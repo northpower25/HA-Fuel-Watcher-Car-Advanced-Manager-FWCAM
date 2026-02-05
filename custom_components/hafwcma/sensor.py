@@ -41,6 +41,7 @@ from .const import (
     DOMAIN,
 )
 from .utils.vehicle_data import async_get_vehicle_data
+from .utils.vehicle_tracker import VehicleDataTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
         self.config_entry = config_entry
+        self.vehicle_tracker = VehicleDataTracker()
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -124,6 +126,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             
             _LOGGER.debug("Vehicle data: %s", vehicle_data)
             
+            # Track vehicle data changes and detect events
+            tracking_result = self.vehicle_tracker.update(vehicle_data)
+            _LOGGER.debug("Tracking result: %s", tracking_result)
+            
             # Use vehicle position if available, otherwise use configured lat/lon
             latitude = vehicle_data.get("latitude")
             longitude = vehicle_data.get("longitude")
@@ -135,7 +141,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             # TODO: Fetch data from Tankerkönig provider using latitude/longitude
             # TODO: Generate forecast
             # TODO: Calculate recommendations
-            # TODO: Detect refueling (compare current tank_level with previous)
 
             # Placeholder data structure - use vehicle data where available
             data = {
@@ -154,6 +159,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 },
                 "forecast_trend": "stable",
                 "vehicle_data": vehicle_data,  # Store for reference
+                "tracking": tracking_result,  # Store tracking results
             }
 
             return data

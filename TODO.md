@@ -4,7 +4,8 @@
 
 ### Core Functionality
 - [ ] Implement actual Tankerkönig API data fetching in sensor coordinator
-- [ ] Add real vehicle tank level tracking (integration with OBD2 or manual input)
+- [x] Add real vehicle tank level tracking (integration with existing entities)
+- [x] Connect vehicle entities for data monitoring (odometer, tank level, range, position)
 - [ ] Connect Telegram notifier to sensor events
 - [ ] Implement proper error handling and retry logic for API calls
 - [ ] Add API rate limiting and caching
@@ -12,6 +13,8 @@
 ### Data Management
 - [ ] Add persistent storage for price history
 - [ ] Implement database for vehicle data and refuel history
+- [x] Add vehicle data change detection (refueling detection)
+- [x] Implement basic consumption tracking (L/100km calculation)
 - [ ] Add data migration support for upgrades
 - [ ] Create backup/restore functionality
 
@@ -25,11 +28,12 @@
 
 ### Features
 - [ ] Support for multiple vehicles per integration instance
-- [ ] Add fuel consumption tracking
-- [ ] Implement refuel history logging
+- [x] Add fuel consumption tracking (via odometer and tank level)
+- [x] Implement refuel history logging (refueling event detection)
 - [ ] Add cost savings calculator
 - [ ] Create station favorites/blacklist feature
 - [ ] Add route-based station recommendations
+- [x] Support for car tracking integrations (device_tracker integration)
 - [ ] Support for other fuel price providers (international)
 
 ### User Interface
@@ -48,7 +52,8 @@
 ### Integrations
 - [ ] Add support for other messaging platforms (WhatsApp, Discord, etc.)
 - [ ] Integration with Google Maps for navigation
-- [ ] Support for car tracking integrations (Traccar, OwnTracks)
+- [x] Support for car tracking integrations (device_tracker entities)
+- [ ] Direct integration with vehicle APIs (e.g., BMW ConnectedDrive, Tesla API)
 - [ ] Connect with fuel card/loyalty programs
 
 ### Analytics
@@ -103,6 +108,10 @@
 - [ ] Social features (share good deals with friends)
 - [ ] Predictive maintenance reminders based on fuel consumption
 - [ ] Integration with financial tracking apps
+- [ ] Smart zone-based position tracking (use home zone coordinates when at home)
+- [ ] Vehicle entity auto-discovery (suggest entities based on naming patterns)
+- [ ] Support for percentage-based tank level sensors
+- [ ] Historical consumption analytics and trends
 
 ---
 
