@@ -1,5 +1,16 @@
 # Change History
 
+## Version 0.1.1 (2026-02-05) - Bug Fixes
+
+### Fixed
+- Fixed FuelPriceSensor state class incompatibility with monetary device class
+  - Removed `SensorStateClass.MEASUREMENT` from FuelPriceSensor
+  - Monetary device class sensors should not use MEASUREMENT state class per HA guidelines
+  - Resolves logger warning: "Entity is using state class 'measurement' which is impossible considering device class ('monetary')"
+- Fixed config flow 404/500 errors
+  - Added missing `strings.json` file required by Home Assistant for config flow UI
+  - Config flow can now be opened without errors
+
 ## Version 0.1.0 (2026-02-05) - Initial MVP Release
 
 ### Added
