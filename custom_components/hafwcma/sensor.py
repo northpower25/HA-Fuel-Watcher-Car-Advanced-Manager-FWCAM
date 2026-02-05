@@ -1,6 +1,7 @@
 """Sensor platform for haFWCMA integration."""
 from __future__ import annotations
 
+import aiohttp
 import logging
 from datetime import timedelta
 from typing import Any
@@ -44,6 +45,7 @@ from .const import (
     DOMAIN,
     PROVIDER_TANKERKONIG,
 )
+from .providers.tankerkonig import TankerkoenigProvider
 from .utils.vehicle_data import async_get_vehicle_data
 from .utils.vehicle_tracker import VehicleDataTracker
 
@@ -171,12 +173,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             
             if provider == PROVIDER_TANKERKONIG and api_key:
                 try:
-                    # Initialize provider if needed
-                    if self._provider is None or self._session is None:
-                        import aiohttp
-                        from .providers.tankerkonig import TankerkoenigProvider
-                        
-                        self._session = aiohttp.ClientSession()
+                    # Initialize provider and session if needed
+                    if self._provider is None:
+                        if self._session is None:
+                            self._session = aiohttp.ClientSession()
                         self._provider = TankerkoenigProvider(api_key, self._session)
                     
                     # Fetch stations near current position

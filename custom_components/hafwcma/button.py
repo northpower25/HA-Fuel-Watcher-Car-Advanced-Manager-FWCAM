@@ -1,6 +1,7 @@
 """Button platform for haFWCMA integration."""
 from __future__ import annotations
 
+import aiohttp
 import logging
 from typing import Any
 
@@ -22,6 +23,7 @@ from .const import (
     DOMAIN,
     PROVIDER_TANKERKONIG,
 )
+from .providers.tankerkonig import TankerkoenigProvider
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,10 +110,16 @@ class TestProviderConnectionButton(ButtonEntity):
         try:
             # Test API connection based on provider
             if provider == PROVIDER_TANKERKONIG:
-                from .providers.tankerkonig import TankerkoenigProvider
-                import aiohttp
+                # Reuse coordinator's session if available, otherwise create temporary one
+                session = None
+                own_session = False
                 
-                session = aiohttp.ClientSession()
+                if self._coordinator and hasattr(self._coordinator, '_session') and self._coordinator._session:
+                    session = self._coordinator._session
+                else:
+                    session = aiohttp.ClientSession()
+                    own_session = True
+                
                 try:
                     provider_instance = TankerkoenigProvider(api_key, session)
                     
@@ -140,7 +148,9 @@ class TestProviderConnectionButton(ButtonEntity):
                         }
                         _LOGGER.warning("API test failed: Invalid API key")
                 finally:
-                    await session.close()
+                    # Only close session if we created it
+                    if own_session:
+                        await session.close()
             else:
                 self._last_result = {
                     "success": False,
