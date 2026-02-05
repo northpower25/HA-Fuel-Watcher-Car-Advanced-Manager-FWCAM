@@ -114,7 +114,8 @@ async def async_get_device_tracker_coordinates(
     
     # If state is a zone name (home, away, not_home, etc.), we can't use it
     # without zone lookup, so return None
-    if state.state.lower() in (STATE_HOME, STATE_NOT_HOME, "away"):
+    state_lower = state.state.lower()
+    if state_lower in ("home", "not_home", "away"):
         _LOGGER.debug(
             "Device tracker %s is in zone '%s' but no coordinates in attributes",
             entity_id,
