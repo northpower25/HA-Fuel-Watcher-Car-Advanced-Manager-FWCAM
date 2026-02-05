@@ -90,8 +90,11 @@ class ManualRefreshSwitch(SwitchEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
         if self._coordinator and hasattr(self._coordinator, "last_update_success"):
-            return {
+            attrs = {
                 "last_update_success": self._coordinator.last_update_success,
-                "last_update_time": self._coordinator.last_update_success_time,
             }
+            # Add last update time if coordinator has the data
+            if hasattr(self._coordinator, "last_update_time"):
+                attrs["last_update_time"] = self._coordinator.last_update_time
+            return attrs
         return {}
