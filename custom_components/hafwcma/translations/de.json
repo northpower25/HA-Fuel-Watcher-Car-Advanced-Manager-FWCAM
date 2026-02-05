@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Tankerkönig API konfigurieren",
+        "description": "Geben Sie Ihre Tankerkönig API-Anmeldedaten und Standort ein.\n\n{api_info}",
+        "data": {
+          "api_key": "Tankerkönig API-Schlüssel",
+          "latitude": "Breitengrad",
+          "longitude": "Längengrad",
+          "radius": "Suchradius (km)",
+          "fuel_type": "Kraftstoffart"
+        }
+      },
+      "vehicle": {
+        "title": "Fahrzeug konfigurieren",
+        "description": "Geben Sie Ihre Fahrzeuginformationen ein",
+        "data": {
+          "vehicle_name": "Fahrzeugname",
+          "tank_capacity": "Tankinhalt (Liter)"
+        }
+      },
+      "telegram": {
+        "title": "Telegram-Benachrichtigungen konfigurieren (Optional)",
+        "description": "{telegram_info}",
+        "data": {
+          "telegram_token": "Telegram Bot-Token",
+          "telegram_chat_id": "Telegram Chat-ID"
+        }
+      }
+    },
+    "error": {
+      "invalid_api_key": "Ungültiger API-Schlüssel. Bitte überprüfen Sie Ihren Tankerkönig API-Schlüssel.",
+      "cannot_connect": "Verbindung zur Tankerkönig API fehlgeschlagen",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten"
+    },
+    "abort": {
+      "already_configured": "Diese Integration ist bereits konfiguriert"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "haFWCMA Optionen",
+        "description": "haFWCMA Integrationsoptionen konfigurieren",
+        "data": {
+          "radius": "Suchradius (km)",
+          "fuel_type": "Kraftstoffart",
+          "tank_capacity": "Tankinhalt (Liter)",
+          "telegram_token": "Telegram Bot-Token",
+          "telegram_chat_id": "Telegram Chat-ID"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "fuel_price": {
+        "name": "Kraftstoffpreis"
+      },
+      "tank_level": {
+        "name": "Tankfüllstand"
+      },
+      "range": {
+        "name": "Reichweite"
+      },
+      "nearest_station": {
+        "name": "Nächste Tankstelle"
+      }
+    }
+  }
+}

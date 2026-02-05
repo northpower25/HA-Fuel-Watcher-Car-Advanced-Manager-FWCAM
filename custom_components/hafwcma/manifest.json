@@ -1,0 +1,16 @@
+{
+  "domain": "hafwcma",
+  "name": "Fuel Watcher Car Advanced Manager",
+  "codeowners": ["@northpower25"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/issues",
+  "requirements": [
+    "aiohttp>=3.8.0",
+    "python-telegram-bot>=20.0"
+  ],
+  "version": "0.1.0"
+}
