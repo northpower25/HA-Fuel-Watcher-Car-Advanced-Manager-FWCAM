@@ -20,6 +20,16 @@
           "tank_capacity": "Tank Capacity (Liters)"
         }
       },
+      "vehicle_entities": {
+        "title": "Configure Vehicle Entities (Optional)",
+        "description": "Select existing Home Assistant entities for your vehicle data. These entities will be monitored for consumption tracking and refueling detection.",
+        "data": {
+          "odometer_entity": "Odometer Sensor",
+          "tank_level_entity": "Tank Fill Level Sensor",
+          "range_entity": "Remaining Range Sensor",
+          "position_entity": "Vehicle Position (Device Tracker)"
+        }
+      },
       "telegram": {
         "title": "Configure Telegram Notifications (Optional)",
         "description": "{telegram_info}",
@@ -32,6 +42,8 @@
     "error": {
       "invalid_api_key": "Invalid API key. Please check your Tankerkönig API key.",
       "cannot_connect": "Failed to connect to Tankerkönig API",
+      "invalid_entity": "Entity does not exist in Home Assistant",
+      "not_device_tracker": "Position entity must be a device_tracker",
       "unknown": "Unexpected error occurred"
     },
     "abort": {
@@ -48,7 +60,11 @@
           "fuel_type": "Fuel Type",
           "tank_capacity": "Tank Capacity (Liters)",
           "telegram_token": "Telegram Bot Token",
-          "telegram_chat_id": "Telegram Chat ID"
+          "telegram_chat_id": "Telegram Chat ID",
+          "odometer_entity": "Odometer Sensor",
+          "tank_level_entity": "Tank Fill Level Sensor",
+          "range_entity": "Remaining Range Sensor",
+          "position_entity": "Vehicle Position (Device Tracker)"
         }
       }
     }

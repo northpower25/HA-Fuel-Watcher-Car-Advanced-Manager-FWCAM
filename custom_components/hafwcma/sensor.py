@@ -31,11 +31,17 @@ from .const import (
     CONF_FUEL_TYPE,
     CONF_LATITUDE,
     CONF_LONGITUDE,
+    CONF_ODOMETER_ENTITY,
+    CONF_POSITION_ENTITY,
     CONF_RADIUS,
+    CONF_RANGE_ENTITY,
+    CONF_TANK_LEVEL_ENTITY,
     CONF_VEHICLE_NAME,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
+from .utils.vehicle_data import async_get_vehicle_data
+from .utils.vehicle_tracker import VehicleDataTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +93,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
         self.config_entry = config_entry
+        self.vehicle_tracker = VehicleDataTracker()
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -98,17 +105,52 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             UpdateFailed: If update fails
         """
         try:
-            # TODO: Fetch data from Tankerkönig provider
-            # TODO: Update vehicle tank level
+            # Get configuration - check both data and options with proper fallback
+            config = self.config_entry.data
+            options = self.config_entry.options
+            
+            # Get entity IDs from options first, then config
+            odometer_entity = options.get(CONF_ODOMETER_ENTITY) or config.get(CONF_ODOMETER_ENTITY)
+            tank_level_entity = options.get(CONF_TANK_LEVEL_ENTITY) or config.get(CONF_TANK_LEVEL_ENTITY)
+            range_entity = options.get(CONF_RANGE_ENTITY) or config.get(CONF_RANGE_ENTITY)
+            position_entity = options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY)
+            
+            # Fetch vehicle data from configured entities
+            vehicle_data = await async_get_vehicle_data(
+                self.hass,
+                odometer_entity,
+                tank_level_entity,
+                range_entity,
+                position_entity,
+            )
+            
+            _LOGGER.debug("Vehicle data: %s", vehicle_data)
+            
+            # Track vehicle data changes and detect events
+            tracking_result = self.vehicle_tracker.update(vehicle_data)
+            _LOGGER.debug("Tracking result: %s", tracking_result)
+            
+            # Use vehicle position if available, otherwise use configured lat/lon
+            latitude = vehicle_data.get("latitude")
+            longitude = vehicle_data.get("longitude")
+            
+            if latitude is None or longitude is None:
+                latitude = config.get(CONF_LATITUDE)
+                longitude = config.get(CONF_LONGITUDE)
+            
+            # TODO: Fetch data from Tankerkönig provider using latitude/longitude
             # TODO: Generate forecast
             # TODO: Calculate recommendations
 
-            # Placeholder data structure
+            # Placeholder data structure - use vehicle data where available
             data = {
-                "fuel_price": 1.649,  # EUR per liter
-                "tank_level": 35.0,  # liters
-                "tank_percentage": 70.0,  # percent
-                "range": 450.0,  # km
+                "fuel_price": 1.649,  # EUR per liter (from API)
+                "tank_level": vehicle_data.get("tank_level", 35.0),  # Use real data if available
+                "tank_percentage": 70.0,  # Calculate from tank_level and capacity
+                "range": vehicle_data.get("range_km", 450.0),  # Use real data if available
+                "odometer": vehicle_data.get("odometer_km"),  # May be None
+                "latitude": latitude,
+                "longitude": longitude,
                 "nearest_station": {
                     "name": "Example Station",
                     "address": "Main Street 1",
@@ -116,6 +158,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     "price": 1.649,
                 },
                 "forecast_trend": "stable",
+                "vehicle_data": vehicle_data,  # Store for reference
+                "tracking": tracking_result,  # Store tracking results
             }
 
             return data

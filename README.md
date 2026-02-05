@@ -11,6 +11,9 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
 - Track tank fuel levels and capacity
 - Monitor estimated driving range
 - Automatic tank level recognition
+- **NEW: Integration with existing vehicle entities** (odometer, tank level, range, position)
+- **NEW: Automatic refueling detection**
+- **NEW: Real-time fuel consumption tracking**
 - Support for multiple vehicles
 
 ### ⛽ Fuel Price Monitoring
@@ -73,7 +76,10 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
 4. Follow the configuration steps:
    - **Step 1**: Enter Tankerkönig API credentials and location
    - **Step 2**: Configure vehicle details (name, tank capacity)
-   - **Step 3**: (Optional) Configure Telegram notifications
+   - **Step 3**: (Optional) Link existing vehicle entities (odometer, tank level, range, position)
+   - **Step 4**: (Optional) Configure Telegram notifications
+
+For detailed information about vehicle entity integration, see [Vehicle Entity Integration Guide](docs/VEHICLE_ENTITIES.md).
 
 ### Configuration Options
 
@@ -82,6 +88,11 @@ After initial setup, you can modify these options:
 - **Search Radius**: Area to search for fuel stations (in km)
 - **Fuel Type**: E5, E10, or Diesel
 - **Tank Capacity**: Vehicle tank capacity in liters
+- **Vehicle Entities**: Link to existing Home Assistant vehicle entities
+  - Odometer sensor (for consumption tracking)
+  - Tank level sensor (for refueling detection)
+  - Range sensor (for consumption analysis)
+  - Position device tracker (for dynamic station search)
 - **Telegram Settings**: Bot token and chat ID
 
 ## Usage
@@ -158,6 +169,10 @@ This is an MVP (Minimum Viable Product) release. The following features are impl
 - ✅ Tankerkönig API integration
 - ✅ Basic fuel price sensors
 - ✅ Tank level tracking (stub)
+- ✅ **Vehicle entity integration** (odometer, tank level, range, position)
+- ✅ **Automatic refueling detection**
+- ✅ **Real-time consumption tracking (L/100km)**
+- ✅ **Dynamic position-based station search**
 - ✅ Telegram notification system
 - ✅ Price trend forecasting (basic)
 - ✅ Multi-language support (EN/DE)

@@ -15,6 +15,12 @@ CONF_VEHICLE_NAME: Final = "vehicle_name"
 CONF_TELEGRAM_TOKEN: Final = "telegram_token"
 CONF_TELEGRAM_CHAT_ID: Final = "telegram_chat_id"
 
+# Vehicle entity configuration keys
+CONF_ODOMETER_ENTITY: Final = "odometer_entity"
+CONF_TANK_LEVEL_ENTITY: Final = "tank_level_entity"
+CONF_RANGE_ENTITY: Final = "range_entity"
+CONF_POSITION_ENTITY: Final = "position_entity"
+
 # Defaults
 DEFAULT_RADIUS: Final = 5.0  # km
 DEFAULT_TANK_CAPACITY: Final = 50.0  # liters
