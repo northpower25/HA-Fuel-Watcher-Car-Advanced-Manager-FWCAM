@@ -387,8 +387,18 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
         station = self.coordinator.data.get("nearest_station", {})
-        return {
+        attributes = {
             ATTR_STATION_ADDRESS: station.get("address"),
             ATTR_DISTANCE: station.get("distance"),
             ATTR_PRICE: station.get("price"),
         }
+        
+        # Add navigation links if station has coordinates
+        lat = station.get("latitude")
+        lon = station.get("longitude")
+        if lat and lon:
+            attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+            attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
+            attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+        
+        return attributes
