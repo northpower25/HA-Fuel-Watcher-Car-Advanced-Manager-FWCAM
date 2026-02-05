@@ -14,6 +14,8 @@ CONF_TANK_CAPACITY: Final = "tank_capacity"
 CONF_VEHICLE_NAME: Final = "vehicle_name"
 CONF_TELEGRAM_TOKEN: Final = "telegram_token"
 CONF_TELEGRAM_CHAT_ID: Final = "telegram_chat_id"
+CONF_PROVIDER: Final = "provider"
+CONF_UPDATE_INTERVAL: Final = "update_interval"
 
 # Vehicle entity configuration keys
 CONF_ODOMETER_ENTITY: Final = "odometer_entity"
@@ -25,6 +27,9 @@ CONF_POSITION_ENTITY: Final = "position_entity"
 DEFAULT_RADIUS: Final = 5.0  # km
 DEFAULT_TANK_CAPACITY: Final = 50.0  # liters
 DEFAULT_SCAN_INTERVAL: Final = 300  # seconds (5 minutes)
+DEFAULT_UPDATE_INTERVAL: Final = 5  # minutes
+MIN_UPDATE_INTERVAL: Final = 1  # minutes
+MAX_UPDATE_INTERVAL: Final = 60  # minutes
 
 # Fuel types
 FUEL_TYPE_E5: Final = "e5"
@@ -36,6 +41,22 @@ FUEL_TYPES: Final = [
     FUEL_TYPE_E10,
     FUEL_TYPE_DIESEL,
 ]
+
+# Provider types
+PROVIDER_TANKERKONIG: Final = "tankerkonig"
+# Future providers can be added here
+# PROVIDER_GASBUDDY: Final = "gasbuddy"
+# PROVIDER_AUTOTRAVELER: Final = "autotraveler"
+
+PROVIDERS: Final = [
+    PROVIDER_TANKERKONIG,
+    # Add more providers as they become available
+]
+
+PROVIDER_NAMES: Final = {
+    PROVIDER_TANKERKONIG: "Tankerkönig (Germany)",
+    # Add more provider display names here
+}
 
 # API endpoints
 TANKERKONIG_API_URL: Final = "https://creativecommons.tankerkoenig.de/json"

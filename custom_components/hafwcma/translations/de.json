@@ -2,14 +2,16 @@
   "config": {
     "step": {
       "user": {
-        "title": "Tankerkönig API konfigurieren",
-        "description": "Geben Sie Ihre Tankerkönig API-Anmeldedaten und Standort ein.\n\n{api_info}",
+        "title": "Kraftstoffpreis-Anbieter konfigurieren",
+        "description": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter und geben Sie die API-Zugangsdaten ein.\n\n{api_info}",
         "data": {
-          "api_key": "Tankerkönig API-Schlüssel",
+          "provider": "Kraftstoffpreis-Anbieter",
+          "api_key": "API-Schlüssel",
           "latitude": "Breitengrad",
           "longitude": "Längengrad",
           "radius": "Suchradius (km)",
-          "fuel_type": "Kraftstoffart"
+          "fuel_type": "Kraftstoffart",
+          "update_interval": "Aktualisierungsintervall (Minuten)"
         }
       },
       "vehicle": {
@@ -56,6 +58,8 @@
         "title": "haFWCMA Optionen",
         "description": "haFWCMA Integrationsoptionen konfigurieren",
         "data": {
+          "provider": "Kraftstoffpreis-Anbieter",
+          "update_interval": "Aktualisierungsintervall (Minuten)",
           "radius": "Suchradius (km)",
           "fuel_type": "Kraftstoffart",
           "tank_capacity": "Tankinhalt (Liter)",
@@ -82,6 +86,16 @@
       },
       "nearest_station": {
         "name": "Nächste Tankstelle"
+      }
+    },
+    "button": {
+      "test_connection": {
+        "name": "API-Verbindung testen"
+      }
+    },
+    "switch": {
+      "manual_refresh": {
+        "name": "Manuelle Aktualisierung"
       }
     }
   }

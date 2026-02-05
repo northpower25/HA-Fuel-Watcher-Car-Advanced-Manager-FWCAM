@@ -17,17 +17,25 @@ from .const import (
     CONF_FUEL_TYPE,
     CONF_ODOMETER_ENTITY,
     CONF_POSITION_ENTITY,
+    CONF_PROVIDER,
     CONF_RADIUS,
     CONF_RANGE_ENTITY,
     CONF_TANK_CAPACITY,
     CONF_TANK_LEVEL_ENTITY,
     CONF_TELEGRAM_CHAT_ID,
     CONF_TELEGRAM_TOKEN,
+    CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
     DEFAULT_RADIUS,
     DEFAULT_TANK_CAPACITY,
+    DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     FUEL_TYPES,
+    MAX_UPDATE_INTERVAL,
+    MIN_UPDATE_INTERVAL,
+    PROVIDER_NAMES,
+    PROVIDER_TANKERKONIG,
+    PROVIDERS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,7 +77,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the initial step - Tankerkönig API configuration.
+        """Handle the initial step - Provider and API configuration.
         
         Args:
             user_input: User provided configuration data
@@ -80,7 +88,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # TODO: Validate API key with Tankerkönig API
+            # TODO: Validate API key with selected provider
             # For now, just check if it's provided
             if not user_input.get(CONF_API_KEY):
                 errors["base"] = "invalid_api_key"
@@ -89,9 +97,12 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self.data = user_input
                 return await self.async_step_vehicle()
 
-        # Show form for API configuration
+        # Show form for provider and API configuration
         data_schema = vol.Schema(
             {
+                vol.Required(CONF_PROVIDER, default=PROVIDER_TANKERKONIG): vol.In(
+                    {provider: PROVIDER_NAMES[provider] for provider in PROVIDERS}
+                ),
                 vol.Required(CONF_API_KEY): str,
                 vol.Required(
                     CONF_LATITUDE,
@@ -105,6 +116,10 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_FUEL_TYPE, default=FUEL_TYPES[0]): vol.In(
                     FUEL_TYPES
                 ),
+                vol.Optional(
+                    CONF_UPDATE_INTERVAL,
+                    default=DEFAULT_UPDATE_INTERVAL,
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_UPDATE_INTERVAL, max=MAX_UPDATE_INTERVAL)),
             }
         )
 
@@ -325,6 +340,19 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
 
         # Get current values with proper fallbacks for empty/invalid values
         # Use explicit None checks to allow 0 values but reject None/empty strings
+        provider_value = current_options.get(CONF_PROVIDER)
+        if not provider_value:
+            provider_value = current_config.get(CONF_PROVIDER, PROVIDER_TANKERKONIG)
+        # Ensure provider is valid
+        if provider_value not in PROVIDERS:
+            provider_value = PROVIDER_TANKERKONIG
+            
+        update_interval_value = current_options.get(CONF_UPDATE_INTERVAL)
+        if update_interval_value is None or update_interval_value == "":
+            update_interval_value = current_config.get(CONF_UPDATE_INTERVAL)
+        if update_interval_value is None or update_interval_value == "":
+            update_interval_value = DEFAULT_UPDATE_INTERVAL
+            
         radius_value = current_options.get(CONF_RADIUS)
         if radius_value is None or radius_value == "":
             radius_value = current_config.get(CONF_RADIUS)
@@ -373,6 +401,14 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
 
         data_schema = vol.Schema(
             {
+                vol.Optional(
+                    CONF_PROVIDER,
+                    default=provider_value,
+                ): vol.In({provider: PROVIDER_NAMES[provider] for provider in PROVIDERS}),
+                vol.Optional(
+                    CONF_UPDATE_INTERVAL,
+                    default=update_interval_value,
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_UPDATE_INTERVAL, max=MAX_UPDATE_INTERVAL)),
                 vol.Optional(
                     CONF_RADIUS,
                     default=radius_value,
