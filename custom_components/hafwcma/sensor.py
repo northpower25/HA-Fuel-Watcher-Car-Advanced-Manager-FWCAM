@@ -38,6 +38,7 @@ from .const import (
     CONF_PROVIDER,
     CONF_RADIUS,
     CONF_RANGE_ENTITY,
+    CONF_TANK_CAPACITY,
     CONF_TANK_LEVEL_ENTITY,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
@@ -213,10 +214,18 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     # Continue with cached/placeholder data
             
             # Build data structure
+            # Calculate tank percentage if we have both level and capacity
+            tank_percentage = None
+            tank_level = vehicle_data.get("tank_level")
+            if tank_level is not None:
+                tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0)
+                if tank_capacity and tank_capacity > 0:
+                    tank_percentage = (tank_level / tank_capacity) * 100
+            
             data = {
                 "fuel_price": fuel_price,
-                "tank_level": vehicle_data.get("tank_level"),
-                "tank_percentage": 70.0,  # TODO: Calculate from tank_level and capacity
+                "tank_level": tank_level,
+                "tank_percentage": tank_percentage,
                 "range": vehicle_data.get("range_km"),
                 "odometer": vehicle_data.get("odometer_km"),
                 "latitude": latitude,
@@ -227,7 +236,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     "distance": 0.0,
                     "price": None,
                 },
-                "forecast_trend": "stable",  # TODO: Implement forecasting
+                "forecast_trend": None,  # TODO: Implement forecasting
                 "vehicle_data": vehicle_data,
                 "tracking": tracking_result,
             }
