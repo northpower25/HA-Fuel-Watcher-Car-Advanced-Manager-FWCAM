@@ -1,5 +1,15 @@
 # Change History
 
+## Version 0.1.2 (2026-02-05) - Options Flow Fix
+
+### Fixed
+- Fixed options flow 500 Internal Server Error
+  - Refactored `HaFWCMAOptionsFlow.async_step_init` to properly handle empty/invalid config values
+  - Added explicit validation for numeric fields (radius, tank capacity) to handle empty strings
+  - Added fuel type validation to ensure default value is in allowed list
+  - Options flow can now be opened without errors even if config contains empty or invalid values
+  - Resolves: "Der Konfigurationsfluss konnte nicht geladen werden: 500 Internal Server Error"
+
 ## Version 0.1.1 (2026-02-05) - Bug Fixes
 
 ### Fixed
