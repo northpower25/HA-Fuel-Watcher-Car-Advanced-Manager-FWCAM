@@ -20,6 +20,16 @@
           "tank_capacity": "Tankinhalt (Liter)"
         }
       },
+      "vehicle_entities": {
+        "title": "Fahrzeugentitäten konfigurieren (Optional)",
+        "description": "Wählen Sie bestehende Home Assistant Entitäten für Ihre Fahrzeugdaten aus. Diese Entitäten werden für Verbrauchsverfolgung und Tankerkennung überwacht.",
+        "data": {
+          "odometer_entity": "Kilometerzähler Sensor",
+          "tank_level_entity": "Tankfüllstand Sensor",
+          "range_entity": "Restreichweite Sensor",
+          "position_entity": "Fahrzeugposition (Device Tracker)"
+        }
+      },
       "telegram": {
         "title": "Telegram-Benachrichtigungen konfigurieren (Optional)",
         "description": "{telegram_info}",
@@ -32,6 +42,8 @@
     "error": {
       "invalid_api_key": "Ungültiger API-Schlüssel. Bitte überprüfen Sie Ihren Tankerkönig API-Schlüssel.",
       "cannot_connect": "Verbindung zur Tankerkönig API fehlgeschlagen",
+      "invalid_entity": "Entität existiert nicht in Home Assistant",
+      "not_device_tracker": "Positionsentität muss ein device_tracker sein",
       "unknown": "Ein unerwarteter Fehler ist aufgetreten"
     },
     "abort": {
@@ -48,7 +60,11 @@
           "fuel_type": "Kraftstoffart",
           "tank_capacity": "Tankinhalt (Liter)",
           "telegram_token": "Telegram Bot-Token",
-          "telegram_chat_id": "Telegram Chat-ID"
+          "telegram_chat_id": "Telegram Chat-ID",
+          "odometer_entity": "Kilometerzähler Sensor",
+          "tank_level_entity": "Tankfüllstand Sensor",
+          "range_entity": "Restreichweite Sensor",
+          "position_entity": "Fahrzeugposition (Device Tracker)"
         }
       }
     }
