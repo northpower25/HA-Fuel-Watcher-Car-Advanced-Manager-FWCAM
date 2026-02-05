@@ -130,7 +130,6 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
 
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = f"{CURRENCY_EURO}/L"
-    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
         self,

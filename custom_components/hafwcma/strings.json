@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure Tankerkönig API",
+        "description": "Enter your Tankerkönig API credentials and location.\n\n{api_info}",
+        "data": {
+          "api_key": "Tankerkönig API Key",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "radius": "Search Radius (km)",
+          "fuel_type": "Fuel Type"
+        }
+      },
+      "vehicle": {
+        "title": "Configure Vehicle",
+        "description": "Enter your vehicle information",
+        "data": {
+          "vehicle_name": "Vehicle Name",
+          "tank_capacity": "Tank Capacity (Liters)"
+        }
+      },
+      "telegram": {
+        "title": "Configure Telegram Notifications (Optional)",
+        "description": "{telegram_info}",
+        "data": {
+          "telegram_token": "Telegram Bot Token",
+          "telegram_chat_id": "Telegram Chat ID"
+        }
+      }
+    },
+    "error": {
+      "invalid_api_key": "Invalid API key. Please check your Tankerkönig API key.",
+      "cannot_connect": "Failed to connect to Tankerkönig API",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This integration is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "haFWCMA Options",
+        "description": "Configure haFWCMA integration options",
+        "data": {
+          "radius": "Search Radius (km)",
+          "fuel_type": "Fuel Type",
+          "tank_capacity": "Tank Capacity (Liters)",
+          "telegram_token": "Telegram Bot Token",
+          "telegram_chat_id": "Telegram Chat ID"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "fuel_price": {
+        "name": "Fuel Price"
+      },
+      "tank_level": {
+        "name": "Tank Level"
+      },
+      "range": {
+        "name": "Range"
+      },
+      "nearest_station": {
+        "name": "Nearest Station"
+      }
+    }
+  }
+}
