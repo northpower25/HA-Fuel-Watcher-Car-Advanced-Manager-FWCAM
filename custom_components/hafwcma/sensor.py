@@ -1,6 +1,7 @@
 """Sensor platform for haFWCMA integration."""
 from __future__ import annotations
 
+import aiohttp
 import logging
 from datetime import timedelta
 from typing import Any
@@ -28,18 +29,24 @@ from .const import (
     ATTR_STATION_ADDRESS,
     ATTR_STATION_NAME,
     ATTR_TANK_LEVEL,
+    CONF_API_KEY,
     CONF_FUEL_TYPE,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_ODOMETER_ENTITY,
     CONF_POSITION_ENTITY,
+    CONF_PROVIDER,
     CONF_RADIUS,
     CONF_RANGE_ENTITY,
+    CONF_TANK_CAPACITY,
     CONF_TANK_LEVEL_ENTITY,
+    CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
-    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
+    PROVIDER_TANKERKONIG,
 )
+from .providers.tankerkonig import TankerkoenigProvider
 from .utils.vehicle_data import async_get_vehicle_data
 from .utils.vehicle_tracker import VehicleDataTracker
 
@@ -60,8 +67,16 @@ async def async_setup_entry(
     """
     _LOGGER.info("Setting up haFWCMA sensors")
 
-    # TODO: Initialize coordinator with actual data fetching
+    # Initialize coordinator with actual data fetching
     coordinator = HaFWCMACoordinator(hass, config_entry)
+    
+    # Store coordinator in hass.data for button/switch access
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = {}
+    if config_entry.entry_id not in hass.data[DOMAIN]:
+        hass.data[DOMAIN][config_entry.entry_id] = {}
+    hass.data[DOMAIN][config_entry.entry_id]["coordinator"] = coordinator
+    
     await coordinator.async_config_entry_first_refresh()
 
     vehicle_name = config_entry.data.get(CONF_VEHICLE_NAME, "Vehicle")
@@ -86,14 +101,23 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             hass: Home Assistant instance
             config_entry: Config entry with user settings
         """
+        # Get update interval from config
+        config = config_entry.data
+        options = config_entry.options
+        update_interval_minutes = options.get(CONF_UPDATE_INTERVAL) or config.get(
+            CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+        )
+        
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+            update_interval=timedelta(minutes=update_interval_minutes),
         )
         self.config_entry = config_entry
         self.vehicle_tracker = VehicleDataTracker()
+        self._provider = None
+        self._session = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -108,6 +132,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             # Get configuration - check both data and options with proper fallback
             config = self.config_entry.data
             options = self.config_entry.options
+            
+            # Get provider configuration
+            provider = options.get(CONF_PROVIDER) or config.get(CONF_PROVIDER, PROVIDER_TANKERKONIG)
+            api_key = config.get(CONF_API_KEY)
+            fuel_type = options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5")
+            radius = options.get(CONF_RADIUS) or config.get(CONF_RADIUS, 5.0)
             
             # Get entity IDs from options first, then config
             odometer_entity = options.get(CONF_ODOMETER_ENTITY) or config.get(CONF_ODOMETER_ENTITY)
@@ -138,28 +168,77 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 latitude = config.get(CONF_LATITUDE)
                 longitude = config.get(CONF_LONGITUDE)
             
-            # TODO: Fetch data from Tankerkönig provider using latitude/longitude
-            # TODO: Generate forecast
-            # TODO: Calculate recommendations
-
-            # Placeholder data structure - use vehicle data where available
+            # Fetch data from provider
+            nearest_station = None
+            fuel_price = None
+            
+            if provider == PROVIDER_TANKERKONIG and api_key:
+                try:
+                    # Initialize provider and session if needed
+                    if self._provider is None:
+                        if self._session is None:
+                            self._session = aiohttp.ClientSession()
+                        self._provider = TankerkoenigProvider(api_key, self._session)
+                    
+                    # Fetch stations near current position
+                    stations = await self._provider.get_stations_nearby(
+                        latitude, longitude, radius, fuel_type
+                    )
+                    
+                    if stations:
+                        # Get nearest station
+                        nearest = stations[0]
+                        fuel_price = nearest.get_price(fuel_type)
+                        nearest_station = {
+                            "id": nearest.station_id,
+                            "name": nearest.name,
+                            "brand": nearest.brand,
+                            "address": f"{nearest.address}, {nearest.city}",
+                            "distance": round(nearest.distance, 2),
+                            "price": fuel_price,
+                            "latitude": nearest.latitude,
+                            "longitude": nearest.longitude,
+                            "is_open": nearest.is_open,
+                        }
+                        _LOGGER.info(
+                            "Found nearest station: %s at %.2f km, price: €%.3f",
+                            nearest.name,
+                            nearest.distance,
+                            fuel_price if fuel_price else 0,
+                        )
+                    else:
+                        _LOGGER.warning("No stations found within %.1f km", radius)
+                        
+                except Exception as err:
+                    _LOGGER.error("Error fetching data from provider: %s", err)
+                    # Continue with cached/placeholder data
+            
+            # Build data structure
+            # Calculate tank percentage if we have both level and capacity
+            tank_percentage = None
+            tank_level = vehicle_data.get("tank_level")
+            if tank_level is not None:
+                tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0)
+                if tank_capacity and tank_capacity > 0:
+                    tank_percentage = (tank_level / tank_capacity) * 100
+            
             data = {
-                "fuel_price": 1.649,  # EUR per liter (from API)
-                "tank_level": vehicle_data.get("tank_level", 35.0),  # Use real data if available
-                "tank_percentage": 70.0,  # Calculate from tank_level and capacity
-                "range": vehicle_data.get("range_km", 450.0),  # Use real data if available
-                "odometer": vehicle_data.get("odometer_km"),  # May be None
+                "fuel_price": fuel_price,
+                "tank_level": tank_level,
+                "tank_percentage": tank_percentage,
+                "range": vehicle_data.get("range_km"),
+                "odometer": vehicle_data.get("odometer_km"),
                 "latitude": latitude,
                 "longitude": longitude,
-                "nearest_station": {
-                    "name": "Example Station",
-                    "address": "Main Street 1",
-                    "distance": 2.5,
-                    "price": 1.649,
+                "nearest_station": nearest_station or {
+                    "name": "No station found",
+                    "address": "",
+                    "distance": 0.0,
+                    "price": None,
                 },
-                "forecast_trend": "stable",
-                "vehicle_data": vehicle_data,  # Store for reference
-                "tracking": tracking_result,  # Store tracking results
+                "forecast_trend": None,  # TODO: Implement forecasting
+                "vehicle_data": vehicle_data,
+                "tracking": tracking_result,
             }
 
             return data
@@ -167,6 +246,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.error("Error updating haFWCMA data: %s", err)
             raise UpdateFailed(f"Error communicating with API: {err}") from err
+    
+    async def async_shutdown(self) -> None:
+        """Shutdown coordinator and cleanup resources."""
+        if self._session:
+            await self._session.close()
+            self._session = None
+        self._provider = None
 
 
 class FuelPriceSensor(CoordinatorEntity, SensorEntity):
@@ -310,8 +396,18 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
         station = self.coordinator.data.get("nearest_station", {})
-        return {
+        attributes = {
             ATTR_STATION_ADDRESS: station.get("address"),
             ATTR_DISTANCE: station.get("distance"),
             ATTR_PRICE: station.get("price"),
         }
+        
+        # Add navigation links if station has coordinates
+        lat = station.get("latitude")
+        lon = station.get("longitude")
+        if lat and lon:
+            attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+            attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
+            attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+        
+        return attributes

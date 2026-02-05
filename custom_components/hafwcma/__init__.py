@@ -21,7 +21,7 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON, Platform.SWITCH]
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -83,6 +83,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         True if unload was successful
     """
     _LOGGER.info("Unloading haFWCMA config entry: %s", entry.entry_id)
+    
+    # Cleanup coordinator
+    coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
+    if coordinator and hasattr(coordinator, "async_shutdown"):
+        await coordinator.async_shutdown()
     
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     

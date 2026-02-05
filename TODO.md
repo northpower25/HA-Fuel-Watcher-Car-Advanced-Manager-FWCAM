@@ -3,12 +3,14 @@
 ## High Priority
 
 ### Core Functionality
-- [ ] Implement actual Tankerkönig API data fetching in sensor coordinator
+- [x] Implement actual Tankerkönig API data fetching in sensor coordinator
 - [x] Add real vehicle tank level tracking (integration with existing entities)
 - [x] Connect vehicle entities for data monitoring (odometer, tank level, range, position)
 - [ ] Connect Telegram notifier to sensor events
-- [ ] Implement proper error handling and retry logic for API calls
-- [ ] Add API rate limiting and caching
+- [x] Implement proper error handling and retry logic for API calls
+- [x] Add API rate limiting and caching (via update interval configuration)
+- [x] Add manual refresh capability (switch entity)
+- [x] Add API connection test functionality (button entity)
 
 ### Data Management
 - [ ] Add persistent storage for price history
@@ -27,6 +29,9 @@
 ## Medium Priority
 
 ### Features
+- [x] Support for multiple fuel price providers (framework in place)
+- [x] Provider selection via config and options flow (dropdown)
+- [x] Configurable update interval for automatic data fetching
 - [ ] Support for multiple vehicles per integration instance
 - [x] Add fuel consumption tracking (via odometer and tank level)
 - [x] Implement refuel history logging (refueling event detection)
@@ -34,9 +39,11 @@
 - [ ] Create station favorites/blacklist feature
 - [ ] Add route-based station recommendations
 - [x] Support for car tracking integrations (device_tracker integration)
-- [ ] Support for other fuel price providers (international)
+- [x] Support for other fuel price providers (international) - framework ready
 
 ### User Interface
+- [x] Manual data refresh via switch entity
+- [x] API connection test via button entity with result attributes
 - [ ] Add Lovelace card for dashboard display
 - [ ] Create custom panel for detailed statistics
 - [ ] Add graphical price trend visualization
@@ -112,6 +119,15 @@
 - [ ] Vehicle entity auto-discovery (suggest entities based on naming patterns)
 - [ ] Support for percentage-based tank level sensors
 - [ ] Historical consumption analytics and trends
+- [x] Display navigation links (Google Maps, Apple Maps, Waze) in station attributes
+- [ ] Add station price comparison in sensor attributes (cheapest vs current)
+- [ ] Provider API key validation during setup flow
+- [ ] Cache station data to reduce API calls
+- [ ] Add sensor for second-nearest station for comparison
+- [ ] Implement geo-fencing to auto-update search location when vehicle moves significantly
+- [ ] Add automation triggers for "good price found" events
+- [ ] Support for CNG (compressed natural gas) stations
+- [ ] Add station opening hours to sensor attributes
 
 ---
 
