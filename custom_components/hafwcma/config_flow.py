@@ -197,38 +197,58 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
         current_config = self.config_entry.data
         current_options = self.config_entry.options
 
+        # Get current values with proper fallbacks for empty/invalid values
+        # Use explicit None checks to allow 0 values but reject None/empty strings
+        radius_value = current_options.get(CONF_RADIUS)
+        if radius_value is None or radius_value == "":
+            radius_value = current_config.get(CONF_RADIUS)
+        if radius_value is None or radius_value == "":
+            radius_value = DEFAULT_RADIUS
+            
+        fuel_type_value = current_options.get(CONF_FUEL_TYPE)
+        if not fuel_type_value:
+            fuel_type_value = current_config.get(CONF_FUEL_TYPE)
+        if not fuel_type_value:
+            fuel_type_value = FUEL_TYPES[0]
+        # Ensure fuel type is valid
+        if fuel_type_value not in FUEL_TYPES:
+            fuel_type_value = FUEL_TYPES[0]
+            
+        tank_capacity_value = current_options.get(CONF_TANK_CAPACITY)
+        if tank_capacity_value is None or tank_capacity_value == "":
+            tank_capacity_value = current_config.get(CONF_TANK_CAPACITY)
+        if tank_capacity_value is None or tank_capacity_value == "":
+            tank_capacity_value = DEFAULT_TANK_CAPACITY
+            
+        telegram_token_value = current_options.get(CONF_TELEGRAM_TOKEN, "")
+        if not telegram_token_value:
+            telegram_token_value = current_config.get(CONF_TELEGRAM_TOKEN, "")
+            
+        telegram_chat_id_value = current_options.get(CONF_TELEGRAM_CHAT_ID, "")
+        if not telegram_chat_id_value:
+            telegram_chat_id_value = current_config.get(CONF_TELEGRAM_CHAT_ID, "")
+
         data_schema = vol.Schema(
             {
                 vol.Optional(
                     CONF_RADIUS,
-                    default=current_options.get(
-                        CONF_RADIUS, current_config.get(CONF_RADIUS, DEFAULT_RADIUS)
-                    ),
+                    default=radius_value,
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_FUEL_TYPE,
-                    default=current_options.get(
-                        CONF_FUEL_TYPE, current_config.get(CONF_FUEL_TYPE, FUEL_TYPES[0])
-                    ),
+                    default=fuel_type_value,
                 ): vol.In(FUEL_TYPES),
                 vol.Optional(
                     CONF_TANK_CAPACITY,
-                    default=current_options.get(
-                        CONF_TANK_CAPACITY,
-                        current_config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY),
-                    ),
+                    default=tank_capacity_value,
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_TELEGRAM_TOKEN,
-                    default=current_options.get(
-                        CONF_TELEGRAM_TOKEN, current_config.get(CONF_TELEGRAM_TOKEN, "")
-                    ),
+                    default=telegram_token_value,
                 ): str,
                 vol.Optional(
                     CONF_TELEGRAM_CHAT_ID,
-                    default=current_options.get(
-                        CONF_TELEGRAM_CHAT_ID, current_config.get(CONF_TELEGRAM_CHAT_ID, "")
-                    ),
+                    default=telegram_chat_id_value,
                 ): str,
             }
         )
