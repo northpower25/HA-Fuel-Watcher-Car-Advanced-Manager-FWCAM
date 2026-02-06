@@ -14,6 +14,9 @@ from . import FuelPriceProvider, ProviderError
 
 _LOGGER = logging.getLogger(__name__)
 
+# Earth radius constant for Haversine formula
+EARTH_RADIUS_KM = 6371.0
+
 
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate distance between two coordinates using Haversine formula.
@@ -27,7 +30,6 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     Returns:
         Distance in kilometers
     """
-    R = 6371.0  # Earth radius in kilometers
     dlat = radians(lat2 - lat1)
     dlon = radians(lon2 - lon1)
 
@@ -38,7 +40,7 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     a = sin_dlat_half**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin_dlon_half**2
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
 
-    return R * c
+    return EARTH_RADIUS_KM * c
 
 
 class TankerkoenigProvider(FuelPriceProvider):
@@ -222,7 +224,8 @@ class TankerkoenigProvider(FuelPriceProvider):
             
             # Calculate distance if not provided or if reference coordinates given
             distance = data.get("dist", 0.0)
-            if ref_lat is not None and ref_lon is not None and station_lat and station_lon:
+            # Use explicit None checks to avoid filtering out valid 0.0 coordinates
+            if ref_lat is not None and ref_lon is not None and station_lat is not None and station_lon is not None:
                 distance = _distance_km(ref_lat, ref_lon, station_lat, station_lon)
             
             return FuelStation(

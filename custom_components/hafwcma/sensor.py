@@ -202,6 +202,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             # Use vehicle position if available, otherwise use configured lat/lon
             latitude = vehicle_data.get("latitude")
             longitude = vehicle_data.get("longitude")
+            # Default to fallback; will be updated if vehicle position is used
             location_source = "fallback (configured)"
             
             if latitude is None or longitude is None:
