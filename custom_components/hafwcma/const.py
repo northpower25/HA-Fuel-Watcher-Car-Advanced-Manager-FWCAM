@@ -23,6 +23,13 @@ CONF_TANK_LEVEL_ENTITY: Final = "tank_level_entity"
 CONF_RANGE_ENTITY: Final = "range_entity"
 CONF_POSITION_ENTITY: Final = "position_entity"
 
+# Prediction engine configuration keys
+CONF_PRICE_DROP_PERCENT_THRESHOLD: Final = "price_drop_percent_threshold"
+CONF_PRICE_DROP_ABSOLUTE_THRESHOLD: Final = "price_drop_absolute_threshold"
+CONF_LOW_FUEL_THRESHOLD: Final = "low_fuel_threshold"
+CONF_CRITICAL_FUEL_THRESHOLD: Final = "critical_fuel_threshold"
+CONF_FALLBACK_DAILY_KM: Final = "fallback_daily_km"
+
 # Defaults
 DEFAULT_RADIUS: Final = 5.0  # km
 DEFAULT_TANK_CAPACITY: Final = 50.0  # liters
@@ -30,6 +37,13 @@ DEFAULT_SCAN_INTERVAL: Final = 300  # seconds (5 minutes)
 DEFAULT_UPDATE_INTERVAL: Final = 5  # minutes
 MIN_UPDATE_INTERVAL: Final = 1  # minutes
 MAX_UPDATE_INTERVAL: Final = 60  # minutes
+
+# Prediction engine defaults
+DEFAULT_PRICE_DROP_PERCENT: Final = 2.0  # 2% price drop
+DEFAULT_PRICE_DROP_ABSOLUTE: Final = 0.05  # 5 cents drop (EUR)
+DEFAULT_LOW_FUEL_THRESHOLD: Final = 30.0  # 30% tank level
+DEFAULT_CRITICAL_FUEL_THRESHOLD: Final = 15.0  # 15% tank level
+DEFAULT_FALLBACK_DAILY_KM: Final = 40.0  # 40 km per day
 
 # Fuel types
 FUEL_TYPE_E5: Final = "e5"
@@ -70,6 +84,13 @@ ATTR_FORECAST_TREND: Final = "forecast_trend"
 ATTR_TANK_LEVEL: Final = "tank_level"
 ATTR_RANGE_KM: Final = "range_km"
 ATTR_LAST_UPDATED: Final = "last_updated"
+ATTR_PRICE_DELTA: Final = "price_delta"
+ATTR_PRICE_DELTA_PERCENT: Final = "price_delta_percent"
+ATTR_SHOULD_REFUEL: Final = "should_refuel"
+ATTR_URGENCY: Final = "urgency"
+ATTR_RECOMMENDATION: Final = "recommendation"
+ATTR_DAYS_LEFT: Final = "days_left"
+ATTR_AVG_DAILY_KM: Final = "avg_daily_km"
 
 # Events
 EVENT_FUEL_PRICE_ALERT: Final = f"{DOMAIN}_fuel_price_alert"
