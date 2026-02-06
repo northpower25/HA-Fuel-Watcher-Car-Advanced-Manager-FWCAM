@@ -207,24 +207,34 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     )
                     
                     if stations:
-                        # Get nearest station
-                        nearest = stations[0]
-                        fuel_price = nearest.get_price(fuel_type)
+                        # Sort stations by price first (cheapest), then by distance
+                        # Filter out stations with no price data
+                        stations_with_price = [s for s in stations if s.get_price(fuel_type) is not None]
+                        
+                        if stations_with_price:
+                            # Sort by price (ascending), then by distance (ascending)
+                            stations_with_price.sort(key=lambda s: (s.get_price(fuel_type), s.distance))
+                            cheapest = stations_with_price[0]
+                        else:
+                            # Fall back to nearest if no price data
+                            cheapest = stations[0]
+                        
+                        fuel_price = cheapest.get_price(fuel_type)
                         nearest_station = {
-                            "id": nearest.station_id,
-                            "name": nearest.name,
-                            "brand": nearest.brand,
-                            "address": f"{nearest.address}, {nearest.city}",
-                            "distance": round(nearest.distance, 2),
+                            "id": cheapest.station_id,
+                            "name": cheapest.name,
+                            "brand": cheapest.brand,
+                            "address": f"{cheapest.address}, {cheapest.city}",
+                            "distance": round(cheapest.distance, 2),
                             "price": fuel_price,
-                            "latitude": nearest.latitude,
-                            "longitude": nearest.longitude,
-                            "is_open": nearest.is_open,
+                            "latitude": cheapest.latitude,
+                            "longitude": cheapest.longitude,
+                            "is_open": cheapest.is_open,
                         }
                         _LOGGER.info(
-                            "Found nearest station: %s at %.2f km, price: €%.3f",
-                            nearest.name,
-                            nearest.distance,
+                            "Found cheapest station: %s at %.2f km, price: €%.3f",
+                            cheapest.name,
+                            cheapest.distance,
                             fuel_price if fuel_price else 0,
                         )
                     else:
@@ -383,7 +393,7 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
 class TankLevelSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing current tank level."""
 
-    _attr_native_unit_of_measurement = "L"
+    _attr_native_unit_of_measurement = "%"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:gas-station"
 
@@ -403,18 +413,23 @@ class TankLevelSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._attr_name = f"{vehicle_name} Tank Level"
         self._attr_unique_id = f"{config_entry.entry_id}_tank_level"
+        self._config_entry = config_entry
 
     @property
     def native_value(self) -> float | None:
-        """Return the current tank level."""
-        return self.coordinator.data.get("tank_level")
+        """Return the current tank level as percentage."""
+        return self.coordinator.data.get("tank_percentage")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
-        return {
-            "percentage": self.coordinator.data.get("tank_percentage"),
-        }
+        tank_level_liters = self.coordinator.data.get("tank_level")
+        attributes = {}
+        
+        if tank_level_liters is not None:
+            attributes["liters"] = tank_level_liters
+        
+        return attributes
 
 
 class RangeSensor(CoordinatorEntity, SensorEntity):
@@ -459,7 +474,7 @@ class RangeSensor(CoordinatorEntity, SensorEntity):
 
 
 class NearestStationSensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing nearest fuel station."""
+    """Sensor showing cheapest fuel station within radius."""
 
     _attr_icon = "mdi:gas-station"
 
@@ -477,12 +492,12 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
-        self._attr_name = f"{vehicle_name} Nearest Station"
+        self._attr_name = f"{vehicle_name} Cheapest Station"
         self._attr_unique_id = f"{config_entry.entry_id}_nearest_station"
 
     @property
     def native_value(self) -> str | None:
-        """Return the name of nearest station."""
+        """Return the name of cheapest station."""
         station = self.coordinator.data.get("nearest_station", {})
         return station.get("name")
 

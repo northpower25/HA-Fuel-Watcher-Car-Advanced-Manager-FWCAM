@@ -49,14 +49,14 @@
       },
       "telegram": {
         "title": "Configure Telegram Notifications (Optional)",
-        "description": "{telegram_info}",
+        "description": "{telegram_info}\n\nFor detailed instructions, visit: https://core.telegram.org/bots#6-botfather",
         "data": {
           "telegram_token": "Telegram Bot Token (Optional)",
           "telegram_chat_id": "Telegram Chat ID (Optional)"
         },
         "data_description": {
-          "telegram_token": "Token from BotFather",
-          "telegram_chat_id": "Your Telegram chat ID for notifications"
+          "telegram_token": "Token from BotFather (@BotFather on Telegram)",
+          "telegram_chat_id": "Your Telegram chat ID (get from @userinfobot)"
         }
       },
       "prediction": {
@@ -145,7 +145,7 @@
         "name": "Range"
       },
       "nearest_station": {
-        "name": "Nearest Station"
+        "name": "Cheapest Station"
       }
     },
     "button": {

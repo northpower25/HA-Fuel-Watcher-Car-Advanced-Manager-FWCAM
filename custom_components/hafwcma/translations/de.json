@@ -49,14 +49,14 @@
       },
       "telegram": {
         "title": "Telegram-Benachrichtigungen konfigurieren (Optional)",
-        "description": "{telegram_info}",
+        "description": "{telegram_info}\n\nFür detaillierte Anweisungen besuchen Sie: https://core.telegram.org/bots#6-botfather",
         "data": {
           "telegram_token": "Telegram Bot-Token (Optional)",
           "telegram_chat_id": "Telegram Chat-ID (Optional)"
         },
         "data_description": {
-          "telegram_token": "Token vom BotFather",
-          "telegram_chat_id": "Ihre Telegram Chat-ID für Benachrichtigungen"
+          "telegram_token": "Token vom BotFather (@BotFather auf Telegram)",
+          "telegram_chat_id": "Ihre Telegram Chat-ID (erhalten von @userinfobot)"
         }
       },
       "prediction": {
@@ -145,7 +145,7 @@
         "name": "Reichweite"
       },
       "nearest_station": {
-        "name": "Nächste Tankstelle"
+        "name": "Günstigste Tankstelle"
       }
     },
     "button": {

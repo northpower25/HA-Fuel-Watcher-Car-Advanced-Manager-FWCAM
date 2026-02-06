@@ -284,7 +284,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=data_schema,
             errors=errors,
             description_placeholders={
-                "telegram_info": "Optional: Configure Telegram for notifications"
+                "telegram_info": "Optional: Configure Telegram for notifications\n\nTo get your Telegram Bot Token:\n1. Open Telegram and search for @BotFather\n2. Send /newbot and follow instructions\n3. Copy the token provided\n\nTo get your Chat ID:\n1. Search for @userinfobot in Telegram\n2. Start a chat and it will show your Chat ID"
             },
         )
     
