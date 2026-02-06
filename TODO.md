@@ -129,6 +129,12 @@
 - [ ] Add automation triggers for "good price found" events
 - [ ] Support for CNG (compressed natural gas) stations
 - [ ] Add station opening hours to sensor attributes
+- [ ] **Enhanced fuel station recommendation**: Calculate if driving to a farther station with lower price is economically justified based on fuel consumption and distance. Consider factors like:
+  - Current fuel price at nearest station vs. farther station
+  - Distance to each station
+  - Vehicle fuel consumption rate
+  - Additional fuel cost for the extra distance
+  - Potential savings after accounting for extra fuel used
 
 ---
 

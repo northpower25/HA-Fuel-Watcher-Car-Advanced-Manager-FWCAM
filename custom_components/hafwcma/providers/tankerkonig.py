@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from math import radians, sin, cos, sqrt, atan2
 from typing import Any, Dict, List
 
 import aiohttp
@@ -12,6 +13,28 @@ from ..models import FuelStation
 from . import FuelPriceProvider, ProviderError
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate distance between two coordinates using Haversine formula.
+    
+    Args:
+        lat1: Latitude of first point
+        lon1: Longitude of first point
+        lat2: Latitude of second point
+        lon2: Longitude of second point
+        
+    Returns:
+        Distance in kilometers
+    """
+    R = 6371.0  # Earth radius in kilometers
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+
+    a = sin(dlat / 2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+    return R * c
 
 
 class TankerkoenigProvider(FuelPriceProvider):
@@ -89,7 +112,7 @@ class TankerkoenigProvider(FuelPriceProvider):
 
                 stations = []
                 for station_data in data.get("stations", []):
-                    station = self._parse_station_data(station_data)
+                    station = self._parse_station_data(station_data, latitude, longitude)
                     if station:
                         stations.append(station)
 
@@ -178,25 +201,35 @@ class TankerkoenigProvider(FuelPriceProvider):
         except (aiohttp.ClientError, TimeoutError):
             return False
 
-    def _parse_station_data(self, data: Dict[str, Any]) -> FuelStation | None:
+    def _parse_station_data(self, data: Dict[str, Any], ref_lat: float = None, ref_lon: float = None) -> FuelStation | None:
         """Parse station data from API response.
         
         Args:
             data: Raw station data from API
+            ref_lat: Reference latitude for distance calculation
+            ref_lon: Reference longitude for distance calculation
             
         Returns:
             FuelStation object or None if parsing fails
         """
         try:
+            station_lat = data.get("lat", 0.0)
+            station_lon = data.get("lng", 0.0)
+            
+            # Calculate distance if not provided or if reference coordinates given
+            distance = data.get("dist", 0.0)
+            if ref_lat is not None and ref_lon is not None and station_lat and station_lon:
+                distance = _distance_km(ref_lat, ref_lon, station_lat, station_lon)
+            
             return FuelStation(
                 station_id=data.get("id", ""),
                 name=data.get("name", "Unknown"),
                 brand=data.get("brand", "Unknown"),
                 address=data.get("street", "") + " " + data.get("houseNumber", ""),
                 city=data.get("place", ""),
-                latitude=data.get("lat", 0.0),
-                longitude=data.get("lng", 0.0),
-                distance=data.get("dist", 0.0),
+                latitude=station_lat,
+                longitude=station_lon,
+                distance=distance,
                 price_e5=data.get("e5"),
                 price_e10=data.get("e10"),
                 price_diesel=data.get("diesel"),
