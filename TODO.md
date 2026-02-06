@@ -13,18 +13,19 @@
 - [x] Add API connection test functionality (button entity)
 
 ### Data Management
-- [ ] Add persistent storage for price history
-- [ ] Implement database for vehicle data and refuel history
+- [x] Add persistent storage for price history
+- [x] Implement database for vehicle data and refuel history
 - [x] Add vehicle data change detection (refueling detection)
 - [x] Implement basic consumption tracking (L/100km calculation)
 - [ ] Add data migration support for upgrades
 - [ ] Create backup/restore functionality
 
 ### Forecasting
-- [ ] Improve price forecasting algorithm (machine learning?)
-- [ ] Add historical price analysis
-- [ ] Implement predictive refueling recommendations
+- [x] Improve price forecasting algorithm (statistical analysis)
+- [x] Add historical price analysis
+- [x] Implement predictive refueling recommendations
 - [ ] Add support for external price trend APIs
+- [ ] Add machine learning for advanced predictions
 
 ## Medium Priority
 
