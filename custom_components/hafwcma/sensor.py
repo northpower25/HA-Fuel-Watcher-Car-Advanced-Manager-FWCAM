@@ -97,6 +97,7 @@ async def async_setup_entry(
         TankLevelSensor(coordinator, config_entry, vehicle_name),
         RangeSensor(coordinator, config_entry, vehicle_name),
         NearestStationSensor(coordinator, config_entry, vehicle_name),
+        ApiDebugSensor(coordinator, config_entry, vehicle_name),
     ]
 
     async_add_entities(sensors)
@@ -129,6 +130,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self.vehicle_tracker = VehicleDataTracker()
         self._provider = None
         self._session = None
+        self._last_api_request = None  # Store debug info about last API request
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -200,10 +202,29 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             # Use vehicle position if available, otherwise use configured lat/lon
             latitude = vehicle_data.get("latitude")
             longitude = vehicle_data.get("longitude")
+            # Default to fallback; will be updated if vehicle position is used
+            location_source = "fallback (configured)"
             
             if latitude is None or longitude is None:
                 latitude = config.get(CONF_LATITUDE)
                 longitude = config.get(CONF_LONGITUDE)
+            else:
+                # Only set vehicle source if position_entity is configured
+                position_entity = options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY)
+                if position_entity:
+                    location_source = f"vehicle ({position_entity})"
+            
+            # Store debug info
+            timestamp = datetime.now().isoformat()
+            self._last_api_request = {
+                "timestamp": timestamp,
+                "location_source": location_source,
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius_km": radius,
+                "fuel_type": fuel_type,
+                "provider": provider,
+            }
             
             # Fetch data from provider
             if provider == PROVIDER_TANKERKONIG and api_key:
@@ -219,6 +240,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         latitude, longitude, radius, fuel_type
                     )
                     
+                    # Update debug info with response
+                    self._last_api_request["api_response_status"] = "success"
+                    self._last_api_request["stations_found"] = len(stations)
+                    
                     if stations:
                         # Sort stations by price first (cheapest), then by distance
                         # Filter out closed stations AND stations without valid prices
@@ -227,6 +252,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                             s for s in stations 
                             if s.get_price(fuel_type) is not None and s.is_open
                         ]
+                        
+                        self._last_api_request["stations_with_price_and_open"] = len(stations_with_price)
                         
                         if stations_with_price:
                             # Sort by price (ascending), then by distance (ascending)
@@ -254,20 +281,29 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                             )
                         else:
                             # No stations with valid prices found
+                            self._last_api_request["warning"] = f"Found {len(stations)} stations but none are both open and have valid prices for {fuel_type}"
                             _LOGGER.warning(
                                 "Found %d stations but none are both open and have valid prices for %s",
                                 len(stations),
                                 fuel_type,
                             )
                     else:
+                        self._last_api_request["warning"] = f"No stations found within {radius} km"
                         _LOGGER.warning("No stations found within %.1f km", radius)
                         
                 except Exception as err:
-                    _LOGGER.error("Error fetching data from provider: %s", err)
+                    self._last_api_request["api_response_status"] = "error"
+                    self._last_api_request["error"] = str(err)
+                    self._last_api_request["error_type"] = type(err).__name__
+                    _LOGGER.error("Error fetching data from provider: %s", err, exc_info=True)
                     # Continue with cached/placeholder data
                     
         except Exception as err:
-            _LOGGER.error("Error in station lookup: %s", err)
+            if self._last_api_request:
+                self._last_api_request["api_response_status"] = "error"
+                self._last_api_request["error"] = str(err)
+                self._last_api_request["error_type"] = type(err).__name__
+            _LOGGER.error("Error in station lookup: %s", err, exc_info=True)
             # Continue with cached/placeholder data
         
         try:
@@ -363,6 +399,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "tracking": tracking_result,
             "recommendation": recommendation,
             "days_left": days_left,
+            "api_debug": self._last_api_request,  # Add debug information
         }
 
         return data
@@ -558,3 +595,46 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
             attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
         
         return attributes
+
+
+class ApiDebugSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing API debug information."""
+
+    _attr_icon = "mdi:api"
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._attr_name = f"{vehicle_name} API Debug"
+        self._attr_unique_id = f"{config_entry.entry_id}_api_debug"
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the API status."""
+        api_debug = self.coordinator.data.get("api_debug", {})
+        if not api_debug:
+            return "Unknown"
+        
+        status = api_debug.get("api_response_status", "unknown")
+        return status.title()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return all API debug information as attributes."""
+        api_debug = self.coordinator.data.get("api_debug", {})
+        if not api_debug:
+            return {"status": "No API request made yet"}
+        
+        return api_debug
+

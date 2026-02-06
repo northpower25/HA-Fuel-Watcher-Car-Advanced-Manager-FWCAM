@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import aiohttp
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
@@ -97,6 +98,9 @@ class TestProviderConnectionButton(ButtonEntity):
         fuel_type = options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5")
         position_entity = options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY)
         
+        # Track the data source for debugging
+        location_source = "fallback (configured)"
+        
         # Use vehicle position if available
         if position_entity:
             state = self._hass.states.get(position_entity)
@@ -106,6 +110,10 @@ class TestProviderConnectionButton(ButtonEntity):
                 if vehicle_lat is not None and vehicle_lon is not None:
                     latitude = vehicle_lat
                     longitude = vehicle_lon
+                    location_source = f"vehicle ({position_entity})"
+        
+        # Build the debug data
+        timestamp = datetime.now().isoformat()
         
         try:
             # Test API connection based on provider
@@ -123,6 +131,19 @@ class TestProviderConnectionButton(ButtonEntity):
                 try:
                     provider_instance = TankerkoenigProvider(api_key, session)
                     
+                    # Build the API request URL for debugging
+                    api_url = f"https://creativecommons.tankerkoenig.de/json/list.php"
+                    # Safely mask API key for debug output
+                    masked_key = api_key[:min(8, len(api_key))] + "..." if api_key else None
+                    api_params = {
+                        "lat": latitude,
+                        "lng": longitude,
+                        "rad": radius,
+                        "type": fuel_type,
+                        "apikey": masked_key,
+                        "sort": "dist",
+                    }
+                    
                     # Validate API key
                     is_valid = await provider_instance.validate_api_key(api_key)
                     
@@ -132,19 +153,48 @@ class TestProviderConnectionButton(ButtonEntity):
                             latitude, longitude, radius, fuel_type
                         )
                         
+                        # Filter open stations with prices
+                        stations_with_price = [
+                            s for s in stations 
+                            if s.get_price(fuel_type) is not None and s.is_open
+                        ]
+                        
                         self._last_result = {
                             "success": True,
-                            "message": f"Connection successful! Found {len(stations)} stations.",
-                            "stations_count": len(stations),
+                            "message": f"Connection successful! Found {len(stations)} stations, {len(stations_with_price)} with valid prices and open.",
+                            "timestamp": timestamp,
+                            "location_source": location_source,
+                            "latitude": latitude,
+                            "longitude": longitude,
+                            "radius_km": radius,
+                            "fuel_type": fuel_type,
+                            "provider": provider,
+                            "api_url": api_url,
+                            "api_params": api_params,
+                            "stations_total": len(stations),
+                            "stations_with_price_and_open": len(stations_with_price),
                             "nearest_station": stations[0].name if stations else None,
                             "nearest_price": stations[0].get_price(fuel_type) if stations else None,
                             "nearest_distance": stations[0].distance if stations else None,
+                            "nearest_is_open": stations[0].is_open if stations else None,
+                            "cheapest_station": stations_with_price[0].name if stations_with_price else None,
+                            "cheapest_price": stations_with_price[0].get_price(fuel_type) if stations_with_price else None,
+                            "cheapest_distance": stations_with_price[0].distance if stations_with_price else None,
                         }
                         _LOGGER.info("API test successful: %s", self._last_result)
                     else:
                         self._last_result = {
                             "success": False,
                             "message": "Invalid API key",
+                            "timestamp": timestamp,
+                            "location_source": location_source,
+                            "latitude": latitude,
+                            "longitude": longitude,
+                            "radius_km": radius,
+                            "fuel_type": fuel_type,
+                            "provider": provider,
+                            "api_url": api_url,
+                            "api_params": api_params,
                         }
                         _LOGGER.warning("API test failed: Invalid API key")
                 finally:
@@ -155,6 +205,8 @@ class TestProviderConnectionButton(ButtonEntity):
                 self._last_result = {
                     "success": False,
                     "message": f"Provider '{provider}' not yet implemented",
+                    "timestamp": timestamp,
+                    "provider": provider,
                 }
                 _LOGGER.warning("Provider not implemented: %s", provider)
                 
@@ -162,8 +214,17 @@ class TestProviderConnectionButton(ButtonEntity):
             self._last_result = {
                 "success": False,
                 "message": f"Error: {str(err)}",
+                "timestamp": timestamp,
+                "location_source": location_source,
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius_km": radius,
+                "fuel_type": fuel_type,
+                "provider": provider,
+                "error_type": type(err).__name__,
+                "error_details": str(err),
             }
-            _LOGGER.error("Error testing API connection: %s", err)
+            _LOGGER.error("Error testing API connection: %s", err, exc_info=True)
         
         # Trigger coordinator update to reflect test results
         if self._coordinator:
