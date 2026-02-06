@@ -127,7 +127,15 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                 ),
                 vol.Required(CONF_API_KEY): str,
-                vol.Optional(CONF_RADIUS, default=DEFAULT_RADIUS): vol.Coerce(float),
+                vol.Optional(CONF_RADIUS, default=DEFAULT_RADIUS): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=25.0,
+                        step=0.5,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Required(CONF_FUEL_TYPE, default=FUEL_TYPES[0]): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=FUEL_TYPES,
@@ -137,7 +145,14 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(
                     CONF_UPDATE_INTERVAL,
                     default=DEFAULT_UPDATE_INTERVAL,
-                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_UPDATE_INTERVAL, max=MAX_UPDATE_INTERVAL)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=MIN_UPDATE_INTERVAL,
+                        max=MAX_UPDATE_INTERVAL,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="min",
+                    )
+                ),
             }
         )
 
@@ -170,7 +185,15 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_VEHICLE_NAME, default="My Car"): str,
-                vol.Required(CONF_TANK_CAPACITY, default=DEFAULT_TANK_CAPACITY): vol.Coerce(float),
+                vol.Required(CONF_TANK_CAPACITY, default=DEFAULT_TANK_CAPACITY): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=10.0,
+                        max=200.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="L",
+                    )
+                ),
             }
         )
 
@@ -321,57 +344,145 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_PRICE_DROP_PERCENT_THRESHOLD,
                     default=DEFAULT_PRICE_DROP_PERCENT,
                     description={"suggested_value": DEFAULT_PRICE_DROP_PERCENT},
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=100.0,
+                        step=0.1,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="%",
+                    )
+                ),
                 vol.Optional(
                     CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
                     default=DEFAULT_PRICE_DROP_ABSOLUTE,
                     description={"suggested_value": DEFAULT_PRICE_DROP_ABSOLUTE},
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.01,
+                        max=1.0,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="EUR",
+                    )
+                ),
                 vol.Optional(
                     CONF_LOW_FUEL_THRESHOLD,
                     default=DEFAULT_LOW_FUEL_THRESHOLD,
                     description={"suggested_value": DEFAULT_LOW_FUEL_THRESHOLD},
-                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=2000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=2000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_CRITICAL_FUEL_THRESHOLD,
                     default=DEFAULT_CRITICAL_FUEL_THRESHOLD,
                     description={"suggested_value": DEFAULT_CRITICAL_FUEL_THRESHOLD},
-                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=500.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=500.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_MONDAY,
                     default=DEFAULT_FALLBACK_DAILY_KM,
                     description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_TUESDAY,
                     default=DEFAULT_FALLBACK_DAILY_KM,
                     description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_WEDNESDAY,
                     default=DEFAULT_FALLBACK_DAILY_KM,
                     description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_THURSDAY,
                     default=DEFAULT_FALLBACK_DAILY_KM,
                     description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_FRIDAY,
                     default=DEFAULT_FALLBACK_DAILY_KM,
                     description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_SATURDAY,
                     default=DEFAULT_FALLBACK_DAILY_KM,
                     description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_SUNDAY,
                     default=DEFAULT_FALLBACK_DAILY_KM,
                     description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
             }
         )
 
@@ -581,11 +692,26 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_UPDATE_INTERVAL,
                     default=update_interval_value,
-                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_UPDATE_INTERVAL, max=MAX_UPDATE_INTERVAL)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=MIN_UPDATE_INTERVAL,
+                        max=MAX_UPDATE_INTERVAL,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="min",
+                    )
+                ),
                 vol.Optional(
                     CONF_RADIUS,
                     default=radius_value,
-                ): vol.Coerce(float),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=25.0,
+                        step=0.5,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FUEL_TYPE,
                     default=fuel_type_value,
@@ -598,7 +724,15 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_TANK_CAPACITY,
                     default=tank_capacity_value,
-                ): vol.Coerce(float),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=10.0,
+                        max=200.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="L",
+                    )
+                ),
                 vol.Optional(
                     CONF_TELEGRAM_TOKEN,
                     default=telegram_token_value,
@@ -646,47 +780,135 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_PRICE_DROP_PERCENT_THRESHOLD,
                     default=price_drop_percent_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=100.0,
+                        step=0.1,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="%",
+                    )
+                ),
                 vol.Optional(
                     CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
                     default=price_drop_absolute_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.01,
+                        max=1.0,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="EUR",
+                    )
+                ),
                 vol.Optional(
                     CONF_LOW_FUEL_THRESHOLD,
                     default=low_fuel_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=2000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=2000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_CRITICAL_FUEL_THRESHOLD,
                     default=critical_fuel_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=500.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=500.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_MONDAY,
                     default=fallback_monday,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_TUESDAY,
                     default=fallback_tuesday,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_WEDNESDAY,
                     default=fallback_wednesday,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_THURSDAY,
                     default=fallback_thursday,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_FRIDAY,
                     default=fallback_friday,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_SATURDAY,
                     default=fallback_saturday,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_SUNDAY,
                     default=fallback_sunday,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=1000.0,
+                        step=1.0,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="km",
+                    )
+                ),
             }
         )
 
