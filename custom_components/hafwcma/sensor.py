@@ -165,6 +165,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         nearest_station = None
         vehicle_data = {}
         tracking_result = {}
+        odometer = None
         
         try:
             # Fetch vehicle data from configured entities
@@ -225,10 +226,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         
                         if stations_with_price:
                             # Sort by price (ascending), then by distance (ascending)
-                            stations_with_price.sort(key=lambda s: (s.get_price(fuel_type), s.distance))
+                            # Note: All stations in this list have valid prices (filtered above)
+                            stations_with_price.sort(key=lambda s: (s.get_price(fuel_type) or 0, s.distance))
                             cheapest = stations_with_price[0]
                         else:
-                            # Fall back to nearest if no price data
+                            # Fall back to nearest if no price data available
                             cheapest = stations[0]
                         
                         fuel_price = cheapest.get_price(fuel_type)
@@ -277,7 +279,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             if tracking_result.get("refueling_detected"):
                 _LOGGER.info("Refueling detected!")
                 # Store refueling event with current price if available
-                odometer = vehicle_data.get("odometer_km")
                 refuel_event = {
                     "timestamp": datetime.now().isoformat(),
                     "fuel_added": tracking_result.get("fuel_added"),
