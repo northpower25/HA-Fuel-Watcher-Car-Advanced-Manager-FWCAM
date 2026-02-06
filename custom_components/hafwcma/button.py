@@ -133,12 +133,14 @@ class TestProviderConnectionButton(ButtonEntity):
                     
                     # Build the API request URL for debugging
                     api_url = f"https://creativecommons.tankerkoenig.de/json/list.php"
+                    # Safely mask API key for debug output
+                    masked_key = api_key[:min(8, len(api_key))] + "..." if api_key and len(api_key) > 0 else None
                     api_params = {
                         "lat": latitude,
                         "lng": longitude,
                         "rad": radius,
                         "type": fuel_type,
-                        "apikey": api_key[:8] + "..." if api_key else None,  # Mask API key
+                        "apikey": masked_key,
                         "sort": "dist",
                     }
                     

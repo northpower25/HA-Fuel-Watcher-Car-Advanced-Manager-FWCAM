@@ -208,8 +208,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 latitude = config.get(CONF_LATITUDE)
                 longitude = config.get(CONF_LONGITUDE)
             else:
+                # Only set vehicle source if position_entity is configured
                 position_entity = options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY)
-                location_source = f"vehicle ({position_entity})"
+                if position_entity:
+                    location_source = f"vehicle ({position_entity})"
             
             # Store debug info
             timestamp = datetime.now().isoformat()
@@ -621,7 +623,7 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
         """Return the API status."""
         api_debug = self.coordinator.data.get("api_debug", {})
         if not api_debug:
-            return "No data"
+            return "Unknown"
         
         status = api_debug.get("api_response_status", "unknown")
         return status.title()
