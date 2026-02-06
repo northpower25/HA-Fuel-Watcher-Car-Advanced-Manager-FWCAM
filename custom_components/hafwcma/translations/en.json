@@ -5,50 +5,88 @@
         "title": "Configure Fuel Price Provider",
         "description": "Select your fuel price data provider and enter API credentials.\n\n{api_info}",
         "data": {
-          "provider": "Fuel Price Provider",
-          "api_key": "API Key",
-          "latitude": "Latitude",
-          "longitude": "Longitude",
-          "radius": "Search Radius (km)",
-          "fuel_type": "Fuel Type",
-          "update_interval": "Update Interval (minutes)"
+          "provider": "Fuel Price Provider (Select from dropdown)",
+          "api_key": "API Key (Get from Tankerkönig website)",
+          "radius": "Search Radius in km (e.g., 5.0)",
+          "fuel_type": "Fuel Type (Select from dropdown)",
+          "update_interval": "Update Interval in minutes (1-60, e.g., 5)"
+        },
+        "data_description": {
+          "provider": "Choose your fuel price data provider",
+          "api_key": "Enter your Tankerkönig API key",
+          "radius": "Maximum distance to search for gas stations",
+          "fuel_type": "Type of fuel your vehicle uses",
+          "update_interval": "How often to check for price updates"
         }
       },
       "vehicle": {
         "title": "Configure Vehicle",
         "description": "Enter your vehicle information",
         "data": {
-          "vehicle_name": "Vehicle Name",
-          "tank_capacity": "Tank Capacity (Liters)"
+          "vehicle_name": "Vehicle Name (e.g., 'My Car')",
+          "tank_capacity": "Tank Capacity in Liters (e.g., 50.0)"
+        },
+        "data_description": {
+          "vehicle_name": "A friendly name for your vehicle",
+          "tank_capacity": "Total capacity of your fuel tank"
         }
       },
       "vehicle_entities": {
         "title": "Configure Vehicle Entities (Optional)",
         "description": "Select existing Home Assistant entities for your vehicle data. These entities will be monitored for consumption tracking and refueling detection.",
         "data": {
-          "odometer_entity": "Odometer Sensor",
-          "tank_level_entity": "Tank Fill Level Sensor",
-          "range_entity": "Remaining Range Sensor",
+          "odometer_entity": "Odometer Sensor (km)",
+          "tank_level_entity": "Tank Fill Level Sensor (in %)",
+          "range_entity": "Remaining Range Sensor (km)",
           "position_entity": "Vehicle Position (Device Tracker)"
+        },
+        "data_description": {
+          "odometer_entity": "Sensor showing total kilometers driven",
+          "tank_level_entity": "Sensor showing fuel level as percentage (0-100%)",
+          "range_entity": "Sensor showing remaining driving range in kilometers",
+          "position_entity": "Device tracker for vehicle location"
         }
       },
       "telegram": {
         "title": "Configure Telegram Notifications (Optional)",
         "description": "{telegram_info}",
         "data": {
-          "telegram_token": "Telegram Bot Token",
-          "telegram_chat_id": "Telegram Chat ID"
+          "telegram_token": "Telegram Bot Token (Optional)",
+          "telegram_chat_id": "Telegram Chat ID (Optional)"
+        },
+        "data_description": {
+          "telegram_token": "Token from BotFather",
+          "telegram_chat_id": "Your Telegram chat ID for notifications"
         }
       },
       "prediction": {
         "title": "Configure Prediction Engine (Optional)",
         "description": "{prediction_info}",
         "data": {
-          "price_drop_percent_threshold": "Price Drop % Threshold",
-          "price_drop_absolute_threshold": "Price Drop Absolute Threshold (EUR)",
-          "low_fuel_threshold": "Low Fuel Alert Threshold (%)",
-          "critical_fuel_threshold": "Critical Fuel Alert Threshold (%)",
-          "fallback_daily_km": "Fallback Daily Kilometers"
+          "price_drop_percent_threshold": "Price Drop % Threshold (0-100, e.g., 2.0)",
+          "price_drop_absolute_threshold": "Price Drop Absolute Threshold in EUR (min 0.01, e.g., 0.05)",
+          "low_fuel_threshold": "Low Fuel Alert Threshold in km (e.g., 150)",
+          "critical_fuel_threshold": "Critical Fuel Alert Threshold in km (e.g., 50)",
+          "fallback_daily_km_monday": "Fallback Daily km - Monday (0-1000, e.g., 40)",
+          "fallback_daily_km_tuesday": "Fallback Daily km - Tuesday (0-1000, e.g., 40)",
+          "fallback_daily_km_wednesday": "Fallback Daily km - Wednesday (0-1000, e.g., 40)",
+          "fallback_daily_km_thursday": "Fallback Daily km - Thursday (0-1000, e.g., 40)",
+          "fallback_daily_km_friday": "Fallback Daily km - Friday (0-1000, e.g., 40)",
+          "fallback_daily_km_saturday": "Fallback Daily km - Saturday (0-1000, e.g., 20)",
+          "fallback_daily_km_sunday": "Fallback Daily km - Sunday (0-1000, e.g., 20)"
+        },
+        "data_description": {
+          "price_drop_percent_threshold": "Notify when price drops by this percentage",
+          "price_drop_absolute_threshold": "Notify when price drops by this amount in EUR",
+          "low_fuel_threshold": "Alert when remaining range falls below this value in km",
+          "critical_fuel_threshold": "Critical alert when remaining range falls below this value in km",
+          "fallback_daily_km_monday": "Estimated daily driving distance for Monday",
+          "fallback_daily_km_tuesday": "Estimated daily driving distance for Tuesday",
+          "fallback_daily_km_wednesday": "Estimated daily driving distance for Wednesday",
+          "fallback_daily_km_thursday": "Estimated daily driving distance for Thursday",
+          "fallback_daily_km_friday": "Estimated daily driving distance for Friday",
+          "fallback_daily_km_saturday": "Estimated daily driving distance for Saturday",
+          "fallback_daily_km_sunday": "Estimated daily driving distance for Sunday"
         }
       }
     },
@@ -69,28 +107,28 @@
         "title": "haFWCMA Options",
         "description": "Configure haFWCMA integration options",
         "data": {
-          "provider": "Fuel Price Provider",
-          "update_interval": "Update Interval (minutes)",
-          "radius": "Search Radius (km)",
-          "fuel_type": "Fuel Type",
-          "tank_capacity": "Tank Capacity (Liters)",
-          "telegram_token": "Telegram Bot Token",
-          "telegram_chat_id": "Telegram Chat ID",
-          "odometer_entity": "Odometer Sensor",
-          "tank_level_entity": "Tank Fill Level Sensor",
-          "range_entity": "Remaining Range Sensor",
+          "provider": "Fuel Price Provider (Select from dropdown)",
+          "update_interval": "Update Interval in minutes (1-60, e.g., 5)",
+          "radius": "Search Radius in km (e.g., 5.0)",
+          "fuel_type": "Fuel Type (Select from dropdown)",
+          "tank_capacity": "Tank Capacity in Liters (e.g., 50.0)",
+          "telegram_token": "Telegram Bot Token (Optional)",
+          "telegram_chat_id": "Telegram Chat ID (Optional)",
+          "odometer_entity": "Odometer Sensor (km)",
+          "tank_level_entity": "Tank Fill Level Sensor (in %)",
+          "range_entity": "Remaining Range Sensor (km)",
           "position_entity": "Vehicle Position (Device Tracker)",
-          "price_drop_percent_threshold": "Price Drop % Threshold",
-          "price_drop_absolute_threshold": "Price Drop Absolute Threshold (EUR)",
-          "low_fuel_threshold": "Low Fuel Alert Threshold (%)",
-          "critical_fuel_threshold": "Critical Fuel Alert Threshold (%)",
-          "fallback_daily_km": "Fallback Daily Kilometers"
-        }
-      }
-    }
-  },
-          "range_entity": "Remaining Range Sensor",
-          "position_entity": "Vehicle Position (Device Tracker)"
+          "price_drop_percent_threshold": "Price Drop % Threshold (0-100, e.g., 2.0)",
+          "price_drop_absolute_threshold": "Price Drop Absolute Threshold in EUR (min 0.01, e.g., 0.05)",
+          "low_fuel_threshold": "Low Fuel Alert Threshold in km (e.g., 150)",
+          "critical_fuel_threshold": "Critical Fuel Alert Threshold in km (e.g., 50)",
+          "fallback_daily_km_monday": "Fallback Daily km - Monday (0-1000, e.g., 40)",
+          "fallback_daily_km_tuesday": "Fallback Daily km - Tuesday (0-1000, e.g., 40)",
+          "fallback_daily_km_wednesday": "Fallback Daily km - Wednesday (0-1000, e.g., 40)",
+          "fallback_daily_km_thursday": "Fallback Daily km - Thursday (0-1000, e.g., 40)",
+          "fallback_daily_km_friday": "Fallback Daily km - Friday (0-1000, e.g., 40)",
+          "fallback_daily_km_saturday": "Fallback Daily km - Saturday (0-1000, e.g., 20)",
+          "fallback_daily_km_sunday": "Fallback Daily km - Sunday (0-1000, e.g., 20)"
         }
       }
     }
