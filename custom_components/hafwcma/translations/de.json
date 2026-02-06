@@ -129,6 +129,30 @@
           "fallback_daily_km_friday": "Standard Tageskilometer - Freitag (0-1000, z.B. 40)",
           "fallback_daily_km_saturday": "Standard Tageskilometer - Samstag (0-1000, z.B. 20)",
           "fallback_daily_km_sunday": "Standard Tageskilometer - Sonntag (0-1000, z.B. 20)"
+        },
+        "data_description": {
+          "provider": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter",
+          "update_interval": "Wie oft nach Preisaktualisierungen gesucht werden soll",
+          "radius": "Maximale Entfernung zur Suche nach Tankstellen",
+          "fuel_type": "Kraftstoffart für Ihr Fahrzeug",
+          "tank_capacity": "Gesamtkapazität Ihres Kraftstofftanks",
+          "telegram_token": "Token vom BotFather (@BotFather auf Telegram)",
+          "telegram_chat_id": "Ihre Telegram Chat-ID (erhalten von @userinfobot)",
+          "odometer_entity": "Sensor zeigt die gesamten gefahrenen Kilometer an",
+          "tank_level_entity": "Sensor zeigt Kraftstoffstand als Prozentsatz (0-100%)",
+          "range_entity": "Sensor zeigt verbleibende Reichweite in Kilometern",
+          "position_entity": "Geräte-Tracker für Fahrzeugposition",
+          "price_drop_percent_threshold": "Benachrichtigung bei Preissenkung um diesen Prozentsatz",
+          "price_drop_absolute_threshold": "Benachrichtigung bei Preissenkung um diesen Betrag in EUR",
+          "low_fuel_threshold": "Alarm wenn Restreichweite unter diesen Wert in km fällt",
+          "critical_fuel_threshold": "Kritischer Alarm wenn Restreichweite unter diesen Wert in km fällt",
+          "fallback_daily_km_monday": "Geschätzte tägliche Fahrtstrecke für Montag",
+          "fallback_daily_km_tuesday": "Geschätzte tägliche Fahrtstrecke für Dienstag",
+          "fallback_daily_km_wednesday": "Geschätzte tägliche Fahrtstrecke für Mittwoch",
+          "fallback_daily_km_thursday": "Geschätzte tägliche Fahrtstrecke für Donnerstag",
+          "fallback_daily_km_friday": "Geschätzte tägliche Fahrtstrecke für Freitag",
+          "fallback_daily_km_saturday": "Geschätzte tägliche Fahrtstrecke für Samstag",
+          "fallback_daily_km_sunday": "Geschätzte tägliche Fahrtstrecke für Sonntag"
         }
       }
     }

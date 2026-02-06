@@ -129,6 +129,30 @@
           "fallback_daily_km_friday": "Fallback Daily km - Friday (0-1000, e.g., 40)",
           "fallback_daily_km_saturday": "Fallback Daily km - Saturday (0-1000, e.g., 20)",
           "fallback_daily_km_sunday": "Fallback Daily km - Sunday (0-1000, e.g., 20)"
+        },
+        "data_description": {
+          "provider": "Choose your fuel price data provider",
+          "update_interval": "How often to check for price updates",
+          "radius": "Maximum distance to search for gas stations",
+          "fuel_type": "Type of fuel your vehicle uses",
+          "tank_capacity": "Total capacity of your fuel tank",
+          "telegram_token": "Token from BotFather (@BotFather on Telegram)",
+          "telegram_chat_id": "Your Telegram chat ID (get from @userinfobot)",
+          "odometer_entity": "Sensor showing total kilometers driven",
+          "tank_level_entity": "Sensor showing fuel level as percentage (0-100%)",
+          "range_entity": "Sensor showing remaining driving range in kilometers",
+          "position_entity": "Device tracker for vehicle location",
+          "price_drop_percent_threshold": "Notify when price drops by this percentage",
+          "price_drop_absolute_threshold": "Notify when price drops by this amount in EUR",
+          "low_fuel_threshold": "Alert when remaining range falls below this value in km",
+          "critical_fuel_threshold": "Critical alert when remaining range falls below this value in km",
+          "fallback_daily_km_monday": "Estimated daily driving distance for Monday",
+          "fallback_daily_km_tuesday": "Estimated daily driving distance for Tuesday",
+          "fallback_daily_km_wednesday": "Estimated daily driving distance for Wednesday",
+          "fallback_daily_km_thursday": "Estimated daily driving distance for Thursday",
+          "fallback_daily_km_friday": "Estimated daily driving distance for Friday",
+          "fallback_daily_km_saturday": "Estimated daily driving distance for Saturday",
+          "fallback_daily_km_sunday": "Estimated daily driving distance for Sunday"
         }
       }
     }
