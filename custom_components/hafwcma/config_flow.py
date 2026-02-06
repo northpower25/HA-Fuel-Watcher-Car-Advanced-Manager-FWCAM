@@ -16,6 +16,13 @@ import homeassistant.helpers.config_validation as cv
 from .const import (
     CONF_CRITICAL_FUEL_THRESHOLD,
     CONF_FALLBACK_DAILY_KM,
+    CONF_FALLBACK_DAILY_KM_MONDAY,
+    CONF_FALLBACK_DAILY_KM_TUESDAY,
+    CONF_FALLBACK_DAILY_KM_WEDNESDAY,
+    CONF_FALLBACK_DAILY_KM_THURSDAY,
+    CONF_FALLBACK_DAILY_KM_FRIDAY,
+    CONF_FALLBACK_DAILY_KM_SATURDAY,
+    CONF_FALLBACK_DAILY_KM_SUNDAY,
     CONF_FUEL_TYPE,
     CONF_LOW_FUEL_THRESHOLD,
     CONF_ODOMETER_ENTITY,
@@ -110,21 +117,22 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Show form for provider and API configuration
         data_schema = vol.Schema(
             {
-                vol.Required(CONF_PROVIDER, default=PROVIDER_TANKERKONIG): vol.In(
-                    {provider: PROVIDER_NAMES[provider] for provider in PROVIDERS}
+                vol.Required(CONF_PROVIDER, default=PROVIDER_TANKERKONIG): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=provider, label=PROVIDER_NAMES[provider])
+                            for provider in PROVIDERS
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
                 ),
                 vol.Required(CONF_API_KEY): str,
-                vol.Required(
-                    CONF_LATITUDE,
-                    default=self.hass.config.latitude,
-                ): cv.latitude,
-                vol.Required(
-                    CONF_LONGITUDE,
-                    default=self.hass.config.longitude,
-                ): cv.longitude,
                 vol.Optional(CONF_RADIUS, default=DEFAULT_RADIUS): vol.Coerce(float),
-                vol.Required(CONF_FUEL_TYPE, default=FUEL_TYPES[0]): vol.In(
-                    FUEL_TYPES
+                vol.Required(CONF_FUEL_TYPE, default=FUEL_TYPES[0]): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=FUEL_TYPES,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
                 ),
                 vol.Optional(
                     CONF_UPDATE_INTERVAL,
@@ -297,6 +305,10 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Merge all data
             self.data.update(user_input)
             
+            # Automatically add latitude and longitude from Home Assistant configuration
+            self.data[CONF_LATITUDE] = self.hass.config.latitude
+            self.data[CONF_LONGITUDE] = self.hass.config.longitude
+            
             # Create the config entry
             return self.async_create_entry(
                 title=f"haFWCMA - {self.data.get(CONF_VEHICLE_NAME, 'Vehicle')}",
@@ -308,23 +320,58 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(
                     CONF_PRICE_DROP_PERCENT_THRESHOLD,
                     default=DEFAULT_PRICE_DROP_PERCENT,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
+                    description={"suggested_value": DEFAULT_PRICE_DROP_PERCENT},
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
                 vol.Optional(
                     CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
                     default=DEFAULT_PRICE_DROP_ABSOLUTE,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=0.5)),
+                    description={"suggested_value": DEFAULT_PRICE_DROP_ABSOLUTE},
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1.0)),
                 vol.Optional(
                     CONF_LOW_FUEL_THRESHOLD,
                     default=DEFAULT_LOW_FUEL_THRESHOLD,
-                ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=50.0)),
+                    description={"suggested_value": DEFAULT_LOW_FUEL_THRESHOLD},
+                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=2000.0)),
                 vol.Optional(
                     CONF_CRITICAL_FUEL_THRESHOLD,
                     default=DEFAULT_CRITICAL_FUEL_THRESHOLD,
-                ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=25.0)),
+                    description={"suggested_value": DEFAULT_CRITICAL_FUEL_THRESHOLD},
+                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=500.0)),
                 vol.Optional(
-                    CONF_FALLBACK_DAILY_KM,
+                    CONF_FALLBACK_DAILY_KM_MONDAY,
                     default=DEFAULT_FALLBACK_DAILY_KM,
-                ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=500.0)),
+                    description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_TUESDAY,
+                    default=DEFAULT_FALLBACK_DAILY_KM,
+                    description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_WEDNESDAY,
+                    default=DEFAULT_FALLBACK_DAILY_KM,
+                    description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_THURSDAY,
+                    default=DEFAULT_FALLBACK_DAILY_KM,
+                    description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_FRIDAY,
+                    default=DEFAULT_FALLBACK_DAILY_KM,
+                    description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_SATURDAY,
+                    default=DEFAULT_FALLBACK_DAILY_KM,
+                    description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_SUNDAY,
+                    default=DEFAULT_FALLBACK_DAILY_KM,
+                    description={"suggested_value": DEFAULT_FALLBACK_DAILY_KM},
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
             }
         )
 
@@ -488,18 +535,49 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
         if critical_fuel_value is None or critical_fuel_value == "":
             critical_fuel_value = DEFAULT_CRITICAL_FUEL_THRESHOLD
         
-        fallback_daily_km_value = current_options.get(CONF_FALLBACK_DAILY_KM)
-        if fallback_daily_km_value is None or fallback_daily_km_value == "":
-            fallback_daily_km_value = current_config.get(CONF_FALLBACK_DAILY_KM)
-        if fallback_daily_km_value is None or fallback_daily_km_value == "":
-            fallback_daily_km_value = DEFAULT_FALLBACK_DAILY_KM
+        # Get weekday-specific fallback values
+        fallback_monday = current_options.get(CONF_FALLBACK_DAILY_KM_MONDAY)
+        if fallback_monday is None or fallback_monday == "":
+            fallback_monday = current_config.get(CONF_FALLBACK_DAILY_KM_MONDAY, DEFAULT_FALLBACK_DAILY_KM)
+        
+        fallback_tuesday = current_options.get(CONF_FALLBACK_DAILY_KM_TUESDAY)
+        if fallback_tuesday is None or fallback_tuesday == "":
+            fallback_tuesday = current_config.get(CONF_FALLBACK_DAILY_KM_TUESDAY, DEFAULT_FALLBACK_DAILY_KM)
+        
+        fallback_wednesday = current_options.get(CONF_FALLBACK_DAILY_KM_WEDNESDAY)
+        if fallback_wednesday is None or fallback_wednesday == "":
+            fallback_wednesday = current_config.get(CONF_FALLBACK_DAILY_KM_WEDNESDAY, DEFAULT_FALLBACK_DAILY_KM)
+        
+        fallback_thursday = current_options.get(CONF_FALLBACK_DAILY_KM_THURSDAY)
+        if fallback_thursday is None or fallback_thursday == "":
+            fallback_thursday = current_config.get(CONF_FALLBACK_DAILY_KM_THURSDAY, DEFAULT_FALLBACK_DAILY_KM)
+        
+        fallback_friday = current_options.get(CONF_FALLBACK_DAILY_KM_FRIDAY)
+        if fallback_friday is None or fallback_friday == "":
+            fallback_friday = current_config.get(CONF_FALLBACK_DAILY_KM_FRIDAY, DEFAULT_FALLBACK_DAILY_KM)
+        
+        fallback_saturday = current_options.get(CONF_FALLBACK_DAILY_KM_SATURDAY)
+        if fallback_saturday is None or fallback_saturday == "":
+            fallback_saturday = current_config.get(CONF_FALLBACK_DAILY_KM_SATURDAY, DEFAULT_FALLBACK_DAILY_KM)
+        
+        fallback_sunday = current_options.get(CONF_FALLBACK_DAILY_KM_SUNDAY)
+        if fallback_sunday is None or fallback_sunday == "":
+            fallback_sunday = current_config.get(CONF_FALLBACK_DAILY_KM_SUNDAY, DEFAULT_FALLBACK_DAILY_KM)
 
         data_schema = vol.Schema(
             {
                 vol.Optional(
                     CONF_PROVIDER,
                     default=provider_value,
-                ): vol.In({provider: PROVIDER_NAMES[provider] for provider in PROVIDERS}),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=provider, label=PROVIDER_NAMES[provider])
+                            for provider in PROVIDERS
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
                 vol.Optional(
                     CONF_UPDATE_INTERVAL,
                     default=update_interval_value,
@@ -511,7 +589,12 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_FUEL_TYPE,
                     default=fuel_type_value,
-                ): vol.In(FUEL_TYPES),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=FUEL_TYPES,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
                 vol.Optional(
                     CONF_TANK_CAPACITY,
                     default=tank_capacity_value,
@@ -563,23 +646,47 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_PRICE_DROP_PERCENT_THRESHOLD,
                     default=price_drop_percent_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
                 vol.Optional(
                     CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
                     default=price_drop_absolute_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=0.5)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1.0)),
                 vol.Optional(
                     CONF_LOW_FUEL_THRESHOLD,
                     default=low_fuel_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=50.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=2000.0)),
                 vol.Optional(
                     CONF_CRITICAL_FUEL_THRESHOLD,
                     default=critical_fuel_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=25.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=500.0)),
                 vol.Optional(
-                    CONF_FALLBACK_DAILY_KM,
-                    default=fallback_daily_km_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=500.0)),
+                    CONF_FALLBACK_DAILY_KM_MONDAY,
+                    default=fallback_monday,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_TUESDAY,
+                    default=fallback_tuesday,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_WEDNESDAY,
+                    default=fallback_wednesday,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_THURSDAY,
+                    default=fallback_thursday,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_FRIDAY,
+                    default=fallback_friday,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_SATURDAY,
+                    default=fallback_saturday,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM_SUNDAY,
+                    default=fallback_sunday,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000.0)),
             }
         )
 

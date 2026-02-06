@@ -29,6 +29,13 @@ CONF_PRICE_DROP_ABSOLUTE_THRESHOLD: Final = "price_drop_absolute_threshold"
 CONF_LOW_FUEL_THRESHOLD: Final = "low_fuel_threshold"
 CONF_CRITICAL_FUEL_THRESHOLD: Final = "critical_fuel_threshold"
 CONF_FALLBACK_DAILY_KM: Final = "fallback_daily_km"
+CONF_FALLBACK_DAILY_KM_MONDAY: Final = "fallback_daily_km_monday"
+CONF_FALLBACK_DAILY_KM_TUESDAY: Final = "fallback_daily_km_tuesday"
+CONF_FALLBACK_DAILY_KM_WEDNESDAY: Final = "fallback_daily_km_wednesday"
+CONF_FALLBACK_DAILY_KM_THURSDAY: Final = "fallback_daily_km_thursday"
+CONF_FALLBACK_DAILY_KM_FRIDAY: Final = "fallback_daily_km_friday"
+CONF_FALLBACK_DAILY_KM_SATURDAY: Final = "fallback_daily_km_saturday"
+CONF_FALLBACK_DAILY_KM_SUNDAY: Final = "fallback_daily_km_sunday"
 
 # Defaults
 DEFAULT_RADIUS: Final = 5.0  # km
@@ -41,9 +48,9 @@ MAX_UPDATE_INTERVAL: Final = 60  # minutes
 # Prediction engine defaults
 DEFAULT_PRICE_DROP_PERCENT: Final = 2.0  # 2% price drop
 DEFAULT_PRICE_DROP_ABSOLUTE: Final = 0.05  # 5 cents drop (EUR)
-DEFAULT_LOW_FUEL_THRESHOLD: Final = 30.0  # 30% tank level
-DEFAULT_CRITICAL_FUEL_THRESHOLD: Final = 15.0  # 15% tank level
-DEFAULT_FALLBACK_DAILY_KM: Final = 40.0  # 40 km per day
+DEFAULT_LOW_FUEL_THRESHOLD: Final = 150.0  # 150 km remaining range
+DEFAULT_CRITICAL_FUEL_THRESHOLD: Final = 50.0  # 50 km remaining range
+DEFAULT_FALLBACK_DAILY_KM: Final = 40.0  # 40 km per day (used if weekday-specific not set)
 
 # Fuel types
 FUEL_TYPE_E5: Final = "e5"
