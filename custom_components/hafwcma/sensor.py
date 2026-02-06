@@ -221,7 +221,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     
                     if stations:
                         # Sort stations by price first (cheapest), then by distance
-                        # Filter out stations with no price data AND closed stations
+                        # Filter out closed stations AND stations without valid prices
+                        # Note: Closed stations may still report prices but can't serve customers
                         stations_with_price = [
                             s for s in stations 
                             if s.get_price(fuel_type) is not None and s.is_open
