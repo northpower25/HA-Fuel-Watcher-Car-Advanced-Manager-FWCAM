@@ -326,17 +326,17 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
                     default=DEFAULT_PRICE_DROP_ABSOLUTE,
                     description={"suggested_value": DEFAULT_PRICE_DROP_ABSOLUTE},
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.01)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1.0)),
                 vol.Optional(
                     CONF_LOW_FUEL_THRESHOLD,
                     default=DEFAULT_LOW_FUEL_THRESHOLD,
                     description={"suggested_value": DEFAULT_LOW_FUEL_THRESHOLD},
-                ): vol.All(vol.Coerce(float), vol.Range(min=1.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=2000.0)),
                 vol.Optional(
                     CONF_CRITICAL_FUEL_THRESHOLD,
                     default=DEFAULT_CRITICAL_FUEL_THRESHOLD,
                     description={"suggested_value": DEFAULT_CRITICAL_FUEL_THRESHOLD},
-                ): vol.All(vol.Coerce(float), vol.Range(min=1.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=500.0)),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_MONDAY,
                     default=DEFAULT_FALLBACK_DAILY_KM,
@@ -650,15 +650,15 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
                     default=price_drop_absolute_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.01)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1.0)),
                 vol.Optional(
                     CONF_LOW_FUEL_THRESHOLD,
                     default=low_fuel_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=1.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=2000.0)),
                 vol.Optional(
                     CONF_CRITICAL_FUEL_THRESHOLD,
                     default=critical_fuel_value,
-                ): vol.All(vol.Coerce(float), vol.Range(min=1.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=500.0)),
                 vol.Optional(
                     CONF_FALLBACK_DAILY_KM_MONDAY,
                     default=fallback_monday,

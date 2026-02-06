@@ -20,6 +20,7 @@ from typing import Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.util import dt as dt_util
 
 from .storage import (
     get_last_price,
@@ -61,6 +62,9 @@ DEFAULT_LOW_FUEL_THRESHOLD = 150.0  # 150 km remaining range
 DEFAULT_CRITICAL_FUEL_THRESHOLD = 50.0  # 50 km remaining range
 DEFAULT_FALLBACK_DAILY_KM = 40.0  # 40 km per day
 
+# Assumed full tank range for percentage fallback calculation
+ASSUMED_FULL_TANK_RANGE_KM = 500.0  # Typical vehicle range for 100% tank
+
 
 def _get_fallback_daily_km(options: dict) -> float:
     """Get fallback daily km based on current weekday.
@@ -71,7 +75,9 @@ def _get_fallback_daily_km(options: dict) -> float:
     Returns:
         Fallback daily km for current weekday
     """
-    weekday = datetime.now().weekday()  # 0=Monday, 6=Sunday
+    # Use Home Assistant's timezone-aware current time
+    now = dt_util.now()
+    weekday = now.weekday()  # 0=Monday, 6=Sunday
     
     weekday_keys = [
         CONF_FALLBACK_DAILY_KM_MONDAY,
@@ -199,9 +205,9 @@ async def evaluate_refuel_strategy(
         is_low = range_km <= low_fuel_threshold
     else:
         # Fallback: use percentage thresholds (convert km thresholds to rough percentages)
-        # Assuming average range of 500km for 100% tank
-        is_critical = tank_percentage <= (critical_fuel_threshold / 5.0)
-        is_low = tank_percentage <= (low_fuel_threshold / 5.0)
+        # Using assumed full tank range to convert km thresholds to percentage
+        is_critical = tank_percentage <= (critical_fuel_threshold / (ASSUMED_FULL_TANK_RANGE_KM / 100.0))
+        is_low = tank_percentage <= (low_fuel_threshold / (ASSUMED_FULL_TANK_RANGE_KM / 100.0))
     
     if is_critical:
         should_refuel = True
