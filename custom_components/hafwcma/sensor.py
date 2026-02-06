@@ -221,37 +221,42 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     
                     if stations:
                         # Sort stations by price first (cheapest), then by distance
-                        # Filter out stations with no price data
-                        stations_with_price = [s for s in stations if s.get_price(fuel_type) is not None]
+                        # Filter out stations with no price data AND closed stations
+                        stations_with_price = [
+                            s for s in stations 
+                            if s.get_price(fuel_type) is not None and s.is_open
+                        ]
                         
                         if stations_with_price:
                             # Sort by price (ascending), then by distance (ascending)
                             # Note: All stations in this list have valid prices (filtered above)
                             stations_with_price.sort(key=lambda s: (s.get_price(fuel_type), s.distance))
                             cheapest = stations_with_price[0]
+                            
+                            fuel_price = cheapest.get_price(fuel_type)
+                            nearest_station = {
+                                "id": cheapest.station_id,
+                                "name": cheapest.name,
+                                "brand": cheapest.brand,
+                                "address": f"{cheapest.address}, {cheapest.city}",
+                                "distance": round(cheapest.distance, 2),
+                                "price": fuel_price,
+                                "latitude": cheapest.latitude,
+                                "longitude": cheapest.longitude,
+                                "is_open": cheapest.is_open,
+                            }
+                            _LOGGER.info(
+                                "Found cheapest station: %s at %.2f km, price: €%.3f",
+                                cheapest.name,
+                                cheapest.distance,
+                                fuel_price if fuel_price else 0,
+                            )
                         else:
-                            # Fall back to nearest station when no price data is available
-                            # Stations from provider are already sorted by distance
-                            cheapest = stations[0]
-                        
-                        fuel_price = cheapest.get_price(fuel_type)
-                        nearest_station = {
-                            "id": cheapest.station_id,
-                            "name": cheapest.name,
-                            "brand": cheapest.brand,
-                            "address": f"{cheapest.address}, {cheapest.city}",
-                            "distance": round(cheapest.distance, 2),
-                            "price": fuel_price,
-                            "latitude": cheapest.latitude,
-                            "longitude": cheapest.longitude,
-                            "is_open": cheapest.is_open,
-                        }
-                        _LOGGER.info(
-                            "Found cheapest station: %s at %.2f km, price: €%.3f",
-                            cheapest.name,
-                            cheapest.distance,
-                            fuel_price if fuel_price else 0,
-                        )
+                            # No stations with valid prices found
+                            _LOGGER.warning(
+                                "Found %d stations but none have valid prices or are open",
+                                len(stations),
+                            )
                     else:
                         _LOGGER.warning("No stations found within %.1f km", radius)
                         
