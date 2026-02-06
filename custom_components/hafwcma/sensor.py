@@ -134,28 +134,39 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         """Fetch data from providers.
         
         Returns:
-            Dictionary with updated sensor data
+            Dictionary with updated sensor data. Always returns data even if API fails,
+            to ensure last_update_success is true and sensors maintain their state.
             
         Raises:
-            UpdateFailed: If update fails
+            UpdateFailed: Only if there's a critical configuration error
         """
+        # Get configuration - check both data and options with proper fallback
+        config = self.config_entry.data
+        options = self.config_entry.options
+        
+        # Get provider configuration
+        provider = options.get(CONF_PROVIDER) or config.get(CONF_PROVIDER, PROVIDER_TANKERKONIG)
+        api_key = config.get(CONF_API_KEY)
+        fuel_type = options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5")
+        radius = options.get(CONF_RADIUS) or config.get(CONF_RADIUS, 5.0)
+        
+        # Validate critical configuration
+        if not api_key:
+            raise UpdateFailed("API key not configured")
+        
+        # Get entity IDs from options first, then config
+        odometer_entity = options.get(CONF_ODOMETER_ENTITY) or config.get(CONF_ODOMETER_ENTITY)
+        tank_level_entity = options.get(CONF_TANK_LEVEL_ENTITY) or config.get(CONF_TANK_LEVEL_ENTITY)
+        range_entity = options.get(CONF_RANGE_ENTITY) or config.get(CONF_RANGE_ENTITY)
+        position_entity = options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY)
+        
+        # Initialize default values
+        fuel_price = None
+        nearest_station = None
+        vehicle_data = {}
+        tracking_result = {}
+        
         try:
-            # Get configuration - check both data and options with proper fallback
-            config = self.config_entry.data
-            options = self.config_entry.options
-            
-            # Get provider configuration
-            provider = options.get(CONF_PROVIDER) or config.get(CONF_PROVIDER, PROVIDER_TANKERKONIG)
-            api_key = config.get(CONF_API_KEY)
-            fuel_type = options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5")
-            radius = options.get(CONF_RADIUS) or config.get(CONF_RADIUS, 5.0)
-            
-            # Get entity IDs from options first, then config
-            odometer_entity = options.get(CONF_ODOMETER_ENTITY) or config.get(CONF_ODOMETER_ENTITY)
-            tank_level_entity = options.get(CONF_TANK_LEVEL_ENTITY) or config.get(CONF_TANK_LEVEL_ENTITY)
-            range_entity = options.get(CONF_RANGE_ENTITY) or config.get(CONF_RANGE_ENTITY)
-            position_entity = options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY)
-            
             # Fetch vehicle data from configured entities
             vehicle_data = await async_get_vehicle_data(
                 self.hass,
@@ -180,7 +191,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     odometer,
                     datetime.now().isoformat(),
                 )
-            
+        except Exception as err:
+            _LOGGER.warning("Error fetching vehicle data: %s", err)
+            # Continue with empty vehicle data
+        
+        try:
             # Use vehicle position if available, otherwise use configured lat/lon
             latitude = vehicle_data.get("latitude")
             longitude = vehicle_data.get("longitude")
@@ -190,9 +205,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 longitude = config.get(CONF_LONGITUDE)
             
             # Fetch data from provider
-            nearest_station = None
-            fuel_price = None
-            
             if provider == PROVIDER_TANKERKONIG and api_key:
                 try:
                     # Initialize provider and session if needed
@@ -243,7 +255,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 except Exception as err:
                     _LOGGER.error("Error fetching data from provider: %s", err)
                     # Continue with cached/placeholder data
-            
+                    
+        except Exception as err:
+            _LOGGER.error("Error in station lookup: %s", err)
+            # Continue with cached/placeholder data
+        
+        try:
             # Store price history if we have a price
             if fuel_price is not None:
                 await storage.add_price_observation(
@@ -252,11 +269,15 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     fuel_price,
                     datetime.now().isoformat(),
                 )
-            
+        except Exception as err:
+            _LOGGER.warning("Error storing price observation: %s", err)
+        
+        try:
             # Handle refueling detection
             if tracking_result.get("refueling_detected"):
                 _LOGGER.info("Refueling detected!")
                 # Store refueling event with current price if available
+                odometer = vehicle_data.get("odometer_km")
                 refuel_event = {
                     "timestamp": datetime.now().isoformat(),
                     "fuel_added": tracking_result.get("fuel_added"),
@@ -265,22 +286,29 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     "price_per_liter": fuel_price,  # Include price for better prediction
                 }
                 await storage.add_refuel_event(self.hass, self.config_entry, refuel_event)
-            
-            # Build data structure
-            # Calculate tank percentage if we have both level and capacity
-            tank_percentage = None
-            tank_level = vehicle_data.get("tank_level")
-            if tank_level is not None:
-                tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0)
-                if tank_capacity and tank_capacity > 0:
-                    tank_percentage = (tank_level / tank_capacity) * 100
-            
-            # Get price trend and statistics
+        except Exception as err:
+            _LOGGER.warning("Error handling refueling detection: %s", err)
+        
+        # Build data structure
+        # Calculate tank percentage if we have both level and capacity
+        tank_percentage = None
+        tank_level = vehicle_data.get("tank_level")
+        if tank_level is not None:
+            tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0)
+            if tank_capacity and tank_capacity > 0:
+                tank_percentage = (tank_level / tank_capacity) * 100
+        
+        # Get price trend and statistics
+        price_trend = None
+        try:
             price_trend = await compute_price_trend(self.hass, self.config_entry, window=5)
-            
-            # Get refuel recommendation if we have price and tank info
-            recommendation = None
-            if fuel_price is not None and tank_percentage is not None:
+        except Exception as err:
+            _LOGGER.warning("Error computing price trend: %s", err)
+        
+        # Get refuel recommendation if we have price and tank info
+        recommendation = None
+        if fuel_price is not None and tank_percentage is not None:
+            try:
                 recommendation = await evaluate_refuel_strategy(
                     self.hass,
                     self.config_entry,
@@ -290,44 +318,45 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     station_name=nearest_station.get("name") if nearest_station else None,
                 )
                 _LOGGER.debug("Refuel recommendation: %s", recommendation)
-            
-            # Estimate days left
-            days_left = None
-            range_km = vehicle_data.get("range_km")
-            if range_km:
+            except Exception as err:
+                _LOGGER.warning("Error evaluating refuel strategy: %s", err)
+        
+        # Estimate days left
+        days_left = None
+        range_km = vehicle_data.get("range_km")
+        if range_km:
+            try:
                 days_left = await estimate_days_left(
                     self.hass,
                     self.config_entry,
                     km_left=range_km,
                     fallback_daily_km=40.0,
                 )
-            
-            data = {
-                "fuel_price": fuel_price,
-                "tank_level": tank_level,
-                "tank_percentage": tank_percentage,
-                "range": range_km,
-                "odometer": vehicle_data.get("odometer_km"),
-                "latitude": latitude,
-                "longitude": longitude,
-                "nearest_station": nearest_station or {
-                    "name": "No station found",
-                    "address": "",
-                    "distance": 0.0,
-                    "price": None,
-                },
-                "forecast_trend": price_trend,
-                "vehicle_data": vehicle_data,
-                "tracking": tracking_result,
-                "recommendation": recommendation,
-                "days_left": days_left,
-            }
+            except Exception as err:
+                _LOGGER.warning("Error estimating days left: %s", err)
+        
+        data = {
+            "fuel_price": fuel_price,
+            "tank_level": tank_level,
+            "tank_percentage": tank_percentage,
+            "range": range_km,
+            "odometer": vehicle_data.get("odometer_km"),
+            "latitude": latitude,
+            "longitude": longitude,
+            "nearest_station": nearest_station or {
+                "name": "No station found",
+                "address": "",
+                "distance": 0.0,
+                "price": None,
+            },
+            "forecast_trend": price_trend,
+            "vehicle_data": vehicle_data,
+            "tracking": tracking_result,
+            "recommendation": recommendation,
+            "days_left": days_left,
+        }
 
-            return data
-
-        except Exception as err:
-            _LOGGER.error("Error updating haFWCMA data: %s", err)
-            raise UpdateFailed(f"Error communicating with API: {err}") from err
+        return data
     
     async def async_shutdown(self) -> None:
         """Shutdown coordinator and cleanup resources."""
