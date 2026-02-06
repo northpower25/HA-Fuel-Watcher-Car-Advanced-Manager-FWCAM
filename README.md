@@ -120,6 +120,12 @@ The integration creates the following sensors for each configured vehicle:
 - **Tank Level**: Current fuel level in liters
 - **Range**: Estimated driving range in kilometers
 - **Nearest Station**: Name and details of closest station
+- **API Debug**: API request/response debug information for troubleshooting
+
+### Controls
+
+- **Test API Connection Button**: Manually test the fuel price API connection with detailed results
+- **Search Radius Number**: Adjust the search radius (1-25 km) dynamically from the UI
 
 ### Attributes
 
@@ -146,6 +152,20 @@ Each sensor provides additional attributes:
 - `station_address`: Full address
 - `distance`: Distance in km
 - `price`: Current fuel price
+- `google_maps_url`: Navigation link for Google Maps
+- `apple_maps_url`: Navigation link for Apple Maps
+- `waze_url`: Navigation link for Waze
+
+#### API Debug Sensor
+- `timestamp`: When the last API request was made
+- `location_source`: Whether using vehicle or fallback coordinates
+- `latitude`, `longitude`: Coordinates used for API request
+- `radius_km`: Search radius used
+- `fuel_type`: Fuel type requested
+- `api_response_status`: Success or error status
+- `stations_found`: Number of stations returned
+- `stations_with_price_and_open`: Number of open stations with valid prices
+- Full request/response details for troubleshooting
 
 ### Automations
 
@@ -231,6 +251,7 @@ See [TODO.md](TODO.md) for the complete roadmap.
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/issues)
+- **Troubleshooting**: [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
 - **Documentation**: [docs/](docs/)
 
 ## Contributing
