@@ -228,7 +228,32 @@ class TankerkoenigProvider(FuelPriceProvider):
             if ref_lat is not None and ref_lon is not None and station_lat is not None and station_lon is not None:
                 distance = _distance_km(ref_lat, ref_lon, station_lat, station_lon)
             
-            return FuelStation(
+            # Parse prices with defensive type conversion
+            # API may return prices as strings, numbers, booleans, or null
+            def parse_price(value: Any) -> float | None:
+                """Convert price value to float or None.
+                
+                Args:
+                    value: Price value from API (could be str, float, int, bool, None)
+                    
+                Returns:
+                    Float price or None if invalid
+                """
+                if value is None or value is False:
+                    return None
+                try:
+                    # Convert to float and validate it's a reasonable price
+                    price = float(value)
+                    # Sanity check: prices should be positive and less than 10 EUR/L
+                    if price > 0 and price < 10.0:
+                        return price
+                    _LOGGER.debug("Price %s out of reasonable range, treating as None", price)
+                    return None
+                except (ValueError, TypeError):
+                    _LOGGER.debug("Could not convert price value '%s' (type: %s) to float", value, type(value).__name__)
+                    return None
+            
+            station = FuelStation(
                 station_id=data.get("id", ""),
                 name=data.get("name", "Unknown"),
                 brand=data.get("brand", "Unknown"),
@@ -237,12 +262,28 @@ class TankerkoenigProvider(FuelPriceProvider):
                 latitude=station_lat,
                 longitude=station_lon,
                 distance=distance,
-                price_e5=data.get("e5"),
-                price_e10=data.get("e10"),
-                price_diesel=data.get("diesel"),
+                price_e5=parse_price(data.get("e5")),
+                price_e10=parse_price(data.get("e10")),
+                price_diesel=parse_price(data.get("diesel")),
                 is_open=data.get("isOpen", True),
                 last_updated=datetime.now(),
             )
+            
+            # Log detailed station info for debugging
+            _LOGGER.debug(
+                "Parsed station '%s': e5=%s, e10=%s, diesel=%s, open=%s (raw: e5=%s, e10=%s, diesel=%s, isOpen=%s)",
+                station.name,
+                station.price_e5,
+                station.price_e10,
+                station.price_diesel,
+                station.is_open,
+                data.get("e5"),
+                data.get("e10"),
+                data.get("diesel"),
+                data.get("isOpen"),
+            )
+            
+            return station
         except (KeyError, ValueError) as err:
             _LOGGER.warning("Failed to parse station data: %s", err)
             return None
