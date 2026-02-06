@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import aiohttp
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -174,25 +174,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             # Store odometer history if available
             odometer = vehicle_data.get("odometer_km")
             if odometer is not None:
-                from datetime import datetime
                 await storage.add_odometer_observation(
                     self.hass,
                     self.config_entry,
                     odometer,
                     datetime.now().isoformat(),
                 )
-            
-            # Handle refueling detection
-            if tracking_result.get("refueling_detected"):
-                _LOGGER.info("Refueling detected!")
-                # Store refueling event
-                refuel_event = {
-                    "timestamp": datetime.now().isoformat(),
-                    "fuel_added": tracking_result.get("fuel_added"),
-                    "odometer_km": odometer,
-                    "consumption_rate": tracking_result.get("average_consumption"),
-                }
-                await storage.add_refuel_event(self.hass, self.config_entry, refuel_event)
             
             # Use vehicle position if available, otherwise use configured lat/lon
             latitude = vehicle_data.get("latitude")
@@ -249,13 +236,25 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             
             # Store price history if we have a price
             if fuel_price is not None:
-                from datetime import datetime
                 await storage.add_price_observation(
                     self.hass,
                     self.config_entry,
                     fuel_price,
                     datetime.now().isoformat(),
                 )
+            
+            # Handle refueling detection
+            if tracking_result.get("refueling_detected"):
+                _LOGGER.info("Refueling detected!")
+                # Store refueling event with current price if available
+                refuel_event = {
+                    "timestamp": datetime.now().isoformat(),
+                    "fuel_added": tracking_result.get("fuel_added"),
+                    "odometer_km": odometer,
+                    "consumption_rate": tracking_result.get("average_consumption"),
+                    "price_per_liter": fuel_price,  # Include price for better prediction
+                }
+                await storage.add_refuel_event(self.hass, self.config_entry, refuel_event)
             
             # Build data structure
             # Calculate tank percentage if we have both level and capacity
