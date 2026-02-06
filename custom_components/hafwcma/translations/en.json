@@ -39,6 +39,17 @@
           "telegram_token": "Telegram Bot Token",
           "telegram_chat_id": "Telegram Chat ID"
         }
+      },
+      "prediction": {
+        "title": "Configure Prediction Engine (Optional)",
+        "description": "{prediction_info}",
+        "data": {
+          "price_drop_percent_threshold": "Price Drop % Threshold",
+          "price_drop_absolute_threshold": "Price Drop Absolute Threshold (EUR)",
+          "low_fuel_threshold": "Low Fuel Alert Threshold (%)",
+          "critical_fuel_threshold": "Critical Fuel Alert Threshold (%)",
+          "fallback_daily_km": "Fallback Daily Kilometers"
+        }
       }
     },
     "error": {
@@ -67,6 +78,17 @@
           "telegram_chat_id": "Telegram Chat ID",
           "odometer_entity": "Odometer Sensor",
           "tank_level_entity": "Tank Fill Level Sensor",
+          "range_entity": "Remaining Range Sensor",
+          "position_entity": "Vehicle Position (Device Tracker)",
+          "price_drop_percent_threshold": "Price Drop % Threshold",
+          "price_drop_absolute_threshold": "Price Drop Absolute Threshold (EUR)",
+          "low_fuel_threshold": "Low Fuel Alert Threshold (%)",
+          "critical_fuel_threshold": "Critical Fuel Alert Threshold (%)",
+          "fallback_daily_km": "Fallback Daily Kilometers"
+        }
+      }
+    }
+  },
           "range_entity": "Remaining Range Sensor",
           "position_entity": "Vehicle Position (Device Tracker)"
         }
