@@ -227,10 +227,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         if stations_with_price:
                             # Sort by price (ascending), then by distance (ascending)
                             # Note: All stations in this list have valid prices (filtered above)
-                            stations_with_price.sort(key=lambda s: (s.get_price(fuel_type) or 0, s.distance))
+                            stations_with_price.sort(key=lambda s: (s.get_price(fuel_type), s.distance))
                             cheapest = stations_with_price[0]
                         else:
-                            # Fall back to nearest if no price data available
+                            # Fall back to nearest station when no price data is available
+                            # Stations from provider are already sorted by distance
                             cheapest = stations[0]
                         
                         fuel_price = cheapest.get_price(fuel_type)
