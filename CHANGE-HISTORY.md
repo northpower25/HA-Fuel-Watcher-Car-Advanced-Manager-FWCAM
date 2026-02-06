@@ -1,5 +1,82 @@
 # Change History
 
+## Version 0.3.0 (2026-02-06) - Prediction Engine
+
+### Added
+- **Prediction Engine** (`utils/prediction_engine.py`)
+  - Intelligent refueling recommendations based on multiple factors
+  - Configurable price drop thresholds (absolute and percentage)
+  - Configurable fuel level thresholds (low and critical)
+  - Urgency level calculation (low, medium, high, critical)
+  - Integration of price trends and tank levels for smart recommendations
+  - Days until refuel estimation based on driving patterns
+- **Storage Layer** (`utils/storage.py`)
+  - Persistent storage per config entry using Home Assistant's Store API
+  - Price history tracking with automatic pruning (last 1000 entries)
+  - Odometer history tracking for consumption analysis
+  - Weekday consumption statistics for driving pattern learning
+  - Tank history (refueling events) with consumption rates
+  - Last price, decision, API data, and error tracking
+- **Statistics Engine** (`utils/statistics_engine.py`)
+  - Self-learning consumption and range logic
+  - Odometer history evaluation
+  - Daily kilometers calculation
+  - Weekday average consumption tracking
+  - Average daily kilometers calculation with fallback
+  - Range estimation in days based on learned patterns
+  - Fuel consumption rate calculation (L/100km)
+- **Price Engine** (`utils/price_engine.py`)
+  - Price delta calculation (absolute in EUR)
+  - Price delta percentage calculation
+  - Price spike detection with configurable threshold
+  - Price trend analysis (rising, falling, stable)
+  - Price statistics (min, max, avg over period)
+  - Smart last known price retrieval (prioritizes actual refuel prices)
+- **Config Flow Enhancement**
+  - New "Prediction" configuration step added
+  - Price drop percent threshold (default: 2%, range: 0-20%)
+  - Price drop absolute threshold (default: 0.05 EUR, range: 0-0.5 EUR)
+  - Low fuel alert threshold (default: 30%, range: 10-50%)
+  - Critical fuel alert threshold (default: 15%, range: 5-25%)
+  - Fallback daily kilometers (default: 40 km, range: 10-500 km)
+- **Options Flow Enhancement**
+  - All prediction thresholds configurable at runtime
+  - Prediction settings integrated into existing options UI
+- **Sensor Enhancements**
+  - Fuel Price Sensor now includes:
+    - `should_refuel` attribute (boolean recommendation)
+    - `urgency` attribute (low/medium/high/critical)
+    - `recommendation` attribute (user-friendly text)
+    - `price_delta` attribute (absolute price change in EUR)
+    - `price_delta_percent` attribute (percentage price change)
+    - `forecast_trend` attribute (rising/falling/stable)
+  - Range Sensor now includes:
+    - `days_left` attribute (estimated days until refuel needed)
+  - Automatic storage of price observations on each update
+  - Automatic storage of odometer readings when available
+  - Automatic detection and storage of refueling events
+
+### Changed
+- Sensor coordinator now uses storage layer for persistent data
+- Coordinator integrates prediction engine for real-time recommendations
+- Config flow now has 5 steps (added prediction step)
+- Fuel price sensor attributes extended with prediction data
+- Range sensor enhanced with days-left estimation
+
+### Technical Details
+- Storage uses versioned JSON files (`.storage/hafwcma_<entry_id>.json`)
+- All engines use async/await patterns for Home Assistant compatibility
+- Prediction engine combines price analysis, statistics, and tank levels
+- Automatic data pruning to prevent storage bloat
+- Comprehensive logging for debugging and monitoring
+- Type hints throughout all new modules
+
+### Translation Updates
+- Added German translations for all new configuration options
+- Added English translations for all new configuration options
+- Prediction step labels in config flow
+- All new option field labels in both languages
+
 ## Version 0.2.0 (2026-02-05) - Vehicle Entity Integration
 
 ### Added

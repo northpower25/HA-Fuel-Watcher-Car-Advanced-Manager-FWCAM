@@ -14,9 +14,14 @@ from homeassistant.helpers import entity_registry as er, selector
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
+    CONF_CRITICAL_FUEL_THRESHOLD,
+    CONF_FALLBACK_DAILY_KM,
     CONF_FUEL_TYPE,
+    CONF_LOW_FUEL_THRESHOLD,
     CONF_ODOMETER_ENTITY,
     CONF_POSITION_ENTITY,
+    CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
+    CONF_PRICE_DROP_PERCENT_THRESHOLD,
     CONF_PROVIDER,
     CONF_RADIUS,
     CONF_RANGE_ENTITY,
@@ -26,6 +31,11 @@ from .const import (
     CONF_TELEGRAM_TOKEN,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
+    DEFAULT_CRITICAL_FUEL_THRESHOLD,
+    DEFAULT_FALLBACK_DAILY_KM,
+    DEFAULT_LOW_FUEL_THRESHOLD,
+    DEFAULT_PRICE_DROP_ABSOLUTE,
+    DEFAULT_PRICE_DROP_PERCENT,
     DEFAULT_RADIUS,
     DEFAULT_TANK_CAPACITY,
     DEFAULT_UPDATE_INTERVAL,
@@ -243,6 +253,42 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input: User provided Telegram configuration
             
         Returns:
+            Form to display or next step
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            # Merge all data
+            self.data.update(user_input)
+            
+            # Move to prediction engine configuration
+            return await self.async_step_prediction()
+
+        data_schema = vol.Schema(
+            {
+                vol.Optional(CONF_TELEGRAM_TOKEN): str,
+                vol.Optional(CONF_TELEGRAM_CHAT_ID): str,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="telegram",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={
+                "telegram_info": "Optional: Configure Telegram for notifications"
+            },
+        )
+    
+    async def async_step_prediction(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle prediction engine configuration (optional).
+        
+        Args:
+            user_input: User provided prediction configuration
+            
+        Returns:
             Form to display or entry creation
         """
         errors: dict[str, str] = {}
@@ -259,17 +305,35 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         data_schema = vol.Schema(
             {
-                vol.Optional(CONF_TELEGRAM_TOKEN): str,
-                vol.Optional(CONF_TELEGRAM_CHAT_ID): str,
+                vol.Optional(
+                    CONF_PRICE_DROP_PERCENT_THRESHOLD,
+                    default=DEFAULT_PRICE_DROP_PERCENT,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
+                vol.Optional(
+                    CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
+                    default=DEFAULT_PRICE_DROP_ABSOLUTE,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=0.5)),
+                vol.Optional(
+                    CONF_LOW_FUEL_THRESHOLD,
+                    default=DEFAULT_LOW_FUEL_THRESHOLD,
+                ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=50.0)),
+                vol.Optional(
+                    CONF_CRITICAL_FUEL_THRESHOLD,
+                    default=DEFAULT_CRITICAL_FUEL_THRESHOLD,
+                ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=25.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM,
+                    default=DEFAULT_FALLBACK_DAILY_KM,
+                ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=500.0)),
             }
         )
 
         return self.async_show_form(
-            step_id="telegram",
+            step_id="prediction",
             data_schema=data_schema,
             errors=errors,
             description_placeholders={
-                "telegram_info": "Optional: Configure Telegram for notifications"
+                "prediction_info": "Configure refueling prediction thresholds"
             },
         )
 
@@ -398,6 +462,37 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
         position_value = current_options.get(CONF_POSITION_ENTITY, "")
         if not position_value:
             position_value = current_config.get(CONF_POSITION_ENTITY, "")
+        
+        # Get prediction engine values
+        price_drop_percent_value = current_options.get(CONF_PRICE_DROP_PERCENT_THRESHOLD)
+        if price_drop_percent_value is None or price_drop_percent_value == "":
+            price_drop_percent_value = current_config.get(CONF_PRICE_DROP_PERCENT_THRESHOLD)
+        if price_drop_percent_value is None or price_drop_percent_value == "":
+            price_drop_percent_value = DEFAULT_PRICE_DROP_PERCENT
+        
+        price_drop_absolute_value = current_options.get(CONF_PRICE_DROP_ABSOLUTE_THRESHOLD)
+        if price_drop_absolute_value is None or price_drop_absolute_value == "":
+            price_drop_absolute_value = current_config.get(CONF_PRICE_DROP_ABSOLUTE_THRESHOLD)
+        if price_drop_absolute_value is None or price_drop_absolute_value == "":
+            price_drop_absolute_value = DEFAULT_PRICE_DROP_ABSOLUTE
+        
+        low_fuel_value = current_options.get(CONF_LOW_FUEL_THRESHOLD)
+        if low_fuel_value is None or low_fuel_value == "":
+            low_fuel_value = current_config.get(CONF_LOW_FUEL_THRESHOLD)
+        if low_fuel_value is None or low_fuel_value == "":
+            low_fuel_value = DEFAULT_LOW_FUEL_THRESHOLD
+        
+        critical_fuel_value = current_options.get(CONF_CRITICAL_FUEL_THRESHOLD)
+        if critical_fuel_value is None or critical_fuel_value == "":
+            critical_fuel_value = current_config.get(CONF_CRITICAL_FUEL_THRESHOLD)
+        if critical_fuel_value is None or critical_fuel_value == "":
+            critical_fuel_value = DEFAULT_CRITICAL_FUEL_THRESHOLD
+        
+        fallback_daily_km_value = current_options.get(CONF_FALLBACK_DAILY_KM)
+        if fallback_daily_km_value is None or fallback_daily_km_value == "":
+            fallback_daily_km_value = current_config.get(CONF_FALLBACK_DAILY_KM)
+        if fallback_daily_km_value is None or fallback_daily_km_value == "":
+            fallback_daily_km_value = DEFAULT_FALLBACK_DAILY_KM
 
         data_schema = vol.Schema(
             {
@@ -465,6 +560,26 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                         multiple=False,
                     )
                 ),
+                vol.Optional(
+                    CONF_PRICE_DROP_PERCENT_THRESHOLD,
+                    default=price_drop_percent_value,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=20.0)),
+                vol.Optional(
+                    CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
+                    default=price_drop_absolute_value,
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=0.5)),
+                vol.Optional(
+                    CONF_LOW_FUEL_THRESHOLD,
+                    default=low_fuel_value,
+                ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=50.0)),
+                vol.Optional(
+                    CONF_CRITICAL_FUEL_THRESHOLD,
+                    default=critical_fuel_value,
+                ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=25.0)),
+                vol.Optional(
+                    CONF_FALLBACK_DAILY_KM,
+                    default=fallback_daily_km_value,
+                ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=500.0)),
             }
         )
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import aiohttp
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -22,13 +22,20 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import (
+    ATTR_AVG_DAILY_KM,
+    ATTR_DAYS_LEFT,
     ATTR_DISTANCE,
     ATTR_FORECAST_TREND,
     ATTR_PRICE,
+    ATTR_PRICE_DELTA,
+    ATTR_PRICE_DELTA_PERCENT,
     ATTR_RANGE_KM,
+    ATTR_RECOMMENDATION,
+    ATTR_SHOULD_REFUEL,
     ATTR_STATION_ADDRESS,
     ATTR_STATION_NAME,
     ATTR_TANK_LEVEL,
+    ATTR_URGENCY,
     CONF_API_KEY,
     CONF_FUEL_TYPE,
     CONF_LATITUDE,
@@ -49,6 +56,10 @@ from .const import (
 from .providers.tankerkonig import TankerkoenigProvider
 from .utils.vehicle_data import async_get_vehicle_data
 from .utils.vehicle_tracker import VehicleDataTracker
+from .utils import storage
+from .utils.prediction_engine import evaluate_refuel_strategy, get_prediction_summary
+from .utils.price_engine import compute_price_trend, get_price_statistics
+from .utils.statistics_engine import estimate_days_left
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -160,6 +171,16 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             tracking_result = self.vehicle_tracker.update(vehicle_data)
             _LOGGER.debug("Tracking result: %s", tracking_result)
             
+            # Store odometer history if available
+            odometer = vehicle_data.get("odometer_km")
+            if odometer is not None:
+                await storage.add_odometer_observation(
+                    self.hass,
+                    self.config_entry,
+                    odometer,
+                    datetime.now().isoformat(),
+                )
+            
             # Use vehicle position if available, otherwise use configured lat/lon
             latitude = vehicle_data.get("latitude")
             longitude = vehicle_data.get("longitude")
@@ -213,6 +234,28 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     _LOGGER.error("Error fetching data from provider: %s", err)
                     # Continue with cached/placeholder data
             
+            # Store price history if we have a price
+            if fuel_price is not None:
+                await storage.add_price_observation(
+                    self.hass,
+                    self.config_entry,
+                    fuel_price,
+                    datetime.now().isoformat(),
+                )
+            
+            # Handle refueling detection
+            if tracking_result.get("refueling_detected"):
+                _LOGGER.info("Refueling detected!")
+                # Store refueling event with current price if available
+                refuel_event = {
+                    "timestamp": datetime.now().isoformat(),
+                    "fuel_added": tracking_result.get("fuel_added"),
+                    "odometer_km": odometer,
+                    "consumption_rate": tracking_result.get("average_consumption"),
+                    "price_per_liter": fuel_price,  # Include price for better prediction
+                }
+                await storage.add_refuel_event(self.hass, self.config_entry, refuel_event)
+            
             # Build data structure
             # Calculate tank percentage if we have both level and capacity
             tank_percentage = None
@@ -222,11 +265,38 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 if tank_capacity and tank_capacity > 0:
                     tank_percentage = (tank_level / tank_capacity) * 100
             
+            # Get price trend and statistics
+            price_trend = await compute_price_trend(self.hass, self.config_entry, window=5)
+            
+            # Get refuel recommendation if we have price and tank info
+            recommendation = None
+            if fuel_price is not None and tank_percentage is not None:
+                recommendation = await evaluate_refuel_strategy(
+                    self.hass,
+                    self.config_entry,
+                    current_price=fuel_price,
+                    tank_percentage=tank_percentage,
+                    range_km=vehicle_data.get("range_km"),
+                    station_name=nearest_station.get("name") if nearest_station else None,
+                )
+                _LOGGER.debug("Refuel recommendation: %s", recommendation)
+            
+            # Estimate days left
+            days_left = None
+            range_km = vehicle_data.get("range_km")
+            if range_km:
+                days_left = await estimate_days_left(
+                    self.hass,
+                    self.config_entry,
+                    km_left=range_km,
+                    fallback_daily_km=40.0,
+                )
+            
             data = {
                 "fuel_price": fuel_price,
                 "tank_level": tank_level,
                 "tank_percentage": tank_percentage,
-                "range": vehicle_data.get("range_km"),
+                "range": range_km,
                 "odometer": vehicle_data.get("odometer_km"),
                 "latitude": latitude,
                 "longitude": longitude,
@@ -236,9 +306,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     "distance": 0.0,
                     "price": None,
                 },
-                "forecast_trend": None,  # TODO: Implement forecasting
+                "forecast_trend": price_trend,
                 "vehicle_data": vehicle_data,
                 "tracking": tracking_result,
+                "recommendation": recommendation,
+                "days_left": days_left,
             }
 
             return data
@@ -288,12 +360,24 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
         station = self.coordinator.data.get("nearest_station", {})
-        return {
+        recommendation = self.coordinator.data.get("recommendation", {})
+        
+        attributes = {
             ATTR_STATION_NAME: station.get("name"),
             ATTR_STATION_ADDRESS: station.get("address"),
             ATTR_DISTANCE: station.get("distance"),
             ATTR_FORECAST_TREND: self.coordinator.data.get("forecast_trend"),
         }
+        
+        # Add prediction attributes if available
+        if recommendation:
+            attributes[ATTR_SHOULD_REFUEL] = recommendation.get("should_refuel", False)
+            attributes[ATTR_URGENCY] = recommendation.get("urgency", "low")
+            attributes[ATTR_RECOMMENDATION] = recommendation.get("recommendation", "")
+            attributes[ATTR_PRICE_DELTA] = recommendation.get("price_delta")
+            attributes[ATTR_PRICE_DELTA_PERCENT] = recommendation.get("price_delta_percent")
+        
+        return attributes
 
 
 class TankLevelSensor(CoordinatorEntity, SensorEntity):
@@ -362,6 +446,16 @@ class RangeSensor(CoordinatorEntity, SensorEntity):
     def native_value(self) -> float | None:
         """Return the estimated range."""
         return self.coordinator.data.get("range")
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        days_left = self.coordinator.data.get("days_left")
+        if days_left is not None:
+            return {
+                ATTR_DAYS_LEFT: days_left,
+            }
+        return {}
 
 
 class NearestStationSensor(CoordinatorEntity, SensorEntity):

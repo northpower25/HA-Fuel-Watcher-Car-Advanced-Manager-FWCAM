@@ -39,6 +39,17 @@
           "telegram_token": "Telegram Bot-Token",
           "telegram_chat_id": "Telegram Chat-ID"
         }
+      },
+      "prediction": {
+        "title": "Vorhersage-Engine konfigurieren (Optional)",
+        "description": "{prediction_info}",
+        "data": {
+          "price_drop_percent_threshold": "Preissenkung Prozentschwelle",
+          "price_drop_absolute_threshold": "Preissenkung Absolute Schwelle (EUR)",
+          "low_fuel_threshold": "Niedriger Tank-Alarm Schwelle (%)",
+          "critical_fuel_threshold": "Kritischer Tank-Alarm Schwelle (%)",
+          "fallback_daily_km": "Standard Tageskilometer"
+        }
       }
     },
     "error": {
@@ -68,7 +79,12 @@
           "odometer_entity": "Kilometerzähler Sensor",
           "tank_level_entity": "Tankfüllstand Sensor",
           "range_entity": "Restreichweite Sensor",
-          "position_entity": "Fahrzeugposition (Device Tracker)"
+          "position_entity": "Fahrzeugposition (Device Tracker)",
+          "price_drop_percent_threshold": "Preissenkung Prozentschwelle",
+          "price_drop_absolute_threshold": "Preissenkung Absolute Schwelle (EUR)",
+          "low_fuel_threshold": "Niedriger Tank-Alarm Schwelle (%)",
+          "critical_fuel_threshold": "Kritischer Tank-Alarm Schwelle (%)",
+          "fallback_daily_km": "Standard Tageskilometer"
         }
       }
     }

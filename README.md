@@ -22,9 +22,14 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
 - Support for E5, E10, and Diesel fuel types
 - Distance-based station sorting
 
-### 📈 Smart Forecasting
-- Fuel price trend prediction
-- Intelligent refueling recommendations
+### 📈 Smart Forecasting & Prediction Engine
+- **Self-learning consumption tracking** based on your driving patterns
+- **Intelligent refueling recommendations** with urgency levels
+- Fuel price trend prediction (rising/falling/stable)
+- Price drop detection with configurable thresholds
+- Days until refuel estimation based on learned daily kilometers
+- Historical price analysis and statistics
+- Weekday consumption pattern learning
 - Best time to refuel suggestions
 - Price vs. distance optimization
 
@@ -78,6 +83,7 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
    - **Step 2**: Configure vehicle details (name, tank capacity)
    - **Step 3**: (Optional) Link existing vehicle entities (odometer, tank level, range, position)
    - **Step 4**: (Optional) Configure Telegram notifications
+   - **Step 5**: (Optional) Configure prediction engine thresholds
 
 For detailed information about vehicle entity integration, see [Vehicle Entity Integration Guide](docs/VEHICLE_ENTITIES.md).
 
@@ -91,6 +97,15 @@ After initial setup, you can modify these options:
 - **Vehicle Entities**: Link to existing Home Assistant vehicle entities
   - Odometer sensor (for consumption tracking)
   - Tank level sensor (for refueling detection)
+  - Range sensor (for consumption analysis)
+  - Position device tracker (for dynamic station search)
+- **Prediction Engine Settings**:
+  - Price drop percent threshold (trigger refuel recommendation)
+  - Price drop absolute threshold (in EUR)
+  - Low fuel alert threshold (% of tank)
+  - Critical fuel alert threshold (% of tank)
+  - Fallback daily kilometers (for range estimation)
+- **Telegram Settings**: Bot token and chat ID
   - Range sensor (for consumption analysis)
   - Position device tracker (for dynamic station search)
 - **Telegram Settings**: Bot token and chat ID
@@ -115,6 +130,14 @@ Each sensor provides additional attributes:
 - `station_address`: Street address
 - `distance`: Distance to station in km
 - `forecast_trend`: Price trend (rising/falling/stable)
+- `should_refuel`: Boolean recommendation to refuel now
+- `urgency`: Urgency level (low/medium/high/critical)
+- `recommendation`: User-friendly recommendation text
+- `price_delta`: Absolute price change from last known price (EUR)
+- `price_delta_percent`: Percentage price change
+
+#### Range Sensor
+- `days_left`: Estimated days until refuel needed (based on learned patterns)
 
 #### Tank Level Sensor
 - `percentage`: Tank fill percentage
@@ -161,20 +184,44 @@ automation:
           message: "Good time to refuel! Prices are falling and tank is at {{ state_attr('sensor.my_car_tank_level', 'percentage') }}%"
 ```
 
+Example automation using prediction engine recommendations:
+
+```yaml
+automation:
+  - alias: "Smart Refuel Alert"
+    trigger:
+      - platform: state
+        entity_id: sensor.my_car_fuel_price
+        attribute: should_refuel
+        to: true
+    action:
+      - service: notify.telegram
+        data:
+          message: >
+            {{ state_attr('sensor.my_car_fuel_price', 'recommendation') }}
+            
+            Price: €{{ states('sensor.my_car_fuel_price') }}/L
+            Urgency: {{ state_attr('sensor.my_car_fuel_price', 'urgency') }}
+            Days of fuel left: {{ state_attr('sensor.my_car_range', 'days_left') }}
+```
+
 ## Development Status
 
 This is an MVP (Minimum Viable Product) release. The following features are implemented:
 
 - ✅ Config Flow and Options Flow
 - ✅ Tankerkönig API integration
-- ✅ Basic fuel price sensors
-- ✅ Tank level tracking (stub)
+- ✅ Fuel price sensors with prediction attributes
 - ✅ **Vehicle entity integration** (odometer, tank level, range, position)
 - ✅ **Automatic refueling detection**
 - ✅ **Real-time consumption tracking (L/100km)**
 - ✅ **Dynamic position-based station search**
+- ✅ **Prediction Engine with intelligent refuel recommendations**
+- ✅ **Persistent storage for price and vehicle history**
+- ✅ **Self-learning driving pattern analysis**
+- ✅ **Price trend analysis and statistics**
+- ✅ **Configurable thresholds for personalized recommendations**
 - ✅ Telegram notification system
-- ✅ Price trend forecasting (basic)
 - ✅ Multi-language support (EN/DE)
 
 ### Planned Features
