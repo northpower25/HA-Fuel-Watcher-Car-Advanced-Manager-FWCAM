@@ -249,13 +249,14 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 "Found cheapest station: %s at %.2f km, price: €%.3f",
                                 cheapest.name,
                                 cheapest.distance,
-                                fuel_price if fuel_price else 0,
+                                fuel_price,
                             )
                         else:
                             # No stations with valid prices found
                             _LOGGER.warning(
-                                "Found %d stations but none have valid prices or are open",
+                                "Found %d stations but none are both open and have valid prices for %s",
                                 len(stations),
+                                fuel_type,
                             )
                     else:
                         _LOGGER.warning("No stations found within %.1f km", radius)
