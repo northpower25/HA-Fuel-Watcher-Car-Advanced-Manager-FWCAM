@@ -196,9 +196,6 @@ class TankerkoenigProvider(FuelPriceProvider):
                 "params": self._mask_api_key(params),
                 "timestamp": datetime.now().isoformat(),
             }
-            # Build full URL for debugging
-            full_url = url + "?" + "&".join([f"{k}={v}" for k, v in self._mask_api_key(params).items()])
-            _LOGGER.debug("API Request URL: %s", full_url)
             
             async with self.session.get(url, params=params) as response:
                 if response.status != 200:
@@ -281,9 +278,6 @@ class TankerkoenigProvider(FuelPriceProvider):
                 "params": self._mask_api_key(params),
                 "timestamp": datetime.now().isoformat(),
             }
-            # Build full URL for debugging
-            full_url = url + "?" + "&".join([f"{k}={v}" for k, v in self._mask_api_key(params).items()])
-            _LOGGER.debug("API Request URL: %s", full_url)
             
             async with self.session.get(url, params=params) as response:
                 if response.status != 200:
