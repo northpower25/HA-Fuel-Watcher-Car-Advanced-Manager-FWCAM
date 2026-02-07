@@ -24,6 +24,14 @@ A new sensor entity `sensor.[vehicle_name]_api_debug` provides detailed informat
 - `api_response_status`: Result of API call (`success` or `error`)
 - `stations_found`: Number of stations returned by API
 - `stations_with_price_and_open`: Number of stations that are open and have valid prices
+- `last_api_request`: Complete details of the last API request
+  - `url`: The API endpoint URL
+  - `params`: All parameters sent (latitude, longitude, radius, fuel type, API key)
+  - `timestamp`: When the request was made
+- `last_api_response`: Complete API response data
+  - `status`: HTTP status code (200 for success)
+  - `data`: Full JSON response from the API
+  - `timestamp`: When the response was received
 - `warning`: Any warning messages from the API call
 - `error`: Error message if request failed
 - `error_type`: Type of error exception
@@ -112,6 +120,20 @@ A new number entity `number.[vehicle_name]_search_radius` allows you to adjust t
    - Closed stations are filtered out even if they report prices
    - Stations without prices for your fuel type are filtered out
    - Check `stations_found` vs `stations_with_price_and_open` difference
+
+7. **Inspect Full API Response**:
+   - Look at `last_api_response` attribute in the API Debug sensor
+   - Check `last_api_response.status` - should be 200 for success
+   - Examine `last_api_response.data` for the complete API response
+   - Verify `last_api_response.data.ok` is `true`
+   - Check `last_api_response.data.stations` or `last_api_response.data.data.stations` for station list
+   - Review individual station data for `isOpen` and price values
+
+8. **Verify API Request URL**:
+   - Look at `last_api_request` attribute in the API Debug sensor
+   - Check `last_api_request.url` - should be the Tankerkönig API endpoint
+   - Verify `last_api_request.params` contains correct latitude, longitude, radius, fuel type
+   - Copy the request parameters and test manually if needed
 
 ### Issue: Invalid API Key
 

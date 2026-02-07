@@ -165,7 +165,8 @@ Each sensor provides additional attributes:
 - `api_response_status`: Success or error status
 - `stations_found`: Number of stations returned
 - `stations_with_price_and_open`: Number of open stations with valid prices
-- Full request/response details for troubleshooting
+- `last_api_request`: Complete details of the last API request sent (URL, parameters, timestamp)
+- `last_api_response`: Complete API response data (status, data payload, timestamp)
 
 ### Automations
 

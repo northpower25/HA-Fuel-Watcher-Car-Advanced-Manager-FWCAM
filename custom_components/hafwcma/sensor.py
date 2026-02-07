@@ -130,7 +130,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self.vehicle_tracker = VehicleDataTracker()
         self._provider = None
         self._session = None
-        self._last_api_request = None  # Store debug info about last API request
+        self._api_debug_info = None  # Store debug info about API requests/responses
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -216,7 +216,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             
             # Store debug info
             timestamp = datetime.now().isoformat()
-            self._last_api_request = {
+            self._api_debug_info = {
                 "timestamp": timestamp,
                 "location_source": location_source,
                 "latitude": latitude,
@@ -224,6 +224,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 "radius_km": radius,
                 "fuel_type": fuel_type,
                 "provider": provider,
+                "last_api_request": None,  # Will be populated from provider
+                "last_api_response": None,  # Will be populated from provider
             }
             
             # Fetch data from provider
@@ -240,9 +242,15 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         latitude, longitude, radius, fuel_type
                     )
                     
+                    # Capture API request and response from provider
+                    if hasattr(self._provider, 'last_api_request'):
+                        self._api_debug_info["last_api_request"] = self._provider.last_api_request
+                    if hasattr(self._provider, 'last_api_response'):
+                        self._api_debug_info["last_api_response"] = self._provider.last_api_response
+                    
                     # Update debug info with response
-                    self._last_api_request["api_response_status"] = "success"
-                    self._last_api_request["stations_found"] = len(stations)
+                    self._api_debug_info["api_response_status"] = "success"
+                    self._api_debug_info["stations_found"] = len(stations)
                     
                     if stations:
                         # Sort stations by price first (cheapest), then by distance
@@ -270,9 +278,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                             if s.get_price(fuel_type) is not None and s.is_open
                         ]
                         
-                        self._last_api_request["stations_with_price_and_open"] = len(stations_with_price)
-                        self._last_api_request["stations_closed"] = closed_count
-                        self._last_api_request["stations_no_price"] = no_price_count
+                        self._api_debug_info["stations_with_price_and_open"] = len(stations_with_price)
+                        self._api_debug_info["stations_closed"] = closed_count
+                        self._api_debug_info["stations_no_price"] = no_price_count
                         
                         if stations_with_price:
                             # Sort by price (ascending), then by distance (ascending)
@@ -300,7 +308,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                             )
                         else:
                             # No stations with valid prices found - provide detailed reason
-                            self._last_api_request["warning"] = f"Found {len(stations)} stations but none are both open and have valid prices for {fuel_type}"
+                            self._api_debug_info["warning"] = f"Found {len(stations)} stations but none are both open and have valid prices for {fuel_type}"
                             _LOGGER.warning(
                                 "Found %d stations but none are both open and have valid prices for %s. Details: %d closed, %d without %s price",
                                 len(stations),
@@ -310,21 +318,21 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 fuel_type,
                             )
                     else:
-                        self._last_api_request["warning"] = f"No stations found within {radius} km"
+                        self._api_debug_info["warning"] = f"No stations found within {radius} km"
                         _LOGGER.warning("No stations found within %.1f km", radius)
                         
                 except Exception as err:
-                    self._last_api_request["api_response_status"] = "error"
-                    self._last_api_request["error"] = str(err)
-                    self._last_api_request["error_type"] = type(err).__name__
+                    self._api_debug_info["api_response_status"] = "error"
+                    self._api_debug_info["error"] = str(err)
+                    self._api_debug_info["error_type"] = type(err).__name__
                     _LOGGER.error("Error fetching data from provider: %s", err, exc_info=True)
                     # Continue with cached/placeholder data
                     
         except Exception as err:
-            if self._last_api_request:
-                self._last_api_request["api_response_status"] = "error"
-                self._last_api_request["error"] = str(err)
-                self._last_api_request["error_type"] = type(err).__name__
+            if self._api_debug_info:
+                self._api_debug_info["api_response_status"] = "error"
+                self._api_debug_info["error"] = str(err)
+                self._api_debug_info["error_type"] = type(err).__name__
             _LOGGER.error("Error in station lookup: %s", err, exc_info=True)
             # Continue with cached/placeholder data
         
@@ -421,7 +429,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "tracking": tracking_result,
             "recommendation": recommendation,
             "days_left": days_left,
-            "api_debug": self._last_api_request,  # Add debug information
+            "api_debug": self._api_debug_info,  # Add debug information
         }
 
         return data
