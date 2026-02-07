@@ -190,10 +190,10 @@ class TankerkoenigProvider(FuelPriceProvider):
                 # - Legacy format: stations at top level data["stations"]
                 # - V4 format: stations nested in data["data"]["stations"]
                 if "stations" in data:
-                    stations_data = data.get("stations", [])
+                    stations_data = data["stations"]
                 elif "data" in data:
                     # Try v4 format with nested data object
-                    stations_data = data.get("data", {}).get("stations", [])
+                    stations_data = data["data"].get("stations", [])
                 else:
                     stations_data = []
 
@@ -248,10 +248,10 @@ class TankerkoenigProvider(FuelPriceProvider):
                 # - Legacy format: station at top level data["station"]
                 # - V4 format: station nested in data["data"]["station"]
                 if "station" in data:
-                    station_data = data.get("station")
+                    station_data = data["station"]
                 elif "data" in data:
                     # Try v4 format with nested data object
-                    station_data = data.get("data", {}).get("station")
+                    station_data = data["data"].get("station")
                 else:
                     station_data = None
 
@@ -321,14 +321,15 @@ class TankerkoenigProvider(FuelPriceProvider):
 
             # Extract prices from nested price object if present, otherwise try top-level
             # The Tankerkönig API v4 returns prices in a nested "price" object
+            # Note: We skip empty dicts to fall back to top-level prices
             price_obj = data.get("price")
             if price_obj is not None and isinstance(price_obj, dict) and price_obj:
-                # V4 API format: prices in nested object
+                # V4 API format: prices in nested object (non-empty dict)
                 price_e5 = price_obj.get("e5")
                 price_e10 = price_obj.get("e10")
                 price_diesel = price_obj.get("diesel")
             else:
-                # Fallback to top-level (legacy format or missing price object)
+                # Fallback to top-level (legacy format, missing, None, or empty price object)
                 price_e5 = data.get("e5")
                 price_e10 = data.get("e10")
                 price_diesel = data.get("diesel")
