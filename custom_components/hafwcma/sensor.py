@@ -253,6 +253,18 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         closed_count = sum(1 for s in stations if not s.is_open)
                         no_price_count = sum(1 for s in stations if s.get_price(fuel_type) is None)
                         
+                        # Log each station's status for detailed debugging
+                        for station in stations:
+                            station_price = station.get_price(fuel_type)
+                            _LOGGER.debug(
+                                "Station '%s': is_open=%s, %s_price=%s, passes_filter=%s",
+                                station.name,
+                                station.is_open,
+                                fuel_type,
+                                station_price,
+                                station_price is not None and station.is_open
+                            )
+                        
                         stations_with_price = [
                             s for s in stations 
                             if s.get_price(fuel_type) is not None and s.is_open
