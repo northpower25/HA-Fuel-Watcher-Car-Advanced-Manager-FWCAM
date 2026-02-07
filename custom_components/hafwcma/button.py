@@ -141,7 +141,7 @@ class TestProviderConnectionButton(ButtonEntity):
                         "rad": radius,
                         "type": fuel_type,
                         "apikey": masked_key,
-                        "sort": "dist",
+                        "sort": "price",
                     }
                     
                     # Validate API key

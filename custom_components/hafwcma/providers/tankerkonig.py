@@ -150,7 +150,7 @@ class TankerkoenigProvider(FuelPriceProvider):
             fuel_type: Type of fuel ('e5', 'e10', 'diesel')
 
         Returns:
-            List of fuel stations sorted by distance
+            List of fuel stations sorted by price (ascending)
 
         Raises:
             ProviderError: If API request fails
