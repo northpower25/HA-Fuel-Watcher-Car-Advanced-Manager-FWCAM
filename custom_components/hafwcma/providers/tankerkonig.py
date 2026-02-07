@@ -47,6 +47,48 @@ def _parse_price(value: Any) -> float | None:
         return None
 
 
+def _parse_is_open(value: Any) -> bool:
+    """Convert isOpen value to boolean.
+    
+    Helper function to safely parse isOpen values from API responses.
+    The Tankerkönig API may return isOpen in various formats (strings, 
+    numbers, booleans, or null).
+    
+    Args:
+        value: isOpen value from API (could be str, bool, int, None)
+        
+    Returns:
+        Boolean indicating if station is open (defaults to True if unclear)
+    """
+    if value is None:
+        # If not specified, assume open to avoid filtering out valid stations
+        _LOGGER.debug("isOpen value is None, defaulting to True")
+        return True
+    
+    # Handle boolean directly
+    if isinstance(value, bool):
+        return value
+    
+    # Handle numeric values (0 = closed, non-zero = open)
+    if isinstance(value, (int, float)):
+        return bool(value)
+    
+    # Handle string values
+    if isinstance(value, str):
+        value_lower = value.lower().strip()
+        if value_lower in ("true", "1", "yes", "open"):
+            return True
+        elif value_lower in ("false", "0", "no", "closed"):
+            return False
+        else:
+            _LOGGER.debug("Unknown isOpen string value '%s', defaulting to True", value)
+            return True
+    
+    # Unknown type, log warning and default to True
+    _LOGGER.debug("Unknown isOpen value type '%s' (value: %s), defaulting to True", type(value).__name__, value)
+    return True
+
+
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate distance between two coordinates using Haversine formula.
     
@@ -269,7 +311,7 @@ class TankerkoenigProvider(FuelPriceProvider):
                 price_e5=_parse_price(data.get("e5")),
                 price_e10=_parse_price(data.get("e10")),
                 price_diesel=_parse_price(data.get("diesel")),
-                is_open=data.get("isOpen", True),
+                is_open=_parse_is_open(data.get("isOpen")),
                 last_updated=datetime.now(),
             )
             
