@@ -168,7 +168,7 @@ class TankerkoenigProvider(FuelPriceProvider):
             "rad": radius,
             "type": fuel_type,
             "apikey": self.api_key,
-            "sort": "dist",
+            "sort": "price",
         }
 
         try:
