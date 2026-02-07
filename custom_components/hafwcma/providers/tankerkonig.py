@@ -298,6 +298,20 @@ class TankerkoenigProvider(FuelPriceProvider):
             if ref_lat is not None and ref_lon is not None and station_lat is not None and station_lon is not None:
                 distance = _distance_km(ref_lat, ref_lon, station_lat, station_lon)
             
+            # Extract prices from nested price object if present, otherwise try top-level
+            # The Tankerkönig API v4 returns prices in a nested "price" object
+            price_obj = data.get("price", {})
+            if isinstance(price_obj, dict):
+                # V4 API format: prices in nested object
+                price_e5 = price_obj.get("e5")
+                price_e10 = price_obj.get("e10")
+                price_diesel = price_obj.get("diesel")
+            else:
+                # Fallback to top-level (legacy format)
+                price_e5 = data.get("e5")
+                price_e10 = data.get("e10")
+                price_diesel = data.get("diesel")
+            
             station = FuelStation(
                 station_id=data.get("id", ""),
                 name=data.get("name", "Unknown"),
@@ -307,24 +321,22 @@ class TankerkoenigProvider(FuelPriceProvider):
                 latitude=station_lat,
                 longitude=station_lon,
                 distance=distance,
-                price_e5=_parse_price(data.get("e5")),
-                price_e10=_parse_price(data.get("e10")),
-                price_diesel=_parse_price(data.get("diesel")),
+                price_e5=_parse_price(price_e5),
+                price_e10=_parse_price(price_e10),
+                price_diesel=_parse_price(price_diesel),
                 is_open=_parse_is_open(data.get("isOpen")),
                 last_updated=datetime.now(),
             )
             
             # Log detailed station info for debugging
             _LOGGER.debug(
-                "Parsed station '%s': e5=%s, e10=%s, diesel=%s, open=%s (raw: e5=%s, e10=%s, diesel=%s, isOpen=%s)",
+                "Parsed station '%s': e5=%s, e10=%s, diesel=%s, open=%s (raw price obj: %s, isOpen=%s)",
                 station.name,
                 station.price_e5,
                 station.price_e10,
                 station.price_diesel,
                 station.is_open,
-                data.get("e5"),
-                data.get("e10"),
-                data.get("diesel"),
+                price_obj,
                 data.get("isOpen"),
             )
             
