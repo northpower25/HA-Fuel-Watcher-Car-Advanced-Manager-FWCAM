@@ -62,7 +62,6 @@ def _parse_is_open(value: Any) -> bool:
     """
     if value is None:
         # If not specified, assume open to avoid filtering out valid stations
-        _LOGGER.debug("isOpen value is None, defaulting to True")
         return True
     
     # Handle boolean directly
@@ -81,11 +80,11 @@ def _parse_is_open(value: Any) -> bool:
         elif value_lower in ("false", "0", "no", "closed"):
             return False
         else:
-            _LOGGER.debug("Unknown isOpen string value '%s', defaulting to True", value)
+            _LOGGER.warning("Unexpected isOpen string value '%s', defaulting to True", value)
             return True
     
-    # Unknown type, log warning and default to True
-    _LOGGER.debug("Unknown isOpen value type '%s' (value: %s), defaulting to True", type(value).__name__, value)
+    # Unknown type - this indicates an API format change that should be investigated
+    _LOGGER.warning("Unexpected isOpen value type '%s' (value: %s), defaulting to True", type(value).__name__, value)
     return True
 
 
