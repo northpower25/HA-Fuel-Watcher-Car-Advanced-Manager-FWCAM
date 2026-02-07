@@ -189,10 +189,13 @@ class TankerkoenigProvider(FuelPriceProvider):
                 # Support both API response formats:
                 # - Legacy format: stations at top level data["stations"]
                 # - V4 format: stations nested in data["data"]["stations"]
-                stations_data = data.get("stations", [])
-                if not stations_data and "data" in data:
+                if "stations" in data:
+                    stations_data = data.get("stations", [])
+                elif "data" in data:
                     # Try v4 format with nested data object
                     stations_data = data.get("data", {}).get("stations", [])
+                else:
+                    stations_data = []
 
                 stations = []
                 for station_data in stations_data:
@@ -244,10 +247,13 @@ class TankerkoenigProvider(FuelPriceProvider):
                 # Support both API response formats:
                 # - Legacy format: station at top level data["station"]
                 # - V4 format: station nested in data["data"]["station"]
-                station_data = data.get("station")
-                if not station_data and "data" in data:
+                if "station" in data:
+                    station_data = data.get("station")
+                elif "data" in data:
                     # Try v4 format with nested data object
                     station_data = data.get("data", {}).get("station")
+                else:
+                    station_data = None
 
                 if not station_data:
                     raise ProviderError(f"Station {station_id} not found")
@@ -315,14 +321,14 @@ class TankerkoenigProvider(FuelPriceProvider):
 
             # Extract prices from nested price object if present, otherwise try top-level
             # The Tankerkönig API v4 returns prices in a nested "price" object
-            price_obj = data.get("price", {})
-            if isinstance(price_obj, dict):
+            price_obj = data.get("price")
+            if price_obj is not None and isinstance(price_obj, dict) and price_obj:
                 # V4 API format: prices in nested object
                 price_e5 = price_obj.get("e5")
                 price_e10 = price_obj.get("e10")
                 price_diesel = price_obj.get("diesel")
             else:
-                # Fallback to top-level (legacy format)
+                # Fallback to top-level (legacy format or missing price object)
                 price_e5 = data.get("e5")
                 price_e10 = data.get("e10")
                 price_diesel = data.get("diesel")
