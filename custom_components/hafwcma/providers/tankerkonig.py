@@ -20,14 +20,14 @@ EARTH_RADIUS_KM = 6371.0
 
 def _parse_price(value: Any) -> float | None:
     """Convert price value to float or None.
-    
+
     Helper function to safely parse price values from API responses.
-    The Tankerkönig API may return prices in various formats (strings, 
+    The Tankerkönig API may return prices in various formats (strings,
     numbers, booleans, or null).
-    
+
     Args:
         value: Price value from API (could be str, float, int, bool, None)
-        
+
     Returns:
         Float price or None if invalid
     """
@@ -49,29 +49,29 @@ def _parse_price(value: Any) -> float | None:
 
 def _parse_is_open(value: Any) -> bool:
     """Convert isOpen value to boolean.
-    
+
     Helper function to safely parse isOpen values from API responses.
-    The Tankerkönig API may return isOpen in various formats (strings, 
+    The Tankerkönig API may return isOpen in various formats (strings,
     numbers, booleans, or null).
-    
+
     Args:
         value: isOpen value from API (could be str, bool, int, None)
-        
+
     Returns:
         Boolean indicating if station is open (defaults to True if unclear)
     """
     if value is None:
         # If not specified, assume open to avoid filtering out valid stations
         return True
-    
+
     # Handle boolean directly
     if isinstance(value, bool):
         return value
-    
+
     # Handle numeric values (0 = closed, non-zero = open)
     if isinstance(value, (int, float)):
         return bool(value)
-    
+
     # Handle string values
     if isinstance(value, str):
         value_lower = value.lower().strip()
@@ -82,7 +82,7 @@ def _parse_is_open(value: Any) -> bool:
         else:
             _LOGGER.warning("Unexpected isOpen string value '%s', defaulting to True", value)
             return True
-    
+
     # Unknown type - this indicates an API format change that should be investigated
     _LOGGER.warning("Unexpected isOpen value type '%s' (value: %s), defaulting to True", type(value).__name__, value)
     return True
@@ -90,13 +90,13 @@ def _parse_is_open(value: Any) -> bool:
 
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate distance between two coordinates using Haversine formula.
-    
+
     Args:
         lat1: Latitude of first point
         lon1: Longitude of first point
         lat2: Latitude of second point
         lon2: Longitude of second point
-        
+
     Returns:
         Distance in kilometers
     """
@@ -106,7 +106,7 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     # Haversine formula broken down for readability
     sin_dlat_half = sin(dlat / 2)
     sin_dlon_half = sin(dlon / 2)
-    
+
     a = sin_dlat_half**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin_dlon_half**2
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
 
@@ -115,10 +115,10 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 class TankerkoenigProvider(FuelPriceProvider):
     """Provider for Tankerkönig fuel price API.
-    
+
     Tankerkönig provides real-time fuel prices for gas stations in Germany.
     API documentation: https://creativecommons.tankerkoenig.de
-    
+
     Attributes:
         api_key: API key for Tankerkönig service
         session: aiohttp session for API requests
@@ -126,7 +126,7 @@ class TankerkoenigProvider(FuelPriceProvider):
 
     def __init__(self, api_key: str, session: aiohttp.ClientSession) -> None:
         """Initialize Tankerkönig provider.
-        
+
         Args:
             api_key: Valid Tankerkönig API key
             session: aiohttp client session
@@ -142,16 +142,16 @@ class TankerkoenigProvider(FuelPriceProvider):
         fuel_type: str,
     ) -> List[FuelStation]:
         """Get fuel stations near a location using Tankerkönig list endpoint.
-        
+
         Args:
             latitude: Geographic latitude
             longitude: Geographic longitude
             radius: Search radius in kilometers
             fuel_type: Type of fuel ('e5', 'e10', 'diesel')
-            
+
         Returns:
             List of fuel stations sorted by distance
-            
+
         Raises:
             ProviderError: If API request fails
         """
@@ -186,8 +186,19 @@ class TankerkoenigProvider(FuelPriceProvider):
                     error_msg = data.get("message", "Unknown error")
                     raise ProviderError(f"Tankerkönig API error: {error_msg}")
 
+                # Support both API response formats:
+                # - Legacy format: stations at top level data["stations"]
+                # - V4 format: stations nested in data["data"]["stations"]
+                if "stations" in data:
+                    stations_data = data["stations"]
+                elif "data" in data:
+                    # Try v4 format with nested data object
+                    stations_data = data["data"].get("stations", [])
+                else:
+                    stations_data = []
+
                 stations = []
-                for station_data in data.get("stations", []):
+                for station_data in stations_data:
                     station = self._parse_station_data(station_data, latitude, longitude)
                     if station:
                         stations.append(station)
@@ -201,13 +212,13 @@ class TankerkoenigProvider(FuelPriceProvider):
 
     async def get_station_details(self, station_id: str) -> FuelStation:
         """Get detailed information for a specific station.
-        
+
         Args:
             station_id: Tankerkönig station UUID
-            
+
         Returns:
             Detailed station information with current prices
-            
+
         Raises:
             ProviderError: If API request fails or station not found
         """
@@ -233,7 +244,17 @@ class TankerkoenigProvider(FuelPriceProvider):
                     error_msg = data.get("message", "Unknown error")
                     raise ProviderError(f"Tankerkönig API error: {error_msg}")
 
-                station_data = data.get("station")
+                # Support both API response formats:
+                # - Legacy format: station at top level data["station"]
+                # - V4 format: station nested in data["data"]["station"]
+                if "station" in data:
+                    station_data = data["station"]
+                elif "data" in data:
+                    # Try v4 format with nested data object
+                    station_data = data["data"].get("station")
+                else:
+                    station_data = None
+
                 if not station_data:
                     raise ProviderError(f"Station {station_id} not found")
 
@@ -249,10 +270,10 @@ class TankerkoenigProvider(FuelPriceProvider):
 
     async def validate_api_key(self, api_key: str) -> bool:
         """Validate API key by making a test request.
-        
+
         Args:
             api_key: API key to validate
-            
+
         Returns:
             True if key is valid, False otherwise
         """
@@ -279,25 +300,40 @@ class TankerkoenigProvider(FuelPriceProvider):
 
     def _parse_station_data(self, data: Dict[str, Any], ref_lat: float = None, ref_lon: float = None) -> FuelStation | None:
         """Parse station data from API response.
-        
+
         Args:
             data: Raw station data from API
             ref_lat: Reference latitude for distance calculation
             ref_lon: Reference longitude for distance calculation
-            
+
         Returns:
             FuelStation object or None if parsing fails
         """
         try:
             station_lat = data.get("lat", 0.0)
             station_lon = data.get("lng", 0.0)
-            
+
             # Calculate distance if not provided or if reference coordinates given
             distance = data.get("dist", 0.0)
             # Use explicit None checks to avoid filtering out valid 0.0 coordinates
             if ref_lat is not None and ref_lon is not None and station_lat is not None and station_lon is not None:
                 distance = _distance_km(ref_lat, ref_lon, station_lat, station_lon)
-            
+
+            # Extract prices from nested price object if present, otherwise try top-level
+            # The Tankerkönig API v4 returns prices in a nested "price" object
+            # Note: We skip empty dicts to fall back to top-level prices
+            price_obj = data.get("price")
+            if price_obj is not None and isinstance(price_obj, dict) and price_obj:
+                # V4 API format: prices in nested object (non-empty dict)
+                price_e5 = price_obj.get("e5")
+                price_e10 = price_obj.get("e10")
+                price_diesel = price_obj.get("diesel")
+            else:
+                # Fallback to top-level (legacy format, missing, None, or empty price object)
+                price_e5 = data.get("e5")
+                price_e10 = data.get("e10")
+                price_diesel = data.get("diesel")
+
             station = FuelStation(
                 station_id=data.get("id", ""),
                 name=data.get("name", "Unknown"),
@@ -307,27 +343,25 @@ class TankerkoenigProvider(FuelPriceProvider):
                 latitude=station_lat,
                 longitude=station_lon,
                 distance=distance,
-                price_e5=_parse_price(data.get("e5")),
-                price_e10=_parse_price(data.get("e10")),
-                price_diesel=_parse_price(data.get("diesel")),
+                price_e5=_parse_price(price_e5),
+                price_e10=_parse_price(price_e10),
+                price_diesel=_parse_price(price_diesel),
                 is_open=_parse_is_open(data.get("isOpen")),
                 last_updated=datetime.now(),
             )
-            
+
             # Log detailed station info for debugging
             _LOGGER.debug(
-                "Parsed station '%s': e5=%s, e10=%s, diesel=%s, open=%s (raw: e5=%s, e10=%s, diesel=%s, isOpen=%s)",
+                "Parsed station '%s': e5=%s, e10=%s, diesel=%s, open=%s (raw price obj: %s, isOpen=%s)",
                 station.name,
                 station.price_e5,
                 station.price_e10,
                 station.price_diesel,
                 station.is_open,
-                data.get("e5"),
-                data.get("e10"),
-                data.get("diesel"),
+                price_obj,
                 data.get("isOpen"),
             )
-            
+
             return station
         except (KeyError, ValueError) as err:
             _LOGGER.warning("Failed to parse station data: %s", err)
