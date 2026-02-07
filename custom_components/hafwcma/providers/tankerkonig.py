@@ -186,8 +186,16 @@ class TankerkoenigProvider(FuelPriceProvider):
                     error_msg = data.get("message", "Unknown error")
                     raise ProviderError(f"Tankerkönig API error: {error_msg}")
 
+                # Support both API response formats:
+                # - Legacy format: stations at top level data["stations"]
+                # - V4 format: stations nested in data["data"]["stations"]
+                stations_data = data.get("stations", [])
+                if not stations_data and "data" in data:
+                    # Try v4 format with nested data object
+                    stations_data = data.get("data", {}).get("stations", [])
+                
                 stations = []
-                for station_data in data.get("stations", []):
+                for station_data in stations_data:
                     station = self._parse_station_data(station_data, latitude, longitude)
                     if station:
                         stations.append(station)
@@ -233,7 +241,14 @@ class TankerkoenigProvider(FuelPriceProvider):
                     error_msg = data.get("message", "Unknown error")
                     raise ProviderError(f"Tankerkönig API error: {error_msg}")
 
+                # Support both API response formats:
+                # - Legacy format: station at top level data["station"]
+                # - V4 format: station nested in data["data"]["station"]
                 station_data = data.get("station")
+                if not station_data and "data" in data:
+                    # Try v4 format with nested data object
+                    station_data = data.get("data", {}).get("station")
+                    
                 if not station_data:
                     raise ProviderError(f"Station {station_id} not found")
 
