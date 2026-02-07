@@ -248,12 +248,19 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         # Sort stations by price first (cheapest), then by distance
                         # Filter out closed stations AND stations without valid prices
                         # Note: Closed stations may still report prices but can't serve customers
+                        
+                        # Count stations by their status for better debugging
+                        closed_count = sum(1 for s in stations if not s.is_open)
+                        no_price_count = sum(1 for s in stations if s.get_price(fuel_type) is None)
+                        
                         stations_with_price = [
                             s for s in stations 
                             if s.get_price(fuel_type) is not None and s.is_open
                         ]
                         
                         self._last_api_request["stations_with_price_and_open"] = len(stations_with_price)
+                        self._last_api_request["stations_closed"] = closed_count
+                        self._last_api_request["stations_no_price"] = no_price_count
                         
                         if stations_with_price:
                             # Sort by price (ascending), then by distance (ascending)
@@ -280,11 +287,14 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 fuel_price,
                             )
                         else:
-                            # No stations with valid prices found
+                            # No stations with valid prices found - provide detailed reason
                             self._last_api_request["warning"] = f"Found {len(stations)} stations but none are both open and have valid prices for {fuel_type}"
                             _LOGGER.warning(
-                                "Found %d stations but none are both open and have valid prices for %s",
+                                "Found %d stations but none are both open and have valid prices for %s. Details: %d closed, %d without %s price",
                                 len(stations),
+                                fuel_type,
+                                closed_count,
+                                no_price_count,
                                 fuel_type,
                             )
                     else:
