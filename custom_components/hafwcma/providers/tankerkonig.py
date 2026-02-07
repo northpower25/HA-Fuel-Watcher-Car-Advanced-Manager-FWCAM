@@ -136,6 +136,21 @@ class TankerkoenigProvider(FuelPriceProvider):
         self.last_api_request = None  # Store last request details
         self.last_api_response = None  # Store last response data
 
+    def _mask_api_key(self, params: dict) -> dict:
+        """Mask API key in parameters for safe logging/storage.
+        
+        Args:
+            params: Dictionary containing API parameters
+            
+        Returns:
+            Dictionary with masked API key
+        """
+        masked = params.copy()
+        if "apikey" in masked:
+            key = masked["apikey"]
+            masked["apikey"] = f"{key[:8]}..." if len(key) > 8 else "***"
+        return masked
+
     async def get_stations_nearby(
         self,
         latitude: float,
@@ -175,16 +190,14 @@ class TankerkoenigProvider(FuelPriceProvider):
 
         try:
             url = f"{TANKERKONIG_API_URL}/list.php"
-            # Store request details for debugging
+            # Store request details for debugging (with masked API key)
             self.last_api_request = {
                 "url": url,
-                "params": params.copy(),
+                "params": self._mask_api_key(params),
                 "timestamp": datetime.now().isoformat(),
             }
-            # Build full URL for debugging (mask API key in logs)
-            params_display = params.copy()
-            params_display["apikey"] = f"{self.api_key[:8]}..." if len(self.api_key) > 8 else "***"
-            full_url = url + "?" + "&".join([f"{k}={v}" for k, v in params_display.items()])
+            # Build full URL for debugging
+            full_url = url + "?" + "&".join([f"{k}={v}" for k, v in self._mask_api_key(params).items()])
             _LOGGER.debug("API Request URL: %s", full_url)
             
             async with self.session.get(url, params=params) as response:
@@ -262,16 +275,14 @@ class TankerkoenigProvider(FuelPriceProvider):
 
         try:
             url = f"{TANKERKONIG_API_URL}/detail.php"
-            # Store request details for debugging
+            # Store request details for debugging (with masked API key)
             self.last_api_request = {
                 "url": url,
-                "params": params.copy(),
+                "params": self._mask_api_key(params),
                 "timestamp": datetime.now().isoformat(),
             }
-            # Build full URL for debugging (mask API key in logs)
-            params_display = params.copy()
-            params_display["apikey"] = f"{self.api_key[:8]}..." if len(self.api_key) > 8 else "***"
-            full_url = url + "?" + "&".join([f"{k}={v}" for k, v in params_display.items()])
+            # Build full URL for debugging
+            full_url = url + "?" + "&".join([f"{k}={v}" for k, v in self._mask_api_key(params).items()])
             _LOGGER.debug("API Request URL: %s", full_url)
             
             async with self.session.get(url, params=params) as response:
