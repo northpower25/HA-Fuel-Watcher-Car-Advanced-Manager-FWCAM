@@ -133,6 +133,8 @@ class TankerkoenigProvider(FuelPriceProvider):
         """
         self.api_key = api_key
         self.session = session
+        self.last_api_request = None  # Store last request details
+        self.last_api_response = None  # Store last response data
 
     async def get_stations_nearby(
         self,
@@ -172,15 +174,38 @@ class TankerkoenigProvider(FuelPriceProvider):
         }
 
         try:
-            async with self.session.get(
-                f"{TANKERKONIG_API_URL}/list.php", params=params
-            ) as response:
+            url = f"{TANKERKONIG_API_URL}/list.php"
+            # Store request details for debugging
+            self.last_api_request = {
+                "url": url,
+                "params": params.copy(),
+                "timestamp": datetime.now().isoformat(),
+            }
+            # Build full URL for debugging (mask API key in logs)
+            params_display = params.copy()
+            params_display["apikey"] = f"{self.api_key[:8]}..." if len(self.api_key) > 8 else "***"
+            full_url = url + "?" + "&".join([f"{k}={v}" for k, v in params_display.items()])
+            _LOGGER.debug("API Request URL: %s", full_url)
+            
+            async with self.session.get(url, params=params) as response:
                 if response.status != 200:
+                    # Store error response
+                    self.last_api_response = {
+                        "status": response.status,
+                        "error": f"HTTP {response.status}",
+                        "timestamp": datetime.now().isoformat(),
+                    }
                     raise ProviderError(
                         f"Tankerkönig API returned status {response.status}"
                     )
 
                 data = await response.json()
+                # Store complete response for debugging
+                self.last_api_response = {
+                    "status": response.status,
+                    "data": data,
+                    "timestamp": datetime.now().isoformat(),
+                }
 
                 if not data.get("ok"):
                     error_msg = data.get("message", "Unknown error")
@@ -207,6 +232,12 @@ class TankerkoenigProvider(FuelPriceProvider):
                 return stations
 
         except aiohttp.ClientError as err:
+            # Store error for debugging
+            self.last_api_response = {
+                "error": str(err),
+                "error_type": type(err).__name__,
+                "timestamp": datetime.now().isoformat(),
+            }
             _LOGGER.error("Error fetching stations: %s", err)
             raise ProviderError(f"Network error: {err}") from err
 
@@ -230,15 +261,38 @@ class TankerkoenigProvider(FuelPriceProvider):
         }
 
         try:
-            async with self.session.get(
-                f"{TANKERKONIG_API_URL}/detail.php", params=params
-            ) as response:
+            url = f"{TANKERKONIG_API_URL}/detail.php"
+            # Store request details for debugging
+            self.last_api_request = {
+                "url": url,
+                "params": params.copy(),
+                "timestamp": datetime.now().isoformat(),
+            }
+            # Build full URL for debugging (mask API key in logs)
+            params_display = params.copy()
+            params_display["apikey"] = f"{self.api_key[:8]}..." if len(self.api_key) > 8 else "***"
+            full_url = url + "?" + "&".join([f"{k}={v}" for k, v in params_display.items()])
+            _LOGGER.debug("API Request URL: %s", full_url)
+            
+            async with self.session.get(url, params=params) as response:
                 if response.status != 200:
+                    # Store error response
+                    self.last_api_response = {
+                        "status": response.status,
+                        "error": f"HTTP {response.status}",
+                        "timestamp": datetime.now().isoformat(),
+                    }
                     raise ProviderError(
                         f"Tankerkönig API returned status {response.status}"
                     )
 
                 data = await response.json()
+                # Store complete response for debugging
+                self.last_api_response = {
+                    "status": response.status,
+                    "data": data,
+                    "timestamp": datetime.now().isoformat(),
+                }
 
                 if not data.get("ok"):
                     error_msg = data.get("message", "Unknown error")
@@ -265,6 +319,12 @@ class TankerkoenigProvider(FuelPriceProvider):
                 return station
 
         except aiohttp.ClientError as err:
+            # Store error for debugging
+            self.last_api_response = {
+                "error": str(err),
+                "error_type": type(err).__name__,
+                "timestamp": datetime.now().isoformat(),
+            }
             _LOGGER.error("Error fetching station details: %s", err)
             raise ProviderError(f"Network error: {err}") from err
 

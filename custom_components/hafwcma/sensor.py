@@ -224,6 +224,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 "radius_km": radius,
                 "fuel_type": fuel_type,
                 "provider": provider,
+                "last_api_request": None,  # Will be populated from provider
+                "last_api_response": None,  # Will be populated from provider
             }
             
             # Fetch data from provider
@@ -239,6 +241,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     stations = await self._provider.get_stations_nearby(
                         latitude, longitude, radius, fuel_type
                     )
+                    
+                    # Capture API request and response from provider
+                    if hasattr(self._provider, 'last_api_request'):
+                        self._last_api_request["last_api_request"] = self._provider.last_api_request
+                    if hasattr(self._provider, 'last_api_response'):
+                        self._last_api_request["last_api_response"] = self._provider.last_api_response
                     
                     # Update debug info with response
                     self._last_api_request["api_response_status"] = "success"
