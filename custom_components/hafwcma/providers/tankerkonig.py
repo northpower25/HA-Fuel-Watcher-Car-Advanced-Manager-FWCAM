@@ -234,7 +234,7 @@ class TankerkoenigProvider(FuelPriceProvider):
 
                 stations = []
                 for station_data in stations_data:
-                    station = self._parse_station_data(station_data, latitude, longitude)
+                    station = self._parse_station_data(station_data, latitude, longitude, fuel_type)
                     if station:
                         stations.append(station)
 
@@ -363,13 +363,16 @@ class TankerkoenigProvider(FuelPriceProvider):
         except (aiohttp.ClientError, TimeoutError):
             return False
 
-    def _parse_station_data(self, data: Dict[str, Any], ref_lat: float = None, ref_lon: float = None) -> FuelStation | None:
+    def _parse_station_data(self, data: Dict[str, Any], ref_lat: float = None, ref_lon: float = None, fuel_type: str = None) -> FuelStation | None:
         """Parse station data from API response.
 
         Args:
             data: Raw station data from API
             ref_lat: Reference latitude for distance calculation
             ref_lon: Reference longitude for distance calculation
+            fuel_type: The fuel type that was requested (e.g., 'e5', 'e10', 'diesel').
+                      When specified and a 'price' field exists in the response,
+                      that price will be used for the corresponding fuel type field.
 
         Returns:
             FuelStation object or None if parsing fails
@@ -398,6 +401,17 @@ class TankerkoenigProvider(FuelPriceProvider):
                 price_e5 = data.get("e5")
                 price_e10 = data.get("e10")
                 price_diesel = data.get("diesel")
+                
+                # Special case: when requesting list.php with a specific fuel type,
+                # the API returns a single 'price' field instead of individual fuel type fields
+                if fuel_type and "price" in data:
+                    single_price = data.get("price")
+                    if fuel_type == "e5":
+                        price_e5 = single_price
+                    elif fuel_type == "e10":
+                        price_e10 = single_price
+                    elif fuel_type == "diesel":
+                        price_diesel = single_price
 
             station = FuelStation(
                 station_id=data.get("id", ""),
@@ -417,13 +431,14 @@ class TankerkoenigProvider(FuelPriceProvider):
 
             # Log detailed station info for debugging
             _LOGGER.debug(
-                "Parsed station '%s': e5=%s, e10=%s, diesel=%s, open=%s (raw price obj: %s, isOpen=%s)",
+                "Parsed station '%s': e5=%s, e10=%s, diesel=%s, open=%s (raw price obj: %s, single price: %s, isOpen=%s)",
                 station.name,
                 station.price_e5,
                 station.price_e10,
                 station.price_diesel,
                 station.is_open,
                 price_obj,
+                data.get("price") if fuel_type else "N/A",
                 data.get("isOpen"),
             )
 
