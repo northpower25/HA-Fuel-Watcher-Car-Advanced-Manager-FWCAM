@@ -132,6 +132,19 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._session = None
         self._api_debug_info = None  # Store debug info about API requests/responses
 
+    def _capture_provider_debug_info(self) -> None:
+        """Capture API request and response from provider for debugging.
+        
+        This method safely extracts debug information from the provider
+        (if available) and stores it in the api_debug_info dictionary.
+        It's used both on successful API calls and when errors occur.
+        """
+        if self._api_debug_info and self._provider:
+            if hasattr(self._provider, 'last_api_request'):
+                self._api_debug_info["last_api_request"] = self._provider.last_api_request
+            if hasattr(self._provider, 'last_api_response'):
+                self._api_debug_info["last_api_response"] = self._provider.last_api_response
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
         
@@ -243,10 +256,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     )
                     
                     # Capture API request and response from provider
-                    if hasattr(self._provider, 'last_api_request'):
-                        self._api_debug_info["last_api_request"] = self._provider.last_api_request
-                    if hasattr(self._provider, 'last_api_response'):
-                        self._api_debug_info["last_api_response"] = self._provider.last_api_response
+                    self._capture_provider_debug_info()
                     
                     # Update debug info with response
                     self._api_debug_info["api_response_status"] = "success"
@@ -323,10 +333,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         
                 except Exception as err:
                     # Capture API request and response from provider even on error
-                    if hasattr(self._provider, 'last_api_request'):
-                        self._api_debug_info["last_api_request"] = self._provider.last_api_request
-                    if hasattr(self._provider, 'last_api_response'):
-                        self._api_debug_info["last_api_response"] = self._provider.last_api_response
+                    self._capture_provider_debug_info()
                     
                     self._api_debug_info["api_response_status"] = "error"
                     self._api_debug_info["error"] = str(err)
@@ -337,10 +344,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             if self._api_debug_info:
                 # Capture API request and response from provider even on error
-                if self._provider and hasattr(self._provider, 'last_api_request'):
-                    self._api_debug_info["last_api_request"] = self._provider.last_api_request
-                if self._provider and hasattr(self._provider, 'last_api_response'):
-                    self._api_debug_info["last_api_response"] = self._provider.last_api_response
+                self._capture_provider_debug_info()
                 
                 self._api_debug_info["api_response_status"] = "error"
                 self._api_debug_info["error"] = str(err)
