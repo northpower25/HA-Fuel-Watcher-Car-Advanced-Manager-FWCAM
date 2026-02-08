@@ -143,7 +143,10 @@ class UpdateIntervalNumber(NumberEntity):
         """Return the current update interval in minutes."""
         options = self._config_entry.options
         config = self._config_entry.data
-        return float(options.get(CONF_UPDATE_INTERVAL) or config.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
+        return float(
+            options.get(CONF_UPDATE_INTERVAL)
+            or config.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+        )
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the API update interval."""

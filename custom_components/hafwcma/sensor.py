@@ -122,9 +122,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
         )
         
-        # Store the base interval for later use
-        self._base_update_interval_minutes = update_interval_minutes
-        
         # Initialize with randomized interval to prevent simultaneous API calls
         # Calculate jitter range (±20% by default)
         jitter_percent = DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT / 100.0
