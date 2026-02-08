@@ -199,15 +199,26 @@ class TankerkoenigProvider(FuelPriceProvider):
             
             async with self.session.get(url, params=params) as response:
                 if response.status != 200:
-                    # Store error response
+                    # Try to get response body for more detailed error information
+                    try:
+                        error_body = await response.text()
+                    except Exception:
+                        error_body = None
+                    
+                    # Store error response with full details
                     self.last_api_response = {
                         "status": response.status,
                         "error": f"HTTP {response.status}",
+                        "error_body": error_body,
                         "timestamp": datetime.now().isoformat(),
                     }
-                    raise ProviderError(
-                        f"Tankerkönig API returned status {response.status}"
-                    )
+                    
+                    # Create detailed error message
+                    error_msg = f"Tankerkönig API returned status {response.status}"
+                    if error_body:
+                        error_msg += f": {error_body}"
+                    
+                    raise ProviderError(error_msg)
 
                 data = await response.json()
                 # Store complete response for debugging
@@ -281,15 +292,26 @@ class TankerkoenigProvider(FuelPriceProvider):
             
             async with self.session.get(url, params=params) as response:
                 if response.status != 200:
-                    # Store error response
+                    # Try to get response body for more detailed error information
+                    try:
+                        error_body = await response.text()
+                    except Exception:
+                        error_body = None
+                    
+                    # Store error response with full details
                     self.last_api_response = {
                         "status": response.status,
                         "error": f"HTTP {response.status}",
+                        "error_body": error_body,
                         "timestamp": datetime.now().isoformat(),
                     }
-                    raise ProviderError(
-                        f"Tankerkönig API returned status {response.status}"
-                    )
+                    
+                    # Create detailed error message
+                    error_msg = f"Tankerkönig API returned status {response.status}"
+                    if error_body:
+                        error_msg += f": {error_body}"
+                    
+                    raise ProviderError(error_msg)
 
                 data = await response.json()
                 # Store complete response for debugging

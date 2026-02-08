@@ -312,7 +312,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     # Initialize provider and session if needed
                     if self._provider is None:
                         if self._session is None:
-                            self._session = aiohttp.ClientSession()
+                            # Create session with timeout configuration
+                            timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
+                            self._session = aiohttp.ClientSession(timeout=timeout)
                         self._provider = TankerkoenigProvider(api_key, self._session)
                     
                     # Fetch stations near current position

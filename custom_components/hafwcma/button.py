@@ -125,7 +125,9 @@ class TestProviderConnectionButton(ButtonEntity):
                 if self._coordinator and hasattr(self._coordinator, '_session') and self._coordinator._session:
                     session = self._coordinator._session
                 else:
-                    session = aiohttp.ClientSession()
+                    # Create session with timeout configuration
+                    timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
+                    session = aiohttp.ClientSession(timeout=timeout)
                     own_session = True
                 
                 try:
