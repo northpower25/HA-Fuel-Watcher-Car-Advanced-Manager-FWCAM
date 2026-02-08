@@ -136,7 +136,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         """Capture API request and response from provider for debugging.
         
         This method safely extracts debug information from the provider
-        (if available) and stores it in the api_debug_info dictionary.
+        (if available) and stores it in self._api_debug_info dictionary.
         It's used both on successful API calls and when errors occur.
         """
         if self._api_debug_info and self._provider:
