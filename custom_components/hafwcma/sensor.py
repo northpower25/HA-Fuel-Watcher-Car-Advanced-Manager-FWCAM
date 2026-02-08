@@ -322,6 +322,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         _LOGGER.warning("No stations found within %.1f km", radius)
                         
                 except Exception as err:
+                    # Capture API request and response from provider even on error
+                    if hasattr(self._provider, 'last_api_request'):
+                        self._api_debug_info["last_api_request"] = self._provider.last_api_request
+                    if hasattr(self._provider, 'last_api_response'):
+                        self._api_debug_info["last_api_response"] = self._provider.last_api_response
+                    
                     self._api_debug_info["api_response_status"] = "error"
                     self._api_debug_info["error"] = str(err)
                     self._api_debug_info["error_type"] = type(err).__name__
@@ -330,6 +336,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     
         except Exception as err:
             if self._api_debug_info:
+                # Capture API request and response from provider even on error
+                if self._provider and hasattr(self._provider, 'last_api_request'):
+                    self._api_debug_info["last_api_request"] = self._provider.last_api_request
+                if self._provider and hasattr(self._provider, 'last_api_response'):
+                    self._api_debug_info["last_api_response"] = self._provider.last_api_response
+                
                 self._api_debug_info["api_response_status"] = "error"
                 self._api_debug_info["error"] = str(err)
                 self._api_debug_info["error_type"] = type(err).__name__
