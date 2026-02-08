@@ -45,6 +45,11 @@ DEFAULT_UPDATE_INTERVAL: Final = 5  # minutes
 MIN_UPDATE_INTERVAL: Final = 1  # minutes
 MAX_UPDATE_INTERVAL: Final = 60  # minutes
 
+# Update interval randomization
+DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT: Final = 20  # ±20% randomization
+MIN_UPDATE_INTERVAL_JITTER_PERCENT: Final = 0  # 0% = no randomization
+MAX_UPDATE_INTERVAL_JITTER_PERCENT: Final = 50  # Maximum 50% jitter
+
 # Prediction engine defaults
 DEFAULT_PRICE_DROP_PERCENT: Final = 2.0  # 2% price drop
 DEFAULT_PRICE_DROP_ABSOLUTE: Final = 0.05  # 5 cents drop (EUR)
