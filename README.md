@@ -21,6 +21,8 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
 - Search for stations within configurable radius
 - Support for E5, E10, and Diesel fuel types
 - Distance-based station sorting
+- **NEW: Configurable API polling interval** (1-60 minutes)
+- **NEW: Automatic randomization** to prevent simultaneous API calls and rate limiting
 
 ### 📈 Smart Forecasting & Prediction Engine
 - **Self-learning consumption tracking** based on your driving patterns
@@ -126,6 +128,7 @@ The integration creates the following sensors for each configured vehicle:
 
 - **Test API Connection Button**: Manually test the fuel price API connection with detailed results
 - **Search Radius Number**: Adjust the search radius (1-25 km) dynamically from the UI
+- **API Update Interval Number**: Configure how often the API is polled (1-60 minutes). Each update is automatically randomized by ±20% to prevent rate limiting when multiple instances access the API simultaneously.
 
 ### Attributes
 
