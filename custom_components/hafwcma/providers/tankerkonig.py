@@ -1,6 +1,7 @@
 """Tankerkönig API provider for German fuel prices."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from math import radians, sin, cos, sqrt, atan2
@@ -202,7 +203,7 @@ class TankerkoenigProvider(FuelPriceProvider):
                     # Try to get response body for more detailed error information
                     try:
                         error_body = await response.text()
-                    except Exception:
+                    except (aiohttp.ClientError, asyncio.TimeoutError):
                         error_body = None
                     
                     # Store error response with full details
@@ -295,7 +296,7 @@ class TankerkoenigProvider(FuelPriceProvider):
                     # Try to get response body for more detailed error information
                     try:
                         error_body = await response.text()
-                    except Exception:
+                    except (aiohttp.ClientError, asyncio.TimeoutError):
                         error_body = None
                     
                     # Store error response with full details
