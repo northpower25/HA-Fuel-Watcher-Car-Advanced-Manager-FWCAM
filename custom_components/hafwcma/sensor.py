@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import aiohttp
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -50,6 +51,7 @@ from .const import (
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
     DEFAULT_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT,
     DOMAIN,
     PROVIDER_TANKERKONIG,
 )
@@ -120,17 +122,34 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
         )
         
+        # Store the base interval for later use
+        self._base_update_interval_minutes = update_interval_minutes
+        
+        # Initialize with randomized interval to prevent simultaneous API calls
+        # Calculate jitter range (±20% by default)
+        jitter_percent = DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT / 100.0
+        jitter_minutes = update_interval_minutes * jitter_percent
+        random_offset = random.uniform(-jitter_minutes, jitter_minutes)
+        randomized_minutes = max(1.0, update_interval_minutes + random_offset)
+        
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(minutes=update_interval_minutes),
+            update_interval=timedelta(minutes=randomized_minutes),
         )
         self.config_entry = config_entry
         self.vehicle_tracker = VehicleDataTracker()
         self._provider = None
         self._session = None
         self._api_debug_info = None  # Store debug info about API requests/responses
+        
+        _LOGGER.info(
+            "Coordinator initialized with randomized update interval: %.1f minutes (base: %d, jitter: ±%.1f)",
+            randomized_minutes,
+            update_interval_minutes,
+            jitter_minutes,
+        )
 
     def _capture_provider_debug_info(self) -> None:
         """Capture API request and response from provider for debugging.
@@ -144,6 +163,55 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 self._api_debug_info["last_api_request"] = self._provider.last_api_request
             if hasattr(self._provider, 'last_api_response'):
                 self._api_debug_info["last_api_response"] = self._provider.last_api_response
+
+    def _get_randomized_interval(self, base_minutes: int) -> timedelta:
+        """Calculate a randomized update interval to avoid simultaneous API calls.
+        
+        Applies a random jitter to the base interval to distribute API calls over time.
+        This helps prevent rate limiting when multiple instances hit the API simultaneously.
+        
+        Args:
+            base_minutes: Base update interval in minutes
+            
+        Returns:
+            Randomized timedelta for next update
+        """
+        # Calculate jitter range (±20% by default)
+        jitter_percent = DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT / 100.0
+        jitter_minutes = base_minutes * jitter_percent
+        
+        # Apply random offset within jitter range
+        random_offset = random.uniform(-jitter_minutes, jitter_minutes)
+        randomized_minutes = base_minutes + random_offset
+        
+        # Ensure we don't go below 1 minute
+        randomized_minutes = max(1.0, randomized_minutes)
+        
+        _LOGGER.debug(
+            "Randomized update interval: base=%.1f min, jitter=±%.1f min, result=%.1f min",
+            base_minutes,
+            jitter_minutes,
+            randomized_minutes,
+        )
+        
+        return timedelta(minutes=randomized_minutes)
+
+    async def async_set_update_interval(self, minutes: int) -> None:
+        """Dynamically update the coordinator's update interval.
+        
+        This allows the update interval to be changed at runtime through
+        the number entity without reloading the integration.
+        
+        Args:
+            minutes: New update interval in minutes
+        """
+        _LOGGER.info("Setting new update interval: %d minutes (with randomization)", minutes)
+        
+        # Update the coordinator's update interval with randomization
+        self.update_interval = self._get_randomized_interval(minutes)
+        
+        # Request a refresh with the new interval
+        await self.async_request_refresh()
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -447,6 +515,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "days_left": days_left,
             "api_debug": self._api_debug_info,  # Add debug information
         }
+        
+        # Apply randomization for next update interval
+        # Get current base interval from config
+        current_base_interval = options.get(CONF_UPDATE_INTERVAL) or config.get(
+            CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+        )
+        self.update_interval = self._get_randomized_interval(current_base_interval)
 
         return data
     

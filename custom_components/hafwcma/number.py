@@ -12,9 +12,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_RADIUS,
+    CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
     DEFAULT_RADIUS,
+    DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
+    MAX_UPDATE_INTERVAL,
+    MIN_UPDATE_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,6 +45,7 @@ async def async_setup_entry(
 
     numbers = [
         SearchRadiusNumber(coordinator, config_entry, vehicle_name, hass),
+        UpdateIntervalNumber(coordinator, config_entry, vehicle_name, hass),
     ]
 
     async_add_entities(numbers)
@@ -100,3 +105,60 @@ class SearchRadiusNumber(NumberEntity):
         # Trigger coordinator refresh to use new radius
         if self._coordinator:
             await self._coordinator.async_request_refresh()
+
+
+class UpdateIntervalNumber(NumberEntity):
+    """Number entity for configurable API update interval."""
+
+    _attr_icon = "mdi:timer-outline"
+    _attr_mode = NumberMode.BOX
+    _attr_native_min_value = float(MIN_UPDATE_INTERVAL)
+    _attr_native_max_value = float(MAX_UPDATE_INTERVAL)
+    _attr_native_step = 1.0
+    _attr_native_unit_of_measurement = "min"
+
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the number entity.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+            hass: Home Assistant instance
+        """
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = f"{vehicle_name} API Update Interval"
+        self._attr_unique_id = f"{config_entry.entry_id}_update_interval"
+
+    @property
+    def native_value(self) -> float:
+        """Return the current update interval in minutes."""
+        options = self._config_entry.options
+        config = self._config_entry.data
+        return float(options.get(CONF_UPDATE_INTERVAL) or config.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Update the API update interval."""
+        _LOGGER.info("Updating API update interval to %.0f minutes", value)
+        
+        # Update the config entry options
+        new_options = dict(self._config_entry.options)
+        new_options[CONF_UPDATE_INTERVAL] = int(value)
+        
+        self._hass.config_entries.async_update_entry(
+            self._config_entry,
+            options=new_options,
+        )
+        
+        # Update coordinator's update interval and schedule next refresh
+        if self._coordinator:
+            await self._coordinator.async_set_update_interval(int(value))
+
