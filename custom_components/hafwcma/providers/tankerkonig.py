@@ -152,6 +152,45 @@ class TankerkoenigProvider(FuelPriceProvider):
             masked["apikey"] = f"{key[:8]}..." if len(key) > 8 else "***"
         return masked
 
+    async def _handle_error_response(self, response: aiohttp.ClientResponse) -> None:
+        """Handle HTTP error responses and raise appropriate ProviderError.
+        
+        Attempts to read the response body for detailed error information,
+        stores the error details for debugging, and raises a ProviderError
+        with a comprehensive error message.
+        
+        Args:
+            response: The aiohttp response object with a non-200 status
+            
+        Raises:
+            ProviderError: Always raised with detailed error information
+        """
+        # Try to get response body for more detailed error information
+        try:
+            error_body = await response.text()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.warning(
+                "Failed to read error response body for HTTP %d: %s",
+                response.status,
+                err
+            )
+            error_body = None
+        
+        # Store error response with full details
+        self.last_api_response = {
+            "status": response.status,
+            "error": f"HTTP {response.status}",
+            "error_body": error_body,
+            "timestamp": datetime.now().isoformat(),
+        }
+        
+        # Create detailed error message
+        error_msg = f"Tankerkönig API returned status {response.status}"
+        if error_body:
+            error_msg += f": {error_body}"
+        
+        raise ProviderError(error_msg)
+
     async def get_stations_nearby(
         self,
         latitude: float,
@@ -200,26 +239,7 @@ class TankerkoenigProvider(FuelPriceProvider):
             
             async with self.session.get(url, params=params) as response:
                 if response.status != 200:
-                    # Try to get response body for more detailed error information
-                    try:
-                        error_body = await response.text()
-                    except (aiohttp.ClientError, asyncio.TimeoutError):
-                        error_body = None
-                    
-                    # Store error response with full details
-                    self.last_api_response = {
-                        "status": response.status,
-                        "error": f"HTTP {response.status}",
-                        "error_body": error_body,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                    
-                    # Create detailed error message
-                    error_msg = f"Tankerkönig API returned status {response.status}"
-                    if error_body:
-                        error_msg += f": {error_body}"
-                    
-                    raise ProviderError(error_msg)
+                    await self._handle_error_response(response)
 
                 data = await response.json()
                 # Store complete response for debugging
@@ -293,26 +313,7 @@ class TankerkoenigProvider(FuelPriceProvider):
             
             async with self.session.get(url, params=params) as response:
                 if response.status != 200:
-                    # Try to get response body for more detailed error information
-                    try:
-                        error_body = await response.text()
-                    except (aiohttp.ClientError, asyncio.TimeoutError):
-                        error_body = None
-                    
-                    # Store error response with full details
-                    self.last_api_response = {
-                        "status": response.status,
-                        "error": f"HTTP {response.status}",
-                        "error_body": error_body,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                    
-                    # Create detailed error message
-                    error_msg = f"Tankerkönig API returned status {response.status}"
-                    if error_body:
-                        error_msg += f": {error_body}"
-                    
-                    raise ProviderError(error_msg)
+                    await self._handle_error_response(response)
 
                 data = await response.json()
                 # Store complete response for debugging
