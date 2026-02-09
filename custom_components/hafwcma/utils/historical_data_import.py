@@ -211,7 +211,9 @@ async def _import_odometer_history(
             _LOGGER.warning("No historical states found for odometer entity: %s", odometer_entity)
             return 0
         
-        # Process states in chronological order
+        # Process states in chronological order, but sample to avoid overwhelming storage
+        # Keep one reading per day max to reduce data volume
+        states_by_day = {}
         for state in states[odometer_entity]:
             try:
                 # Skip if state is unknown or unavailable
@@ -220,15 +222,37 @@ async def _import_odometer_history(
                 
                 # Parse odometer value
                 odometer_value = float(state.state)
-                timestamp = state.last_changed.isoformat()
+                timestamp = state.last_changed
                 
-                # Add to history
-                await add_odometer_observation(hass, entry, odometer_value, timestamp)
-                count += 1
+                # Group by day to avoid too many data points
+                day_key = timestamp.date().isoformat()
+                
+                # Keep the first reading of each day
+                if day_key not in states_by_day:
+                    states_by_day[day_key] = {
+                        "value": odometer_value,
+                        "timestamp": timestamp.isoformat(),
+                    }
                 
             except (ValueError, TypeError) as err:
                 _LOGGER.debug("Skipping invalid odometer state: %s (%s)", state.state, err)
                 continue
+        
+        # Add sampled data to history
+        for day_data in states_by_day.values():
+            await add_odometer_observation(
+                hass, 
+                entry, 
+                day_data["value"], 
+                day_data["timestamp"]
+            )
+            count += 1
+        
+        _LOGGER.info(
+            "Imported %d odometer readings (sampled from %d total states)",
+            count,
+            len(states[odometer_entity]),
+        )
         
     except Exception as err:
         _LOGGER.error("Error importing odometer history: %s", err, exc_info=True)
