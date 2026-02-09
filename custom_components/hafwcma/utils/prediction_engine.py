@@ -181,7 +181,7 @@ async def evaluate_refuel_strategy(
             "should_refuel": False,
             "reason": "initial",
             "urgency": "low",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": dt_util.now().isoformat(),
         }
         await set_last_decision(hass, entry, decision)
         
@@ -309,7 +309,7 @@ async def evaluate_refuel_strategy(
         "urgency": urgency,
         "price_delta": price_delta,
         "price_delta_percent": price_delta_percent,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": dt_util.now().isoformat(),
         "station_name": station_name,
     }
     await set_last_decision(hass, entry, decision)

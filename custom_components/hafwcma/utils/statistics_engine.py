@@ -19,6 +19,7 @@ from typing import Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.util import dt as dt_util
 
 from .storage import (
     get_odometer_history,
@@ -40,10 +41,16 @@ def _parse_ts(ts: str) -> Optional[datetime]:
         ts: Timestamp string
         
     Returns:
-        Datetime object or None if parse fails
+        Timezone-aware datetime object or None if parse fails
     """
     try:
-        return datetime.fromisoformat(ts)
+        # Use dt_util.parse_datetime to ensure timezone-aware datetime
+        parsed = dt_util.parse_datetime(ts)
+        if parsed:
+            return parsed
+        # Fallback to fromisoformat and make it timezone-aware
+        dt = datetime.fromisoformat(ts)
+        return dt_util.as_local(dt)
     except Exception:
         return None
 
@@ -76,7 +83,7 @@ async def recompute_weekday_stats(
     # Sort by timestamp
     odo_sorted = sorted(
         odo,
-        key=lambda x: _parse_ts(x.get("ts") or "") or datetime.min,
+        key=lambda x: _parse_ts(x.get("ts") or "") or dt_util.as_local(datetime.min),
     )
 
     last = odo_sorted[0]

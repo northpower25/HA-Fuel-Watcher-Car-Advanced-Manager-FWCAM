@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -41,7 +43,7 @@ class VehicleDataTracker:
         # Create new snapshot
         self._previous_snapshot = self._current_snapshot
         self._current_snapshot = VehicleSnapshot(
-            timestamp=datetime.now(),
+            timestamp=dt_util.now(),
             odometer_km=vehicle_data.get("odometer_km"),
             tank_level=vehicle_data.get("tank_level"),
             range_km=vehicle_data.get("range_km"),
