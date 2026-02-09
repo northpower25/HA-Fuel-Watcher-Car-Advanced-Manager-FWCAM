@@ -74,6 +74,7 @@ async def load_data(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
             "last_error": None,  # str with last error
             "ml_models": {},  # ML model parameters
             "prediction_history": [],  # List of prediction results for accuracy tracking
+            "next_refuel_id": 1,  # Counter for refueling event IDs
         }
     return data
 
@@ -241,22 +242,65 @@ async def add_refuel_event(
     hass: HomeAssistant,
     entry: ConfigEntry,
     event_data: dict[str, Any],
-) -> None:
+) -> int:
     """Add a refueling event to tank history.
     
     Args:
         hass: Home Assistant instance
         entry: Config entry
         event_data: Refueling event data (timestamp, amount, price, etc.)
+        
+    Returns:
+        The ID of the newly created refueling event
     """
     data = await load_data(hass, entry)
+    
+    # Initialize refueling_log if not present
+    if "refueling_log" not in data:
+        data["refueling_log"] = []
+    
+    # Get next ID from counter (with fallback for old data)
+    if "next_refuel_id" not in data:
+        # Migrate old data - find highest existing ID and increment
+        # Only consider events with valid (non-None) IDs
+        existing_ids = [
+            event.get("id") for event in data.get("refueling_log", [])
+            if event.get("id") is not None
+        ]
+        # Use highest ID + 1, or start at 1 if no valid IDs exist
+        data["next_refuel_id"] = (max(existing_ids) + 1) if existing_ids else 1
+    
+    next_id = data["next_refuel_id"]
+    data["next_refuel_id"] = next_id + 1
+    
+    # Create complete refueling record with ID
+    refuel_record = {
+        "id": next_id,
+        "timestamp": event_data.get("timestamp"),
+        "odometer_km": event_data.get("odometer_km"),
+        "station_name": event_data.get("station_name"),
+        "liters_refueled": event_data.get("liters_refueled"),
+        "price_per_liter": event_data.get("price_per_liter"),
+        "total_cost": event_data.get("total_cost"),
+        "latitude": event_data.get("latitude"),
+        "longitude": event_data.get("longitude"),
+        "fuel_type": event_data.get("fuel_type"),
+        "editable": True,
+    }
+    
+    data["refueling_log"].append(refuel_record)
+    
+    # Also add to legacy tank_history for backward compatibility
     data["tank_history"].append(event_data)
     
     # Keep only last 100 refueling events
     if len(data["tank_history"]) > 100:
         data["tank_history"] = data["tank_history"][-100:]
+    if len(data["refueling_log"]) > 100:
+        data["refueling_log"] = data["refueling_log"][-100:]
     
     await save_data(hass, entry, data)
+    return next_id
 
 
 async def get_tank_history(
@@ -274,6 +318,118 @@ async def get_tank_history(
     """
     data = await load_data(hass, entry)
     return data.get("tank_history", [])
+
+
+async def get_refueling_log(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> list[dict[str, Any]]:
+    """Get complete refueling log with all records.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        List of refueling log records with full details
+    """
+    data = await load_data(hass, entry)
+    return data.get("refueling_log", [])
+
+
+async def get_refueling_record(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    refuel_id: int,
+) -> dict[str, Any] | None:
+    """Get a specific refueling record by ID.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        refuel_id: ID of the refueling record
+        
+    Returns:
+        Refueling record or None if not found
+    """
+    log = await get_refueling_log(hass, entry)
+    for record in log:
+        if record.get("id") == refuel_id:
+            return record
+    return None
+
+
+async def update_refueling_record(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    refuel_id: int,
+    updates: dict[str, Any],
+) -> bool:
+    """Update a specific refueling record.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        refuel_id: ID of the refueling record to update
+        updates: Dictionary with fields to update
+        
+    Returns:
+        True if record was updated, False if not found
+    """
+    data = await load_data(hass, entry)
+    
+    if "refueling_log" not in data:
+        return False
+    
+    for record in data["refueling_log"]:
+        if record.get("id") == refuel_id:
+            # Update allowed fields
+            allowed_fields = [
+                "timestamp", "odometer_km", "station_name",
+                "liters_refueled", "price_per_liter", "total_cost",
+                "latitude", "longitude", "fuel_type"
+            ]
+            for field in allowed_fields:
+                if field in updates:
+                    record[field] = updates[field]
+            
+            await save_data(hass, entry, data)
+            return True
+    
+    return False
+
+
+async def delete_refueling_record(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    refuel_id: int,
+) -> bool:
+    """Delete a specific refueling record.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        refuel_id: ID of the refueling record to delete
+        
+    Returns:
+        True if record was deleted, False if not found
+    """
+    data = await load_data(hass, entry)
+    
+    if "refueling_log" not in data:
+        return False
+    
+    original_length = len(data["refueling_log"])
+    data["refueling_log"] = [
+        record for record in data["refueling_log"]
+        if record.get("id") != refuel_id
+    ]
+    
+    if len(data["refueling_log"]) < original_length:
+        await save_data(hass, entry, data)
+        return True
+    
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -468,3 +624,99 @@ async def set_last_error(hass: HomeAssistant, entry: ConfigEntry, error: str) ->
     data["last_error"] = error
     await save_data(hass, entry, data)
     _LOGGER.error("haFWCMA [%s]: %s", entry.title, error)
+
+
+# ---------------------------------------------------------------------------
+# Consumption History Calculations
+# ---------------------------------------------------------------------------
+
+async def calculate_consumption_history(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    days: int = 1,
+) -> dict[str, Any]:
+    """Calculate average consumption for a historical period.
+    
+    Calculates consumption based on refueling events and odometer changes.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        days: Number of days to look back (1, 7, 14, 30)
+        
+    Returns:
+        Dictionary with consumption statistics
+    """
+    from datetime import timedelta
+    from homeassistant.util import dt as dt_util
+    
+    data = await load_data(hass, entry)
+    refueling_log = data.get("refueling_log", [])
+    
+    if not refueling_log:
+        return {
+            "avg_consumption_l_per_100km": None,
+            "total_liters": 0,
+            "total_km": 0,
+            "refuel_count": 0,
+        }
+    
+    # Calculate cutoff timestamp
+    cutoff = dt_util.now() - timedelta(days=days)
+    
+    # Filter events within period
+    relevant_events = []
+    for event in refueling_log:
+        try:
+            event_time = dt_util.parse_datetime(event.get("timestamp", ""))
+            if event_time and event_time >= cutoff:
+                relevant_events.append(event)
+        except (ValueError, TypeError):
+            continue
+    
+    if len(relevant_events) < 2:
+        # Need at least 2 refueling events to calculate consumption
+        return {
+            "avg_consumption_l_per_100km": None,
+            "total_liters": 0,
+            "total_km": 0,
+            "refuel_count": len(relevant_events),
+        }
+    
+    # Sort by timestamp
+    relevant_events.sort(key=lambda x: x.get("timestamp", ""))
+    
+    # Calculate total distance and fuel consumed
+    # Logic: Fuel from refueling event i is consumed between event i and event i+1
+    total_km = 0
+    total_liters = 0
+    
+    for i in range(len(relevant_events) - 1):
+        curr_event = relevant_events[i]
+        next_event = relevant_events[i + 1]
+        
+        curr_odometer = curr_event.get("odometer_km")
+        next_odometer = next_event.get("odometer_km")
+        liters_refueled = curr_event.get("liters_refueled")
+        
+        # Fuel from current refueling was consumed to reach next refueling
+        # Use explicit None checks to handle 0 values correctly
+        if (curr_odometer is not None and next_odometer is not None 
+            and liters_refueled is not None):
+            km_driven = next_odometer - curr_odometer
+            # Only count if positive distance and fuel was actually consumed
+            if km_driven > 0 and liters_refueled > 0:
+                total_km += km_driven
+                total_liters += liters_refueled
+    
+    # Calculate average consumption
+    avg_consumption = None
+    if total_km > 0:
+        avg_consumption = (total_liters / total_km) * 100
+    
+    return {
+        "avg_consumption_l_per_100km": avg_consumption,
+        "total_liters": total_liters,
+        "total_km": total_km,
+        "refuel_count": len(relevant_events),
+    }

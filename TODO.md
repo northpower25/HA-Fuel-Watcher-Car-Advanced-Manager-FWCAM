@@ -18,6 +18,9 @@
 - [x] Add vehicle data change detection (refueling detection)
 - [x] Implement basic consumption tracking (L/100km calculation)
 - [x] Add prediction history for accuracy tracking
+- [x] **NEW: Enhanced refueling log with ID, editable fields, and comprehensive data**
+- [x] **NEW: CRUD operations for refueling records (add, get, update, delete)**
+- [x] **NEW: Historical consumption calculation utilities**
 - [ ] Add data migration support for upgrades
 - [ ] Create backup/restore functionality
 - [ ] Implement prediction accuracy analysis and reporting
@@ -30,6 +33,8 @@
 - [x] Implement consumption prediction engine with historical data analysis
 - [x] Add configurable prediction intervals and data requirements
 - [x] Create days-until-refuel sensor with confidence scoring
+- [x] **NEW: Average consumption history sensor (today, week, 14 days, month)**
+- [x] **NEW: Average consumption forecast sensor (tomorrow, week, 14 days, month)**
 - [ ] Add support for external price trend APIs
 - [x] Add machine learning for advanced predictions
 - [x] Implement seasonal consumption pattern learning
@@ -147,6 +152,45 @@
   - Vehicle fuel consumption rate
   - Additional fuel cost for the extra distance
   - Potential savings after accounting for extra fuel used
+
+## Automatic Fuel Log / Refueling Book Features
+
+### Core Features (Implemented)
+- [x] Refueling event detection based on tank level changes
+- [x] Automatic storage of refueling events with comprehensive data
+- [x] Refueling log with unique IDs and editable fields
+- [x] Pre-fill station name from recommended station at time of refueling
+- [x] Pre-fill price from current fuel price at time of refueling
+- [x] Calculate total cost based on liters and price
+- [x] Store location data (GPS coordinates) for each refueling event
+- [x] CRUD operations (Create, Read, Update, Delete) for refueling records
+
+### Future Enhancements
+- [ ] **Table entity for Home Assistant UI**: Create a table entity to display and edit refueling records directly in the Home Assistant GUI
+- [ ] **Home Assistant services**: Expose services for managing refueling records
+  - [ ] `hafwcma.add_refueling_event` - Manually add a refueling event
+  - [ ] `hafwcma.update_refueling_event` - Update an existing refueling event
+  - [ ] `hafwcma.delete_refueling_event` - Delete a refueling event
+  - [ ] `hafwcma.get_refueling_log` - Retrieve refueling log data
+- [ ] **Telegram chat integration**: Complete refueling records via chat message
+  - [ ] AI-powered text parsing to extract refueling details from user messages
+  - [ ] Automatically map extracted data to correct fields
+  - [ ] Confirmation and editing workflow via chat
+- [ ] **Receipt OCR/AI analysis**: Scan fuel receipts using AI
+  - [ ] Image upload via Telegram or Home Assistant
+  - [ ] OCR extraction of key data (station, amount, price, date/time)
+  - [ ] AI validation and correction of extracted data
+  - [ ] Automatic population of refueling record
+- [ ] **Statistics and reporting**:
+  - [ ] Monthly fuel cost summaries
+  - [ ] Average price paid per liter over time
+  - [ ] Fuel cost trends and comparisons
+  - [ ] Most frequented stations
+  - [ ] Cost per kilometer calculations
+- [ ] **Refueling reminders**: Smart reminders based on historical patterns
+- [ ] **Loyalty card integration**: Track loyalty points and discounts
+- [ ] **Multi-vehicle support**: Separate refueling logs for each vehicle
+- [ ] **Export/Import**: CSV or JSON export for external analysis or backup
 
 ---
 
