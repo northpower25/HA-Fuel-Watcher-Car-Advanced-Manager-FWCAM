@@ -36,11 +36,17 @@ def _parse_iso_timestamp(ts: str) -> Optional[datetime]:
         ts: Timestamp string in ISO format
         
     Returns:
-        Datetime object or None if parse fails
+        Timezone-aware datetime object or None if parse fails
     """
     try:
-        return datetime.fromisoformat(ts)
-    except (ValueError, TypeError):
+        # Use dt_util.parse_datetime to ensure timezone-aware datetime
+        parsed = dt_util.parse_datetime(ts)
+        if parsed:
+            return parsed
+        # Fallback to fromisoformat and make it timezone-aware
+        dt = datetime.fromisoformat(ts)
+        return dt_util.as_local(dt)
+    except Exception:
         return None
 
 
