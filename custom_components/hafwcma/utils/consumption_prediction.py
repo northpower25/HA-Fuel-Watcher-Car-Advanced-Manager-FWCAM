@@ -335,8 +335,10 @@ async def predict_days_until_refuel(
         # If ML prediction has depletion date, use it for better accuracy
         if ml_enabled and ml_prediction.get("predicted_range_depletion_date"):
             try:
-                depletion_date = datetime.fromisoformat(ml_prediction["predicted_range_depletion_date"])
-                days_until_refuel = (depletion_date - now).total_seconds() / 86400
+                from homeassistant.util import dt as dt_util
+                depletion_date = dt_util.parse_datetime(ml_prediction["predicted_range_depletion_date"])
+                if depletion_date:
+                    days_until_refuel = (depletion_date - now).total_seconds() / 86400
             except (ValueError, TypeError) as err:
                 _LOGGER.debug("Failed to parse ML depletion date: %s", err)
                 # Use calculated value

@@ -40,7 +40,7 @@ def _parse_iso_timestamp(ts: str) -> Optional[datetime]:
     """
     try:
         return datetime.fromisoformat(ts)
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 
@@ -337,11 +337,14 @@ async def predict_with_ml(
         
         predicted_range_depletion_date = now + timedelta(days=depletion_day)
     
+    # Calculate average predicted daily km for logging
+    avg_predicted_daily_km = sum(predicted_daily_km) / len(predicted_daily_km) if predicted_daily_km else 0.0
+    
     _LOGGER.info(
         "ML Prediction: days_ahead=%d, avg_predicted_daily_km=%.1f, "
         "depletion_date=%s, confidence=%.2f",
         days_ahead,
-        sum(predicted_daily_km) / len(predicted_daily_km) if predicted_daily_km else 0,
+        avg_predicted_daily_km,
         predicted_range_depletion_date.isoformat() if predicted_range_depletion_date else "N/A",
         patterns["confidence"]
     )

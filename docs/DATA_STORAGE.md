@@ -87,8 +87,8 @@ Each configuration entry stores the following data:
 
 3. **Store timestamps with data**
    ```python
-   from datetime import datetime
-   timestamp = datetime.now().isoformat()
+   from homeassistant.util import dt as dt_util
+   timestamp = dt_util.now().isoformat()
    await storage.set_last_price(hass, entry, price, timestamp)
    ```
 
