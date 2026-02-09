@@ -666,13 +666,21 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 # Get current fuel type from config
                 fuel_type = options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5")
                 
+                # Get fuel added amount
+                fuel_added = tracking_result.get("fuel_added")
+                
+                # Calculate total cost only if both price and amount are available
+                total_cost = None
+                if fuel_price is not None and fuel_added is not None:
+                    total_cost = fuel_added * fuel_price
+                
                 # Create comprehensive refueling event with all available data
                 refuel_event = {
                     "timestamp": tracking_result.get("refuel_timestamp", dt_util.now().isoformat()),
                     "odometer_km": tracking_result.get("refuel_odometer_km") or odometer,
-                    "liters_refueled": tracking_result.get("fuel_added"),
+                    "liters_refueled": fuel_added,
                     "price_per_liter": fuel_price,
-                    "total_cost": (tracking_result.get("fuel_added", 0) * fuel_price) if fuel_price is not None else None,
+                    "total_cost": total_cost,
                     "station_name": nearest_station.get("name") if nearest_station else None,
                     "latitude": tracking_result.get("refuel_latitude"),
                     "longitude": tracking_result.get("refuel_longitude"),
@@ -681,14 +689,18 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 
                 # Store in new refueling log with ID
                 refuel_id = await storage.add_refuel_event(self.hass, self.config_entry, refuel_event)
-                _LOGGER.info(
-                    "Stored refueling event #%d: %.1f L at %s (€%.3f/L, total: €%.2f)",
-                    refuel_id,
-                    refuel_event.get("liters_refueled", 0),
-                    refuel_event.get("station_name", "Unknown"),
-                    refuel_event.get("price_per_liter", 0),
-                    refuel_event.get("total_cost", 0),
-                )
+                
+                # Format log message with safe handling of None values
+                log_msg = f"Stored refueling event #{refuel_id}: "
+                log_msg += f"{fuel_added:.1f} L " if fuel_added else "Unknown L "
+                log_msg += f"at {refuel_event.get('station_name', 'Unknown')} "
+                if fuel_price is not None:
+                    log_msg += f"(€{fuel_price:.3f}/L"
+                    if total_cost is not None:
+                        log_msg += f", total: €{total_cost:.2f}"
+                    log_msg += ")"
+                
+                _LOGGER.info(log_msg)
         except Exception as err:
             _LOGGER.warning("Error handling refueling detection: %s", err)
         
