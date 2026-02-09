@@ -261,10 +261,10 @@ async def add_refuel_event(
     
     # Get next ID from counter (with fallback for old data)
     if "next_refuel_id" not in data:
-        # Migrate old data - scan for max ID with safe default
-        # Use default=0 so that max(...) + 1 = 1 for empty logs
+        # Migrate old data - find highest existing ID and increment
         if data["refueling_log"]:
-            data["next_refuel_id"] = max((event.get("id", 0) for event in data["refueling_log"]), default=0) + 1
+            existing_ids = [event.get("id", 0) for event in data["refueling_log"]]
+            data["next_refuel_id"] = max(existing_ids) + 1 if existing_ids else 1
         else:
             data["next_refuel_id"] = 1
     

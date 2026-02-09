@@ -701,7 +701,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 except (TypeError, ValueError):
                     log_msg += "Unknown L "
                 
-                log_msg += f"at {refuel_event.get('station_name', 'Unknown')} "
+                station_name = refuel_event.get("station_name") or "Unknown"
+                log_msg += f"at {station_name} "
                 if fuel_price is not None:
                     log_msg += f"(€{fuel_price:.3f}/L"
                     if total_cost is not None:
