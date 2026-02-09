@@ -43,9 +43,12 @@ def _parse_iso_timestamp(ts: str) -> Optional[datetime]:
         parsed = dt_util.parse_datetime(ts)
         if parsed:
             return parsed
-        # Fallback to fromisoformat and make it timezone-aware
+        # Fallback to fromisoformat
         dt = datetime.fromisoformat(ts)
-        return dt_util.as_local(dt)
+        # Make timezone-aware if it's naive
+        if dt.tzinfo is None:
+            return dt_util.as_local(dt)
+        return dt
     except Exception:
         return None
 
