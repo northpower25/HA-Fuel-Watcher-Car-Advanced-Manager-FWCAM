@@ -65,10 +65,15 @@ async def load_data(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
             "weekday_consumption": {},  # {weekday: {km: float, count: int}}
             "tank_history": [],  # List of refueling events
             "last_price": None,  # float
+            "last_price_timestamp": None,  # str timestamp of last price
+            "last_station": None,  # dict with last station data
+            "last_station_timestamp": None,  # str timestamp of last station
             "last_decision": None,  # dict with decision data
             "last_api": None,  # dict with last API response
             "last_telegram": None,  # dict with last telegram message
             "last_error": None,  # str with last error
+            "ml_models": {},  # ML model parameters
+            "prediction_history": [],  # List of prediction results for accuracy tracking
         }
     return data
 
@@ -289,17 +294,86 @@ async def get_last_price(hass: HomeAssistant, entry: ConfigEntry) -> float | Non
     return data.get("last_price")
 
 
-async def set_last_price(hass: HomeAssistant, entry: ConfigEntry, price: float) -> None:
-    """Set last known price for this entry.
+async def set_last_price(hass: HomeAssistant, entry: ConfigEntry, price: float, timestamp: str | None = None) -> None:
+    """Set last known price for this entry with timestamp.
     
     Args:
         hass: Home Assistant instance
         entry: Config entry
         price: Price to store
+        timestamp: Timestamp of the price (ISO format), defaults to now
     """
+    from homeassistant.util import dt as dt_util
+    
+    if timestamp is None:
+        timestamp = dt_util.now().isoformat()
+    
     data = await load_data(hass, entry)
     data["last_price"] = price
+    data["last_price_timestamp"] = timestamp
     await save_data(hass, entry, data)
+
+
+async def get_last_price_timestamp(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
+    """Get timestamp of last known price.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Timestamp string or None
+    """
+    data = await load_data(hass, entry)
+    return data.get("last_price_timestamp")
+
+
+async def set_last_station(hass: HomeAssistant, entry: ConfigEntry, station: dict, timestamp: str | None = None) -> None:
+    """Set last known station data with timestamp.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        station: Station data to store
+        timestamp: Timestamp of the station data (ISO format), defaults to now
+    """
+    from homeassistant.util import dt as dt_util
+    
+    if timestamp is None:
+        timestamp = dt_util.now().isoformat()
+    
+    data = await load_data(hass, entry)
+    data["last_station"] = station
+    data["last_station_timestamp"] = timestamp
+    await save_data(hass, entry, data)
+
+
+async def get_last_station(hass: HomeAssistant, entry: ConfigEntry) -> dict | None:
+    """Get last known station data.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Last station data or None
+    """
+    data = await load_data(hass, entry)
+    return data.get("last_station")
+
+
+async def get_last_station_timestamp(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
+    """Get timestamp of last known station data.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Timestamp string or None
+    """
+    data = await load_data(hass, entry)
+    return data.get("last_station_timestamp")
 
 
 # ---------------------------------------------------------------------------

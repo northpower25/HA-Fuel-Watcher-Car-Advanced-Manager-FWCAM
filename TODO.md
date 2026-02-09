@@ -31,8 +31,8 @@
 - [x] Add configurable prediction intervals and data requirements
 - [x] Create days-until-refuel sensor with confidence scoring
 - [ ] Add support for external price trend APIs
-- [ ] Add machine learning for advanced predictions
-- [ ] Implement seasonal consumption pattern learning
+- [x] Add machine learning for advanced predictions
+- [x] Implement seasonal consumption pattern learning
 - [ ] Add weather-based consumption adjustments (requires weather integration)
 - [ ] Add route-based consumption prediction (requires route planning integration)
 

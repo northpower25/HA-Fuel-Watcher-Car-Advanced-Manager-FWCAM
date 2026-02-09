@@ -245,7 +245,7 @@ async def predict_days_until_refuel(
 ) -> Dict[str, Any]:
     """Predict days until refueling is needed.
     
-    Uses historical data if available, otherwise falls back to configuration values.
+    Uses historical data and ML patterns if available, otherwise falls back to configuration values.
     
     Args:
         hass: Home Assistant instance
@@ -262,14 +262,17 @@ async def predict_days_until_refuel(
         {
             "days_until_refuel": float,
             "predicted_refuel_date": datetime,
-            "data_source": str,  # "historical_data" or "fallback_values"
+            "data_source": str,  # "ml_enhanced", "historical_data" or "fallback_values"
             "confidence": float,
             "avg_daily_km": float,
             "avg_consumption_rate": float,
             "last_prediction_time": datetime,
             "data_points_used": int,
+            "ml_prediction": dict,  # ML-specific predictions if available
         }
     """
+    from .ml_engine import analyze_consumption_patterns, predict_with_ml
+    
     now = dt_util.now()
     
     # Check data sufficiency
@@ -278,10 +281,40 @@ async def predict_days_until_refuel(
     # Calculate historical consumption
     historical = await calculate_historical_consumption(hass, entry)
     
-    # Determine data source
+    # Try ML-enhanced prediction first
+    ml_prediction = None
+    ml_enabled = False
+    
+    if sufficiency["sufficient"] and current_range_km is not None:
+        try:
+            ml_prediction = await predict_with_ml(
+                hass,
+                entry,
+                days_ahead=14,
+                current_range_km=current_range_km,
+            )
+            
+            if ml_prediction.get("ml_enabled") and ml_prediction.get("confidence", 0) >= 0.5:
+                ml_enabled = True
+                _LOGGER.info("ML prediction enabled with confidence %.2f", ml_prediction.get("confidence"))
+        except Exception as err:
+            _LOGGER.warning("ML prediction failed, falling back to historical: %s", err)
+    
+    # Determine data source and values
     use_historical = sufficiency["sufficient"] and historical["avg_daily_km"] > 0
     
-    if use_historical:
+    if ml_enabled and ml_prediction:
+        data_source = "ml_enhanced"
+        # Use ML weekday pattern for more accurate daily km
+        weekday_pattern = ml_prediction.get("weekday_pattern", {})
+        if weekday_pattern:
+            avg_daily_km = sum(weekday_pattern.values()) / len(weekday_pattern)
+        else:
+            avg_daily_km = historical["avg_daily_km"]
+        avg_consumption_rate = historical["avg_consumption_rate"]
+        confidence = ml_prediction.get("confidence", 0.5)
+        data_points_used = historical["data_points"]
+    elif use_historical:
         data_source = "historical_data"
         avg_daily_km = historical["avg_daily_km"]
         avg_consumption_rate = historical["avg_consumption_rate"]
@@ -297,11 +330,23 @@ async def predict_days_until_refuel(
     # Calculate days until refuel
     if current_range_km is not None and current_range_km > 0:
         # Use range-based calculation (most accurate)
-        days_until_refuel = current_range_km / avg_daily_km
+        days_until_refuel = current_range_km / avg_daily_km if avg_daily_km > 0 else None
+        
+        # If ML prediction has depletion date, use it for better accuracy
+        if ml_enabled and ml_prediction.get("predicted_range_depletion_date"):
+            try:
+                from homeassistant.util import dt as dt_util
+                depletion_date = dt_util.parse_datetime(ml_prediction["predicted_range_depletion_date"])
+                if depletion_date:
+                    days_until_refuel = (depletion_date - now).total_seconds() / 86400
+            except (ValueError, TypeError) as err:
+                _LOGGER.debug("Failed to parse ML depletion date: %s", err)
+                # Use calculated value
+                
     elif current_tank_level is not None and tank_capacity is not None and avg_consumption_rate > 0:
         # Calculate range from tank level and consumption rate
         estimated_range_km = (current_tank_level / avg_consumption_rate) * 100
-        days_until_refuel = estimated_range_km / avg_daily_km
+        days_until_refuel = estimated_range_km / avg_daily_km if avg_daily_km > 0 else None
     else:
         # Cannot calculate
         days_until_refuel = None
@@ -327,6 +372,7 @@ async def predict_days_until_refuel(
         "avg_consumption_rate": avg_consumption_rate,
         "last_prediction_time": now,
         "data_points_used": data_points_used,
+        "ml_prediction": ml_prediction if ml_enabled else None,
     }
 
 
