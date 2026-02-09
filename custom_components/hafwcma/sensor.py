@@ -361,6 +361,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         
         Uses ML prediction engine to forecast consumption patterns.
         
+        Note: Currently returns the same prediction for all time periods as the
+        prediction engine provides an average consumption rate. Future enhancements
+        will add time-specific forecasting with seasonal patterns and trends.
+        
         Args:
             consumption_prediction: Current consumption prediction data
             
@@ -380,8 +384,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         confidence = consumption_prediction.get("confidence", 0.0)
         data_source = consumption_prediction.get("data_source", "unknown")
         
-        # For now, use the same consumption rate for all periods
-        # In the future, this could be enhanced with seasonal patterns and ML predictions
+        # Currently use the same consumption rate for all periods
+        # TODO: Enhance with time-specific forecasting based on:
+        #   - Weekday vs weekend patterns
+        #   - Seasonal variations
+        #   - Historical trends for each time period
         forecast_base = {
             "avg_consumption_l_per_100km": avg_consumption_rate,
             "confidence": confidence,
@@ -665,7 +672,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     "odometer_km": tracking_result.get("refuel_odometer_km") or odometer,
                     "liters_refueled": tracking_result.get("fuel_added"),
                     "price_per_liter": fuel_price,
-                    "total_cost": (tracking_result.get("fuel_added", 0) * fuel_price) if fuel_price else None,
+                    "total_cost": (tracking_result.get("fuel_added", 0) * fuel_price) if fuel_price is not None else None,
                     "station_name": nearest_station.get("name") if nearest_station else None,
                     "latitude": tracking_result.get("refuel_latitude"),
                     "longitude": tracking_result.get("refuel_longitude"),

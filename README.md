@@ -130,7 +130,7 @@ The integration creates the following sensors for each configured vehicle:
 - **Nearest Station**: Name and details of closest station
 - **Days Until Refuel**: Predicted days until refueling needed (consumption prediction)
 - **Average Consumption History**: Historical average consumption with attributes for today, last week, last 14 days, and last month
-- **Average Consumption Forecast**: Forecasted average consumption with attributes for tomorrow, next week, next 14 days, and next month
+- **Average Consumption Forecast**: Forecasted average consumption with attributes for tomorrow, next week, next 14 days, and next month (currently uses the same prediction for all periods; future enhancements will add time-specific forecasting)
 - **API Debug**: API request/response debug information for troubleshooting
 
 ### Controls

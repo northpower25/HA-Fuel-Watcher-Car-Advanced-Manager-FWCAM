@@ -74,6 +74,7 @@ async def load_data(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
             "last_error": None,  # str with last error
             "ml_models": {},  # ML model parameters
             "prediction_history": [],  # List of prediction results for accuracy tracking
+            "next_refuel_id": 1,  # Counter for refueling event IDs
         }
     return data
 
@@ -258,10 +259,16 @@ async def add_refuel_event(
     if "refueling_log" not in data:
         data["refueling_log"] = []
     
-    # Get next ID
-    next_id = 1
-    if data["refueling_log"]:
-        next_id = max(event.get("id", 0) for event in data["refueling_log"]) + 1
+    # Get next ID from counter (with fallback for old data)
+    if "next_refuel_id" not in data:
+        # Migrate old data - scan for max ID
+        if data["refueling_log"]:
+            data["next_refuel_id"] = max(event.get("id", 0) for event in data["refueling_log"]) + 1
+        else:
+            data["next_refuel_id"] = 1
+    
+    next_id = data["next_refuel_id"]
+    data["next_refuel_id"] = next_id + 1
     
     # Create complete refueling record with ID
     refuel_record = {
@@ -677,19 +684,21 @@ async def calculate_consumption_history(
     relevant_events.sort(key=lambda x: x.get("timestamp", ""))
     
     # Calculate total distance and fuel consumed
+    # Logic: Fuel from refueling event i is consumed between event i and event i+1
     total_km = 0
     total_liters = 0
     
-    for i in range(1, len(relevant_events)):
-        prev_event = relevant_events[i - 1]
+    for i in range(len(relevant_events) - 1):
         curr_event = relevant_events[i]
+        next_event = relevant_events[i + 1]
         
-        prev_odometer = prev_event.get("odometer_km")
         curr_odometer = curr_event.get("odometer_km")
-        liters_refueled = prev_event.get("liters_refueled")
+        next_odometer = next_event.get("odometer_km")
+        liters_refueled = curr_event.get("liters_refueled")
         
-        if prev_odometer and curr_odometer and liters_refueled:
-            km_driven = curr_odometer - prev_odometer
+        # Fuel from current refueling was consumed to reach next refueling
+        if curr_odometer and next_odometer and liters_refueled:
+            km_driven = next_odometer - curr_odometer
             if km_driven > 0:
                 total_km += km_driven
                 total_liters += liters_refueled
