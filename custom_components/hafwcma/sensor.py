@@ -362,11 +362,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             # Store odometer history if available
             odometer = vehicle_data.get("odometer_km")
             if odometer is not None:
+                from homeassistant.util import dt as dt_util
                 await storage.add_odometer_observation(
                     self.hass,
                     self.config_entry,
                     odometer,
-                    datetime.now().isoformat(),
+                    dt_util.now().isoformat(),
                 )
         except Exception as err:
             _LOGGER.warning("Error fetching vehicle data: %s", err)
@@ -389,7 +390,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     location_source = f"vehicle ({position_entity})"
             
             # Store debug info
-            timestamp = datetime.now().isoformat()
+            from homeassistant.util import dt as dt_util
+            timestamp = dt_util.now().isoformat()
             self._api_debug_info = {
                 "timestamp": timestamp,
                 "location_source": location_source,
@@ -516,7 +518,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             # Continue with cached/placeholder data
         
         # Handle storing and retrieving last successful price and station
-        timestamp_now = datetime.now().isoformat()
+        from homeassistant.util import dt as dt_util
+        timestamp_now = dt_util.now().isoformat()
         
         try:
             # If we successfully got a price, store it with timestamp
@@ -562,9 +565,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             # Handle refueling detection
             if tracking_result.get("refueling_detected"):
                 _LOGGER.info("Refueling detected!")
+                from homeassistant.util import dt as dt_util
                 # Store refueling event with current price if available
                 refuel_event = {
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": dt_util.now().isoformat(),
                     "fuel_added": tracking_result.get("fuel_added"),
                     "odometer_km": odometer,
                     "consumption_rate": tracking_result.get("average_consumption"),

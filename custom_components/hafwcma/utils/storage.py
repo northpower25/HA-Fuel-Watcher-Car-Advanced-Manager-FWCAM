@@ -303,10 +303,10 @@ async def set_last_price(hass: HomeAssistant, entry: ConfigEntry, price: float, 
         price: Price to store
         timestamp: Timestamp of the price (ISO format), defaults to now
     """
-    from datetime import datetime
+    from homeassistant.util import dt as dt_util
     
     if timestamp is None:
-        timestamp = datetime.now().isoformat()
+        timestamp = dt_util.now().isoformat()
     
     data = await load_data(hass, entry)
     data["last_price"] = price
@@ -337,10 +337,10 @@ async def set_last_station(hass: HomeAssistant, entry: ConfigEntry, station: dic
         station: Station data to store
         timestamp: Timestamp of the station data (ISO format), defaults to now
     """
-    from datetime import datetime
+    from homeassistant.util import dt as dt_util
     
     if timestamp is None:
-        timestamp = datetime.now().isoformat()
+        timestamp = dt_util.now().isoformat()
     
     data = await load_data(hass, entry)
     data["last_station"] = station

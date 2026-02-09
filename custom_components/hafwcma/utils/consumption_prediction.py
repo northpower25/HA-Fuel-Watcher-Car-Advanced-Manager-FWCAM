@@ -337,8 +337,9 @@ async def predict_days_until_refuel(
             try:
                 depletion_date = datetime.fromisoformat(ml_prediction["predicted_range_depletion_date"])
                 days_until_refuel = (depletion_date - now).total_seconds() / 86400
-            except Exception:
-                pass  # Use calculated value
+            except (ValueError, TypeError) as err:
+                _LOGGER.debug("Failed to parse ML depletion date: %s", err)
+                # Use calculated value
                 
     elif current_tank_level is not None and tank_capacity is not None and avg_consumption_rate > 0:
         # Calculate range from tank level and consumption rate

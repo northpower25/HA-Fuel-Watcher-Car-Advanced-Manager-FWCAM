@@ -29,11 +29,11 @@ from .storage import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _parse_timestamp(ts: str) -> Optional[datetime]:
+def _parse_iso_timestamp(ts: str) -> Optional[datetime]:
     """Parse ISO format timestamp.
     
     Args:
-        ts: Timestamp string
+        ts: Timestamp string in ISO format
         
     Returns:
         Datetime object or None if parse fails
@@ -87,8 +87,8 @@ async def analyze_consumption_patterns(
     cutoff_time = dt_util.now() - timedelta(days=lookback_days)
     recent_history = [
         entry for entry in odometer_history
-        if _parse_timestamp(entry.get("ts", "")) and 
-           _parse_timestamp(entry.get("ts", "")) >= cutoff_time
+        if _parse_iso_timestamp(entry.get("ts", "")) and 
+           _parse_iso_timestamp(entry.get("ts", "")) >= cutoff_time
     ]
     
     if len(recent_history) < 7:
@@ -100,8 +100,12 @@ async def analyze_consumption_patterns(
             "confidence": 0.0,
         }
     
-    # Sort by timestamp
-    sorted_history = sorted(recent_history, key=lambda x: _parse_timestamp(x.get("ts", "")))
+    # Sort by timestamp - filter out entries with None timestamps first
+    valid_history = [
+        entry for entry in recent_history 
+        if _parse_iso_timestamp(entry.get("ts", "")) is not None
+    ]
+    sorted_history = sorted(valid_history, key=lambda x: _parse_iso_timestamp(x.get("ts", "")))
     
     # Calculate daily km for each day
     weekday_km: Dict[int, List[float]] = {i: [] for i in range(7)}
@@ -110,8 +114,8 @@ async def analyze_consumption_patterns(
         current = sorted_history[i]
         next_entry = sorted_history[i + 1]
         
-        current_ts = _parse_timestamp(current.get("ts", ""))
-        next_ts = _parse_timestamp(next_entry.get("ts", ""))
+        current_ts = _parse_iso_timestamp(current.get("ts", ""))
+        next_ts = _parse_iso_timestamp(next_entry.get("ts", ""))
         
         if not current_ts or not next_ts:
             continue
@@ -175,8 +179,8 @@ async def analyze_consumption_patterns(
             slope = (n * sum_xy - sum_x * sum_y) / (n * sum_xx - sum_x * sum_x)
             
             # Normalize slope to daily km change
-            days_span = (_parse_timestamp(recent_14[-1].get("ts", "")) - 
-                        _parse_timestamp(recent_14[0].get("ts", ""))).days
+            days_span = (_parse_iso_timestamp(recent_14[-1].get("ts", "")) - 
+                        _parse_iso_timestamp(recent_14[0].get("ts", ""))).days
             
             if days_span > 0:
                 daily_change = slope / days_span
@@ -211,7 +215,12 @@ async def analyze_consumption_patterns(
             mean_pattern = sum(pattern_values) / len(pattern_values)
             variance = sum((x - mean_pattern) ** 2 for x in pattern_values) / len(pattern_values)
             std_dev = variance ** 0.5
-            consistency_factor = 1.0 - min(std_dev / mean_pattern if mean_pattern > 0 else 1.0, 1.0)
+            # Use coefficient of variation for consistency
+            if mean_pattern > 0:
+                coefficient_of_variation = std_dev / mean_pattern
+                consistency_factor = max(0.0, 1.0 - coefficient_of_variation)
+            else:
+                consistency_factor = 0.0
         else:
             consistency_factor = 0.5
     else:

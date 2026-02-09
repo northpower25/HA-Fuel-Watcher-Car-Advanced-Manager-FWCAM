@@ -136,7 +136,7 @@ class ManualPredictionSwitch(SwitchEntity):
         # Force a consumption prediction update
         if self._coordinator:
             try:
-                from datetime import datetime
+                from homeassistant.util import dt as dt_util
                 from .utils.consumption_prediction import predict_days_until_refuel, store_prediction_result
                 from .utils.statistics_engine import get_average_consumption_rate
                 from .const import (
@@ -181,7 +181,7 @@ class ManualPredictionSwitch(SwitchEntity):
                 # Store result
                 await store_prediction_result(self._coordinator.hass, self._config_entry, prediction)
                 
-                self._last_prediction_time = datetime.now().isoformat()
+                self._last_prediction_time = dt_util.now().isoformat()
                 self._last_prediction_result = prediction
                 
                 _LOGGER.info("Manual prediction completed: %s", prediction)
