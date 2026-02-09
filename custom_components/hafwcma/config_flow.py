@@ -226,9 +226,13 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
             
             # Validate each entity if provided
-            for key, entity_id in entity_ids.items():
-                if entity_id and not await async_validate_entity(self.hass, entity_id):
-                    errors[key] = "invalid_entity"
+            try:
+                for key, entity_id in entity_ids.items():
+                    if entity_id and not await async_validate_entity(self.hass, entity_id):
+                        errors[key] = "invalid_entity"
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.error("Error validating entities: %s", err)
+                errors["base"] = "unknown"
                     
             # Validate position entity is a device_tracker
             position_entity = entity_ids.get(CONF_POSITION_ENTITY, "")
@@ -329,8 +333,14 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.data.update(user_input)
             
             # Automatically add latitude and longitude from Home Assistant configuration
-            self.data[CONF_LATITUDE] = self.hass.config.latitude
-            self.data[CONF_LONGITUDE] = self.hass.config.longitude
+            try:
+                self.data[CONF_LATITUDE] = self.hass.config.latitude
+                self.data[CONF_LONGITUDE] = self.hass.config.longitude
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.warning("Could not get latitude/longitude from HA config: %s", err)
+                # Use default coordinates if not available
+                self.data[CONF_LATITUDE] = 0.0
+                self.data[CONF_LONGITUDE] = 0.0
             
             # Create the config entry
             return self.async_create_entry(
@@ -508,19 +518,11 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         Returns:
             Options flow handler
         """
-        return HaFWCMAOptionsFlow(config_entry)
+        return HaFWCMAOptionsFlow()
 
 
 class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for haFWCMA integration."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow.
-        
-        Args:
-            config_entry: The config entry to manage options for
-        """
-        self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -545,9 +547,13 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
             }
             
             # Validate each entity if provided
-            for key, entity_id in entity_ids.items():
-                if entity_id and not await async_validate_entity(self.hass, entity_id):
-                    errors[key] = "invalid_entity"
+            try:
+                for key, entity_id in entity_ids.items():
+                    if entity_id and not await async_validate_entity(self.hass, entity_id):
+                        errors[key] = "invalid_entity"
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.error("Error validating entities: %s", err)
+                errors["base"] = "unknown"
                     
             # Validate position entity is a device_tracker
             position_entity = entity_ids.get(CONF_POSITION_ENTITY, "")
