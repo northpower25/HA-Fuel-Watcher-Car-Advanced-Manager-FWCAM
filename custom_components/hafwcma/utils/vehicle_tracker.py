@@ -30,6 +30,7 @@ class VehicleDataTracker:
         """Initialize the tracker."""
         self._previous_snapshot: VehicleSnapshot | None = None
         self._current_snapshot: VehicleSnapshot | None = None
+        self._last_refuel_timestamp: datetime | None = None
         
     def update(self, vehicle_data: dict[str, Any]) -> dict[str, Any]:
         """Update with new vehicle data and detect changes.
@@ -69,14 +70,31 @@ class VehicleDataTracker:
         ):
             tank_diff = self._current_snapshot.tank_level - self._previous_snapshot.tank_level
             
-            # Refueling detected if tank increased by more than 5 liters
-            # (could be percentage or liters depending on entity)
-            if tank_diff > 5:
+            # Refueling detected if tank increased by more than 5 liters/percent
+            # Avoid duplicate detection within 5 minutes of last refuel
+            time_since_last_refuel = None
+            if self._last_refuel_timestamp:
+                time_since_last_refuel = (
+                    self._current_snapshot.timestamp - self._last_refuel_timestamp
+                ).total_seconds()
+            
+            if tank_diff > 5 and (
+                time_since_last_refuel is None or time_since_last_refuel > 300
+            ):
                 result["refueling_detected"] = True
                 result["fuel_added"] = tank_diff
+                result["refuel_timestamp"] = self._current_snapshot.timestamp.isoformat()
+                result["refuel_odometer_km"] = self._current_snapshot.odometer_km
+                result["refuel_latitude"] = self._current_snapshot.latitude
+                result["refuel_longitude"] = self._current_snapshot.longitude
+                
+                # Track last refuel time to avoid duplicates
+                self._last_refuel_timestamp = self._current_snapshot.timestamp
+                
                 _LOGGER.info(
-                    "Refueling detected: tank level increased by %.2f units",
+                    "Refueling detected: tank level increased by %.2f units at odometer %.1f km",
                     tank_diff,
+                    self._current_snapshot.odometer_km or 0,
                 )
         
         # Calculate fuel consumption (only if no refueling)

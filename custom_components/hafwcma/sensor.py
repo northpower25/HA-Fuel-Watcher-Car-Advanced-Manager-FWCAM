@@ -112,6 +112,8 @@ async def async_setup_entry(
         NearestStationSensor(coordinator, config_entry, vehicle_name),
         ApiDebugSensor(coordinator, config_entry, vehicle_name),
         ConsumptionPredictionSensor(coordinator, config_entry, vehicle_name),
+        ConsumptionHistorySensor(coordinator, config_entry, vehicle_name),
+        ConsumptionForecastSensor(coordinator, config_entry, vehicle_name),
     ]
 
     async_add_entities(sensors)
@@ -329,6 +331,69 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         )
         
         return prediction
+
+    async def _calculate_consumption_history(self) -> dict[str, Any]:
+        """Calculate consumption history for different time periods.
+        
+        Returns:
+            Dictionary with consumption statistics for today, last week, last 14 days, last month
+        """
+        from .utils.storage import calculate_consumption_history
+        
+        # Calculate for different time periods
+        today = await calculate_consumption_history(self.hass, self.config_entry, days=1)
+        last_week = await calculate_consumption_history(self.hass, self.config_entry, days=7)
+        last_14_days = await calculate_consumption_history(self.hass, self.config_entry, days=14)
+        last_month = await calculate_consumption_history(self.hass, self.config_entry, days=30)
+        
+        return {
+            "today": today,
+            "last_week": last_week,
+            "last_14_days": last_14_days,
+            "last_month": last_month,
+        }
+    
+    async def _calculate_consumption_forecast(
+        self,
+        consumption_prediction: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Calculate consumption forecast for different time periods.
+        
+        Uses ML prediction engine to forecast consumption patterns.
+        
+        Args:
+            consumption_prediction: Current consumption prediction data
+            
+        Returns:
+            Dictionary with consumption forecasts for tomorrow, next week, next 14 days, next month
+        """
+        if not consumption_prediction:
+            return {
+                "tomorrow": None,
+                "next_week": None,
+                "next_14_days": None,
+                "next_month": None,
+            }
+        
+        # Get average consumption rate and confidence from prediction
+        avg_consumption_rate = consumption_prediction.get("avg_consumption_rate")
+        confidence = consumption_prediction.get("confidence", 0.0)
+        data_source = consumption_prediction.get("data_source", "unknown")
+        
+        # For now, use the same consumption rate for all periods
+        # In the future, this could be enhanced with seasonal patterns and ML predictions
+        forecast_base = {
+            "avg_consumption_l_per_100km": avg_consumption_rate,
+            "confidence": confidence,
+            "data_source": data_source,
+        }
+        
+        return {
+            "tomorrow": forecast_base.copy() if avg_consumption_rate else None,
+            "next_week": forecast_base.copy() if avg_consumption_rate else None,
+            "next_14_days": forecast_base.copy() if avg_consumption_rate else None,
+            "next_month": forecast_base.copy() if avg_consumption_rate else None,
+        }
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -590,15 +655,33 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             if tracking_result.get("refueling_detected"):
                 _LOGGER.info("Refueling detected!")
                 from homeassistant.util import dt as dt_util
-                # Store refueling event with current price if available
+                
+                # Get current fuel type from config
+                fuel_type = options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5")
+                
+                # Create comprehensive refueling event with all available data
                 refuel_event = {
-                    "timestamp": dt_util.now().isoformat(),
-                    "fuel_added": tracking_result.get("fuel_added"),
-                    "odometer_km": odometer,
-                    "consumption_rate": tracking_result.get("average_consumption"),
-                    "price_per_liter": fuel_price,  # Include price for better prediction
+                    "timestamp": tracking_result.get("refuel_timestamp", dt_util.now().isoformat()),
+                    "odometer_km": tracking_result.get("refuel_odometer_km") or odometer,
+                    "liters_refueled": tracking_result.get("fuel_added"),
+                    "price_per_liter": fuel_price,
+                    "total_cost": (tracking_result.get("fuel_added", 0) * fuel_price) if fuel_price else None,
+                    "station_name": nearest_station.get("name") if nearest_station else None,
+                    "latitude": tracking_result.get("refuel_latitude"),
+                    "longitude": tracking_result.get("refuel_longitude"),
+                    "fuel_type": fuel_type,
                 }
-                await storage.add_refuel_event(self.hass, self.config_entry, refuel_event)
+                
+                # Store in new refueling log with ID
+                refuel_id = await storage.add_refuel_event(self.hass, self.config_entry, refuel_event)
+                _LOGGER.info(
+                    "Stored refueling event #%d: %.1f L at %s (€%.3f/L, total: €%.2f)",
+                    refuel_id,
+                    refuel_event.get("liters_refueled", 0),
+                    refuel_event.get("station_name", "Unknown"),
+                    refuel_event.get("price_per_liter", 0),
+                    refuel_event.get("total_cost", 0),
+                )
         except Exception as err:
             _LOGGER.warning("Error handling refueling detection: %s", err)
         
@@ -669,6 +752,20 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         last_price_timestamp = await storage.get_last_price_timestamp(self.hass, self.config_entry)
         last_station_timestamp = await storage.get_last_station_timestamp(self.hass, self.config_entry)
         
+        # Calculate consumption history
+        consumption_history = None
+        try:
+            consumption_history = await self._calculate_consumption_history()
+        except Exception as err:
+            _LOGGER.warning("Error calculating consumption history: %s", err)
+        
+        # Calculate consumption forecast
+        consumption_forecast = None
+        try:
+            consumption_forecast = await self._calculate_consumption_forecast(consumption_prediction)
+        except Exception as err:
+            _LOGGER.warning("Error calculating consumption forecast: %s", err)
+        
         data = {
             "fuel_price": fuel_price,
             "last_price_timestamp": last_price_timestamp,
@@ -692,6 +789,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "days_left": days_left,
             "api_debug": self._api_debug_info,  # Add debug information
             "consumption_prediction": consumption_prediction,  # Add consumption prediction
+            "consumption_history": consumption_history,  # Add consumption history
+            "consumption_forecast": consumption_forecast,  # Add consumption forecast
         }
         
         # Apply randomization for next update interval
@@ -1009,4 +1108,169 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             attributes[ATTR_PREDICTED_REFUEL_DATE] = prediction["predicted_refuel_date"].isoformat()
         
         return attributes
+
+
+class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing average consumption based on historical data."""
+
+    _attr_icon = "mdi:chart-line"
+    _attr_native_unit_of_measurement = "L/100km"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_device_class = None
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._attr_name = f"{vehicle_name} Average Consumption History"
+        self._attr_unique_id = f"{config_entry.entry_id}_consumption_history"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the average consumption for today."""
+        history = self.coordinator.data.get("consumption_history")
+        if history and history.get("today"):
+            return history["today"].get("avg_consumption_l_per_100km")
+        return None
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return consumption statistics for different time periods."""
+        history = self.coordinator.data.get("consumption_history")
+        if not history:
+            return {
+                "today": None,
+                "last_week": None,
+                "last_14_days": None,
+                "last_month": None,
+                "status": "Waiting for refueling data",
+            }
+        
+        attributes = {}
+        
+        # Today's consumption
+        if history.get("today"):
+            today = history["today"]
+            attributes["today_consumption"] = today.get("avg_consumption_l_per_100km")
+            attributes["today_km"] = today.get("total_km", 0)
+            attributes["today_liters"] = today.get("total_liters", 0)
+            attributes["today_refuel_count"] = today.get("refuel_count", 0)
+        
+        # Last week
+        if history.get("last_week"):
+            week = history["last_week"]
+            attributes["last_week_consumption"] = week.get("avg_consumption_l_per_100km")
+            attributes["last_week_km"] = week.get("total_km", 0)
+            attributes["last_week_liters"] = week.get("total_liters", 0)
+            attributes["last_week_refuel_count"] = week.get("refuel_count", 0)
+        
+        # Last 14 days
+        if history.get("last_14_days"):
+            two_weeks = history["last_14_days"]
+            attributes["last_14_days_consumption"] = two_weeks.get("avg_consumption_l_per_100km")
+            attributes["last_14_days_km"] = two_weeks.get("total_km", 0)
+            attributes["last_14_days_liters"] = two_weeks.get("total_liters", 0)
+            attributes["last_14_days_refuel_count"] = two_weeks.get("refuel_count", 0)
+        
+        # Last month
+        if history.get("last_month"):
+            month = history["last_month"]
+            attributes["last_month_consumption"] = month.get("avg_consumption_l_per_100km")
+            attributes["last_month_km"] = month.get("total_km", 0)
+            attributes["last_month_liters"] = month.get("total_liters", 0)
+            attributes["last_month_refuel_count"] = month.get("refuel_count", 0)
+        
+        return attributes
+
+
+class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing forecasted average consumption based on prediction engine."""
+
+    _attr_icon = "mdi:chart-timeline-variant"
+    _attr_native_unit_of_measurement = "L/100km"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_device_class = None
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._attr_name = f"{vehicle_name} Average Consumption Forecast"
+        self._attr_unique_id = f"{config_entry.entry_id}_consumption_forecast"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the forecasted consumption for tomorrow."""
+        forecast = self.coordinator.data.get("consumption_forecast")
+        if forecast and forecast.get("tomorrow"):
+            return forecast["tomorrow"].get("avg_consumption_l_per_100km")
+        return None
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return forecasted consumption for different time periods."""
+        forecast = self.coordinator.data.get("consumption_forecast")
+        if not forecast:
+            return {
+                "tomorrow": None,
+                "next_week": None,
+                "next_14_days": None,
+                "next_month": None,
+                "status": "Waiting for prediction data",
+            }
+        
+        attributes = {}
+        
+        # Tomorrow's forecast
+        if forecast.get("tomorrow"):
+            tomorrow = forecast["tomorrow"]
+            attributes["tomorrow_consumption"] = tomorrow.get("avg_consumption_l_per_100km")
+            attributes["tomorrow_confidence"] = tomorrow.get("confidence", 0.0)
+            attributes["tomorrow_data_source"] = tomorrow.get("data_source", "unknown")
+        
+        # Next week
+        if forecast.get("next_week"):
+            week = forecast["next_week"]
+            attributes["next_week_consumption"] = week.get("avg_consumption_l_per_100km")
+            attributes["next_week_confidence"] = week.get("confidence", 0.0)
+            attributes["next_week_data_source"] = week.get("data_source", "unknown")
+        
+        # Next 14 days
+        if forecast.get("next_14_days"):
+            two_weeks = forecast["next_14_days"]
+            attributes["next_14_days_consumption"] = two_weeks.get("avg_consumption_l_per_100km")
+            attributes["next_14_days_confidence"] = two_weeks.get("confidence", 0.0)
+            attributes["next_14_days_data_source"] = two_weeks.get("data_source", "unknown")
+        
+        # Next month
+        if forecast.get("next_month"):
+            month = forecast["next_month"]
+            attributes["next_month_consumption"] = month.get("avg_consumption_l_per_100km")
+            attributes["next_month_confidence"] = month.get("confidence", 0.0)
+            attributes["next_month_data_source"] = month.get("data_source", "unknown")
+        
+        return attributes
+
 
