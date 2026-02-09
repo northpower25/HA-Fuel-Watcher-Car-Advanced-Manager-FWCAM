@@ -359,11 +359,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
     ) -> dict[str, Any]:
         """Calculate consumption forecast for different time periods.
         
-        Uses ML prediction engine to forecast consumption patterns.
-        
-        Note: Currently returns the same prediction for all time periods as the
-        prediction engine provides an average consumption rate. Future enhancements
-        will add time-specific forecasting with seasonal patterns and trends.
+        Uses ML prediction engine to forecast consumption patterns. Currently returns
+        the same average consumption rate for all periods. Future enhancements will add
+        time-specific forecasting with weekday/weekend patterns, seasonal variations,
+        and historical trends.
         
         Args:
             consumption_prediction: Current consumption prediction data
@@ -372,34 +371,26 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             Dictionary with consumption forecasts for tomorrow, next week, next 14 days, next month
         """
         if not consumption_prediction:
-            return {
-                "tomorrow": None,
-                "next_week": None,
-                "next_14_days": None,
-                "next_month": None,
-            }
+            periods = ["tomorrow", "next_week", "next_14_days", "next_month"]
+            return {period: None for period in periods}
         
         # Get average consumption rate and confidence from prediction
         avg_consumption_rate = consumption_prediction.get("avg_consumption_rate")
         confidence = consumption_prediction.get("confidence", 0.0)
         data_source = consumption_prediction.get("data_source", "unknown")
         
-        # Currently use the same consumption rate for all periods
-        # TODO: Enhance with time-specific forecasting based on:
-        #   - Weekday vs weekend patterns
-        #   - Seasonal variations
-        #   - Historical trends for each time period
+        # Create forecast with current average consumption rate
         forecast_base = {
             "avg_consumption_l_per_100km": avg_consumption_rate,
             "confidence": confidence,
             "data_source": data_source,
         }
         
+        # Return same forecast for all periods (future: time-specific forecasting)
+        periods = ["tomorrow", "next_week", "next_14_days", "next_month"]
         return {
-            "tomorrow": forecast_base.copy() if avg_consumption_rate else None,
-            "next_week": forecast_base.copy() if avg_consumption_rate else None,
-            "next_14_days": forecast_base.copy() if avg_consumption_rate else None,
-            "next_month": forecast_base.copy() if avg_consumption_rate else None,
+            period: forecast_base.copy() if avg_consumption_rate else None
+            for period in periods
         }
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -691,14 +682,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 # Store in new refueling log with ID
                 refuel_id = await storage.add_refuel_event(self.hass, self.config_entry, refuel_event)
                 
-                # Format log message with safe handling of None values and type errors
+                # Format log message with safe handling of None values
                 log_msg = f"Stored refueling event #{refuel_id}: "
-                try:
-                    if fuel_added is not None:
-                        log_msg += f"{fuel_added:.1f} L "
-                    else:
-                        log_msg += "Unknown L "
-                except (TypeError, ValueError):
+                if fuel_added is not None:
+                    log_msg += f"{fuel_added:.1f} L "
+                else:
                     log_msg += "Unknown L "
                 
                 station_name = refuel_event.get("station_name") or "Unknown"
