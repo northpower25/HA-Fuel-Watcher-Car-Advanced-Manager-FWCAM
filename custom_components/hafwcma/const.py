@@ -50,9 +50,9 @@ MIN_UPDATE_INTERVAL: Final = 1  # minutes
 MAX_UPDATE_INTERVAL: Final = 60  # minutes
 
 # Update interval randomization
-DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT: Final = 20  # ±20% randomization
+DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT: Final = 2  # ±2% randomization to avoid simultaneous API calls
 MIN_UPDATE_INTERVAL_JITTER_PERCENT: Final = 0  # 0% = no randomization
-MAX_UPDATE_INTERVAL_JITTER_PERCENT: Final = 50  # Maximum 50% jitter
+MAX_UPDATE_INTERVAL_JITTER_PERCENT: Final = 10  # Maximum 10% jitter
 
 # Prediction engine defaults
 DEFAULT_PRICE_DROP_PERCENT: Final = 2.0  # 2% price drop

@@ -107,10 +107,18 @@ class SearchRadiusNumber(NumberEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_RADIUS] = value
         
+        # Update entry without triggering reload listener
         self._hass.config_entries.async_update_entry(
             self._config_entry,
             options=new_options,
         )
+        
+        # Update the internal options reference
+        if DOMAIN in self._hass.data and self._config_entry.entry_id in self._hass.data[DOMAIN]:
+            self._hass.data[DOMAIN][self._config_entry.entry_id]["options"] = new_options
+        
+        # Schedule state update to reflect new value
+        self.async_schedule_update_ha_state(force_refresh=True)
         
         # Trigger coordinator refresh to use new radius
         if self._coordinator:
@@ -166,10 +174,18 @@ class UpdateIntervalNumber(NumberEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_UPDATE_INTERVAL] = int(value)
         
+        # Update entry without triggering reload listener
         self._hass.config_entries.async_update_entry(
             self._config_entry,
             options=new_options,
         )
+        
+        # Update the internal options reference
+        if DOMAIN in self._hass.data and self._config_entry.entry_id in self._hass.data[DOMAIN]:
+            self._hass.data[DOMAIN][self._config_entry.entry_id]["options"] = new_options
+        
+        # Schedule state update to reflect new value
+        self.async_schedule_update_ha_state(force_refresh=True)
         
         # Update coordinator's update interval and schedule next refresh
         if self._coordinator:
@@ -224,10 +240,18 @@ class ConsumptionMinDataPointsNumber(NumberEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_CONSUMPTION_MIN_DATA_POINTS] = int(value)
         
+        # Update entry without triggering reload listener
         self._hass.config_entries.async_update_entry(
             self._config_entry,
             options=new_options,
         )
+        
+        # Update the internal options reference
+        if DOMAIN in self._hass.data and self._config_entry.entry_id in self._hass.data[DOMAIN]:
+            self._hass.data[DOMAIN][self._config_entry.entry_id]["options"] = new_options
+        
+        # Schedule state update to reflect new value
+        self.async_schedule_update_ha_state(force_refresh=True)
 
 
 class ConsumptionPredictionIntervalNumber(NumberEntity):
@@ -279,8 +303,16 @@ class ConsumptionPredictionIntervalNumber(NumberEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_CONSUMPTION_PREDICTION_INTERVAL] = value
         
+        # Update entry without triggering reload listener
         self._hass.config_entries.async_update_entry(
             self._config_entry,
             options=new_options,
         )
+        
+        # Update the internal options reference
+        if DOMAIN in self._hass.data and self._config_entry.entry_id in self._hass.data[DOMAIN]:
+            self._hass.data[DOMAIN][self._config_entry.entry_id]["options"] = new_options
+        
+        # Schedule state update to reflect new value
+        self.async_schedule_update_ha_state(force_refresh=True)
 
