@@ -232,7 +232,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors[key] = "invalid_entity"
             except Exception as err:  # pylint: disable=broad-except
                 _LOGGER.error("Error validating entities: %s", err)
-                errors["base"] = "unknown"
+                errors["base"] = "entity_validation_failed"
                     
             # Validate position entity is a device_tracker
             position_entity = entity_ids.get(CONF_POSITION_ENTITY, "")
@@ -333,14 +333,9 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.data.update(user_input)
             
             # Automatically add latitude and longitude from Home Assistant configuration
-            try:
-                self.data[CONF_LATITUDE] = self.hass.config.latitude
-                self.data[CONF_LONGITUDE] = self.hass.config.longitude
-            except Exception as err:  # pylint: disable=broad-except
-                _LOGGER.warning("Could not get latitude/longitude from HA config: %s", err)
-                # Use default coordinates if not available
-                self.data[CONF_LATITUDE] = 0.0
-                self.data[CONF_LONGITUDE] = 0.0
+            # These will be 0.0 if not configured in Home Assistant
+            self.data[CONF_LATITUDE] = self.hass.config.latitude
+            self.data[CONF_LONGITUDE] = self.hass.config.longitude
             
             # Create the config entry
             return self.async_create_entry(
@@ -553,7 +548,7 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                         errors[key] = "invalid_entity"
             except Exception as err:  # pylint: disable=broad-except
                 _LOGGER.error("Error validating entities: %s", err)
-                errors["base"] = "unknown"
+                errors["base"] = "entity_validation_failed"
                     
             # Validate position entity is a device_tracker
             position_entity = entity_ids.get(CONF_POSITION_ENTITY, "")
