@@ -230,8 +230,8 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 for key, entity_id in entity_ids.items():
                     if entity_id and not await async_validate_entity(self.hass, entity_id):
                         errors[key] = "invalid_entity"
-            except Exception as err:  # pylint: disable=broad-except
-                _LOGGER.exception("Error validating entities: %s", err)
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Error validating entities")
                 errors["base"] = "entity_validation_failed"
                     
             # Validate position entity is a device_tracker
@@ -546,8 +546,8 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 for key, entity_id in entity_ids.items():
                     if entity_id and not await async_validate_entity(self.hass, entity_id):
                         errors[key] = "invalid_entity"
-            except Exception as err:  # pylint: disable=broad-except
-                _LOGGER.exception("Error validating entities: %s", err)
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Error validating entities")
                 errors["base"] = "entity_validation_failed"
                     
             # Validate position entity is a device_tracker
