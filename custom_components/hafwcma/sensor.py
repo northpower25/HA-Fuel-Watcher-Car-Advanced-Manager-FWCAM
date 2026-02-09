@@ -515,17 +515,48 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             _LOGGER.error("Error in station lookup: %s", err, exc_info=True)
             # Continue with cached/placeholder data
         
+        # Handle storing and retrieving last successful price and station
+        timestamp_now = datetime.now().isoformat()
+        
         try:
-            # Store price history if we have a price
-            if fuel_price is not None:
+            # If we successfully got a price, store it with timestamp
+            if fuel_price is not None and nearest_station:
+                await storage.set_last_price(
+                    self.hass,
+                    self.config_entry,
+                    fuel_price,
+                    timestamp_now,
+                )
+                await storage.set_last_station(
+                    self.hass,
+                    self.config_entry,
+                    nearest_station,
+                    timestamp_now,
+                )
+                # Also store price history
                 await storage.add_price_observation(
                     self.hass,
                     self.config_entry,
                     fuel_price,
-                    datetime.now().isoformat(),
+                    timestamp_now,
                 )
+            else:
+                # No current data - use last successful values
+                _LOGGER.info("No current price/station data, using last successful values")
+                last_price = await storage.get_last_price(self.hass, self.config_entry)
+                last_price_timestamp = await storage.get_last_price_timestamp(self.hass, self.config_entry)
+                last_station = await storage.get_last_station(self.hass, self.config_entry)
+                last_station_timestamp = await storage.get_last_station_timestamp(self.hass, self.config_entry)
+                
+                if last_price is not None:
+                    fuel_price = last_price
+                    _LOGGER.info("Using last successful price: €%.3f from %s", last_price, last_price_timestamp)
+                
+                if last_station is not None:
+                    nearest_station = last_station
+                    _LOGGER.info("Using last successful station: %s from %s", last_station.get("name"), last_station_timestamp)
         except Exception as err:
-            _LOGGER.warning("Error storing price observation: %s", err)
+            _LOGGER.warning("Error handling price/station persistence: %s", err)
         
         try:
             # Handle refueling detection
@@ -600,8 +631,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.warning("Error updating consumption prediction: %s", err)
         
+        # Get timestamps for last successful data
+        last_price_timestamp = await storage.get_last_price_timestamp(self.hass, self.config_entry)
+        last_station_timestamp = await storage.get_last_station_timestamp(self.hass, self.config_entry)
+        
         data = {
             "fuel_price": fuel_price,
+            "last_price_timestamp": last_price_timestamp,
             "tank_level": tank_level,
             "tank_percentage": tank_percentage,
             "range": range_km,
@@ -614,6 +650,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 "distance": 0.0,
                 "price": None,
             },
+            "last_station_timestamp": last_station_timestamp,
             "forecast_trend": price_trend,
             "vehicle_data": vehicle_data,
             "tracking": tracking_result,
@@ -681,6 +718,11 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
             ATTR_DISTANCE: station.get("distance"),
             ATTR_FORECAST_TREND: self.coordinator.data.get("forecast_trend"),
         }
+        
+        # Add timestamp of last successful price fetch
+        last_price_timestamp = self.coordinator.data.get("last_price_timestamp")
+        if last_price_timestamp:
+            attributes["last_update_timestamp"] = last_price_timestamp
         
         # Add prediction attributes if available
         if recommendation:
@@ -813,6 +855,11 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
             ATTR_DISTANCE: station.get("distance"),
             ATTR_PRICE: station.get("price"),
         }
+        
+        # Add timestamp of last successful station fetch
+        last_station_timestamp = self.coordinator.data.get("last_station_timestamp")
+        if last_station_timestamp:
+            attributes["last_update_timestamp"] = last_station_timestamp
         
         # Add navigation links if station has coordinates
         lat = station.get("latitude")
