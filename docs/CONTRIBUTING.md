@@ -54,6 +54,34 @@ Thank you for your interest in contributing to the Fuel Watcher Car Advanced Man
 - Use [isort](https://pycqa.github.io/isort/) for import sorting
 - Use type hints for all function signatures
 - Write docstrings for all public functions and classes
+- **Follow data storage guidelines** (see [DATA_STORAGE.md](DATA_STORAGE.md))
+
+### Data Storage Guidelines
+
+**CRITICAL**: All persistent data storage must use Home Assistant's Store class. Never use direct JSON file operations.
+
+See [DATA_STORAGE.md](DATA_STORAGE.md) for complete guidelines on:
+- Using the Storage API correctly
+- Thread-safe operations
+- Data retention policies
+- Best practices and anti-patterns
+
+Example (DO):
+```python
+from .utils import storage
+
+# Load and save data using helper functions
+await storage.add_price_observation(hass, entry, price, timestamp)
+history = await storage.get_price_history(hass, entry)
+```
+
+Example (DON'T):
+```python
+# ❌ WRONG - Never do this
+import json
+with open("data.json", "w") as f:
+    json.dump(data, f)
+```
 
 ### Example Code Style
 

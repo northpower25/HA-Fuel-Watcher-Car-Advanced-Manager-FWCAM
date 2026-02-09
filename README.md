@@ -26,8 +26,10 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
 
 ### 📈 Smart Forecasting & Prediction Engine
 - **Self-learning consumption tracking** based on your driving patterns
+- **Machine learning for advanced predictions** with weekday/weekend pattern recognition
 - **Intelligent refueling recommendations** with urgency levels
 - **Advanced consumption prediction engine** with confidence scoring
+- **Manual prediction trigger** via switch entity for on-demand calculations
 - **Configurable prediction intervals** and data requirements
 - Fuel price trend prediction (rising/falling/stable)
 - Price drop detection with configurable thresholds
@@ -37,6 +39,7 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
 - Best time to refuel suggestions
 - Price vs. distance optimization
 - Automatic fallback to configuration values when insufficient historical data
+- **Stable fuel price display** - sensors retain last successful values with timestamps
 
 ### 📱 Telegram Notifications
 - Price alerts for favorite stations
@@ -131,6 +134,7 @@ The integration creates the following sensors for each configured vehicle:
 ### Controls
 
 - **Test API Connection Button**: Manually test the fuel price API connection with detailed results
+- **Manual Prediction Switch**: Trigger immediate consumption/range prediction calculation on demand
 - **Search Radius Number**: Adjust the search radius (1-25 km) dynamically from the UI
 - **API Update Interval Number**: Configure how often the API is polled (1-60 minutes). Each update is automatically randomized by ±20% to prevent rate limiting when multiple instances access the API simultaneously.
 - **Consumption Min Data Points Number**: Configure minimum historical data points required for reliable predictions (2-50, default: 5)
@@ -144,6 +148,7 @@ Each sensor provides additional attributes:
 - `station_name`: Name of the station
 - `station_address`: Street address
 - `distance`: Distance to station in km
+- `last_update_timestamp`: When this price was last successfully fetched (ISO format)
 - `forecast_trend`: Price trend (rising/falling/stable)
 - `should_refuel`: Boolean recommendation to refuel now
 - `urgency`: Urgency level (low/medium/high/critical)
@@ -158,18 +163,20 @@ Each sensor provides additional attributes:
 - `percentage`: Tank fill percentage
 
 #### Days Until Refuel Sensor (Consumption Prediction)
-- `data_source`: Whether prediction uses `historical_data` or `fallback_values`
+- `data_source`: Whether prediction uses `ml_enhanced`, `historical_data` or `fallback_values`
 - `confidence`: Confidence level of prediction (0-1)
 - `avg_daily_km`: Average daily kilometers driven
 - `avg_consumption_rate`: Average fuel consumption rate (L/100km)
 - `data_points_used`: Number of historical data points used
 - `last_prediction`: Timestamp of last prediction calculation
 - `predicted_refuel_date`: Predicted date/time when refueling will be needed
+- `ml_prediction`: ML-enhanced prediction data (weekday patterns, trends) if available
 
 #### Nearest Station Sensor
 - `station_address`: Full address
 - `distance`: Distance in km
 - `price`: Current fuel price
+- `last_update_timestamp`: When this station was last successfully fetched (ISO format)
 - `google_maps_url`: Navigation link for Google Maps
 - `apple_maps_url`: Navigation link for Apple Maps
 - `waze_url`: Navigation link for Waze
@@ -279,6 +286,8 @@ This is an MVP (Minimum Viable Product) release. The following features are impl
 - ✅ **Real-time consumption tracking (L/100km)**
 - ✅ **Dynamic position-based station search**
 - ✅ **Prediction Engine with intelligent refuel recommendations**
+- ✅ **Machine learning for advanced predictions**
+- ✅ **Manual prediction trigger switch**
 - ✅ **Advanced consumption prediction engine** with confidence scoring
 - ✅ **Configurable prediction intervals and data requirements**
 - ✅ **Persistent storage for price and vehicle history**
