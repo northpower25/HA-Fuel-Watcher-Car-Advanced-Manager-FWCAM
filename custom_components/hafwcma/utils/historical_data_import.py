@@ -28,6 +28,12 @@ from .storage import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Constants for historical data import configuration
+REFUEL_DETECTION_THRESHOLD_LITERS = 5  # Minimum tank level increase to detect refueling
+REFUEL_DETECTION_MIN_TIME_GAP_MINUTES = 5  # Minimum time between refuelings
+ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS = 1  # Maximum time difference for odometer lookup
+PRICE_LOOKUP_WINDOW_DAYS = 7  # Maximum age of price data to use for historical events
+
 
 async def import_historical_vehicle_data(
     hass: HomeAssistant,
@@ -338,11 +344,11 @@ async def _import_tank_history_and_detect_refueling(
                 if previous_level is not None:
                     level_increase = current_level - previous_level
                     
-                    # Refueling detected if increase > 5 liters/percent
-                    # and time gap > 5 minutes (to avoid duplicate detections)
-                    if level_increase > 5:
+                    # Refueling detected if increase exceeds threshold
+                    # and time gap is sufficient (to avoid duplicate detections)
+                    if level_increase > REFUEL_DETECTION_THRESHOLD_LITERS:
                         time_gap = (current_time - previous_time).total_seconds() / 60
-                        if time_gap > 5:
+                        if time_gap > REFUEL_DETECTION_MIN_TIME_GAP_MINUTES:
                             # Find closest odometer reading
                             odometer_km = _find_closest_odometer(odometer_lookup, current_time)
                             
@@ -408,8 +414,9 @@ def _find_closest_odometer(
         key=lambda t: abs((t - target_time).total_seconds()),
     )
     
-    # Return value if within 1 hour
-    if abs((closest_time - target_time).total_seconds()) < 3600:
+    # Return value if within configured time window
+    max_time_diff_seconds = ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS * 3600
+    if abs((closest_time - target_time).total_seconds()) < max_time_diff_seconds:
         return odometer_lookup[closest_time]
     
     return None
@@ -443,6 +450,8 @@ async def _get_current_price(
         closest_price = None
         min_time_diff = float('inf')
         
+        max_price_age_seconds = PRICE_LOOKUP_WINDOW_DAYS * 24 * 3600
+        
         for price_entry in price_history:
             try:
                 price_time = dt_util.parse_datetime(price_entry.get("ts", ""))
@@ -451,8 +460,8 @@ async def _get_current_price(
                 
                 time_diff = abs((price_time - timestamp).total_seconds())
                 
-                # Use price if within 7 days
-                if time_diff < min_time_diff and time_diff < 7 * 24 * 3600:
+                # Use price if within configured time window
+                if time_diff < min_time_diff and time_diff < max_price_age_seconds:
                     min_time_diff = time_diff
                     closest_price = price_entry.get("price")
             except Exception:

@@ -23,6 +23,9 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON, Platform.SWITCH, Platform.NUMBER]
 
+# Historical data import configuration
+HISTORICAL_IMPORT_STARTUP_DELAY_SECONDS = 10  # Delay before starting background import
+
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the haFWCMA component from YAML configuration.
@@ -95,9 +98,9 @@ async def _import_historical_data_background(
         
         _LOGGER.info("Starting background historical data import")
         
-        # Wait a bit to ensure coordinator is fully initialized
+        # Wait to ensure coordinator is fully initialized
         import asyncio
-        await asyncio.sleep(10)
+        await asyncio.sleep(HISTORICAL_IMPORT_STARTUP_DELAY_SECONDS)
         
         # Import historical data (90 days lookback by default)
         result = await import_historical_vehicle_data(

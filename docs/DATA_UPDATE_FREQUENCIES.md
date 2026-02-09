@@ -186,7 +186,7 @@ Immediately fetches current data from configured vehicle entities and updates al
 
 **Use when:**
 - You want instant update without waiting for next interval
-- After refueling to immediate detect the event
+- After refueling to immediately detect the event
 - Testing entity configuration
 
 ### Switches
