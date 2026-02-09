@@ -692,7 +692,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 
                 # Format log message with safe handling of None values
                 log_msg = f"Stored refueling event #{refuel_id}: "
-                log_msg += f"{fuel_added:.1f} L " if fuel_added else "Unknown L "
+                log_msg += f"{fuel_added:.1f} L " if fuel_added is not None else "Unknown L "
                 log_msg += f"at {refuel_event.get('station_name', 'Unknown')} "
                 if fuel_price is not None:
                     log_msg += f"(€{fuel_price:.3f}/L"
