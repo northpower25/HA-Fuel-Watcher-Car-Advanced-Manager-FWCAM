@@ -115,7 +115,7 @@ class SearchRadiusNumber(NumberEntity):
         )
         
         # Schedule state update to reflect new value immediately
-        self.async_schedule_update_ha_state(force_refresh=True)
+        self.async_schedule_update_ha_state()
 
 
 class UpdateIntervalNumber(NumberEntity):
@@ -175,7 +175,7 @@ class UpdateIntervalNumber(NumberEntity):
         )
         
         # Schedule state update to reflect new value immediately
-        self.async_schedule_update_ha_state(force_refresh=True)
+        self.async_schedule_update_ha_state()
 
 
 class ConsumptionMinDataPointsNumber(NumberEntity):
@@ -233,7 +233,7 @@ class ConsumptionMinDataPointsNumber(NumberEntity):
         )
         
         # Schedule state update to reflect new value immediately
-        self.async_schedule_update_ha_state(force_refresh=True)
+        self.async_schedule_update_ha_state()
 
 
 class ConsumptionPredictionIntervalNumber(NumberEntity):
@@ -292,5 +292,5 @@ class ConsumptionPredictionIntervalNumber(NumberEntity):
         )
         
         # Schedule state update to reflect new value immediately
-        self.async_schedule_update_ha_state(force_refresh=True)
+        self.async_schedule_update_ha_state()
 
