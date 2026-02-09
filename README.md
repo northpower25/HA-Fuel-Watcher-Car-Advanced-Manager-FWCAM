@@ -129,6 +129,8 @@ The integration creates the following sensors for each configured vehicle:
 - **Range**: Estimated driving range in kilometers
 - **Nearest Station**: Name and details of closest station
 - **Days Until Refuel**: Predicted days until refueling needed (consumption prediction)
+- **Average Consumption History**: Historical average consumption with attributes for today, last week, last 14 days, and last month
+- **Average Consumption Forecast**: Forecasted average consumption with attributes for tomorrow, next week, next 14 days, and next month
 - **API Debug**: API request/response debug information for troubleshooting
 
 ### Controls
@@ -171,6 +173,38 @@ Each sensor provides additional attributes:
 - `last_prediction`: Timestamp of last prediction calculation
 - `predicted_refuel_date`: Predicted date/time when refueling will be needed
 - `ml_prediction`: ML-enhanced prediction data (weekday patterns, trends) if available
+
+#### Average Consumption History Sensor
+- `today_consumption`: Average consumption for today (L/100km)
+- `today_km`: Total kilometers driven today
+- `today_liters`: Total liters consumed today
+- `today_refuel_count`: Number of refueling events today
+- `last_week_consumption`: Average consumption for last 7 days (L/100km)
+- `last_week_km`: Total kilometers driven in last 7 days
+- `last_week_liters`: Total liters consumed in last 7 days
+- `last_week_refuel_count`: Number of refueling events in last 7 days
+- `last_14_days_consumption`: Average consumption for last 14 days (L/100km)
+- `last_14_days_km`: Total kilometers driven in last 14 days
+- `last_14_days_liters`: Total liters consumed in last 14 days
+- `last_14_days_refuel_count`: Number of refueling events in last 14 days
+- `last_month_consumption`: Average consumption for last 30 days (L/100km)
+- `last_month_km`: Total kilometers driven in last 30 days
+- `last_month_liters`: Total liters consumed in last 30 days
+- `last_month_refuel_count`: Number of refueling events in last 30 days
+
+#### Average Consumption Forecast Sensor
+- `tomorrow_consumption`: Forecasted consumption for tomorrow (L/100km)
+- `tomorrow_confidence`: Confidence level of tomorrow's forecast (0-1)
+- `tomorrow_data_source`: Data source for forecast (`ml_enhanced`, `historical_data`, or `fallback_values`)
+- `next_week_consumption`: Forecasted consumption for next 7 days (L/100km)
+- `next_week_confidence`: Confidence level of next week's forecast (0-1)
+- `next_week_data_source`: Data source for forecast
+- `next_14_days_consumption`: Forecasted consumption for next 14 days (L/100km)
+- `next_14_days_confidence`: Confidence level of forecast (0-1)
+- `next_14_days_data_source`: Data source for forecast
+- `next_month_consumption`: Forecasted consumption for next 30 days (L/100km)
+- `next_month_confidence`: Confidence level of forecast (0-1)
+- `next_month_data_source`: Data source for forecast
 
 #### Nearest Station Sensor
 - `station_address`: Full address
@@ -274,6 +308,39 @@ automation:
             Confidence: {{ (state_attr('sensor.my_car_days_until_refuel', 'confidence') | float * 100) | round(0) }}%
 ```
 
+## Automatic Fuel Log
+
+The integration includes an **automatic fuel log** feature that tracks all your refueling events with comprehensive details:
+
+### Refueling Detection
+
+The system automatically detects refueling events when the tank level increases by more than 5 liters/percent. When a refueling is detected, the following information is automatically recorded:
+
+- **Refueling ID**: Unique sequential ID for each refueling event
+- **Timestamp**: Date and time of the refueling (editable)
+- **Odometer Reading**: Mileage at the time of refueling (editable)
+- **Station Name**: Automatically pre-filled with the recommended station at that time (editable)
+- **Liters Refueled**: Calculated from tank level change (editable)
+- **Price per Liter**: Pre-filled with the current fuel price (editable)
+- **Total Cost**: Automatically calculated from liters × price per liter
+- **Location**: GPS coordinates of the refueling event
+- **Fuel Type**: Type of fuel (E5, E10, Diesel)
+
+### Data Storage
+
+All refueling events are stored persistently in the integration's database with full CRUD (Create, Read, Update, Delete) support. The refueling log maintains up to 100 refueling events per vehicle.
+
+### Future Enhancements
+
+Planned features for the automatic fuel log include:
+- Table entity for viewing and editing refueling records in the Home Assistant UI
+- Telegram chat integration for completing/editing refueling records via chat
+- AI-powered receipt scanning for automatic data extraction
+- Monthly fuel cost reports and statistics
+- Export functionality (CSV, JSON)
+
+See [TODO.md](TODO.md) for the complete roadmap of fuel log features.
+
 ## Development Status
 
 This is an MVP (Minimum Viable Product) release. The following features are implemented:
@@ -294,6 +361,9 @@ This is an MVP (Minimum Viable Product) release. The following features are impl
 - ✅ **Self-learning driving pattern analysis**
 - ✅ **Price trend analysis and statistics**
 - ✅ **Configurable thresholds for personalized recommendations**
+- ✅ **Automatic fuel log with comprehensive refueling tracking**
+- ✅ **Average consumption history sensor** (today, week, 14 days, month)
+- ✅ **Average consumption forecast sensor** (tomorrow, week, 14 days, month)
 - ✅ Telegram notification system
 - ✅ Multi-language support (EN/DE)
 
