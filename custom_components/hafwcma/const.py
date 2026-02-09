@@ -37,6 +37,10 @@ CONF_FALLBACK_DAILY_KM_FRIDAY: Final = "fallback_daily_km_friday"
 CONF_FALLBACK_DAILY_KM_SATURDAY: Final = "fallback_daily_km_saturday"
 CONF_FALLBACK_DAILY_KM_SUNDAY: Final = "fallback_daily_km_sunday"
 
+# Consumption prediction configuration keys
+CONF_CONSUMPTION_MIN_DATA_POINTS: Final = "consumption_min_data_points"
+CONF_CONSUMPTION_PREDICTION_INTERVAL: Final = "consumption_prediction_interval"
+
 # Defaults
 DEFAULT_RADIUS: Final = 5.0  # km
 DEFAULT_TANK_CAPACITY: Final = 50.0  # liters
@@ -56,6 +60,14 @@ DEFAULT_PRICE_DROP_ABSOLUTE: Final = 0.05  # 5 cents drop (EUR)
 DEFAULT_LOW_FUEL_THRESHOLD: Final = 150.0  # 150 km remaining range
 DEFAULT_CRITICAL_FUEL_THRESHOLD: Final = 50.0  # 50 km remaining range
 DEFAULT_FALLBACK_DAILY_KM: Final = 40.0  # 40 km per day (used if weekday-specific not set)
+
+# Consumption prediction defaults
+DEFAULT_CONSUMPTION_MIN_DATA_POINTS: Final = 5  # Minimum historical data points for reliable prediction
+MIN_CONSUMPTION_MIN_DATA_POINTS: Final = 2  # Absolute minimum
+MAX_CONSUMPTION_MIN_DATA_POINTS: Final = 50  # Maximum configurable
+DEFAULT_CONSUMPTION_PREDICTION_INTERVAL: Final = 6.0  # Hours between prediction calculations
+MIN_CONSUMPTION_PREDICTION_INTERVAL: Final = 0.5  # Minimum 30 minutes
+MAX_CONSUMPTION_PREDICTION_INTERVAL: Final = 24.0  # Maximum 24 hours
 
 # Fuel types
 FUEL_TYPE_E5: Final = "e5"
@@ -103,6 +115,12 @@ ATTR_URGENCY: Final = "urgency"
 ATTR_RECOMMENDATION: Final = "recommendation"
 ATTR_DAYS_LEFT: Final = "days_left"
 ATTR_AVG_DAILY_KM: Final = "avg_daily_km"
+ATTR_DATA_SOURCE: Final = "data_source"
+ATTR_LAST_PREDICTION: Final = "last_prediction"
+ATTR_PREDICTED_REFUEL_DATE: Final = "predicted_refuel_date"
+ATTR_CONFIDENCE: Final = "confidence"
+ATTR_AVG_CONSUMPTION_RATE: Final = "avg_consumption_rate"
+ATTR_DATA_POINTS_USED: Final = "data_points_used"
 
 # Events
 EVENT_FUEL_PRICE_ALERT: Final = f"{DOMAIN}_fuel_price_alert"

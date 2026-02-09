@@ -23,10 +23,16 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import (
+    ATTR_AVG_CONSUMPTION_RATE,
     ATTR_AVG_DAILY_KM,
+    ATTR_CONFIDENCE,
+    ATTR_DATA_POINTS_USED,
+    ATTR_DATA_SOURCE,
     ATTR_DAYS_LEFT,
     ATTR_DISTANCE,
     ATTR_FORECAST_TREND,
+    ATTR_LAST_PREDICTION,
+    ATTR_PREDICTED_REFUEL_DATE,
     ATTR_PRICE,
     ATTR_PRICE_DELTA,
     ATTR_PRICE_DELTA_PERCENT,
@@ -38,6 +44,8 @@ from .const import (
     ATTR_TANK_LEVEL,
     ATTR_URGENCY,
     CONF_API_KEY,
+    CONF_CONSUMPTION_MIN_DATA_POINTS,
+    CONF_CONSUMPTION_PREDICTION_INTERVAL,
     CONF_FUEL_TYPE,
     CONF_LATITUDE,
     CONF_LONGITUDE,
@@ -50,6 +58,8 @@ from .const import (
     CONF_TANK_LEVEL_ENTITY,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
+    DEFAULT_CONSUMPTION_MIN_DATA_POINTS,
+    DEFAULT_CONSUMPTION_PREDICTION_INTERVAL,
     DEFAULT_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT,
     DOMAIN,
@@ -59,6 +69,7 @@ from .providers.tankerkonig import TankerkoenigProvider
 from .utils.vehicle_data import async_get_vehicle_data
 from .utils.vehicle_tracker import VehicleDataTracker
 from .utils import storage
+from .utils.consumption_prediction import predict_days_until_refuel, store_prediction_result
 from .utils.prediction_engine import evaluate_refuel_strategy, get_prediction_summary
 from .utils.price_engine import compute_price_trend, get_price_statistics
 from .utils.statistics_engine import estimate_days_left
@@ -100,6 +111,7 @@ async def async_setup_entry(
         RangeSensor(coordinator, config_entry, vehicle_name),
         NearestStationSensor(coordinator, config_entry, vehicle_name),
         ApiDebugSensor(coordinator, config_entry, vehicle_name),
+        ConsumptionPredictionSensor(coordinator, config_entry, vehicle_name),
     ]
 
     async_add_entities(sensors)
@@ -140,6 +152,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._provider = None
         self._session = None
         self._api_debug_info = None  # Store debug info about API requests/responses
+        self._last_consumption_prediction = None  # Store last consumption prediction time
         
         _LOGGER.info(
             "Coordinator initialized with randomized update interval: %.1f minutes (base: %d, jitter: ±%.1f)",
@@ -209,6 +222,89 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         
         # Request a refresh with the new interval
         await self.async_request_refresh()
+
+    async def _update_consumption_prediction(
+        self,
+        range_km: float | None,
+        tank_level: float | None,
+        tank_capacity: float,
+    ) -> dict[str, Any] | None:
+        """Update consumption prediction if interval has passed.
+        
+        Args:
+            range_km: Current range in km
+            tank_level: Current tank level in liters
+            tank_capacity: Tank capacity in liters
+            
+        Returns:
+            Prediction dictionary or None if not updated
+        """
+        from homeassistant.util import dt as dt_util
+        from .const import (
+            CONF_CONSUMPTION_MIN_DATA_POINTS,
+            CONF_CONSUMPTION_PREDICTION_INTERVAL,
+            CONF_FALLBACK_DAILY_KM,
+            DEFAULT_CONSUMPTION_MIN_DATA_POINTS,
+            DEFAULT_CONSUMPTION_PREDICTION_INTERVAL,
+            DEFAULT_FALLBACK_DAILY_KM,
+        )
+        from .utils.statistics_engine import get_average_consumption_rate
+        
+        # Get configuration
+        options = self.config_entry.options
+        config = self.config_entry.data
+        
+        prediction_interval_hours = options.get(CONF_CONSUMPTION_PREDICTION_INTERVAL) or config.get(
+            CONF_CONSUMPTION_PREDICTION_INTERVAL, DEFAULT_CONSUMPTION_PREDICTION_INTERVAL
+        )
+        min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
+            CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+        )
+        fallback_daily_km = options.get(CONF_FALLBACK_DAILY_KM) or config.get(
+            CONF_FALLBACK_DAILY_KM, DEFAULT_FALLBACK_DAILY_KM
+        )
+        
+        # Check if we should run prediction (based on interval)
+        now = dt_util.now()
+        if self._last_consumption_prediction:
+            time_since_last = (now - self._last_consumption_prediction).total_seconds() / 3600
+            if time_since_last < prediction_interval_hours:
+                # Return None to keep existing prediction
+                return None
+        
+        # Update last prediction time
+        self._last_consumption_prediction = now
+        
+        # Get average consumption rate from history
+        fallback_consumption_rate = await get_average_consumption_rate(
+            self.hass,
+            self.config_entry,
+            fallback=7.0,
+        )
+        
+        # Run prediction
+        prediction = await predict_days_until_refuel(
+            self.hass,
+            self.config_entry,
+            current_range_km=range_km,
+            current_tank_level=tank_level,
+            tank_capacity=tank_capacity,
+            fallback_daily_km=fallback_daily_km,
+            fallback_consumption_rate=fallback_consumption_rate,
+            min_data_points=int(min_data_points),
+        )
+        
+        # Store prediction result for accuracy tracking
+        await store_prediction_result(self.hass, self.config_entry, prediction)
+        
+        _LOGGER.info(
+            "Consumption prediction updated: %.1f days until refuel (source: %s, confidence: %.2f)",
+            prediction.get("days_until_refuel") or 0,
+            prediction.get("data_source"),
+            prediction.get("confidence") or 0,
+        )
+        
+        return prediction
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -493,6 +589,17 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             except Exception as err:
                 _LOGGER.warning("Error estimating days left: %s", err)
         
+        # Run consumption prediction if interval has passed
+        consumption_prediction = None
+        try:
+            consumption_prediction = await self._update_consumption_prediction(
+                range_km=range_km,
+                tank_level=tank_level,
+                tank_capacity=options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0),
+            )
+        except Exception as err:
+            _LOGGER.warning("Error updating consumption prediction: %s", err)
+        
         data = {
             "fuel_price": fuel_price,
             "tank_level": tank_level,
@@ -513,6 +620,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "recommendation": recommendation,
             "days_left": days_left,
             "api_debug": self._api_debug_info,  # Add debug information
+            "consumption_prediction": consumption_prediction,  # Add consumption prediction
         }
         
         # Apply randomization for next update interval
@@ -757,4 +865,67 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
             return {"status": "No API request made yet"}
         
         return api_debug
+
+
+class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing days until refueling is needed based on consumption prediction."""
+
+    _attr_icon = "mdi:fuel"
+    _attr_native_unit_of_measurement = "days"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._attr_name = f"{vehicle_name} Days Until Refuel"
+        self._attr_unique_id = f"{config_entry.entry_id}_days_until_refuel"
+        self._last_prediction_update = None
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the days until refueling is needed."""
+        prediction = self.coordinator.data.get("consumption_prediction")
+        if prediction:
+            return prediction.get("days_until_refuel")
+        return None
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional prediction attributes."""
+        prediction = self.coordinator.data.get("consumption_prediction")
+        if not prediction:
+            return {
+                ATTR_DATA_SOURCE: "no_data",
+                "status": "Waiting for initial prediction",
+            }
+        
+        attributes = {
+            ATTR_DATA_SOURCE: prediction.get("data_source", "unknown"),
+            ATTR_CONFIDENCE: prediction.get("confidence", 0.0),
+            ATTR_AVG_DAILY_KM: prediction.get("avg_daily_km", 0.0),
+            ATTR_AVG_CONSUMPTION_RATE: prediction.get("avg_consumption_rate", 0.0),
+            ATTR_DATA_POINTS_USED: prediction.get("data_points_used", 0),
+        }
+        
+        # Add last prediction time
+        if prediction.get("last_prediction_time"):
+            attributes[ATTR_LAST_PREDICTION] = prediction["last_prediction_time"].isoformat()
+        
+        # Add predicted refuel date
+        if prediction.get("predicted_refuel_date"):
+            attributes[ATTR_PREDICTED_REFUEL_DATE] = prediction["predicted_refuel_date"].isoformat()
+        
+        return attributes
 
