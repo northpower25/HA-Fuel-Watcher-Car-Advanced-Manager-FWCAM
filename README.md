@@ -27,6 +27,8 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
 ### 📈 Smart Forecasting & Prediction Engine
 - **Self-learning consumption tracking** based on your driving patterns
 - **Intelligent refueling recommendations** with urgency levels
+- **Advanced consumption prediction engine** with confidence scoring
+- **Configurable prediction intervals** and data requirements
 - Fuel price trend prediction (rising/falling/stable)
 - Price drop detection with configurable thresholds
 - Days until refuel estimation based on learned daily kilometers
@@ -34,6 +36,7 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
 - Weekday consumption pattern learning
 - Best time to refuel suggestions
 - Price vs. distance optimization
+- Automatic fallback to configuration values when insufficient historical data
 
 ### 📱 Telegram Notifications
 - Price alerts for favorite stations
@@ -122,6 +125,7 @@ The integration creates the following sensors for each configured vehicle:
 - **Tank Level**: Current fuel level in liters
 - **Range**: Estimated driving range in kilometers
 - **Nearest Station**: Name and details of closest station
+- **Days Until Refuel**: Predicted days until refueling needed (consumption prediction)
 - **API Debug**: API request/response debug information for troubleshooting
 
 ### Controls
@@ -129,6 +133,8 @@ The integration creates the following sensors for each configured vehicle:
 - **Test API Connection Button**: Manually test the fuel price API connection with detailed results
 - **Search Radius Number**: Adjust the search radius (1-25 km) dynamically from the UI
 - **API Update Interval Number**: Configure how often the API is polled (1-60 minutes). Each update is automatically randomized by ±20% to prevent rate limiting when multiple instances access the API simultaneously.
+- **Consumption Min Data Points Number**: Configure minimum historical data points required for reliable predictions (2-50, default: 5)
+- **Consumption Prediction Interval Number**: Configure how often consumption predictions are recalculated (0.5-24 hours, default: 6)
 
 ### Attributes
 
@@ -150,6 +156,15 @@ Each sensor provides additional attributes:
 
 #### Tank Level Sensor
 - `percentage`: Tank fill percentage
+
+#### Days Until Refuel Sensor (Consumption Prediction)
+- `data_source`: Whether prediction uses `historical_data` or `fallback_values`
+- `confidence`: Confidence level of prediction (0-1)
+- `avg_daily_km`: Average daily kilometers driven
+- `avg_consumption_rate`: Average fuel consumption rate (L/100km)
+- `data_points_used`: Number of historical data points used
+- `last_prediction`: Timestamp of last prediction calculation
+- `predicted_refuel_date`: Predicted date/time when refueling will be needed
 
 #### Nearest Station Sensor
 - `station_address`: Full address
@@ -229,6 +244,29 @@ automation:
             Days of fuel left: {{ state_attr('sensor.my_car_range', 'days_left') }}
 ```
 
+Example automation using consumption prediction:
+
+```yaml
+automation:
+  - alias: "Low Days Until Refuel Alert"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.my_car_days_until_refuel
+        below: 2
+    condition:
+      - condition: template
+        value_template: "{{ state_attr('sensor.my_car_days_until_refuel', 'confidence') | float > 0.5 }}"
+    action:
+      - service: notify.telegram
+        data:
+          message: >
+            Warning: Only {{ states('sensor.my_car_days_until_refuel') }} days of fuel left!
+            
+            Predicted refuel date: {{ state_attr('sensor.my_car_days_until_refuel', 'predicted_refuel_date') }}
+            Data source: {{ state_attr('sensor.my_car_days_until_refuel', 'data_source') }}
+            Confidence: {{ (state_attr('sensor.my_car_days_until_refuel', 'confidence') | float * 100) | round(0) }}%
+```
+
 ## Development Status
 
 This is an MVP (Minimum Viable Product) release. The following features are implemented:
@@ -241,6 +279,8 @@ This is an MVP (Minimum Viable Product) release. The following features are impl
 - ✅ **Real-time consumption tracking (L/100km)**
 - ✅ **Dynamic position-based station search**
 - ✅ **Prediction Engine with intelligent refuel recommendations**
+- ✅ **Advanced consumption prediction engine** with confidence scoring
+- ✅ **Configurable prediction intervals and data requirements**
 - ✅ **Persistent storage for price and vehicle history**
 - ✅ **Self-learning driving pattern analysis**
 - ✅ **Price trend analysis and statistics**
