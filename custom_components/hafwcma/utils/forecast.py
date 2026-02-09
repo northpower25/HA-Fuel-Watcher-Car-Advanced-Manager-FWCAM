@@ -5,6 +5,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
+from homeassistant.util import dt as dt_util
+
 from ..models import FuelForecast
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,7 +38,7 @@ class FuelPriceForecaster:
             timestamp: Time of observation (uses now if None)
         """
         if timestamp is None:
-            timestamp = datetime.now()
+            timestamp = dt_util.now()
 
         if fuel_type not in self.price_history:
             self.price_history[fuel_type] = []
@@ -44,7 +46,7 @@ class FuelPriceForecaster:
         self.price_history[fuel_type].append((timestamp, price))
 
         # Keep only last 30 days of data
-        cutoff_date = datetime.now() - timedelta(days=30)
+        cutoff_date = dt_util.now() - timedelta(days=30)
         self.price_history[fuel_type] = [
             (ts, p) for ts, p in self.price_history[fuel_type] if ts > cutoff_date
         ]
@@ -83,7 +85,7 @@ class FuelPriceForecaster:
             )
 
         # Filter to lookback period
-        cutoff_time = datetime.now() - timedelta(hours=lookback_hours)
+        cutoff_time = dt_util.now() - timedelta(hours=lookback_hours)
         recent_history = [(ts, p) for ts, p in history if ts > cutoff_time]
 
         if len(recent_history) < 2:

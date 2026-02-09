@@ -186,7 +186,7 @@ def is_within_operating_hours(
         True if within operating hours
     """
     if current_time is None:
-        current_time = datetime.now()
+        current_time = dt_util.now()
 
     current_hour = current_time.hour
     return open_hour <= current_hour < close_hour

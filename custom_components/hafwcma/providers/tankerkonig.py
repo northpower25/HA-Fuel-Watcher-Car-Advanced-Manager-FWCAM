@@ -9,6 +9,8 @@ from typing import Any, Dict, List
 
 import aiohttp
 
+from homeassistant.util import dt as dt_util
+
 from ..const import TANKERKONIG_API_URL
 from ..models import FuelStation
 from . import FuelPriceProvider, ProviderError
@@ -181,7 +183,7 @@ class TankerkoenigProvider(FuelPriceProvider):
             "status": response.status,
             "error": f"HTTP {response.status}",
             "error_body": error_body,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": dt_util.now().isoformat(),
         }
         
         # Create detailed error message
@@ -234,7 +236,7 @@ class TankerkoenigProvider(FuelPriceProvider):
             self.last_api_request = {
                 "url": url,
                 "params": self._mask_api_key(params),
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": dt_util.now().isoformat(),
             }
             
             async with self.session.get(url, params=params) as response:
@@ -246,7 +248,7 @@ class TankerkoenigProvider(FuelPriceProvider):
                 self.last_api_response = {
                     "status": response.status,
                     "data": data,
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": dt_util.now().isoformat(),
                 }
 
                 if not data.get("ok"):
@@ -278,7 +280,7 @@ class TankerkoenigProvider(FuelPriceProvider):
             self.last_api_response = {
                 "error": str(err),
                 "error_type": type(err).__name__,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": dt_util.now().isoformat(),
             }
             _LOGGER.error("Error fetching stations: %s", err)
             raise ProviderError(f"Network error: {err}") from err
@@ -308,7 +310,7 @@ class TankerkoenigProvider(FuelPriceProvider):
             self.last_api_request = {
                 "url": url,
                 "params": self._mask_api_key(params),
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": dt_util.now().isoformat(),
             }
             
             async with self.session.get(url, params=params) as response:
@@ -320,7 +322,7 @@ class TankerkoenigProvider(FuelPriceProvider):
                 self.last_api_response = {
                     "status": response.status,
                     "data": data,
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": dt_util.now().isoformat(),
                 }
 
                 if not data.get("ok"):
@@ -352,7 +354,7 @@ class TankerkoenigProvider(FuelPriceProvider):
             self.last_api_response = {
                 "error": str(err),
                 "error_type": type(err).__name__,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": dt_util.now().isoformat(),
             }
             _LOGGER.error("Error fetching station details: %s", err)
             raise ProviderError(f"Network error: {err}") from err
@@ -450,7 +452,7 @@ class TankerkoenigProvider(FuelPriceProvider):
                 price_e10=_parse_price(price_e10),
                 price_diesel=_parse_price(price_diesel),
                 is_open=_parse_is_open(data.get("isOpen")),
-                last_updated=datetime.now(),
+                last_updated=dt_util.now(),
             )
 
             # Log detailed station info for debugging

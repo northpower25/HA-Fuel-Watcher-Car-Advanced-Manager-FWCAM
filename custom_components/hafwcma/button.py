@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_API_KEY,
@@ -113,7 +114,7 @@ class TestProviderConnectionButton(ButtonEntity):
                     location_source = f"vehicle ({position_entity})"
         
         # Build the debug data
-        timestamp = datetime.now().isoformat()
+        timestamp = dt_util.now().isoformat()
         
         try:
             # Test API connection based on provider
