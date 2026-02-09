@@ -17,15 +17,24 @@
 - [x] Implement database for vehicle data and refuel history
 - [x] Add vehicle data change detection (refueling detection)
 - [x] Implement basic consumption tracking (L/100km calculation)
+- [x] Add prediction history for accuracy tracking
 - [ ] Add data migration support for upgrades
 - [ ] Create backup/restore functionality
+- [ ] Implement prediction accuracy analysis and reporting
+- [ ] Add data export functionality (CSV, JSON)
 
 ### Forecasting
 - [x] Improve price forecasting algorithm (statistical analysis)
 - [x] Add historical price analysis
 - [x] Implement predictive refueling recommendations
+- [x] Implement consumption prediction engine with historical data analysis
+- [x] Add configurable prediction intervals and data requirements
+- [x] Create days-until-refuel sensor with confidence scoring
 - [ ] Add support for external price trend APIs
 - [ ] Add machine learning for advanced predictions
+- [ ] Implement seasonal consumption pattern learning
+- [ ] Add weather-based consumption adjustments (requires weather integration)
+- [ ] Add route-based consumption prediction (requires route planning integration)
 
 ## Medium Priority
 
@@ -45,9 +54,12 @@
 ### User Interface
 - [x] Manual data refresh via switch entity
 - [x] API connection test via button entity with result attributes
+- [x] Configurable number entities for prediction settings (min data points, prediction interval)
 - [ ] Add Lovelace card for dashboard display
 - [ ] Create custom panel for detailed statistics
 - [ ] Add graphical price trend visualization
+- [ ] Add consumption prediction accuracy visualization
+- [ ] Create prediction confidence indicator in UI
 - [ ] Implement interactive station map
 
 ### Automations
@@ -140,4 +152,4 @@
 
 **Note**: This is a living document. Items will be added, removed, or reprioritized based on user feedback and development progress.
 
-Last updated: 2026-02-05
+Last updated: 2026-02-09
