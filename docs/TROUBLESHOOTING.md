@@ -80,6 +80,24 @@ A new number entity `number.[vehicle_name]_search_radius` allows you to adjust t
 
 ## Common Issues
 
+### Issue: Number input fields "shake" or "wobble" when changing values
+
+**Symptoms**: 
+- When adjusting number entities like `number.[vehicle_name]_search_radius`, the input field or display briefly flickers
+- Visual "shaking" or "wobbling" effect in the Home Assistant UI
+- Affects: `api_update_interval`, `consumption_min_data_points`, `consumption_prediction_interval`, `search_radius`
+
+**Resolution**:
+This issue has been fixed in recent versions. The problem was caused by duplicate state updates when changing values. If you still experience this:
+
+1. **Update to the latest version** of the integration
+2. **Restart Home Assistant** after updating
+3. **Clear browser cache** (Ctrl+F5 or Cmd+Shift+R)
+4. If the issue persists, check Home Assistant logs for errors
+
+**Technical background**:
+The issue was resolved by removing redundant `async_schedule_update_ha_state()` calls that created race conditions with the config entry update listener.
+
 ### Issue: "No station found" even though stations exist nearby
 
 **Symptoms**: 

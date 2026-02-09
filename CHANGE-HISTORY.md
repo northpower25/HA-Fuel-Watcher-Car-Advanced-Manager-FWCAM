@@ -1,5 +1,19 @@
 # Change History
 
+## Version 0.3.1 (2026-02-09) - UI Improvements
+
+### Fixed
+- **Number Entity UI Shaking/Wobbling** (#issue)
+  - Fixed visual "shaking" or "wobbling" effect when adjusting number entities
+  - Removed redundant `async_schedule_update_ha_state()` calls that caused duplicate updates
+  - Affects: `api_update_interval`, `consumption_min_data_points`, `consumption_prediction_interval`, `search_radius`
+  - Entities now update smoothly through the config entry update listener mechanism
+  - No functional changes - all values still update correctly in the UI
+
+### Documentation
+- Added troubleshooting section for number input field shaking/wobbling issue
+- Documented the technical resolution in TROUBLESHOOTING.md
+
 ## Version 0.3.0 (2026-02-06) - Prediction Engine
 
 ### Added
