@@ -657,12 +657,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 tank_capacity=options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0),
             )
             # If no new prediction (interval not passed), keep existing prediction from previous data
-            if consumption_prediction is None and hasattr(self, 'data') and self.data:
+            if consumption_prediction is None and self.data:
                 consumption_prediction = self.data.get("consumption_prediction")
         except Exception as err:
             _LOGGER.warning("Error updating consumption prediction: %s", err)
             # Keep existing prediction on error
-            if hasattr(self, 'data') and self.data:
+            if self.data:
                 consumption_prediction = self.data.get("consumption_prediction")
         
         # Get timestamps for last successful data

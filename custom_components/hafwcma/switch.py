@@ -190,8 +190,6 @@ class ManualPredictionSwitch(SwitchEntity):
                 # This ensures the sensor gets updated immediately without waiting for the next interval
                 if self._coordinator.data:
                     self._coordinator.data["consumption_prediction"] = prediction
-                    # Update last prediction time in coordinator to prevent duplicate runs
-                    self._coordinator._last_consumption_prediction = dt_util.now()
                 
                 # Request coordinator refresh to update sensors
                 await self._coordinator.async_request_refresh()
