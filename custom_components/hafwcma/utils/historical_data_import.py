@@ -33,6 +33,7 @@ REFUEL_DETECTION_THRESHOLD_LITERS = 5  # Minimum tank level increase to detect r
 REFUEL_DETECTION_MIN_TIME_GAP_MINUTES = 5  # Minimum time between refuelings
 ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS = 1  # Maximum time difference for odometer lookup
 PRICE_LOOKUP_WINDOW_DAYS = 7  # Maximum age of price data to use for historical events
+SECONDS_PER_HOUR = 3600  # Number of seconds in an hour
 
 
 async def import_historical_vehicle_data(
@@ -415,7 +416,7 @@ def _find_closest_odometer(
     )
     
     # Return value if within configured time window
-    max_time_diff_seconds = ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS * 3600
+    max_time_diff_seconds = ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS * SECONDS_PER_HOUR
     if abs((closest_time - target_time).total_seconds()) < max_time_diff_seconds:
         return odometer_lookup[closest_time]
     
@@ -450,7 +451,7 @@ async def _get_current_price(
         closest_price = None
         min_time_diff = float('inf')
         
-        max_price_age_seconds = PRICE_LOOKUP_WINDOW_DAYS * 24 * 3600
+        max_price_age_seconds = PRICE_LOOKUP_WINDOW_DAYS * 24 * SECONDS_PER_HOUR
         
         for price_entry in price_history:
             try:
