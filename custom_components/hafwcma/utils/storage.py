@@ -262,8 +262,9 @@ async def add_refuel_event(
     # Get next ID from counter (with fallback for old data)
     if "next_refuel_id" not in data:
         # Migrate old data - scan for max ID with safe default
+        # Use default=-1 to ensure first ID is 1 even if all existing IDs are 0 or missing
         if data["refueling_log"]:
-            data["next_refuel_id"] = max((event.get("id", 0) for event in data["refueling_log"]), default=0) + 1
+            data["next_refuel_id"] = max((event.get("id", 0) for event in data["refueling_log"]), default=-1) + 1
         else:
             data["next_refuel_id"] = 1
     
@@ -697,9 +698,12 @@ async def calculate_consumption_history(
         liters_refueled = curr_event.get("liters_refueled")
         
         # Fuel from current refueling was consumed to reach next refueling
-        if curr_odometer and next_odometer and liters_refueled:
+        # Use explicit None checks to handle 0 values correctly
+        if (curr_odometer is not None and next_odometer is not None 
+            and liters_refueled is not None):
             km_driven = next_odometer - curr_odometer
-            if km_driven > 0:
+            # Only count if positive distance and fuel was actually consumed
+            if km_driven > 0 and liters_refueled > 0:
                 total_km += km_driven
                 total_liters += liters_refueled
     

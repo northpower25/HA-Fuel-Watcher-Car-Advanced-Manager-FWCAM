@@ -669,9 +669,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 # Get fuel added amount
                 fuel_added = tracking_result.get("fuel_added")
                 
-                # Calculate total cost only if both price and amount are available
+                # Calculate total cost only if both price and amount are available and positive
                 total_cost = None
-                if fuel_price is not None and fuel_added is not None:
+                if (fuel_price is not None and fuel_added is not None 
+                    and fuel_price > 0 and fuel_added > 0):
                     total_cost = fuel_added * fuel_price
                 
                 # Create comprehensive refueling event with all available data
@@ -690,9 +691,16 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 # Store in new refueling log with ID
                 refuel_id = await storage.add_refuel_event(self.hass, self.config_entry, refuel_event)
                 
-                # Format log message with safe handling of None values
+                # Format log message with safe handling of None values and type errors
                 log_msg = f"Stored refueling event #{refuel_id}: "
-                log_msg += f"{fuel_added:.1f} L " if fuel_added is not None else "Unknown L "
+                try:
+                    if fuel_added is not None and isinstance(fuel_added, (int, float)):
+                        log_msg += f"{fuel_added:.1f} L "
+                    else:
+                        log_msg += "Unknown L "
+                except (TypeError, ValueError):
+                    log_msg += "Unknown L "
+                
                 log_msg += f"at {refuel_event.get('station_name', 'Unknown')} "
                 if fuel_price is not None:
                     log_msg += f"(€{fuel_price:.3f}/L"
