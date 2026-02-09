@@ -186,6 +186,11 @@ class ManualPredictionSwitch(SwitchEntity):
                 
                 _LOGGER.info("Manual prediction completed: %s", prediction)
                 
+                # Directly update coordinator data with the new prediction
+                # This ensures the sensor gets updated immediately without waiting for the next interval
+                if self._coordinator.data:
+                    self._coordinator.data["consumption_prediction"] = prediction
+                
                 # Request coordinator refresh to update sensors
                 await self._coordinator.async_request_refresh()
                 

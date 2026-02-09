@@ -1,5 +1,21 @@
 # Change History
 
+## Version 0.0.25 (2026-02-09) - Bug Fix: Manual Prediction
+
+### Fixed
+- **Days Until Refuel Sensor Showing Unknown** (#issue)
+  - Fixed issue where `sensor.[car name]_days_until_refuel` remained "unknown" after manual prediction trigger
+  - Manual prediction switch now directly updates coordinator data for immediate sensor update
+  - Coordinator now preserves existing prediction values between update intervals
+  - Affects: `switch.[car name]_manual_prediction` and `sensor.[car name]_days_until_refuel`
+  - Root cause: Synchronization issue between manual switch and coordinator refresh cycle
+  - Sensor now correctly displays prediction values immediately after manual trigger
+
+### Technical Details
+- Updated `switch.py`: Direct update of `coordinator.data["consumption_prediction"]` after prediction completes
+- Updated `sensor.py`: Preserve existing prediction when interval check returns None
+- No breaking changes - all existing functionality preserved
+
 ## Version 0.3.1 (2026-02-09) - UI Improvements
 
 ### Fixed
