@@ -1107,6 +1107,14 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
                 "status": "Waiting for initial prediction",
             }
         
+        # Get min data points configuration
+        from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+        options = self._config_entry.options
+        config = self._config_entry.data
+        min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
+            CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+        )
+        
         attributes = {
             ATTR_DATA_SOURCE: prediction.get("data_source", "unknown"),
             ATTR_CONFIDENCE: prediction.get("confidence", 0.0),
@@ -1114,6 +1122,16 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             ATTR_AVG_CONSUMPTION_RATE: prediction.get("avg_consumption_rate", 0.0),
             ATTR_DATA_POINTS_USED: prediction.get("data_points_used", 0),
         }
+        
+        # Calculate and add data points percentage
+        data_points_used = prediction.get("data_points_used", 0)
+        if min_data_points > 0:
+            data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
+            attributes["data_points_percentage"] = round(data_points_percentage, 1)
+            attributes["data_points_required"] = min_data_points
+        else:
+            attributes["data_points_percentage"] = 0.0
+            attributes["data_points_required"] = min_data_points
         
         # Add last prediction time
         if prediction.get("last_prediction_time"):

@@ -136,11 +136,16 @@ The integration creates the following sensors for each configured vehicle:
 ### Controls
 
 - **Test API Connection Button**: Manually test the fuel price API connection with detailed results
+- **Import Historical Data Button**: Import historical vehicle data from Home Assistant's recorder (odometer, tank level changes, past refuelings)
+- **Refresh Vehicle Data Button**: Manually fetch current vehicle data from configured entities
+- **Manual Refresh Switch**: Trigger immediate data refresh (API + vehicle data)
 - **Manual Prediction Switch**: Trigger immediate consumption/range prediction calculation on demand
 - **Search Radius Number**: Adjust the search radius (1-25 km) dynamically from the UI
-- **API Update Interval Number**: Configure how often the API is polled (1-60 minutes). Each update is automatically randomized by ±20% to prevent rate limiting when multiple instances access the API simultaneously.
+- **API Update Interval Number**: Configure how often the API is polled (1-60 minutes). Each update is automatically randomized by ±2% to prevent rate limiting when multiple instances access the API simultaneously.
 - **Consumption Min Data Points Number**: Configure minimum historical data points required for reliable predictions (2-50, default: 5)
 - **Consumption Prediction Interval Number**: Configure how often consumption predictions are recalculated (0.5-24 hours, default: 6)
+
+For detailed information about update frequencies, configuration options, and warnings about API limits and system load, see [Data Update Frequencies Guide](docs/DATA_UPDATE_FREQUENCIES.md).
 
 ### Attributes
 
@@ -170,6 +175,8 @@ Each sensor provides additional attributes:
 - `avg_daily_km`: Average daily kilometers driven
 - `avg_consumption_rate`: Average fuel consumption rate (L/100km)
 - `data_points_used`: Number of historical data points used
+- `data_points_percentage`: Percentage of required data points collected (shows progress before switching from fallback to historical mode)
+- `data_points_required`: Minimum data points required (configured value)
 - `last_prediction`: Timestamp of last prediction calculation
 - `predicted_refuel_date`: Predicted date/time when refueling will be needed
 - `ml_prediction`: ML-enhanced prediction data (weekday patterns, trends) if available

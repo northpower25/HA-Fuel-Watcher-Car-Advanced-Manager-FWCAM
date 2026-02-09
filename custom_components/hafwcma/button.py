@@ -51,6 +51,8 @@ async def async_setup_entry(
 
     buttons = [
         TestProviderConnectionButton(coordinator, config_entry, vehicle_name, hass),
+        ImportHistoricalDataButton(coordinator, config_entry, vehicle_name, hass),
+        RefreshVehicleDataButton(coordinator, config_entry, vehicle_name, hass),
     ]
 
     async_add_entities(buttons)
@@ -237,3 +239,123 @@ class TestProviderConnectionButton(ButtonEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with test results."""
         return self._last_result
+
+
+class ImportHistoricalDataButton(ButtonEntity):
+    """Button to import historical vehicle data from recorder."""
+
+    _attr_icon = "mdi:database-import"
+
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the button.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+            hass: Home Assistant instance
+        """
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = f"{vehicle_name} Import Historical Data"
+        self._attr_unique_id = f"{config_entry.entry_id}_import_historical_data"
+        self._last_result: dict[str, Any] = {}
+
+    async def async_press(self) -> None:
+        """Handle button press - import historical data."""
+        _LOGGER.info("Manual historical data import triggered")
+        
+        try:
+            from .utils.historical_data_import import import_historical_vehicle_data
+            
+            # Import with force_reimport=True to allow re-importing
+            result = await import_historical_vehicle_data(
+                self._hass,
+                self._config_entry,
+                lookback_days=90,
+                force_reimport=True,
+            )
+            
+            self._last_result = result
+            
+            if result["imported"]:
+                _LOGGER.info(
+                    "Historical import successful: %d odometer points, %d refuel events",
+                    result["odometer_points_imported"],
+                    result["refuel_events_detected"],
+                )
+            else:
+                _LOGGER.warning("Historical import skipped: %s", result["reason"])
+                
+        except Exception as err:
+            self._last_result = {
+                "imported": False,
+                "reason": f"Error: {str(err)}",
+                "error_type": type(err).__name__,
+                "error_details": str(err),
+            }
+            _LOGGER.error("Error importing historical data: %s", err, exc_info=True)
+        
+        # Trigger coordinator update to recalculate predictions with new data
+        if self._coordinator:
+            await self._coordinator.async_request_refresh()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with import results."""
+        return self._last_result
+
+
+class RefreshVehicleDataButton(ButtonEntity):
+    """Button to manually refresh vehicle data from source entities."""
+
+    _attr_icon = "mdi:car-sync"
+
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the button.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+            hass: Home Assistant instance
+        """
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = f"{vehicle_name} Refresh Vehicle Data"
+        self._attr_unique_id = f"{config_entry.entry_id}_refresh_vehicle_data"
+        self._last_refresh_time: str | None = None
+
+    async def async_press(self) -> None:
+        """Handle button press - refresh vehicle data."""
+        _LOGGER.info("Manual vehicle data refresh triggered")
+        
+        # Request coordinator to refresh data (which includes fetching vehicle data)
+        if self._coordinator:
+            await self._coordinator.async_request_refresh()
+            self._last_refresh_time = dt_util.now().isoformat()
+            _LOGGER.info("Vehicle data refresh completed")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        attrs = {}
+        if self._last_refresh_time:
+            attrs["last_refresh_time"] = self._last_refresh_time
+        if self._coordinator and hasattr(self._coordinator, "last_update_success"):
+            attrs["last_update_success"] = self._coordinator.last_update_success
+        return attrs

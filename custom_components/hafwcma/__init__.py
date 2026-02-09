@@ -69,7 +69,55 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Setup options update listener - use update handler instead of reload
     entry.async_on_unload(entry.add_update_listener(async_update_options))
     
+    # Import historical data in the background (non-blocking)
+    # This runs asynchronously after setup is complete
+    hass.async_create_task(_import_historical_data_background(hass, entry))
+    
     return True
+
+
+async def _import_historical_data_background(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> None:
+    """Import historical data in the background.
+    
+    This runs after integration setup to avoid blocking startup.
+    Imports historical vehicle data from Home Assistant's recorder
+    to populate consumption history and enable predictions.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+    """
+    try:
+        from .utils.historical_data_import import import_historical_vehicle_data
+        
+        _LOGGER.info("Starting background historical data import")
+        
+        # Wait a bit to ensure coordinator is fully initialized
+        import asyncio
+        await asyncio.sleep(10)
+        
+        # Import historical data (90 days lookback by default)
+        result = await import_historical_vehicle_data(
+            hass,
+            entry,
+            lookback_days=90,
+            force_reimport=False,
+        )
+        
+        if result["imported"]:
+            _LOGGER.info(
+                "Historical data import completed: %d odometer points, %d refuel events",
+                result["odometer_points_imported"],
+                result["refuel_events_detected"],
+            )
+        else:
+            _LOGGER.info("Historical data import skipped: %s", result["reason"])
+            
+    except Exception as err:
+        _LOGGER.error("Error during background historical data import: %s", err, exc_info=True)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
