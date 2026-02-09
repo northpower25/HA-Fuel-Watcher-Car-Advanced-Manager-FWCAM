@@ -694,7 +694,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 # Format log message with safe handling of None values and type errors
                 log_msg = f"Stored refueling event #{refuel_id}: "
                 try:
-                    if fuel_added is not None and isinstance(fuel_added, (int, float)):
+                    if fuel_added is not None:
                         log_msg += f"{fuel_added:.1f} L "
                     else:
                         log_msg += "Unknown L "
