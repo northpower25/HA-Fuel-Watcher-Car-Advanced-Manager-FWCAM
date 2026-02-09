@@ -107,14 +107,15 @@ class SearchRadiusNumber(NumberEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_RADIUS] = value
         
+        # Update entry - this will trigger the update listener (async_update_options)
+        # which will update the coordinator and refresh entities
         self._hass.config_entries.async_update_entry(
             self._config_entry,
             options=new_options,
         )
         
-        # Trigger coordinator refresh to use new radius
-        if self._coordinator:
-            await self._coordinator.async_request_refresh()
+        # Schedule state update to reflect new value immediately
+        self.async_schedule_update_ha_state()
 
 
 class UpdateIntervalNumber(NumberEntity):
@@ -166,14 +167,15 @@ class UpdateIntervalNumber(NumberEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_UPDATE_INTERVAL] = int(value)
         
+        # Update entry - this will trigger the update listener (async_update_options)
+        # which will update the coordinator with new interval
         self._hass.config_entries.async_update_entry(
             self._config_entry,
             options=new_options,
         )
         
-        # Update coordinator's update interval and schedule next refresh
-        if self._coordinator:
-            await self._coordinator.async_set_update_interval(int(value))
+        # Schedule state update to reflect new value immediately
+        self.async_schedule_update_ha_state()
 
 
 class ConsumptionMinDataPointsNumber(NumberEntity):
@@ -224,10 +226,14 @@ class ConsumptionMinDataPointsNumber(NumberEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_CONSUMPTION_MIN_DATA_POINTS] = int(value)
         
+        # Update entry - this will trigger the update listener (async_update_options)
         self._hass.config_entries.async_update_entry(
             self._config_entry,
             options=new_options,
         )
+        
+        # Schedule state update to reflect new value immediately
+        self.async_schedule_update_ha_state()
 
 
 class ConsumptionPredictionIntervalNumber(NumberEntity):
@@ -279,8 +285,12 @@ class ConsumptionPredictionIntervalNumber(NumberEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_CONSUMPTION_PREDICTION_INTERVAL] = value
         
+        # Update entry - this will trigger the update listener (async_update_options)
         self._hass.config_entries.async_update_entry(
             self._config_entry,
             options=new_options,
         )
+        
+        # Schedule state update to reflect new value immediately
+        self.async_schedule_update_ha_state()
 

@@ -66,8 +66,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     
-    # Setup options update listener
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    # Setup options update listener - use update handler instead of reload
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
     
     return True
 
@@ -97,8 +97,39 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
+async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Update options without reloading the integration.
+    
+    This updates the coordinator and entities in-place to avoid entities
+    becoming unavailable during the update process.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry with updated options
+    """
+    _LOGGER.info("Updating options for haFWCMA config entry: %s", entry.entry_id)
+    
+    # Update stored options
+    if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+        hass.data[DOMAIN][entry.entry_id]["options"] = entry.options
+        
+        # Get the coordinator and update it with new settings
+        coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
+        if coordinator and hasattr(coordinator, "async_update_config"):
+            await coordinator.async_update_config(entry)
+        
+        # Trigger a refresh to apply new settings
+        if coordinator:
+            await coordinator.async_request_refresh()
+    
+    _LOGGER.info("Options updated successfully without reloading")
+
+
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry when options change.
+    
+    This function is kept for compatibility but should not be used
+    as the update listener. Use async_update_options instead.
     
     Args:
         hass: Home Assistant instance

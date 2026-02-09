@@ -135,7 +135,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         )
         
         # Initialize with randomized interval to prevent simultaneous API calls
-        # Calculate jitter range (±20% by default)
+        # Calculate jitter range with reduced randomization to avoid "shaky" sensor updates
         jitter_percent = DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT / 100.0
         jitter_minutes = update_interval_minutes * jitter_percent
         random_offset = random.uniform(-jitter_minutes, jitter_minutes)
@@ -177,8 +177,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
     def _get_randomized_interval(self, base_minutes: int) -> timedelta:
         """Calculate a randomized update interval to avoid simultaneous API calls.
         
-        Applies a random jitter to the base interval to distribute API calls over time.
-        This helps prevent rate limiting when multiple instances hit the API simultaneously.
+        Applies a small random jitter (±2% by default) to distribute API calls over time.
+        This helps prevent rate limiting when multiple instances hit the API simultaneously
+        while keeping sensor updates stable and non-"shaky".
         
         Args:
             base_minutes: Base update interval in minutes
@@ -186,7 +187,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         Returns:
             Randomized timedelta for next update
         """
-        # Calculate jitter range (±20% by default)
+        # Calculate jitter range with reduced randomization
         jitter_percent = DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT / 100.0
         jitter_minutes = base_minutes * jitter_percent
         
@@ -222,6 +223,29 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         
         # Request a refresh with the new interval
         await self.async_request_refresh()
+
+    async def async_update_config(self, config_entry: ConfigEntry) -> None:
+        """Update coordinator configuration from config entry.
+        
+        This allows configuration changes without reloading the entire integration.
+        
+        Args:
+            config_entry: Updated config entry
+        """
+        _LOGGER.info("Updating coordinator configuration")
+        self.config_entry = config_entry
+        
+        # Update update interval if it changed
+        options = config_entry.options
+        config = config_entry.data
+        update_interval_minutes = options.get(CONF_UPDATE_INTERVAL) or config.get(
+            CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+        )
+        
+        # Update interval with randomization
+        self.update_interval = self._get_randomized_interval(update_interval_minutes)
+        
+        _LOGGER.info("Coordinator configuration updated successfully")
 
     async def _update_consumption_prediction(
         self,
