@@ -50,6 +50,8 @@ Bundled the frontend card with the integration and implemented automatic registr
 ### Frontend Card Registration
 
 ```python
+from homeassistant.components.http import StaticPathConfig
+
 async def _async_register_frontend_card(hass: HomeAssistant) -> None:
     """Register the FWCAM frontend card."""
     # Get card directory and verify file exists
@@ -57,10 +59,13 @@ async def _async_register_frontend_card(hass: HomeAssistant) -> None:
     card_path = card_dir / CARD_FILENAME
     
     # Register static path for serving the card
-    await hass.http.async_register_static_paths([{
-        "url_path": f"/{DOMAIN}_local",
-        "path": str(card_dir),
-    }])
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(
+            url_path=f"/{DOMAIN}_local",
+            path=str(card_dir),
+            cache_headers=False,
+        )
+    ])
     
     # Register card as frontend module
     card_url = f"/{DOMAIN}_local/{CARD_FILENAME}?v={CARD_VERSION}"

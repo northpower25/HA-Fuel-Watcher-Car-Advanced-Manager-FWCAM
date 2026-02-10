@@ -15,6 +15,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -100,10 +101,11 @@ async def _async_register_frontend_card(hass: HomeAssistant) -> None:
         # Register static path for serving the card
         # This makes the card available at /hafwcma_local/fwcam-card.js
         await hass.http.async_register_static_paths([
-            {
-                "url_path": f"/{DOMAIN}_local",
-                "path": str(card_dir),
-            }
+            StaticPathConfig(
+                url_path=f"/{DOMAIN}_local",
+                path=str(card_dir),
+                cache_headers=False,
+            )
         ])
         
         # Register the card as a frontend module
