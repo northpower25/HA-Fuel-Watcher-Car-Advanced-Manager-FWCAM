@@ -77,6 +77,9 @@ show_vehicle_info: true     # Show vehicle information
 show_controls: true         # Show control buttons
 show_settings: true         # Show settings inputs
 rows_per_page: 10          # Number of events to display
+refresh_interval: 300      # Refresh interval in seconds (5 minutes)
+table_max_height: 400px    # Maximum table height for vertical scrolling
+table_min_width: 100%      # Minimum table width
 ```
 
 #### Configuration Options
@@ -90,6 +93,9 @@ rows_per_page: 10          # Number of events to display
 | `show_controls` | boolean | `true` | Show/hide control buttons |
 | `show_settings` | boolean | `true` | Show/hide settings section |
 | `rows_per_page` | number | `10` | Number of refueling events to display |
+| `refresh_interval` | number | `300` | Refresh interval in seconds (prevents scrolling interruption) |
+| `table_max_height` | string | `400px` | Maximum height of refueling log table (enables viewing at least 10 entries with vertical scrolling) |
+| `table_min_width` | string | `100%` | Minimum width of table (reduces horizontal scrolling) |
 
 #### What the Card Displays
 

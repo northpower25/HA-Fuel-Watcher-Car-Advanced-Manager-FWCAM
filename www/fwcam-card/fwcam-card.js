@@ -21,6 +21,9 @@
  * 5. Update documentation in REFUELING_LOG_GUIDE.md
  */
 
+// Constants
+const SERVICE_CALL_REFRESH_DELAY_MS = 1000;
+
 class FWCAMCard extends HTMLElement {
   constructor() {
     super();
@@ -28,6 +31,7 @@ class FWCAMCard extends HTMLElement {
     this._config = {};
     this._hass = null;
     this._entities = {};
+    this._lastRender = 0;
   }
 
   /**
@@ -45,8 +49,13 @@ class FWCAMCard extends HTMLElement {
       show_controls: config.show_controls !== false,
       show_settings: config.show_settings !== false,
       rows_per_page: config.rows_per_page || 10,
+      refresh_interval: config.refresh_interval || 300,
+      table_max_height: this.sanitizeCSSValue(config.table_max_height, '400px'),
+      table_min_width: this.sanitizeCSSValue(config.table_min_width, '100%'),
       ...config
     };
+    // Ensure first render happens immediately
+    this._lastRender = 0;
     this.findEntities();
     this.render();
   }
@@ -55,8 +64,21 @@ class FWCAMCard extends HTMLElement {
    * Set Home Assistant instance
    */
   set hass(hass) {
+    // Always store the hass instance
     this._hass = hass;
-    this.render();
+    
+    // Skip throttling check if config not yet initialized
+    if (!this._config || !this._config.refresh_interval) {
+      return;
+    }
+    
+    // Throttle rendering based on refresh_interval (in seconds)
+    const now = Date.now();
+    const intervalMs = this._config.refresh_interval * 1000;
+    
+    if (now - this._lastRender >= intervalMs) {
+      this.render();
+    }
   }
 
   /**
@@ -64,6 +86,26 @@ class FWCAMCard extends HTMLElement {
    */
   getCardSize() {
     return 10;
+  }
+
+  /**
+   * Sanitize CSS value to prevent injection
+   * Only allows positive numbers with safe CSS units
+   */
+  sanitizeCSSValue(value, defaultValue) {
+    if (!value) return defaultValue;
+    
+    // Allow only safe CSS units: px, %, em, rem, vh, vw
+    // Only positive numbers (negative/zero not useful for dimensions)
+    const cssUnitPattern = /^(?:[1-9]\d*(?:\.\d+)?|0?\.\d+)(?:px|%|em|rem|vh|vw)$/;
+    const trimmedValue = String(value).trim();
+    
+    if (cssUnitPattern.test(trimmedValue)) {
+      return trimmedValue;
+    }
+    
+    console.warn(`Invalid CSS value '${value}', using default '${defaultValue}'`);
+    return defaultValue;
   }
 
   /**
@@ -119,6 +161,8 @@ class FWCAMCard extends HTMLElement {
   callService(domain, service, serviceData = {}) {
     if (!this._hass) return;
     this._hass.callService(domain, service, serviceData);
+    // Force render after service calls to show immediate feedback
+    setTimeout(() => this.forceRender(), SERVICE_CALL_REFRESH_DELAY_MS);
   }
 
   /**
@@ -171,10 +215,24 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Get user's preferred language
+   */
+  getUserLanguage() {
+    return this._hass?.language || 'en';
+  }
+
+  /**
    * Delete a refueling event
    */
   deleteRefuelingEvent(eventId) {
-    if (confirm('Are you sure you want to delete this refueling event?')) {
+    const lang = this.getUserLanguage();
+    const confirmMessages = {
+      de: 'Sind Sie sicher, dass Sie diesen Tankvorgang löschen möchten?',
+      en: 'Are you sure you want to delete this refueling event?'
+    };
+    const message = confirmMessages[lang] || confirmMessages['en'];
+    
+    if (confirm(message)) {
       this.callService('hafwcma', 'delete_refuel_event', {
         config_entry_id: this.getConfigEntryId(),
         event_id: eventId
@@ -209,6 +267,15 @@ class FWCAMCard extends HTMLElement {
   formatNumber(value, decimals = 1, unit = '') {
     if (value === null || value === undefined) return 'N/A';
     return `${parseFloat(value).toFixed(decimals)}${unit ? ' ' + unit : ''}`;
+  }
+
+  /**
+   * Force an immediate render (bypasses throttling)
+   * Used after user interactions to provide immediate feedback
+   * Note: _lastRender will be updated by render() after successful completion
+   */
+  forceRender() {
+    this.render();
   }
 
   /**
@@ -249,6 +316,9 @@ class FWCAMCard extends HTMLElement {
     `;
 
     this.attachEventListeners();
+    
+    // Update last render timestamp only after successful render
+    this._lastRender = Date.now();
   }
 
   /**
@@ -672,6 +742,9 @@ class FWCAMCard extends HTMLElement {
 
         .table-container {
           overflow-x: auto;
+          overflow-y: auto;
+          max-height: ${this._config.table_max_height};
+          min-width: ${this._config.table_min_width};
         }
 
         .refueling-table {

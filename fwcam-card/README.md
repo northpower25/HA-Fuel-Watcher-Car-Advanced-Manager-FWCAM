@@ -72,6 +72,9 @@ show_vehicle_info: true
 show_controls: true
 show_settings: true
 rows_per_page: 10
+refresh_interval: 300
+table_max_height: 400px
+table_min_width: 100%
 ```
 
 ### Configuration Options
@@ -85,6 +88,9 @@ rows_per_page: 10
 | `show_controls` | boolean | `true` | Show/hide control buttons |
 | `show_settings` | boolean | `true` | Show/hide settings section |
 | `rows_per_page` | number | `10` | Number of refueling events to display |
+| `refresh_interval` | number | `300` | Refresh interval in seconds (default: 5 minutes) |
+| `table_max_height` | string | `400px` | Maximum height of refueling log table (enables vertical scrolling) |
+| `table_min_width` | string | `100%` | Minimum width of table (reduces horizontal scrolling) |
 
 ## Entity Auto-Detection
 
