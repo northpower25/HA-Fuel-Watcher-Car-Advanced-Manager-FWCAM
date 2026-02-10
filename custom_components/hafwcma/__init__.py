@@ -12,10 +12,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import voluptuous as vol
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
+import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN
 
@@ -25,6 +28,45 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON, Platform.SWITCH, 
 
 # Historical data import configuration
 HISTORICAL_IMPORT_STARTUP_DELAY_SECONDS = 10  # Delay before starting background import
+
+# Service schemas
+SERVICE_ADD_REFUEL_EVENT = "add_refuel_event"
+SERVICE_UPDATE_REFUEL_EVENT = "update_refuel_event"
+SERVICE_DELETE_REFUEL_EVENT = "delete_refuel_event"
+
+SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("timestamp"): cv.string,
+    vol.Required("liters_refueled"): vol.Coerce(float),
+    vol.Optional("odometer_km"): vol.Coerce(float),
+    vol.Optional("price_per_liter"): vol.Coerce(float),
+    vol.Optional("total_cost"): vol.Coerce(float),
+    vol.Optional("station_name"): cv.string,
+    vol.Optional("station_address"): cv.string,
+    vol.Optional("fuel_type"): cv.string,
+    vol.Optional("data_quality"): cv.string,
+    vol.Optional("confidence"): vol.Coerce(float),
+})
+
+SCHEMA_UPDATE_REFUEL_EVENT = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("event_id"): vol.Coerce(int),
+    vol.Optional("timestamp"): cv.string,
+    vol.Optional("liters_refueled"): vol.Coerce(float),
+    vol.Optional("odometer_km"): vol.Coerce(float),
+    vol.Optional("price_per_liter"): vol.Coerce(float),
+    vol.Optional("total_cost"): vol.Coerce(float),
+    vol.Optional("station_name"): cv.string,
+    vol.Optional("station_address"): cv.string,
+    vol.Optional("fuel_type"): cv.string,
+    vol.Optional("data_quality"): cv.string,
+    vol.Optional("confidence"): vol.Coerce(float),
+})
+
+SCHEMA_DELETE_REFUEL_EVENT = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("event_id"): vol.Coerce(int),
+})
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -39,6 +81,84 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """
     _LOGGER.info("Setting up haFWCMA integration")
     hass.data.setdefault(DOMAIN, {})
+    
+    # Register services
+    async def handle_add_refuel_event(call: ServiceCall) -> None:
+        """Handle the add_refuel_event service call."""
+        from .utils.storage import add_refuel_event
+        
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+        
+        event_data = {
+            "timestamp": call.data["timestamp"],
+            "liters_refueled": call.data["liters_refueled"],
+            "odometer_km": call.data.get("odometer_km"),
+            "price_per_liter": call.data.get("price_per_liter"),
+            "total_cost": call.data.get("total_cost"),
+            "station_name": call.data.get("station_name"),
+            "station_address": call.data.get("station_address"),
+            "fuel_type": call.data.get("fuel_type"),
+            "data_quality": call.data.get("data_quality", "manual"),
+            "confidence": call.data.get("confidence", 1.0),
+        }
+        
+        event_id = await add_refuel_event(hass, entry, event_data)
+        _LOGGER.info("Added refuel event with ID %s", event_id)
+    
+    async def handle_update_refuel_event(call: ServiceCall) -> None:
+        """Handle the update_refuel_event service call."""
+        from .utils.storage import update_refueling_record
+        
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+        
+        event_id = call.data["event_id"]
+        
+        # Build updates dictionary with only valid fields
+        valid_fields = [
+            "timestamp", "liters_refueled", "odometer_km", "price_per_liter",
+            "total_cost", "station_name", "station_address", "fuel_type",
+            "data_quality", "confidence"
+        ]
+        updates = {k: v for k, v in call.data.items() if k in valid_fields}
+        
+        await update_refueling_record(hass, entry, event_id, updates)
+        _LOGGER.info("Updated refuel event ID %s", event_id)
+    
+    async def handle_delete_refuel_event(call: ServiceCall) -> None:
+        """Handle the delete_refuel_event service call."""
+        from .utils.storage import delete_refueling_record
+        
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+        
+        event_id = call.data["event_id"]
+        await delete_refueling_record(hass, entry, event_id)
+        _LOGGER.info("Deleted refuel event ID %s", event_id)
+    
+    hass.services.async_register(
+        DOMAIN, SERVICE_ADD_REFUEL_EVENT, handle_add_refuel_event, schema=SCHEMA_ADD_REFUEL_EVENT
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_UPDATE_REFUEL_EVENT, handle_update_refuel_event, schema=SCHEMA_UPDATE_REFUEL_EVENT
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DELETE_REFUEL_EVENT, handle_delete_refuel_event, schema=SCHEMA_DELETE_REFUEL_EVENT
+    )
+    
     return True
 
 

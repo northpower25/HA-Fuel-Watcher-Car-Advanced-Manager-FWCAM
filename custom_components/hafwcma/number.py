@@ -62,7 +62,7 @@ async def async_setup_entry(
 
 
 class SearchRadiusNumber(NumberEntity):
-    """Number entity for configurable search radius."""
+    """Number entity for configurable fuel station search radius."""
 
     _attr_icon = "mdi:radius"
     _attr_mode = NumberMode.BOX
@@ -89,8 +89,8 @@ class SearchRadiusNumber(NumberEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Search Radius"
-        self._attr_unique_id = f"{config_entry.entry_id}_search_radius"
+        self._attr_name = f"{vehicle_name} Station Search Radius"
+        self._attr_unique_id = f"{config_entry.entry_id}_station_search_radius"
 
     @property
     def native_value(self) -> float:

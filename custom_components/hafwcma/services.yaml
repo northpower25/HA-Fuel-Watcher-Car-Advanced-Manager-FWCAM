@@ -1,0 +1,243 @@
+# Services for Fuel Watcher Car Advanced Manager (FWCAM)
+
+add_refuel_event:
+  name: Add Refueling Event
+  description: Manually add a refueling event to the log
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    timestamp:
+      name: Timestamp
+      description: Date and time of refueling (ISO format)
+      required: true
+      example: "2024-01-15T14:30:00"
+      selector:
+        datetime:
+    liters_refueled:
+      name: Liters Refueled
+      description: Amount of fuel added in liters
+      required: true
+      example: 45.5
+      selector:
+        number:
+          min: 0
+          max: 200
+          step: 0.1
+          unit_of_measurement: "L"
+    odometer_km:
+      name: Odometer Reading
+      description: Vehicle odometer reading in kilometers
+      required: false
+      example: 123456
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 1
+          unit_of_measurement: "km"
+    price_per_liter:
+      name: Price per Liter
+      description: Fuel price per liter in EUR
+      required: false
+      example: 1.599
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.001
+          unit_of_measurement: "€"
+    total_cost:
+      name: Total Cost
+      description: Total cost of refueling in EUR
+      required: false
+      example: 72.70
+      selector:
+        number:
+          min: 0
+          max: 500
+          step: 0.01
+          unit_of_measurement: "€"
+    station_name:
+      name: Station Name
+      description: Name of the fuel station
+      required: false
+      example: "Shell Station"
+      selector:
+        text:
+    station_address:
+      name: Station Address
+      description: Address of the fuel station
+      required: false
+      example: "Main Street 123, 12345 City"
+      selector:
+        text:
+    fuel_type:
+      name: Fuel Type
+      description: Type of fuel (e.g., diesel, e5, e10)
+      required: false
+      example: "diesel"
+      selector:
+        text:
+    data_quality:
+      name: Data Quality
+      description: Quality indicator for this entry
+      required: false
+      example: "manual"
+      selector:
+        select:
+          options:
+            - "manual"
+            - "auto_detected"
+            - "historical_import"
+    confidence:
+      name: Confidence
+      description: Confidence score (0.0 to 1.0)
+      required: false
+      example: 1.0
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.1
+
+update_refuel_event:
+  name: Update Refueling Event
+  description: Update an existing refueling event in the log
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    event_id:
+      name: Event ID
+      description: ID of the refueling event to update
+      required: true
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 100000
+          step: 1
+    timestamp:
+      name: Timestamp
+      description: Date and time of refueling (ISO format)
+      required: false
+      example: "2024-01-15T14:30:00"
+      selector:
+        datetime:
+    liters_refueled:
+      name: Liters Refueled
+      description: Amount of fuel added in liters
+      required: false
+      example: 45.5
+      selector:
+        number:
+          min: 0
+          max: 200
+          step: 0.1
+          unit_of_measurement: "L"
+    odometer_km:
+      name: Odometer Reading
+      description: Vehicle odometer reading in kilometers
+      required: false
+      example: 123456
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 1
+          unit_of_measurement: "km"
+    price_per_liter:
+      name: Price per Liter
+      description: Fuel price per liter in EUR
+      required: false
+      example: 1.599
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.001
+          unit_of_measurement: "€"
+    total_cost:
+      name: Total Cost
+      description: Total cost of refueling in EUR
+      required: false
+      example: 72.70
+      selector:
+        number:
+          min: 0
+          max: 500
+          step: 0.01
+          unit_of_measurement: "€"
+    station_name:
+      name: Station Name
+      description: Name of the fuel station
+      required: false
+      example: "Shell Station"
+      selector:
+        text:
+    station_address:
+      name: Station Address
+      description: Address of the fuel station
+      required: false
+      example: "Main Street 123, 12345 City"
+      selector:
+        text:
+    fuel_type:
+      name: Fuel Type
+      description: Type of fuel (e.g., diesel, e5, e10)
+      required: false
+      example: "diesel"
+      selector:
+        text:
+    data_quality:
+      name: Data Quality
+      description: Quality indicator for this entry
+      required: false
+      example: "manual"
+      selector:
+        select:
+          options:
+            - "manual"
+            - "auto_detected"
+            - "historical_import"
+    confidence:
+      name: Confidence
+      description: Confidence score (0.0 to 1.0)
+      required: false
+      example: 1.0
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.1
+
+delete_refuel_event:
+  name: Delete Refueling Event
+  description: Delete a refueling event from the log
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    event_id:
+      name: Event ID
+      description: ID of the refueling event to delete
+      required: true
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 100000
+          step: 1

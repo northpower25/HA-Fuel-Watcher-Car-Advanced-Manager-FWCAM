@@ -178,8 +178,25 @@
       }
     },
     "switch": {
-      "manual_refresh": {
-        "name": "Manual Refresh"
+      "fuel_price_refresh": {
+        "name": "Fuel Price Refresh"
+      },
+      "consumption_prediction": {
+        "name": "Consumption Prediction"
+      }
+    },
+    "number": {
+      "station_search_radius": {
+        "name": "Station Search Radius"
+      },
+      "api_update_interval": {
+        "name": "API Update Interval"
+      },
+      "consumption_min_data_points": {
+        "name": "Consumption Min Data Points"
+      },
+      "consumption_prediction_interval": {
+        "name": "Consumption Prediction Interval"
       }
     }
   }

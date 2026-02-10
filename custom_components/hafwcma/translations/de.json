@@ -178,8 +178,25 @@
       }
     },
     "switch": {
-      "manual_refresh": {
-        "name": "Manuelle Aktualisierung"
+      "fuel_price_refresh": {
+        "name": "Kraftstoffpreis Aktualisierung"
+      },
+      "consumption_prediction": {
+        "name": "Verbrauchsvorhersage"
+      }
+    },
+    "number": {
+      "station_search_radius": {
+        "name": "Tankstellen Suchradius"
+      },
+      "api_update_interval": {
+        "name": "API Aktualisierungsintervall"
+      },
+      "consumption_min_data_points": {
+        "name": "Verbrauch Min Datenpunkte"
+      },
+      "consumption_prediction_interval": {
+        "name": "Verbrauchsvorhersage Intervall"
       }
     }
   }
