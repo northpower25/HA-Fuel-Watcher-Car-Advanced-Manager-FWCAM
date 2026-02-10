@@ -23,6 +23,9 @@
 
 // Constants
 const SERVICE_CALL_REFRESH_DELAY_MS = 1000;
+const DEFAULT_TANK_CAPACITY_LITERS = 60.0;
+const DEFAULT_DAILY_DISTANCE_KM = 40.0;
+const MAX_AUTOCOMPLETE_SUGGESTIONS = 10;
 
 class FWCAMCard extends HTMLElement {
   constructor() {
@@ -253,8 +256,8 @@ class FWCAMCard extends HTMLElement {
       return parseFloat(tankSensor.attributes.tank_capacity);
     }
     
-    // Default fallback
-    return 60.0; // Default 60 liters
+    // Default fallback - configurable via constant
+    return DEFAULT_TANK_CAPACITY_LITERS;
   }
 
   /**
@@ -358,7 +361,7 @@ class FWCAMCard extends HTMLElement {
     
     // Get average daily km from consumption history sensor
     const consumptionHistory = this.getEntityState(this._entities.consumption_history);
-    let dailyKm = 40.0; // Default fallback
+    let dailyKm = DEFAULT_DAILY_DISTANCE_KM; // Configurable fallback
     
     if (consumptionHistory && consumptionHistory.attributes) {
       // Try to get average daily distance
@@ -1250,7 +1253,7 @@ class FWCAMCard extends HTMLElement {
       
       // Update datalist
       datalist.innerHTML = '';
-      for (const station of filteredStations.slice(0, 10)) { // Limit to 10 suggestions
+      for (const station of filteredStations.slice(0, MAX_AUTOCOMPLETE_SUGGESTIONS)) {
         const option = document.createElement('option');
         option.value = `${station.name}${station.city ? ' ' + station.city : ''}${station.street ? ' ' + station.street : ''}`;
         option.dataset.address = station.address;
