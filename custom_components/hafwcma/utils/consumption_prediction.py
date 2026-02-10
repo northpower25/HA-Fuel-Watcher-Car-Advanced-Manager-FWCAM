@@ -112,7 +112,7 @@ async def check_data_sufficiency(
     return {
         "sufficient": sufficient,
         "odometer_points": odometer_points,
-        "tank_points": refuel_count,  # Keep same key for backward compatibility
+        "tank_points": refuel_count,  # Kept for backward compatibility - actually contains refuel count, not tank history points
         "consumption_events": consumption_events,
         "reason": reason,
     }

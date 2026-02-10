@@ -76,6 +76,10 @@ from .utils.statistics_engine import estimate_days_left
 
 _LOGGER = logging.getLogger(__name__)
 
+# Constants for tank percentage validation
+MIN_TANK_PERCENTAGE = 0.0
+MAX_TANK_PERCENTAGE = 100.0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -727,7 +731,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             
             # Clamp tank percentage to valid range (0-100%)
             if tank_percentage is not None:
-                tank_percentage = max(0.0, min(100.0, tank_percentage))
+                tank_percentage = max(MIN_TANK_PERCENTAGE, min(MAX_TANK_PERCENTAGE, tank_percentage))
         
         # Get price trend and statistics
         price_trend = None
@@ -1212,14 +1216,13 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             return None
         
         # Try to get the most comprehensive average, prioritizing longer periods
-        if history.get("last_month"):
-            return history["last_month"].get("avg_consumption_l_per_100km")
-        elif history.get("last_14_days"):
-            return history["last_14_days"].get("avg_consumption_l_per_100km")
-        elif history.get("last_week"):
-            return history["last_week"].get("avg_consumption_l_per_100km")
-        elif history.get("today"):
-            return history["today"].get("avg_consumption_l_per_100km")
+        # Use a loop to eliminate duplication
+        for period_key in ["last_month", "last_14_days", "last_week", "today"]:
+            period_data = history.get(period_key)
+            if period_data:
+                consumption = period_data.get("avg_consumption_l_per_100km")
+                if consumption is not None:
+                    return consumption
         
         return None
     
@@ -1406,9 +1409,11 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
                 "status": "No refueling events recorded",
             }
         
-        # Sort by timestamp (newest first)
+        # Filter out events without timestamps and sort by timestamp (newest first)
+        # Use a sentinel value that sorts to the beginning (will be at end after reverse)
+        events_with_timestamps = [e for e in refueling_log if e.get("timestamp")]
         sorted_log = sorted(
-            refueling_log,
+            events_with_timestamps,
             key=lambda x: x.get("timestamp", ""),
             reverse=True
         )
