@@ -18,6 +18,143 @@ ToDo-Entitäten in Home Assistant sind für Aufgabenverwaltung (Einkaufslisten, 
 
 ## Anzeigeoptionen
 
+### Option 0: FWCAM Custom Card (EMPFOHLEN - Am Benutzerfreundlichsten)
+
+**Die FWCAM Card ist eine benutzerdefinierte Lovelace-Karte, die die beste Benutzererfahrung für die Verwaltung der Fuel Watcher Car Advanced Manager Integration bietet.**
+
+#### Funktionen
+- ✅ **Fahrzeuginformationen**: Echtzeit-Anzeige von Kraftstoffpreis, Tankfüllstand, Reichweite und nächster Tankstelle
+- ✅ **Bedienfeld**: Schnellzugriff-Buttons für alle Integrationsfunktionen
+- ✅ **Einstellungsverwaltung**: Inline-Bearbeitung aller Integrationseinstellungen
+- ✅ **Tankprotokoll-Tabelle**: Anzeigen, Bearbeiten und Löschen von Tankvorgängen
+- ✅ **Ereignisse hinzufügen**: Manuelle Eingabe neuer Tankvorgänge
+- ✅ **Datenqualitätsindikatoren**: Farbcodierte Qualitäts- und Vertrauens-Scores
+- ✅ **Responsives Design**: Funktioniert auf Desktop und Mobile
+- ✅ **Auto-Erkennung**: Findet automatisch alle zugehörigen Entitäten
+
+#### Installation
+
+**Manuelle Installation:**
+1. Kopieren Sie `/www/fwcam-card/fwcam-card.js` aus diesem Repository in Ihr Home Assistant `config/www/fwcam-card/` Verzeichnis
+2. Fügen Sie die Ressource in Ihrer Lovelace-Konfiguration hinzu (Konfiguration → Dashboards → Ressourcen):
+   ```yaml
+   url: /local/fwcam-card/fwcam-card.js
+   type: module
+   ```
+3. Laden Sie Ihren Browser-Cache neu (Strg+F5)
+
+**HACS Installation (Zukünftig):**
+> Hinweis: HACS-Installation wird verfügbar sein, sobald diese Karte im HACS-Standard-Repository veröffentlicht ist.
+
+#### Grundlegende Verwendung
+
+Fügen Sie Folgendes zu Ihrem Lovelace-Dashboard hinzu:
+
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+```
+
+#### Vollständige Konfiguration
+
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+title: Mein Auto Kraftstoff-Manager
+show_refueling_log: true    # Tankprotokoll-Tabelle anzeigen
+show_vehicle_info: true     # Fahrzeuginformationen anzeigen
+show_controls: true         # Steuerungs-Buttons anzeigen
+show_settings: true         # Einstellungen anzeigen
+rows_per_page: 10          # Anzahl anzuzeigender Ereignisse
+```
+
+#### Konfigurationsoptionen
+
+| Option | Typ | Standard | Beschreibung |
+|--------|-----|----------|--------------|
+| `entity` | string | **Erforderlich** | Ihr Tankprotokoll-Sensor (z.B. `sensor.my_car_refueling_log`) |
+| `title` | string | `Fuel Watcher Car Advanced Manager` | Kartentitel |
+| `show_refueling_log` | boolean | `true` | Tankprotokoll-Tabelle anzeigen/ausblenden |
+| `show_vehicle_info` | boolean | `true` | Fahrzeuginformationen anzeigen/ausblenden |
+| `show_controls` | boolean | `true` | Steuerungs-Buttons anzeigen/ausblenden |
+| `show_settings` | boolean | `true` | Einstellungen anzeigen/ausblenden |
+| `rows_per_page` | number | `10` | Anzahl anzuzeigender Tankvorgänge |
+
+#### Was die Karte anzeigt
+
+**Fahrzeuginformationen-Bereich:**
+- Aktueller Kraftstoffpreis (€/L)
+- Tankfüllstand (%)
+- Verbleibende Reichweite (km)
+- Nächste/günstigste Tankstelle
+- Vorhergesagte Tage bis zum nächsten Tanken
+
+**Bedienfeld:**
+- 🔄 Kraftstoffpreise aktualisieren - Kraftstoffpreisdaten manuell aktualisieren
+- 📊 Vorhersage aktualisieren - Verbrauchsvorhersage neu berechnen
+- 🔌 Verbindung testen - API-Verbindung zum Kraftstoffpreisanbieter testen
+- 📥 Historie importieren - Historische Tankdaten importieren
+
+**Einstellungen:**
+- Tankstellen-Suchradius (1-25 km)
+- API-Aktualisierungsintervall (1-60 Minuten)
+- Minimale Datenpunkte für Verbrauchsberechnung
+- Vorhersage-Berechnungsintervall (0,5-24 Stunden)
+
+**Tankprotokoll-Tabelle:**
+- Datum/Uhrzeit des Tankvorgangs
+- Kilometerstand (km)
+- Getankte Liter
+- Preis pro Liter (€)
+- Gesamtkosten (€)
+- Tankstellenname
+- Datenqualitätsindikator (Manuell/Auto/Historisch)
+- Vertrauens-Score (0-100%)
+- Bearbeiten/Löschen-Buttons für jedes Ereignis
+
+#### Entwicklerhinweise
+
+**Beim Hinzufügen neuer Funktionen zur FWCAM-Integration:**
+
+1. **Neue Entitäten**: Fügen Sie sie zur `findEntities()`-Methode in `fwcam-card.js` hinzu
+   ```javascript
+   // Beispiel: Hinzufügen eines neuen Sensors
+   new_sensor: `sensor.${baseName}_new_feature`,
+   ```
+
+2. **Neue UI-Bereiche**: Erstellen Sie eine neue Render-Methode
+   ```javascript
+   renderNewSection() {
+     // Ihr UI-Code hier
+   }
+   ```
+
+3. **Neue Dienste**: Fügen Sie Dienstaufruf-Methoden hinzu
+   ```javascript
+   callNewService(params) {
+     this.callService('hafwcma', 'new_service', params);
+   }
+   ```
+
+4. **Konfigurationsoptionen**: Aktualisieren Sie die `setConfig()`-Methode und Dokumentation
+
+5. **Immer aktualisieren**:
+   - `fwcam-card.js` - Haupt-Kartencode
+   - `www/fwcam-card/README.md` - Karten-Dokumentation
+   - `REFUELING_LOG_GUIDE.md` - Englische Version
+   - `REFUELING_LOG_GUIDE_DE.md` - Diese Datei
+
+#### Vorteile der benutzerdefinierten Karte
+
+- ✅ **All-in-One-Interface**: Zentrale Übersicht für die gesamte Integration
+- ✅ **Benutzerfreundlich**: Keine komplexen YAML-Templates erforderlich
+- ✅ **Voll editierbar**: Direkte Manipulation von Tankvorgängen
+- ✅ **Visuelles Feedback**: Farbcodierte Qualitäts- und Vertrauensindikatoren
+- ✅ **Responsiv**: Funktioniert auf allen Geräten
+- ✅ **Zukunftssicher**: Einfach mit neuen Funktionen erweiterbar
+
+---
+
 ### Option 1: Attribute-Karte (Empfohlen)
 
 Verwenden Sie die integrierte Attribute-Karte zur Anzeige der Tankvorgänge:

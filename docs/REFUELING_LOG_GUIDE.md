@@ -18,6 +18,143 @@ Todo entities in Home Assistant are designed for task management (shopping lists
 
 ## Display Options
 
+### Option 0: FWCAM Custom Card (RECOMMENDED - Most User-Friendly)
+
+**The FWCAM Card is a custom Lovelace card that provides the best user experience for managing the Fuel Watcher Car Advanced Manager integration.**
+
+#### Features
+- ✅ **Vehicle Information**: Real-time display of fuel price, tank level, range, and nearest station
+- ✅ **Control Panel**: Quick access buttons for all integration functions
+- ✅ **Settings Management**: Inline editing of all integration settings
+- ✅ **Refueling Log Table**: View, edit, and delete refueling events
+- ✅ **Add Events**: Manually add new refueling events
+- ✅ **Data Quality Indicators**: Color-coded quality and confidence scores
+- ✅ **Responsive Design**: Works on desktop and mobile
+- ✅ **Auto-Detection**: Automatically finds all related entities
+
+#### Installation
+
+**Manual Installation:**
+1. Copy `/www/fwcam-card/fwcam-card.js` from this repository to your Home Assistant `config/www/fwcam-card/` directory
+2. Add the resource in your Lovelace configuration (Configuration → Dashboards → Resources):
+   ```yaml
+   url: /local/fwcam-card/fwcam-card.js
+   type: module
+   ```
+3. Reload your browser cache (Ctrl+F5)
+
+**HACS Installation (Future):**
+> Note: HACS installation will be available once this card is published to the HACS default repository.
+
+#### Basic Usage
+
+Add the following to your Lovelace dashboard:
+
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+```
+
+#### Full Configuration
+
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+title: My Car Fuel Manager
+show_refueling_log: true    # Show refueling log table
+show_vehicle_info: true     # Show vehicle information
+show_controls: true         # Show control buttons
+show_settings: true         # Show settings inputs
+rows_per_page: 10          # Number of events to display
+```
+
+#### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `entity` | string | **Required** | Your refueling log sensor (e.g., `sensor.my_car_refueling_log`) |
+| `title` | string | `Fuel Watcher Car Advanced Manager` | Card title |
+| `show_refueling_log` | boolean | `true` | Show/hide the refueling log table |
+| `show_vehicle_info` | boolean | `true` | Show/hide vehicle information section |
+| `show_controls` | boolean | `true` | Show/hide control buttons |
+| `show_settings` | boolean | `true` | Show/hide settings section |
+| `rows_per_page` | number | `10` | Number of refueling events to display |
+
+#### What the Card Displays
+
+**Vehicle Information Section:**
+- Current fuel price (€/L)
+- Tank level (%)
+- Remaining range (km)
+- Nearest/cheapest fuel station
+- Predicted days until refueling needed
+
+**Control Panel:**
+- 🔄 Refresh Fuel Prices - Manually update fuel price data
+- 📊 Update Prediction - Recalculate consumption prediction
+- 🔌 Test Connection - Test API connection to fuel price provider
+- 📥 Import History - Import historical refueling data
+
+**Settings:**
+- Station Search Radius (1-25 km)
+- API Update Interval (1-60 minutes)
+- Minimum Data Points for consumption calculation
+- Prediction Calculation Interval (0.5-24 hours)
+
+**Refueling Log Table:**
+- Date/Time of refueling
+- Odometer reading (km)
+- Liters refueled
+- Price per liter (€)
+- Total cost (€)
+- Station name
+- Data quality indicator (Manual/Auto/Historical)
+- Confidence score (0-100%)
+- Edit/Delete buttons for each event
+
+#### Developer Notes
+
+**When adding new features to the FWCAM integration:**
+
+1. **New Entities**: Add them to the `findEntities()` method in `fwcam-card.js`
+   ```javascript
+   // Example: Adding a new sensor
+   new_sensor: `sensor.${baseName}_new_feature`,
+   ```
+
+2. **New UI Sections**: Create a new render method
+   ```javascript
+   renderNewSection() {
+     // Your UI code here
+   }
+   ```
+
+3. **New Services**: Add service call methods
+   ```javascript
+   callNewService(params) {
+     this.callService('hafwcma', 'new_service', params);
+   }
+   ```
+
+4. **Configuration Options**: Update `setConfig()` method and documentation
+
+5. **Always update**:
+   - `fwcam-card.js` - Main card code
+   - `www/fwcam-card/README.md` - Card documentation
+   - `REFUELING_LOG_GUIDE.md` - This file
+   - `REFUELING_LOG_GUIDE_DE.md` - German version
+
+#### Advantages of the Custom Card
+
+- ✅ **All-in-one interface**: Central dashboard for the entire integration
+- ✅ **User-friendly**: No need for complex YAML templates
+- ✅ **Fully editable**: Direct manipulation of refueling events
+- ✅ **Visual feedback**: Color-coded quality and confidence indicators
+- ✅ **Responsive**: Works on all devices
+- ✅ **Future-proof**: Easy to extend with new features
+
+---
+
 ### Option 1: Attributes Card (Recommended)
 
 Use the built-in Attributes card to display refueling events:
