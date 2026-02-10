@@ -95,11 +95,10 @@ class FWCAMCard extends HTMLElement {
     if (!value) return defaultValue;
     
     // Allow only safe CSS units: px, %, em, rem, vh, vw
-    const cssUnitPattern = /^(\d+(?:\.\d+)?)(px|%|em|rem|vh|vw)$/;
+    const cssUnitPattern = /^(?:\d+(?:\.\d+)?)(?:px|%|em|rem|vh|vw)$/;
     const trimmedValue = String(value).trim();
-    const match = trimmedValue.match(cssUnitPattern);
     
-    if (match) {
+    if (cssUnitPattern.test(trimmedValue)) {
       return trimmedValue;
     }
     
@@ -214,11 +213,17 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Get user's preferred language
+   */
+  getUserLanguage() {
+    return this._hass?.language || 'en';
+  }
+
+  /**
    * Delete a refueling event
    */
   deleteRefuelingEvent(eventId) {
-    // Try to detect user language, default to English
-    const lang = this._hass?.language || 'en';
+    const lang = this.getUserLanguage();
     const confirmMessages = {
       de: 'Sind Sie sicher, dass Sie diesen Tankvorgang löschen möchten?',
       en: 'Are you sure you want to delete this refueling event?'
@@ -263,7 +268,8 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
-   * Force an immediate render (used after user interactions)
+   * Force an immediate render (bypasses throttling)
+   * Used after user interactions to provide immediate feedback
    * Note: _lastRender will be updated by render() after successful completion
    */
   forceRender() {
