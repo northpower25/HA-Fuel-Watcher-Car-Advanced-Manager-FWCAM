@@ -60,6 +60,7 @@ from .const import (
     CONF_VEHICLE_NAME,
     DEFAULT_CONSUMPTION_MIN_DATA_POINTS,
     DEFAULT_CONSUMPTION_PREDICTION_INTERVAL,
+    DEFAULT_TANK_CAPACITY,
     DEFAULT_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT,
     DOMAIN,
@@ -953,6 +954,12 @@ class TankLevelSensor(CoordinatorEntity, SensorEntity):
         
         if tank_level_liters is not None:
             attributes["liters"] = tank_level_liters
+        
+        # Include tank capacity from config for use in Lovelace card validation
+        options = self._config_entry.options
+        config = self._config_entry.data
+        tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
+        attributes["tank_capacity"] = tank_capacity
         
         return attributes
 
