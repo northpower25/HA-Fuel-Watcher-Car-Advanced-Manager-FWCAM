@@ -49,13 +49,18 @@ Repository Root
 Added automatic card registration in `custom_components/hafwcma/__init__.py`:
 
 ```python
+from homeassistant.components.http import StaticPathConfig
+
 async def _async_register_frontend_card(hass: HomeAssistant) -> None:
     """Register the FWCAM frontend card."""
     # Register static path for serving the card
-    await hass.http.async_register_static_paths([{
-        "url_path": f"/{DOMAIN}_local",
-        "path": str(card_dir),
-    }])
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(
+            url_path=f"/{DOMAIN}_local",
+            path=str(card_dir),
+            cache_headers=False,
+        )
+    ])
     
     # Add to frontend extra module URLs
     card_url = f"/{DOMAIN}_local/{CARD_FILENAME}?v={CARD_VERSION}"
