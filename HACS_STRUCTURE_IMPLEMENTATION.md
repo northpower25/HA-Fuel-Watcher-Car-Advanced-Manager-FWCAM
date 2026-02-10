@@ -1,48 +1,73 @@
-# HACS Dual-Component Structure Implementation
+# HACS Integration with Bundled Frontend Card
 
 ## Overview
 
-This document describes the implementation of a HACS-compatible dual-component structure for the Fuel Watcher Car Advanced Manager (FWCAM) repository.
+This document describes the implementation of a modern HACS-compatible structure for the Fuel Watcher Car Advanced Manager (FWCAM) repository, where the frontend card is bundled with the integration.
 
 ## Problem Statement
 
-The original repository had:
+The original dual-component structure had:
 - A Home Assistant integration in `custom_components/hafwcma/`
-- A Lovelace card in `www/fwcam-card/`
-- A single `hacs.json` configured only for the integration
+- A separate Lovelace card in `fwcam-card/` with its own `hacs.json`
+- Users had to install both components separately via HACS
 
-This structure prevented users from installing the Lovelace card via HACS, requiring manual installation only.
+This caused issues:
+- Users received "Repository exists in the store" errors when trying to add the same repository twice
+- HACS no longer has a "Lovelace" category (replaced with "Dashboard")
+- Confusion about whether to use "Integration" or "Lovelace" category
+- Manual installation complexity
 
-## Solution
+## Modern Solution
 
-Implemented a HACS-compatible structure that allows both the integration and Lovelace card to be distributed from the same repository as separate HACS components.
+Implemented a bundled approach where the frontend card is included with the integration and automatically registered during setup. This is the modern, recommended approach for Home Assistant custom integrations with custom cards.
 
 ## Changes Made
 
 ### 1. Repository Structure
 
-Created a new directory structure:
-
 ```
 Repository Root
 ├── custom_components/
-│   └── hafwcma/              # Integration (existing)
-├── fwcam-card/               # NEW: Card component
-│   ├── dist/                 # NEW: Card distribution files
-│   │   ├── fwcam-card.js
-│   │   └── fwcam-card.min.js
-│   ├── hacs.json             # NEW: Card HACS config
-│   ├── README.md             # NEW: Card documentation
-│   └── README_DE.md          # NEW: German card docs
-├── www/                      # KEPT: Backward compatibility
-│   └── fwcam-card/           # DEPRECATED: Old location
-├── hacs.json                 # UPDATED: Integration config
+│   └── hafwcma/              # Integration
+│       ├── www/              # NEW: Frontend card files
+│       │   └── fwcam-card.js # Card JavaScript
+│       ├── __init__.py       # UPDATED: Card registration
+│       ├── manifest.json
+│       └── ...
+├── fwcam-card/               # KEPT: Documentation & source
+│   ├── dist/                 # Distribution files
+│   ├── README.md             # Card documentation
+│   └── README_DE.md          # German docs
+├── www/                      # DEPRECATED: Old location
+│   └── fwcam-card/           # For backward compatibility
+├── hacs.json                 # Integration only
 └── ...
 ```
 
-### 2. HACS Configuration Files
+### 2. Frontend Card Registration
 
-#### Root `hacs.json` (Integration)
+Added automatic card registration in `custom_components/hafwcma/__init__.py`:
+
+```python
+async def _async_register_frontend_card(hass: HomeAssistant) -> None:
+    """Register the FWCAM frontend card."""
+    # Register static path for serving the card
+    await hass.http.async_register_static_paths([{
+        "url_path": f"/{DOMAIN}_local",
+        "path": str(card_dir),
+    }])
+    
+    # Add to frontend extra module URLs
+    card_url = f"/{DOMAIN}_local/{CARD_FILENAME}?v={CARD_VERSION}"
+    hass.data.setdefault("frontend_extra_module_url", set()).add(card_url)
+```
+
+This is called during `async_setup()` to ensure the card is registered when the integration loads.
+
+### 3. HACS Configuration
+
+The root `hacs.json` remains as an integration-only config:
+
 ```json
 {
   "name": "Fuel Watcher Car Advanced Manager",
@@ -54,130 +79,157 @@ Repository Root
 }
 ```
 
-#### `fwcam-card/hacs.json` (Lovelace Card)
-```json
-{
-  "name": "FWCAM Lovelace Card",
-  "filename": "fwcam-card.js",
-  "render_readme": true,
-  "content_in_root": false
-}
-```
-
-### 3. .gitignore Update
-
-Modified `.gitignore` to exclude Python `dist/` directories while allowing `fwcam-card/dist/`:
-
-```gitignore
-dist/
-!fwcam-card/dist/
-```
+**Removed**: `fwcam-card/hacs.json` (no longer needed)
 
 ### 4. Documentation Updates
 
-**New Documents:**
-- `HACS_INSTALLATION.md` - Comprehensive English installation guide
-- `HACS_INSTALLATION_DE.md` - Comprehensive German installation guide
-- `fwcam-card/README.md` - Detailed card documentation
-- `fwcam-card/README_DE.md` - German card documentation
-
 **Updated Documents:**
-- `README.md` - Added quick installation links and dual-component info
-- `docs/INSTALLATION.md` - Added Lovelace card installation section
-- `docs/REFUELING_LOG_GUIDE.md` - Updated with HACS installation instructions
-- `docs/REFUELING_LOG_GUIDE_DE.md` - Updated with HACS installation instructions
-- `www/fwcam-card/README.md` - Added deprecation notice
-- `TODO.md` - Marked Lovelace card tasks as completed
+- `HACS_INSTALLATION.md` - Single installation process (integration only)
+- `HACS_INSTALLATION_DE.md` - German version, single installation
+- `HACS_STRUCTURE_IMPLEMENTATION.md` - This document, new approach
+
+**Key Message**: Users only install the integration via HACS, and the card is automatically available.
 
 ## How It Works
 
 ### For Users
 
-Users can now install both components via HACS from the same repository:
+1. **Install Integration via HACS**
+   - HACS → Integrations → Custom repositories
+   - Add URL with category "Integration"
+   - Download "Fuel Watcher Car Advanced Manager"
 
-**Integration Installation:**
-1. HACS → Integrations → Custom repositories
-2. Add URL with category "Integration"
-3. Download "Fuel Watcher Car Advanced Manager"
+2. **Restart Home Assistant**
+   - The integration loads
+   - Frontend card is automatically registered
+   - Card becomes available in Lovelace
 
-**Card Installation:**
-1. HACS → Frontend → Custom repositories
-2. Add URL with category "Lovelace"
-3. Download "FWCAM Lovelace Card"
+3. **Use the Card**
+   - No separate installation needed
+   - Card appears in card picker
+   - Configure as `type: custom:fwcam-card`
 
 ### For HACS
 
-HACS recognizes components based on:
-- Directory structure
-- `hacs.json` configuration
-- Category specified when adding the repository
+HACS recognizes this as a standard integration:
+- Downloads `custom_components/hafwcma/` to Home Assistant
+- Integration's `__init__.py` runs on startup
+- Card registration happens automatically
 
-Since each component has its own `hacs.json` and directory:
-- The root `hacs.json` + `custom_components/` → Integration
-- The `fwcam-card/hacs.json` + `dist/` → Lovelace card
+### For Home Assistant
 
-HACS treats them as separate installable components from the same repo.
-
-## Backward Compatibility
-
-The old `www/fwcam-card/` directory is **kept** for backward compatibility:
-- Users with manual installations can continue using files from `www/`
-- A deprecation notice guides users to the new structure
-- No breaking changes for existing users
+When the integration loads:
+1. `async_setup()` is called
+2. `_async_register_frontend_card()` registers the static path
+3. Card URL is added to `frontend_extra_module_url`
+4. Frontend loads the card module automatically
+5. Card appears in Lovelace card picker
 
 ## Benefits
 
-1. **Single Repository**: Both components in one repo, easier to maintain
-2. **HACS Native**: No manual installation required
-3. **Easy Updates**: One-click updates for both components
-4. **Version Sync**: Keep integration and card versions aligned
-5. **Proper Distribution**: Follows HACS best practices
+1. **Single Installation**: Users install only the integration
+2. **No Confusion**: No ambiguity about which HACS category to use
+3. **No Errors**: No "repository exists" errors
+4. **Automatic Updates**: Card updates with integration
+5. **Modern Approach**: Follows Home Assistant best practices
+6. **Version Sync**: Card and integration always match
+7. **Better UX**: Seamless installation experience
 
-## Future Considerations
+## Backward Compatibility
 
-### Versioning
+The old `www/fwcam-card/` directory is kept for users who:
+- Manually installed the card previously
+- Have direct references in their configuration
 
-Consider using the same version numbers for both components:
-- Integration: `v0.0.33`
-- Card: `v0.0.33`
+A migration guide is provided in documentation for these users.
 
-This ensures compatibility and simplifies version management.
+## Technical Details
 
-### Releases
+### Card Serving
 
-When creating GitHub releases:
-- Tag format: `v0.0.34`
-- Include changes for both integration and card
-- HACS automatically detects the correct files for each component
+The card is served from:
+```
+/hafwcma_local/fwcam-card.js?v={version}
+```
 
-### Advanced Features
+This URL:
+- Is unique to this integration (using domain prefix)
+- Includes version parameter for cache busting
+- Is automatically registered on integration load
 
-The TODO list includes additional Lovelace features that could be implemented:
-- [ ] Graphical price trend visualization
-- [ ] Consumption prediction accuracy visualization
-- [ ] Interactive station map
-- [ ] Custom panel for detailed statistics
+### Version Management
 
-These would require additional development but can be added to the same `fwcam-card/` structure.
+Card version is defined in `__init__.py`:
+```python
+CARD_VERSION = "1.0.0"
+```
+
+Increment this when the card changes to force browser cache refresh.
+
+### Error Handling
+
+The registration function:
+- Checks if card file exists
+- Logs warnings if card is missing
+- Continues integration setup even if card fails
+- Provides detailed error logging
 
 ## Testing Checklist
 
-Before release, verify:
+- [x] Card file copied to `custom_components/hafwcma/www/`
+- [x] Frontend registration code added to `__init__.py`
+- [x] Removed `fwcam-card/hacs.json`
+- [x] Updated HACS installation documentation (EN)
+- [x] Updated HACS installation documentation (DE)
+- [x] Updated structure documentation
+- [ ] Test installation via HACS
+- [ ] Verify card appears in card picker
+- [ ] Test card functionality
+- [ ] Verify browser cache handling
 
-- [ ] Both `hacs.json` files are valid JSON
-- [ ] Card JavaScript files are in `fwcam-card/dist/`
-- [ ] All documentation links are correct
-- [ ] README files render correctly on GitHub
-- [ ] .gitignore properly excludes/includes files
-- [ ] Card files are committed to git
-- [ ] Version numbers are consistent
+## Migration Guide for Users
+
+If users previously installed the card separately:
+
+1. **Remove old card from HACS Frontend** (if installed)
+2. **Remove manual configuration**:
+   - Check `configuration.yaml` for `frontend.extra_module_url` entries
+   - Remove any entries pointing to `/local/fwcam-card.js`
+3. **Update/reinstall integration** via HACS
+4. **Restart Home Assistant**
+5. **Clear browser cache**
+6. Card is now provided automatically
+
+## Future Considerations
+
+### Multiple Cards
+
+If additional cards are added in the future:
+- Place them in `custom_components/hafwcma/www/`
+- Register them in `_async_register_frontend_card()`
+- Each card gets a unique filename
+
+### Card Development
+
+For card development:
+- Source files can remain in `fwcam-card/`
+- Build process copies to `custom_components/hafwcma/www/`
+- Version number in `__init__.py` should be updated after builds
+
+### Alternative: Config Flow Registration
+
+An alternative approach would be to register the card during config flow:
+- Pros: Card only loads when integration is configured
+- Cons: More complex, requires reload if integration removed
+- Current approach (on setup) is simpler and more reliable
 
 ## Conclusion
 
-The implementation successfully restructures the repository for HACS dual-component distribution while maintaining backward compatibility and providing comprehensive documentation for users.
+The implementation successfully modernizes the repository structure to use the recommended bundled approach. This eliminates HACS installation confusion, prevents errors, and provides a better user experience while following Home Assistant best practices.
 
 ---
 
 **Implementation Date**: 2026-02-10  
-**Version**: 0.0.33 (base)  
+**Version**: 0.0.35 (updated)  
 **Author**: GitHub Copilot Agent
+

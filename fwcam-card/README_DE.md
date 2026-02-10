@@ -2,6 +2,10 @@
 
 Eine benutzerdefinierte Lovelace-Karte für die Fuel Watcher Car Advanced Manager (FWCAM) Home Assistant Integration.
 
+> **📦 NEU: Die Karte ist jetzt in der Integration enthalten!**  
+> Wenn Sie die FWCAM-Integration über HACS installieren, ist die Karte automatisch enthalten und registriert.  
+> Eine separate Installation ist nicht mehr erforderlich. Siehe [Installation](#installation) unten.
+
 ## Funktionen
 
 - **Fahrzeuginformationsanzeige**: Zeigt aktuellen Kraftstoffpreis, Tankfüllstand, Reichweite, nächste Tankstelle und Tankvorhersage
@@ -17,22 +21,22 @@ Eine benutzerdefinierte Lovelace-Karte für die Fuel Watcher Car Advanced Manage
 
 ## Installation
 
-### HACS Installation (Empfohlen)
+### Automatische Installation (Empfohlen)
 
-1. Öffnen Sie HACS in Ihrem Home Assistant
-2. Gehen Sie zum Abschnitt "Frontend"
-3. Klicken Sie auf die drei Punkte oben rechts
-4. Wählen Sie "Benutzerdefinierte Repositories"
-5. Fügen Sie diese Repository-URL hinzu: `https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM`
-6. Wählen Sie die Kategorie "Lovelace"
-7. Klicken Sie auf "Hinzufügen"
-8. Suchen Sie "FWCAM Lovelace Card" in der Liste
-9. Klicken Sie auf "Herunterladen"
-10. Starten Sie Home Assistant neu
-11. Leeren Sie Ihren Browser-Cache
-12. Fügen Sie die Karte Ihrem Dashboard hinzu
+**Die Karte ist jetzt in der Integration enthalten!**
 
-### Manuelle Installation
+1. Installieren Sie die FWCAM-Integration über HACS (siehe [Haupt-README](../README.md))
+2. Starten Sie Home Assistant neu
+3. Leeren Sie Ihren Browser-Cache (Strg+Umschalt+R)
+4. Die Karte ist automatisch in Ihrem Dashboard verfügbar!
+
+Keine separate Installation erforderlich!
+
+### Manuelle Installation (Legacy)
+
+Wenn Sie die Integration manuell installieren, ist die Karte bereits in `custom_components/hafwcma/www/` enthalten.
+
+Alternativ für eigenständige Nutzung:
 
 1. Laden Sie `fwcam-card.js` aus dem `dist/` Verzeichnis herunter
 2. Kopieren Sie es in Ihr `config/www/fwcam-card/` Verzeichnis
