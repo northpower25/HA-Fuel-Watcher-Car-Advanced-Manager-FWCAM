@@ -9,17 +9,19 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
 
 ## 📦 Quick Installation
 
-This repository provides **two HACS components**:
-1. **Integration** - Backend functionality
-2. **Lovelace Card** - Beautiful dashboard UI
+**Install the integration via HACS and get the frontend card automatically!**
 
 **→ [Complete HACS Installation Guide](HACS_INSTALLATION.md)** | **[German Guide](HACS_INSTALLATION_DE.md)**
 
+The integration includes:
+1. **Backend Integration** - All monitoring and prediction features
+2. **Frontend Card** - Beautiful dashboard UI (automatically bundled)
+
 ---
 
-## 🎨 NEW: Custom Lovelace Card
+## 🎨 NEW: Custom Lovelace Card (Included!)
 
-**The FWCAM integration now includes a custom Lovelace card for a beautiful, all-in-one dashboard!**
+**The FWCAM integration includes a custom Lovelace card that's automatically available after installation!**
 
 ### Features:
 - 📊 **Vehicle Information Display** - Real-time fuel price, tank level, range, and more
@@ -90,9 +92,7 @@ entity: sensor.my_car_refueling_log
 
 ## Installation
 
-### Integration Installation
-
-#### HACS (Recommended)
+### HACS Installation (Recommended)
 
 1. Open HACS in Home Assistant
 2. Go to "Integrations"
@@ -104,41 +104,15 @@ entity: sensor.my_car_refueling_log
 8. Find "Fuel Watcher Car Advanced Manager" in the integration list
 9. Click "Download"
 10. Restart Home Assistant
+11. The frontend card is automatically available after restart!
 
-#### Manual Installation
+**→ [Detailed Installation Guide](HACS_INSTALLATION.md)** | **[German Guide](HACS_INSTALLATION_DE.md)**
+
+### Manual Installation
 
 1. Copy the `custom_components/hafwcma` directory to your Home Assistant `custom_components` directory
 2. Restart Home Assistant
-
-### Lovelace Card Installation (Optional but Recommended)
-
-#### HACS (Recommended)
-
-1. Open HACS in Home Assistant
-2. Go to "Frontend"
-3. Click the three dots in the top right corner
-4. Select "Custom repositories"
-5. Add the same repository URL: `https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM`
-6. Select category "Lovelace"
-7. Click "Add"
-8. Find "FWCAM Lovelace Card" in the list
-9. Click "Download"
-10. Restart Home Assistant
-11. Clear your browser cache (Ctrl+Shift+R)
-
-#### Manual Installation
-
-1. Download `fwcam-card.js` from the `fwcam-card/dist/` directory
-2. Copy it to your `config/www/fwcam-card/` directory
-3. Add to your Lovelace resources:
-   ```yaml
-   resources:
-     - url: /local/fwcam-card/fwcam-card.js
-       type: module
-   ```
-4. Restart Home Assistant and clear browser cache
-
-For detailed card documentation, see [fwcam-card/README.md](fwcam-card/README.md).
+3. The frontend card will be automatically registered
 
 ## Configuration
 

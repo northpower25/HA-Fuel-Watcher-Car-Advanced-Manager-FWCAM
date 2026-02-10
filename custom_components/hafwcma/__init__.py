@@ -10,6 +10,7 @@ This integration provides:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -25,6 +26,10 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON, Platform.SWITCH, Platform.NUMBER]
+
+# Frontend card configuration
+CARD_FILENAME = "fwcam-card.js"
+CARD_VERSION = "1.0.0"  # Update this when the card changes
 
 # Historical data import configuration
 HISTORICAL_IMPORT_STARTUP_DELAY_SECONDS = 10  # Delay before starting background import
@@ -69,6 +74,59 @@ SCHEMA_DELETE_REFUEL_EVENT = vol.Schema({
 })
 
 
+async def _async_register_frontend_card(hass: HomeAssistant) -> None:
+    """Register the FWCAM frontend card.
+    
+    This makes the custom card available in the Lovelace UI.
+    The card is served from the integration's www directory and
+    automatically registered when the integration loads.
+    
+    Args:
+        hass: Home Assistant instance
+    """
+    try:
+        # Get the path to our card JS file
+        card_dir = Path(__file__).parent / "www"
+        card_path = card_dir / CARD_FILENAME
+        
+        # Verify the card file exists
+        if not card_path.exists():
+            _LOGGER.warning(
+                "FWCAM card file not found at %s. Card will not be available.",
+                card_path
+            )
+            return
+        
+        # Register static path for serving the card
+        # This makes the card available at /hafwcma_local/fwcam-card.js
+        await hass.http.async_register_static_paths([
+            {
+                "url_path": f"/{DOMAIN}_local",
+                "path": str(card_dir),
+            }
+        ])
+        
+        # Register the card as a frontend module
+        # This adds it to the list of available resources
+        card_url = f"/{DOMAIN}_local/{CARD_FILENAME}?v={CARD_VERSION}"
+        
+        # Add to frontend extra module URLs
+        # This is equivalent to manually adding the resource in the UI
+        hass.data.setdefault("frontend_extra_module_url", set()).add(card_url)
+        
+        _LOGGER.info(
+            "FWCAM frontend card registered at %s",
+            card_url
+        )
+        
+    except Exception as err:
+        _LOGGER.error(
+            "Failed to register FWCAM frontend card: %s",
+            err,
+            exc_info=True
+        )
+
+
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the haFWCMA component from YAML configuration.
     
@@ -81,6 +139,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """
     _LOGGER.info("Setting up haFWCMA integration")
     hass.data.setdefault(DOMAIN, {})
+    
+    # Register the frontend card resource
+    await _async_register_frontend_card(hass)
     
     # Register services
     async def handle_add_refuel_event(call: ServiceCall) -> None:
