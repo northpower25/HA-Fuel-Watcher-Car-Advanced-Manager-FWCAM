@@ -60,7 +60,8 @@
 - [x] Manual data refresh via switch entity
 - [x] API connection test via button entity with result attributes
 - [x] Configurable number entities for prediction settings (min data points, prediction interval)
-- [ ] Add Lovelace card for dashboard display
+- [x] Add Lovelace card for dashboard display
+- [x] **HACS-compatible Lovelace card distribution structure**
 - [ ] Create custom panel for detailed statistics
 - [ ] Add graphical price trend visualization
 - [ ] Add consumption prediction accuracy visualization

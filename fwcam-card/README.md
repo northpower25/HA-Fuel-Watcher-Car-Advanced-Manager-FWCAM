@@ -1,11 +1,5 @@
 # FWCAM Card - Fuel Watcher Car Advanced Manager Card
 
-> **⚠️ DEPRECATION NOTICE**: This directory is deprecated. For HACS installation, the card files are now in `fwcam-card/dist/`. 
-> 
-> **For manual installations**: You can continue to use files from this directory, but we recommend switching to the new structure for better HACS compatibility.
-> 
-> See the main [fwcam-card/README.md](../../fwcam-card/README.md) for updated installation instructions.
-
 A custom Lovelace card for the Fuel Watcher Car Advanced Manager (FWCAM) Home Assistant integration.
 
 ## Features
@@ -23,10 +17,26 @@ A custom Lovelace card for the Fuel Watcher Car Advanced Manager (FWCAM) Home As
 
 ## Installation
 
+### HACS Installation (Recommended)
+
+1. Open HACS in your Home Assistant
+2. Go to "Frontend" section
+3. Click the three dots in the top right corner
+4. Select "Custom repositories"
+5. Add this repository URL: `https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM`
+6. Select category "Lovelace"
+7. Click "Add"
+8. Find "FWCAM Lovelace Card" in the list
+9. Click "Download"
+10. Restart Home Assistant
+11. Clear your browser cache
+12. Add the card to your dashboard
+
 ### Manual Installation
 
-1. Copy `fwcam-card.js` to your `config/www/fwcam-card/` directory
-2. Add the resource in your Lovelace configuration:
+1. Download `fwcam-card.js` from the `dist/` directory
+2. Copy it to your `config/www/fwcam-card/` directory
+3. Add the resource in your Lovelace configuration:
 
 ```yaml
 resources:
@@ -34,17 +44,8 @@ resources:
     type: module
 ```
 
-3. Add the card to your dashboard
-
-### HACS Installation (Recommended)
-
-> **Note**: HACS installation will be available once this card is published to the HACS default repository.
-
-1. Open HACS in your Home Assistant
-2. Go to "Frontend" section
-3. Click the "+" button
-4. Search for "FWCAM Card"
-5. Click "Install"
+4. Restart Home Assistant
+5. Clear your browser cache
 6. Add the card to your dashboard
 
 ## Configuration
@@ -156,7 +157,7 @@ When adding new features to the FWCAM integration:
 2. **Update UI sections** to display new entities
 3. **Add service calls** if new backend functionality is added
 4. **Update configuration** if new options are needed
-5. **Update documentation** in `REFUELING_LOG_GUIDE.md`
+5. **Update documentation** in the integration's documentation
 
 ### Contributing
 
@@ -169,7 +170,7 @@ Contributions are welcome! Please:
 ## Support
 
 For issues and feature requests:
-1. Check the [Documentation](https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/docs/REFUELING_LOG_GUIDE.md)
+1. Check the [Documentation](https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM)
 2. Open an issue on [GitHub](https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/issues)
 
 ## License
