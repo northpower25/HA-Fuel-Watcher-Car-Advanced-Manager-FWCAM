@@ -35,6 +35,7 @@ ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS = 1  # Maximum time difference for odometer 
 PRICE_LOOKUP_WINDOW_DAYS = 7  # Maximum age of price data to use for historical events
 SECONDS_PER_HOUR = 3600  # Number of seconds in an hour
 DUPLICATE_DETECTION_WINDOW_HOURS = 24  # Window for detecting duplicate refuelings
+PERCENTAGE_MULTIPLIER = 100  # Multiplier for converting decimals to percentages
 
 
 async def import_historical_vehicle_data(
@@ -416,7 +417,7 @@ async def _import_tank_history_and_detect_refueling(
                             existing_timestamps.add(current_time)  # Add to prevent duplicates in same import
                             refuel_count += 1
                             
-                            _LOGGER.info(
+                            _LOGGER.debug(
                                 "Detected historical refueling: +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
                                 level_increase,
                                 current_time.isoformat(),
@@ -430,6 +431,13 @@ async def _import_tank_history_and_detect_refueling(
             except (ValueError, TypeError) as err:
                 _LOGGER.debug("Skipping invalid tank level state: %s (%s)", state.state, err)
                 continue
+        
+        # Log summary if any refuelings were detected
+        if refuel_count > 0:
+            _LOGGER.info(
+                "Historical import completed: detected %d refueling event(s) from tank level changes",
+                refuel_count,
+            )
         
     except Exception as err:
         _LOGGER.error("Error importing tank history: %s", err, exc_info=True)
@@ -555,7 +563,7 @@ def _calculate_confidence(
     # Refueling amount is reasonable (30% weight)
     # Consider it reasonable if between 10% and 100% of tank capacity
     if tank_capacity > 0:
-        refuel_percentage = (level_increase / tank_capacity) * 100
+        refuel_percentage = (level_increase / tank_capacity) * PERCENTAGE_MULTIPLIER
         if 10 <= refuel_percentage <= 100:
             confidence += 0.3
         elif refuel_percentage > 100:
