@@ -5,6 +5,28 @@
 
 A comprehensive Home Assistant integration for monitoring fuel prices, managing vehicle fuel levels, and receiving intelligent refueling recommendations.
 
+## 🎨 NEW: Custom Lovelace Card
+
+**The FWCAM integration now includes a custom Lovelace card for a beautiful, all-in-one dashboard!**
+
+### Features:
+- 📊 **Vehicle Information Display** - Real-time fuel price, tank level, range, and more
+- 🎛️ **Control Panel** - Quick access to all integration functions
+- ⚙️ **Settings Management** - Inline editing of all settings
+- 📝 **Refueling Log** - View, edit, and manage refueling events
+- 🎨 **Responsive Design** - Works perfectly on desktop, tablet, and mobile
+- 🔄 **Auto-Detection** - Automatically finds all related entities
+
+**Quick Start:**
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+```
+
+📖 [Full Installation Guide](docs/REFUELING_LOG_GUIDE.md) | 🎨 [Visual Guide](docs/FWCAM_CARD_VISUAL_GUIDE.md)
+
+---
+
 ## Features
 
 ### 🚗 Vehicle Management
@@ -426,6 +448,37 @@ This is an MVP (Minimum Viable Product) release. The following features are impl
 ### Planned Features
 
 See [TODO.md](TODO.md) for the complete roadmap.
+
+## ⚠️ Breaking Changes (v0.0.33)
+
+### Entity Renaming
+
+To improve clarity and user experience, the following entities have been renamed:
+
+| Old Entity ID | New Entity ID | Purpose |
+|--------------|---------------|---------|
+| `switch.[car]_manual_refresh` | `switch.[car]_fuel_price_refresh` | Manually refresh fuel prices |
+| `switch.[car]_manual_prediction` | `switch.[car]_consumption_prediction` | Manually update consumption prediction |
+| `number.[car]_search_radius` | `number.[car]_station_search_radius` | Set fuel station search radius |
+
+**Action Required:**
+- Update your automations, scripts, and dashboards to use the new entity IDs
+- The old entity IDs will no longer be available after upgrading
+
+**Example Migration:**
+```yaml
+# Before
+- service: switch.turn_on
+  target:
+    entity_id: switch.my_car_manual_refresh
+
+# After
+- service: switch.turn_on
+  target:
+    entity_id: switch.my_car_fuel_price_refresh
+```
+
+For detailed migration information, see [IMPLEMENTATION_SUMMARY_CUSTOM_CARD.md](IMPLEMENTATION_SUMMARY_CUSTOM_CARD.md).
 
 ## Support
 
