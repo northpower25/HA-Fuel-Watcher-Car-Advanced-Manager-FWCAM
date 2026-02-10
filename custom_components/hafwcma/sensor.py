@@ -702,13 +702,31 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Error handling refueling detection: %s", err)
         
         # Build data structure
-        # Calculate tank percentage if we have both level and capacity
+        # Calculate tank percentage and liters from vehicle data
         tank_percentage = None
+        tank_level_liters = None
         tank_level = vehicle_data.get("tank_level")
+        tank_level_unit = vehicle_data.get("tank_level_unit")
+        tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0)
+        
         if tank_level is not None:
-            tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0)
-            if tank_capacity and tank_capacity > 0:
-                tank_percentage = (tank_level / tank_capacity) * 100
+            # Check if tank level is already a percentage or in liters
+            if tank_level_unit and tank_level_unit.lower() in ("%", "percent", "percentage"):
+                # Tank level is already a percentage, use it directly
+                tank_percentage = tank_level
+                # Calculate liters from percentage if we have tank capacity
+                if tank_capacity and tank_capacity > 0:
+                    tank_level_liters = (tank_level / 100.0) * tank_capacity
+            else:
+                # Tank level is in liters, use it directly
+                tank_level_liters = tank_level
+                # Convert to percentage if we have tank capacity
+                if tank_capacity and tank_capacity > 0:
+                    tank_percentage = (tank_level / tank_capacity) * 100
+            
+            # Clamp tank percentage to valid range (0-100%)
+            if tank_percentage is not None:
+                tank_percentage = max(0.0, min(100.0, tank_percentage))
         
         # Get price trend and statistics
         price_trend = None
@@ -785,7 +803,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         data = {
             "fuel_price": fuel_price,
             "last_price_timestamp": last_price_timestamp,
-            "tank_level": tank_level,
+            "tank_level": tank_level_liters,  # Always in liters for consistency
             "tank_percentage": tank_percentage,
             "range": range_km,
             "odometer": vehicle_data.get("odometer_km"),
@@ -1172,10 +1190,28 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return the average consumption for today."""
+        """Return the overall average consumption based on available historical data.
+        
+        Prioritizes longer time periods for more accurate overall average:
+        1. Last month (if available)
+        2. Last 14 days (if available)
+        3. Last week (if available)
+        4. Today (as fallback)
+        """
         history = self.coordinator.data.get("consumption_history")
-        if history and history.get("today"):
+        if not history:
+            return None
+        
+        # Try to get the most comprehensive average, prioritizing longer periods
+        if history.get("last_month"):
+            return history["last_month"].get("avg_consumption_l_per_100km")
+        elif history.get("last_14_days"):
+            return history["last_14_days"].get("avg_consumption_l_per_100km")
+        elif history.get("last_week"):
+            return history["last_week"].get("avg_consumption_l_per_100km")
+        elif history.get("today"):
             return history["today"].get("avg_consumption_l_per_100km")
+        
         return None
     
     @property
