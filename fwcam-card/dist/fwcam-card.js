@@ -21,6 +21,9 @@
  * 5. Update documentation in REFUELING_LOG_GUIDE.md
  */
 
+// Constants
+const SERVICE_CALL_REFRESH_DELAY_MS = 1000;
+
 class FWCAMCard extends HTMLElement {
   constructor() {
     super();
@@ -47,10 +50,12 @@ class FWCAMCard extends HTMLElement {
       show_settings: config.show_settings !== false,
       rows_per_page: config.rows_per_page || 10,
       refresh_interval: config.refresh_interval || 300,
-      table_max_height: config.table_max_height || '400px',
-      table_min_width: config.table_min_width || '100%',
+      table_max_height: this.sanitizeCSSValue(config.table_max_height, '400px'),
+      table_min_width: this.sanitizeCSSValue(config.table_min_width, '100%'),
       ...config
     };
+    // Ensure first render happens immediately
+    this._lastRender = 0;
     this.findEntities();
     this.render();
   }
@@ -76,6 +81,24 @@ class FWCAMCard extends HTMLElement {
    */
   getCardSize() {
     return 10;
+  }
+
+  /**
+   * Sanitize CSS value to prevent injection
+   */
+  sanitizeCSSValue(value, defaultValue) {
+    if (!value) return defaultValue;
+    
+    // Allow only safe CSS units: px, %, em, rem, vh, vw
+    const cssUnitPattern = /^(\d+(?:\.\d+)?)(px|%|em|rem|vh|vw)$/;
+    const match = String(value).trim().match(cssUnitPattern);
+    
+    if (match) {
+      return value;
+    }
+    
+    console.warn(`Invalid CSS value '${value}', using default '${defaultValue}'`);
+    return defaultValue;
   }
 
   /**
@@ -132,7 +155,7 @@ class FWCAMCard extends HTMLElement {
     if (!this._hass) return;
     this._hass.callService(domain, service, serviceData);
     // Force render after service calls to show immediate feedback
-    setTimeout(() => this.forceRender(), 1000);
+    setTimeout(() => this.forceRender(), SERVICE_CALL_REFRESH_DELAY_MS);
   }
 
   /**
@@ -188,7 +211,15 @@ class FWCAMCard extends HTMLElement {
    * Delete a refueling event
    */
   deleteRefuelingEvent(eventId) {
-    if (confirm('Sind Sie sicher, dass Sie diesen Tankvorgang löschen möchten? / Are you sure you want to delete this refueling event?')) {
+    // Try to detect user language, default to English
+    const lang = this._hass?.language || 'en';
+    const confirmMessages = {
+      de: 'Sind Sie sicher, dass Sie diesen Tankvorgang löschen möchten?',
+      en: 'Are you sure you want to delete this refueling event?'
+    };
+    const message = confirmMessages[lang] || confirmMessages['en'];
+    
+    if (confirm(message)) {
       this.callService('hafwcma', 'delete_refuel_event', {
         config_entry_id: this.getConfigEntryId(),
         event_id: eventId
