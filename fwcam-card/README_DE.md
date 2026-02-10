@@ -72,6 +72,9 @@ show_vehicle_info: true
 show_controls: true
 show_settings: true
 rows_per_page: 10
+refresh_interval: 300
+table_max_height: 400px
+table_min_width: 100%
 ```
 
 ### Konfigurationsoptionen
@@ -85,6 +88,9 @@ rows_per_page: 10
 | `show_controls` | boolean | `true` | Steuerungsschaltflächen anzeigen/ausblenden |
 | `show_settings` | boolean | `true` | Einstellungsbereich anzeigen/ausblenden |
 | `rows_per_page` | number | `10` | Anzahl der anzuzeigenden Tankvorgänge |
+| `refresh_interval` | number | `300` | Aktualisierungsintervall in Sekunden (Standard: 5 Minuten) |
+| `table_max_height` | string | `400px` | Maximale Höhe der Tankbuch-Tabelle (ermöglicht vertikales Scrollen) |
+| `table_min_width` | string | `100%` | Minimale Breite der Tabelle (verringert horizontales Scrollen) |
 
 ## Automatische Entitätserkennung
 

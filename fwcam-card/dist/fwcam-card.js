@@ -28,6 +28,7 @@ class FWCAMCard extends HTMLElement {
     this._config = {};
     this._hass = null;
     this._entities = {};
+    this._lastRender = 0;
   }
 
   /**
@@ -45,6 +46,9 @@ class FWCAMCard extends HTMLElement {
       show_controls: config.show_controls !== false,
       show_settings: config.show_settings !== false,
       rows_per_page: config.rows_per_page || 10,
+      refresh_interval: config.refresh_interval || 300,
+      table_max_height: config.table_max_height || '400px',
+      table_min_width: config.table_min_width || '100%',
       ...config
     };
     this.findEntities();
@@ -56,7 +60,15 @@ class FWCAMCard extends HTMLElement {
    */
   set hass(hass) {
     this._hass = hass;
-    this.render();
+    
+    // Throttle rendering based on refresh_interval (in seconds)
+    const now = Date.now();
+    const intervalMs = (this._config.refresh_interval || 300) * 1000;
+    
+    if (now - this._lastRender >= intervalMs) {
+      this._lastRender = now;
+      this.render();
+    }
   }
 
   /**
@@ -119,6 +131,8 @@ class FWCAMCard extends HTMLElement {
   callService(domain, service, serviceData = {}) {
     if (!this._hass) return;
     this._hass.callService(domain, service, serviceData);
+    // Force render after service calls to show immediate feedback
+    setTimeout(() => this.forceRender(), 1000);
   }
 
   /**
@@ -174,7 +188,7 @@ class FWCAMCard extends HTMLElement {
    * Delete a refueling event
    */
   deleteRefuelingEvent(eventId) {
-    if (confirm('Are you sure you want to delete this refueling event?')) {
+    if (confirm('Sind Sie sicher, dass Sie diesen Tankvorgang löschen möchten? / Are you sure you want to delete this refueling event?')) {
       this.callService('hafwcma', 'delete_refuel_event', {
         config_entry_id: this.getConfigEntryId(),
         event_id: eventId
@@ -209,6 +223,14 @@ class FWCAMCard extends HTMLElement {
   formatNumber(value, decimals = 1, unit = '') {
     if (value === null || value === undefined) return 'N/A';
     return `${parseFloat(value).toFixed(decimals)}${unit ? ' ' + unit : ''}`;
+  }
+
+  /**
+   * Force an immediate render (used after user interactions)
+   */
+  forceRender() {
+    this._lastRender = Date.now();
+    this.render();
   }
 
   /**
@@ -672,6 +694,9 @@ class FWCAMCard extends HTMLElement {
 
         .table-container {
           overflow-x: auto;
+          overflow-y: auto;
+          max-height: ${this._config.table_max_height};
+          min-width: ${this._config.table_min_width};
         }
 
         .refueling-table {

@@ -1,12 +1,10 @@
 # FWCAM Card - Fuel Watcher Car Advanced Manager Card
 
-> **⚠️ DEPRECATION NOTICE**: This directory is deprecated. For HACS installation, the card files are now in `fwcam-card/dist/`. 
-> 
-> **For manual installations**: You can continue to use files from this directory, but we recommend switching to the new structure for better HACS compatibility.
-> 
-> See the main [fwcam-card/README.md](../../fwcam-card/README.md) for updated installation instructions.
-
 A custom Lovelace card for the Fuel Watcher Car Advanced Manager (FWCAM) Home Assistant integration.
+
+> **📦 NEW: The card is now bundled with the integration!**  
+> When you install the FWCAM integration via HACS, the card is automatically included and registered.  
+> You no longer need to install it separately. See [Installation](#installation) below.
 
 ## Features
 
@@ -23,10 +21,26 @@ A custom Lovelace card for the Fuel Watcher Car Advanced Manager (FWCAM) Home As
 
 ## Installation
 
-### Manual Installation
+### Automatic Installation (Recommended)
 
-1. Copy `fwcam-card.js` to your `config/www/fwcam-card/` directory
-2. Add the resource in your Lovelace configuration:
+**The card is now bundled with the integration!**
+
+1. Install the FWCAM integration via HACS (see [main README](../README.md))
+2. Restart Home Assistant
+3. Clear your browser cache (Ctrl+Shift+R)
+4. The card is automatically available in your dashboard!
+
+No separate installation needed!
+
+### Manual Installation (Legacy)
+
+If you're installing the integration manually, the card is already included in `custom_components/hafwcma/www/`.
+
+Alternatively, for standalone use:
+
+1. Download `fwcam-card.js` from the `dist/` directory
+2. Copy it to your `config/www/fwcam-card/` directory
+3. Add the resource in your Lovelace configuration:
 
 ```yaml
 resources:
@@ -34,17 +48,8 @@ resources:
     type: module
 ```
 
-3. Add the card to your dashboard
-
-### HACS Installation (Recommended)
-
-> **Note**: HACS installation will be available once this card is published to the HACS default repository.
-
-1. Open HACS in your Home Assistant
-2. Go to "Frontend" section
-3. Click the "+" button
-4. Search for "FWCAM Card"
-5. Click "Install"
+4. Restart Home Assistant
+5. Clear your browser cache
 6. Add the card to your dashboard
 
 ## Configuration
@@ -67,6 +72,9 @@ show_vehicle_info: true
 show_controls: true
 show_settings: true
 rows_per_page: 10
+refresh_interval: 300
+table_max_height: 400px
+table_min_width: 100%
 ```
 
 ### Configuration Options
@@ -80,6 +88,9 @@ rows_per_page: 10
 | `show_controls` | boolean | `true` | Show/hide control buttons |
 | `show_settings` | boolean | `true` | Show/hide settings section |
 | `rows_per_page` | number | `10` | Number of refueling events to display |
+| `refresh_interval` | number | `300` | Refresh interval in seconds (default: 5 minutes) |
+| `table_max_height` | string | `400px` | Maximum height of refueling log table (enables vertical scrolling) |
+| `table_min_width` | string | `100%` | Minimum width of table (reduces horizontal scrolling) |
 
 ## Entity Auto-Detection
 
@@ -156,7 +167,7 @@ When adding new features to the FWCAM integration:
 2. **Update UI sections** to display new entities
 3. **Add service calls** if new backend functionality is added
 4. **Update configuration** if new options are needed
-5. **Update documentation** in `REFUELING_LOG_GUIDE.md`
+5. **Update documentation** in the integration's documentation
 
 ### Contributing
 
@@ -169,7 +180,7 @@ Contributions are welcome! Please:
 ## Support
 
 For issues and feature requests:
-1. Check the [Documentation](https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/docs/REFUELING_LOG_GUIDE.md)
+1. Check the [Documentation](https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM)
 2. Open an issue on [GitHub](https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/issues)
 
 ## License

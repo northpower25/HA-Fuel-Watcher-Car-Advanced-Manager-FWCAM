@@ -77,6 +77,9 @@ show_vehicle_info: true     # Fahrzeuginformationen anzeigen
 show_controls: true         # Steuerungs-Buttons anzeigen
 show_settings: true         # Einstellungen anzeigen
 rows_per_page: 10          # Anzahl anzuzeigender Ereignisse
+refresh_interval: 300      # Aktualisierungsintervall in Sekunden (5 Minuten)
+table_max_height: 400px    # Maximale Tabellenhöhe für vertikales Scrollen
+table_min_width: 100%      # Minimale Tabellenbreite
 ```
 
 #### Konfigurationsoptionen
@@ -90,6 +93,9 @@ rows_per_page: 10          # Anzahl anzuzeigender Ereignisse
 | `show_controls` | boolean | `true` | Steuerungs-Buttons anzeigen/ausblenden |
 | `show_settings` | boolean | `true` | Einstellungen anzeigen/ausblenden |
 | `rows_per_page` | number | `10` | Anzahl anzuzeigender Tankvorgänge |
+| `refresh_interval` | number | `300` | Aktualisierungsintervall in Sekunden (verhindert Unterbrechung beim Scrollen) |
+| `table_max_height` | string | `400px` | Maximale Höhe der Tankprotokoll-Tabelle (ermöglicht Anzeige von mindestens 10 Einträgen mit vertikalem Scrollen) |
+| `table_min_width` | string | `100%` | Minimale Breite der Tabelle (reduziert horizontales Scrollen) |
 
 #### Was die Karte anzeigt
 
