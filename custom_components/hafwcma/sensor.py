@@ -1403,6 +1403,7 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
         
         if not refueling_log:
             return {
+                "config_entry_id": self._config_entry.entry_id,
                 "total_events": 0,
                 "last_refueling": None,
                 "recent_events": [],
@@ -1429,6 +1430,7 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
                 "price_per_liter": event.get("price_per_liter"),
                 "total_cost": event.get("total_cost"),
                 "station_name": event.get("station_name"),
+                "station_address": event.get("station_address"),
                 "fuel_type": event.get("fuel_type"),
                 "data_quality": event.get("data_quality", "manual"),
                 "confidence": event.get("confidence", 1.0),
@@ -1447,6 +1449,7 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
             }
         
         return {
+            "config_entry_id": self._config_entry.entry_id,
             "total_events": len(refueling_log),
             "last_refueling": last_refueling,
             "recent_events": recent_events,
