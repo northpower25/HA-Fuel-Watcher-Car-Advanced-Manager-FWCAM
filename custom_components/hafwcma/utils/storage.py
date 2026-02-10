@@ -286,6 +286,9 @@ async def add_refuel_event(
         "longitude": event_data.get("longitude"),
         "fuel_type": event_data.get("fuel_type"),
         "editable": True,
+        # Data quality indicators for filtering and manual correction
+        "data_quality": event_data.get("data_quality", "manual"),  # manual, auto_detected, historical_import
+        "confidence": event_data.get("confidence", 1.0),  # 0.0-1.0, higher is better
     }
     
     data["refueling_log"].append(refuel_record)

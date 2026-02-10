@@ -34,6 +34,8 @@ REFUEL_DETECTION_MIN_TIME_GAP_MINUTES = 5  # Minimum time between refuelings
 ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS = 1  # Maximum time difference for odometer lookup
 PRICE_LOOKUP_WINDOW_DAYS = 7  # Maximum age of price data to use for historical events
 SECONDS_PER_HOUR = 3600  # Number of seconds in an hour
+DUPLICATE_DETECTION_WINDOW_HOURS = 24  # Window for detecting duplicate refuelings
+PERCENTAGE_MULTIPLIER = 100  # Multiplier for converting decimals to percentages
 
 
 async def import_historical_vehicle_data(
@@ -296,6 +298,22 @@ async def _import_tank_history_and_detect_refueling(
     refuel_count = 0
     
     try:
+        # Load existing refueling log to check for duplicates
+        from .storage import get_refueling_log
+        from homeassistant.util import dt as dt_util
+        
+        existing_log = await get_refueling_log(hass, entry)
+        existing_timestamps = set()
+        for event in existing_log:
+            if event.get("timestamp"):
+                # Parse timestamp and store as datetime for comparison
+                try:
+                    ts = dt_util.parse_datetime(event["timestamp"])
+                    if ts:
+                        existing_timestamps.add(ts)
+                except (ValueError, TypeError):
+                    pass
+        
         # Get historical states from recorder
         tank_states = await hass.async_add_executor_job(
             history.state_changes_during_period,
@@ -350,13 +368,37 @@ async def _import_tank_history_and_detect_refueling(
                     if level_increase > REFUEL_DETECTION_THRESHOLD_LITERS:
                         time_gap = (current_time - previous_time).total_seconds() / 60
                         if time_gap > REFUEL_DETECTION_MIN_TIME_GAP_MINUTES:
+                            # Check if this refueling is a duplicate
+                            is_duplicate = False
+                            for existing_ts in existing_timestamps:
+                                time_diff_hours = abs((current_time - existing_ts).total_seconds()) / SECONDS_PER_HOUR
+                                if time_diff_hours < DUPLICATE_DETECTION_WINDOW_HOURS:
+                                    is_duplicate = True
+                                    _LOGGER.debug(
+                                        "Skipping duplicate refueling at %s (existing: %s)",
+                                        current_time.isoformat(),
+                                        existing_ts.isoformat(),
+                                    )
+                                    break
+                            
+                            if is_duplicate:
+                                continue
+                            
                             # Find closest odometer reading
                             odometer_km = _find_closest_odometer(odometer_lookup, current_time)
                             
                             # Get current price from integration data (if available)
                             price_per_liter = await _get_current_price(hass, entry, current_time)
                             
-                            # Create refueling event
+                            # Calculate confidence based on data availability
+                            confidence = _calculate_confidence(
+                                odometer_km=odometer_km,
+                                price_per_liter=price_per_liter,
+                                level_increase=level_increase,
+                                tank_capacity=tank_capacity,
+                            )
+                            
+                            # Create refueling event with quality indicators
                             event_data = {
                                 "timestamp": current_time.isoformat(),
                                 "odometer_km": odometer_km,
@@ -367,16 +409,20 @@ async def _import_tank_history_and_detect_refueling(
                                 "latitude": None,
                                 "longitude": None,
                                 "fuel_type": fuel_type,
+                                "data_quality": "historical_import",
+                                "confidence": confidence,
                             }
                             
                             await add_refuel_event(hass, entry, event_data)
+                            existing_timestamps.add(current_time)  # Add to prevent duplicates in same import
                             refuel_count += 1
                             
                             _LOGGER.debug(
-                                "Detected historical refueling: +%.1fL at %s (odometer: %.1f km)",
+                                "Detected historical refueling: +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
                                 level_increase,
                                 current_time.isoformat(),
                                 odometer_km or 0,
+                                confidence,
                             )
                 
                 previous_level = current_level
@@ -385,6 +431,13 @@ async def _import_tank_history_and_detect_refueling(
             except (ValueError, TypeError) as err:
                 _LOGGER.debug("Skipping invalid tank level state: %s (%s)", state.state, err)
                 continue
+        
+        # Log summary if any refuelings were detected
+        if refuel_count > 0:
+            _LOGGER.info(
+                "Historical import completed: detected %d refueling event(s) from tank level changes",
+                refuel_count,
+            )
         
     except Exception as err:
         _LOGGER.error("Error importing tank history: %s", err, exc_info=True)
@@ -473,3 +526,52 @@ async def _get_current_price(
     except Exception as err:
         _LOGGER.debug("Error getting historical price: %s", err)
         return None
+
+
+def _calculate_confidence(
+    odometer_km: float | None,
+    price_per_liter: float | None,
+    level_increase: float,
+    tank_capacity: float,
+) -> float:
+    """Calculate confidence score for a detected refueling event.
+    
+    Confidence is based on:
+    - Availability of odometer data (0.4 weight)
+    - Availability of price data (0.3 weight)
+    - Reasonableness of refueling amount (0.3 weight)
+    
+    Args:
+        odometer_km: Odometer reading at refueling (None if not available)
+        price_per_liter: Price per liter (None if not available)
+        level_increase: Amount of fuel added in liters
+        tank_capacity: Tank capacity in liters
+        
+    Returns:
+        Confidence score from 0.0 to 1.0 (higher is better)
+    """
+    confidence = 0.0
+    
+    # Odometer data available (40% weight)
+    if odometer_km is not None and odometer_km > 0:
+        confidence += 0.4
+    
+    # Price data available (30% weight)
+    if price_per_liter is not None and price_per_liter > 0:
+        confidence += 0.3
+    
+    # Refueling amount is reasonable (30% weight)
+    # Consider it reasonable if between 10% and 100% of tank capacity
+    if tank_capacity > 0:
+        refuel_percentage = (level_increase / tank_capacity) * PERCENTAGE_MULTIPLIER
+        if 10 <= refuel_percentage <= 100:
+            confidence += 0.3
+        elif refuel_percentage > 100:
+            # Over 100% suggests measurement error or wrong tank capacity
+            # Still give partial credit as refueling was detected
+            confidence += 0.15
+    else:
+        # No tank capacity data, give partial credit
+        confidence += 0.15
+    
+    return round(confidence, 2)
