@@ -90,12 +90,14 @@ class FWCAMCard extends HTMLElement {
 
   /**
    * Sanitize CSS value to prevent injection
+   * Only allows positive numbers with safe CSS units
    */
   sanitizeCSSValue(value, defaultValue) {
     if (!value) return defaultValue;
     
     // Allow only safe CSS units: px, %, em, rem, vh, vw
-    const cssUnitPattern = /^(?:\d+(?:\.\d+)?)(?:px|%|em|rem|vh|vw)$/;
+    // Only positive numbers (negative/zero not useful for dimensions)
+    const cssUnitPattern = /^(?:[1-9]\d*(?:\.\d+)?|0?\.\d+)(?:px|%|em|rem|vh|vw)$/;
     const trimmedValue = String(value).trim();
     
     if (cssUnitPattern.test(trimmedValue)) {
