@@ -114,6 +114,7 @@ async def async_setup_entry(
         ConsumptionPredictionSensor(coordinator, config_entry, vehicle_name),
         ConsumptionHistorySensor(coordinator, config_entry, vehicle_name),
         ConsumptionForecastSensor(coordinator, config_entry, vehicle_name),
+        RefuelingLogSensor(coordinator, config_entry, vehicle_name),
     ]
 
     async_add_entities(sensors)
@@ -800,6 +801,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.warning("Error calculating consumption forecast: %s", err)
         
+        # Get refueling log for the refueling log sensor
+        refueling_log = None
+        try:
+            refueling_log = await storage.get_refueling_log(self.hass, self.config_entry)
+        except Exception as err:
+            _LOGGER.warning("Error getting refueling log: %s", err)
+        
         data = {
             "fuel_price": fuel_price,
             "last_price_timestamp": last_price_timestamp,
@@ -825,6 +833,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "consumption_prediction": consumption_prediction,  # Add consumption prediction
             "consumption_history": consumption_history,  # Add consumption history
             "consumption_forecast": consumption_forecast,  # Add consumption forecast
+            "refueling_log": refueling_log,  # Add refueling log
         }
         
         # Apply randomization for next update interval
@@ -1342,5 +1351,99 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes["next_month_data_source"] = month.get("data_source", "unknown")
         
         return attributes
+
+
+class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing refueling events log with detailed information.
+    
+    Displays the total number of refueling events as the state and provides
+    detailed information about each refueling event in the attributes.
+    This allows users to review and track their refueling history.
+    """
+
+    _attr_icon = "mdi:gas-station"
+    _attr_state_class = None
+    _attr_device_class = None
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._attr_name = f"{vehicle_name} Refueling Log"
+        self._attr_unique_id = f"{config_entry.entry_id}_refueling_log"
+
+    @property
+    def native_value(self) -> int:
+        """Return the total number of refueling events."""
+        refueling_log = self.coordinator.data.get("refueling_log")
+        return len(refueling_log) if refueling_log else 0
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return detailed refueling events as attributes.
+        
+        Returns the last 10 refueling events with all details to allow
+        users to review and verify detected refuelings.
+        """
+        refueling_log = self.coordinator.data.get("refueling_log")
+        
+        if not refueling_log:
+            return {
+                "total_events": 0,
+                "last_refueling": None,
+                "recent_events": [],
+                "status": "No refueling events recorded",
+            }
+        
+        # Sort by timestamp (newest first)
+        sorted_log = sorted(
+            refueling_log,
+            key=lambda x: x.get("timestamp", ""),
+            reverse=True
+        )
+        
+        # Get the last 10 events for display
+        recent_events = []
+        for event in sorted_log[:10]:
+            event_info = {
+                "id": event.get("id"),
+                "timestamp": event.get("timestamp"),
+                "odometer_km": event.get("odometer_km"),
+                "liters_refueled": event.get("liters_refueled"),
+                "price_per_liter": event.get("price_per_liter"),
+                "total_cost": event.get("total_cost"),
+                "station_name": event.get("station_name"),
+                "fuel_type": event.get("fuel_type"),
+            }
+            recent_events.append(event_info)
+        
+        # Get the most recent refueling
+        last_refueling = None
+        if sorted_log:
+            last_event = sorted_log[0]
+            last_refueling = {
+                "timestamp": last_event.get("timestamp"),
+                "liters": last_event.get("liters_refueled"),
+                "cost": last_event.get("total_cost"),
+                "station": last_event.get("station_name"),
+            }
+        
+        return {
+            "total_events": len(refueling_log),
+            "last_refueling": last_refueling,
+            "recent_events": recent_events,
+            "status": f"{len(refueling_log)} refueling events recorded",
+        }
 
 
