@@ -1085,12 +1085,7 @@ class FWCAMCard extends HTMLElement {
    * Get config entry ID from entity
    */
   getConfigEntryId() {
-    // Try to extract from entity ID
-    // Format is usually sensor.{car_name}_refueling_log
-    const entityId = this._config.entity;
-    const parts = entityId.split('_');
-    
-    // For now, we need to get this from the entity attributes
+    // Get config_entry_id from the entity attributes
     const entity = this.getEntityState(this._config.entity);
     if (entity && entity.attributes.config_entry_id) {
       return entity.attributes.config_entry_id;
