@@ -5,6 +5,18 @@
 
 A comprehensive Home Assistant integration for monitoring fuel prices, managing vehicle fuel levels, and receiving intelligent refueling recommendations.
 
+---
+
+## 📦 Quick Installation
+
+This repository provides **two HACS components**:
+1. **Integration** - Backend functionality
+2. **Lovelace Card** - Beautiful dashboard UI
+
+**→ [Complete HACS Installation Guide](HACS_INSTALLATION.md)** | **[German Guide](HACS_INSTALLATION_DE.md)**
+
+---
+
 ## 🎨 NEW: Custom Lovelace Card
 
 **The FWCAM integration now includes a custom Lovelace card for a beautiful, all-in-one dashboard!**
