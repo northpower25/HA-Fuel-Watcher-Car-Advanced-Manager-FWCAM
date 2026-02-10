@@ -23,6 +23,9 @@
 
 // Constants
 const SERVICE_CALL_REFRESH_DELAY_MS = 1000;
+const DEFAULT_TANK_CAPACITY_LITERS = 60.0;
+const DEFAULT_DAILY_DISTANCE_KM = 40.0;
+const MAX_AUTOCOMPLETE_SUGGESTIONS = 10;
 
 class FWCAMCard extends HTMLElement {
   constructor() {
@@ -238,6 +241,138 @@ class FWCAMCard extends HTMLElement {
         event_id: eventId
       });
     }
+  }
+
+  /**
+   * Get tank capacity from config
+   */
+  getTankCapacity() {
+    // Try to get from various sources
+    const entity = this.getEntityState(this._config.entity);
+    
+    // Check if tank capacity is in any related sensor attributes
+    const tankSensor = this.getEntityState(this._entities.tank_level);
+    if (tankSensor && tankSensor.attributes && tankSensor.attributes.tank_capacity) {
+      return parseFloat(tankSensor.attributes.tank_capacity);
+    }
+    
+    // Default fallback - configurable via constant
+    return DEFAULT_TANK_CAPACITY_LITERS;
+  }
+
+  /**
+   * Build unique station list from recent events
+   */
+  getUniqueStations() {
+    if (!this._recentEvents) return [];
+    
+    const stations = new Map();
+    
+    for (const event of this._recentEvents) {
+      if (event.station_name) {
+        const key = `${event.station_name}|${event.station_address || ''}`;
+        if (!stations.has(key)) {
+          stations.set(key, {
+            name: event.station_name,
+            address: event.station_address || '',
+            // Parse address components if available
+            city: this._extractCity(event.station_address),
+            street: this._extractStreet(event.station_address)
+          });
+        }
+      }
+    }
+    
+    return Array.from(stations.values());
+  }
+
+  /**
+   * Extract city from address (simple heuristic)
+   */
+  _extractCity(address) {
+    if (!address) return '';
+    // Common German address format: "Street Number, PLZ City"
+    const parts = address.split(',');
+    if (parts.length >= 2) {
+      const cityPart = parts[parts.length - 1].trim();
+      // Remove PLZ (postal code) if present
+      return cityPart.replace(/^\d{5}\s*/, '').trim();
+    }
+    return address;
+  }
+
+  /**
+   * Extract street from address (simple heuristic)
+   */
+  _extractStreet(address) {
+    if (!address) return '';
+    const parts = address.split(',');
+    return parts[0].trim();
+  }
+
+  /**
+   * Filter stations by search query
+   */
+  filterStations(query, stations) {
+    if (!query) return stations;
+    
+    const lowerQuery = query.toLowerCase();
+    const queryParts = lowerQuery.split(/\s+/);
+    
+    return stations.filter(station => {
+      const searchText = `${station.name} ${station.city} ${station.street}`.toLowerCase();
+      // All query parts must be found in the search text
+      return queryParts.every(part => searchText.includes(part));
+    });
+  }
+
+  /**
+   * Get last fuel type from recent events
+   */
+  getLastFuelType() {
+    if (!this._recentEvents || this._recentEvents.length === 0) return '';
+    
+    // Events are already sorted by timestamp (newest first)
+    for (const event of this._recentEvents) {
+      if (event.fuel_type) {
+        return event.fuel_type;
+      }
+    }
+    
+    return '';
+  }
+
+  /**
+   * Estimate odometer reading based on last refueling and average consumption
+   */
+  estimateOdometer(targetDate) {
+    if (!this._recentEvents || this._recentEvents.length === 0) return null;
+    
+    // Find the last event with an odometer reading
+    const lastEvent = this._recentEvents.find(e => e.odometer_km);
+    if (!lastEvent) return null;
+    
+    const lastOdometer = lastEvent.odometer_km;
+    const lastDate = new Date(lastEvent.timestamp);
+    const targetDateTime = new Date(targetDate);
+    
+    // Calculate days elapsed
+    const daysElapsed = (targetDateTime - lastDate) / (1000 * 60 * 60 * 24);
+    
+    // Get average daily km from consumption history sensor
+    const consumptionHistory = this.getEntityState(this._entities.consumption_history);
+    let dailyKm = DEFAULT_DAILY_DISTANCE_KM; // Configurable fallback
+    
+    if (consumptionHistory && consumptionHistory.attributes) {
+      // Try to get average daily distance
+      if (consumptionHistory.attributes.avg_daily_distance_km) {
+        dailyKm = consumptionHistory.attributes.avg_daily_distance_km;
+      }
+    }
+    
+    // Estimate new odometer
+    const estimatedKm = Math.round(lastOdometer + (daysElapsed * dailyKm));
+    return Math.max(lastOdometer, estimatedKm); // Never go backwards
   }
 
   /**
@@ -873,9 +1008,9 @@ class FWCAMCard extends HTMLElement {
                          min="0" max="10" step="0.001">
                 </label>
                 <label for="total_cost">
-                  Total Cost (€)
+                  Total Cost (€) <small>(auto-calculated)</small>
                   <input type="number" id="total_cost" name="total_cost" 
-                         min="0" max="500" step="0.01">
+                         min="0" max="500" step="0.01" readonly>
                 </label>
               </div>
 
@@ -948,6 +1083,33 @@ class FWCAMCard extends HTMLElement {
     const localISOTime = new Date(now - tzOffset).toISOString().slice(0, 16);
     this.shadowRoot.getElementById('timestamp').value = localISOTime;
     
+    // Set max liters based on tank capacity
+    const tankCapacity = this.getTankCapacity();
+    const litersInput = this.shadowRoot.getElementById('liters_refueled');
+    litersInput.setAttribute('max', tankCapacity);
+    
+    // Pre-fill last fuel type
+    const lastFuelType = this.getLastFuelType();
+    if (lastFuelType) {
+      this.shadowRoot.getElementById('fuel_type').value = lastFuelType;
+    }
+    
+    // Estimate and suggest odometer reading
+    const estimatedOdometer = this.estimateOdometer(localISOTime);
+    if (estimatedOdometer) {
+      this.shadowRoot.getElementById('odometer_km').value = estimatedOdometer;
+      this.shadowRoot.getElementById('odometer_km').setAttribute('placeholder', `Suggested: ${estimatedOdometer} km`);
+    }
+    
+    // Setup auto-calculation for total cost
+    this._setupCostCalculation();
+    
+    // Setup station autocomplete
+    this._setupStationAutocomplete();
+    
+    // Setup timestamp change listener to recalculate odometer
+    this._setupOdometerRecalculation();
+    
     // Show dialog
     dialog.style.display = 'flex';
   }
@@ -980,6 +1142,11 @@ class FWCAMCard extends HTMLElement {
     const localISOTime = new Date(eventDate - tzOffset).toISOString().slice(0, 16);
     this.shadowRoot.getElementById('timestamp').value = localISOTime;
     
+    // Set max liters based on tank capacity
+    const tankCapacity = this.getTankCapacity();
+    const litersInput = this.shadowRoot.getElementById('liters_refueled');
+    litersInput.setAttribute('max', tankCapacity);
+    
     this.shadowRoot.getElementById('liters_refueled').value = event.liters_refueled || '';
     this.shadowRoot.getElementById('odometer_km').value = event.odometer_km || '';
     this.shadowRoot.getElementById('price_per_liter').value = event.price_per_liter || '';
@@ -990,8 +1157,137 @@ class FWCAMCard extends HTMLElement {
     this.shadowRoot.getElementById('data_quality').value = event.data_quality || 'manual';
     this.shadowRoot.getElementById('confidence').value = event.confidence !== undefined ? event.confidence : 1.0;
     
+    // Setup auto-calculation for total cost
+    this._setupCostCalculation();
+    
+    // Setup station autocomplete
+    this._setupStationAutocomplete();
+    
     // Show dialog
     dialog.style.display = 'flex';
+  }
+
+  /**
+   * Setup auto-calculation for total cost
+   */
+  _setupCostCalculation() {
+    const litersInput = this.shadowRoot.getElementById('liters_refueled');
+    const priceInput = this.shadowRoot.getElementById('price_per_liter');
+    const totalInput = this.shadowRoot.getElementById('total_cost');
+    
+    // Remove any existing listeners
+    const newLitersInput = litersInput.cloneNode(true);
+    const newPriceInput = priceInput.cloneNode(true);
+    litersInput.parentNode.replaceChild(newLitersInput, litersInput);
+    priceInput.parentNode.replaceChild(newPriceInput, priceInput);
+    
+    const calculateTotal = () => {
+      const liters = parseFloat(newLitersInput.value) || 0;
+      const price = parseFloat(newPriceInput.value) || 0;
+      
+      if (liters > 0 && price > 0) {
+        const total = (liters * price).toFixed(2);
+        totalInput.value = total;
+      }
+    };
+    
+    newLitersInput.addEventListener('input', calculateTotal);
+    newPriceInput.addEventListener('input', calculateTotal);
+  }
+
+  /**
+   * Setup station autocomplete with smart search
+   */
+  _setupStationAutocomplete() {
+    const stationInput = this.shadowRoot.getElementById('station_name');
+    const addressInput = this.shadowRoot.getElementById('station_address');
+    
+    // Remove existing datalist if present
+    let datalist = this.shadowRoot.getElementById('station-suggestions');
+    if (datalist) {
+      datalist.remove();
+    }
+    
+    // Create new datalist
+    datalist = document.createElement('datalist');
+    datalist.id = 'station-suggestions';
+    
+    // Get unique stations
+    const stations = this.getUniqueStations();
+    
+    // Add options to datalist
+    for (const station of stations) {
+      const option = document.createElement('option');
+      option.value = `${station.name}${station.city ? ' ' + station.city : ''}${station.street ? ' ' + station.street : ''}`;
+      option.dataset.address = station.address;
+      datalist.appendChild(option);
+    }
+    
+    // Append datalist to shadow root
+    stationInput.parentNode.appendChild(datalist);
+    stationInput.setAttribute('list', 'station-suggestions');
+    
+    // Auto-fill address when station is selected
+    // Remove any existing listener
+    const newStationInput = stationInput.cloneNode(true);
+    newStationInput.setAttribute('list', 'station-suggestions');
+    stationInput.parentNode.replaceChild(newStationInput, stationInput);
+    
+    newStationInput.addEventListener('change', () => {
+      const selectedValue = newStationInput.value;
+      
+      // Find matching station
+      for (const station of stations) {
+        const displayValue = `${station.name}${station.city ? ' ' + station.city : ''}${station.street ? ' ' + station.street : ''}`;
+        if (displayValue === selectedValue || selectedValue.toLowerCase().includes(station.name.toLowerCase())) {
+          addressInput.value = station.address;
+          break;
+        }
+      }
+    });
+    
+    // Also support incremental filtering via input event
+    newStationInput.addEventListener('input', () => {
+      const query = newStationInput.value;
+      const filteredStations = this.filterStations(query, stations);
+      
+      // Update datalist
+      datalist.innerHTML = '';
+      for (const station of filteredStations.slice(0, MAX_AUTOCOMPLETE_SUGGESTIONS)) {
+        const option = document.createElement('option');
+        option.value = `${station.name}${station.city ? ' ' + station.city : ''}${station.street ? ' ' + station.street : ''}`;
+        option.dataset.address = station.address;
+        datalist.appendChild(option);
+      }
+    });
+  }
+
+  /**
+   * Setup odometer recalculation when timestamp changes (Add dialog only)
+   */
+  _setupOdometerRecalculation() {
+    const timestampInput = this.shadowRoot.getElementById('timestamp');
+    const odometerInput = this.shadowRoot.getElementById('odometer_km');
+    const eventIdInput = this.shadowRoot.getElementById('event-id');
+    
+    // Only for Add dialog (not Edit)
+    if (eventIdInput.value) {
+      return; // This is Edit dialog, skip
+    }
+    
+    // Remove existing listener
+    const newTimestampInput = timestampInput.cloneNode(true);
+    timestampInput.parentNode.replaceChild(newTimestampInput, timestampInput);
+    
+    newTimestampInput.addEventListener('change', () => {
+      const newTimestamp = newTimestampInput.value;
+      const estimatedOdometer = this.estimateOdometer(newTimestamp);
+      
+      if (estimatedOdometer) {
+        odometerInput.value = estimatedOdometer;
+        odometerInput.setAttribute('placeholder', `Suggested: ${estimatedOdometer} km`);
+      }
+    });
   }
 
   /**

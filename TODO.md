@@ -62,11 +62,25 @@
 - [x] Configurable number entities for prediction settings (min data points, prediction interval)
 - [x] Add Lovelace card for dashboard display
 - [x] **HACS-compatible Lovelace card distribution structure**
+- [x] **NEW: Refueling log table with sorting and filtering in Lovelace card**
+- [x] **NEW: Add/Edit/Delete refueling events via dialogs**
+- [x] **NEW: Immediate UI refresh after CRUD operations via coordinator**
+- [x] **NEW: Smart station autocomplete with case-insensitive search**
+- [x] **NEW: Auto-calculated total cost field**
+- [x] **NEW: Tank capacity validation for liters**
+- [x] **NEW: Intelligent odometer suggestions based on history**
+- [x] **NEW: Last fuel type pre-selection**
+- [x] **NEW: Dynamic odometer recalculation on timestamp change**
 - [ ] Create custom panel for detailed statistics
 - [ ] Add graphical price trend visualization
 - [ ] Add consumption prediction accuracy visualization
 - [ ] Create prediction confidence indicator in UI
 - [ ] Implement interactive station map
+- [ ] **FUTURE: Make tank capacity configurable in UI (currently uses constant)**
+- [ ] **FUTURE: Make default daily distance configurable in UI**
+- [ ] **FUTURE: Add station favorites list management**
+- [ ] **FUTURE: Improve autocomplete with fuzzy matching**
+- [ ] **FUTURE: Add bulk import/export of refueling data**
 
 ### Automations
 - [ ] Create blueprint automations for common scenarios
