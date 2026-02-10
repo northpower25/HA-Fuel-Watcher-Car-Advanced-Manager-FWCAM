@@ -279,6 +279,7 @@ async def add_refuel_event(
         "timestamp": event_data.get("timestamp"),
         "odometer_km": event_data.get("odometer_km"),
         "station_name": event_data.get("station_name"),
+        "station_address": event_data.get("station_address"),
         "liters_refueled": event_data.get("liters_refueled"),
         "price_per_liter": event_data.get("price_per_liter"),
         "total_cost": event_data.get("total_cost"),
@@ -388,9 +389,9 @@ async def update_refueling_record(
         if record.get("id") == refuel_id:
             # Update allowed fields
             allowed_fields = [
-                "timestamp", "odometer_km", "station_name",
+                "timestamp", "odometer_km", "station_name", "station_address",
                 "liters_refueled", "price_per_liter", "total_cost",
-                "latitude", "longitude", "fuel_type"
+                "latitude", "longitude", "fuel_type", "data_quality", "confidence"
             ]
             for field in allowed_fields:
                 if field in updates:

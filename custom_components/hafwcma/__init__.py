@@ -172,6 +172,11 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         
         event_id = await add_refuel_event(hass, entry, event_data)
         _LOGGER.info("Added refuel event with ID %s", event_id)
+        
+        # Trigger coordinator refresh to update sensors immediately
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
     
     async def handle_update_refuel_event(call: ServiceCall) -> None:
         """Handle the update_refuel_event service call."""
@@ -196,6 +201,11 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         
         await update_refueling_record(hass, entry, event_id, updates)
         _LOGGER.info("Updated refuel event ID %s", event_id)
+        
+        # Trigger coordinator refresh to update sensors immediately
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
     
     async def handle_delete_refuel_event(call: ServiceCall) -> None:
         """Handle the delete_refuel_event service call."""
@@ -211,6 +221,11 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         event_id = call.data["event_id"]
         await delete_refueling_record(hass, entry, event_id)
         _LOGGER.info("Deleted refuel event ID %s", event_id)
+        
+        # Trigger coordinator refresh to update sensors immediately
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
     
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_REFUEL_EVENT, handle_add_refuel_event, schema=SCHEMA_ADD_REFUEL_EVENT
