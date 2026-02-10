@@ -91,10 +91,11 @@ class FWCAMCard extends HTMLElement {
     
     // Allow only safe CSS units: px, %, em, rem, vh, vw
     const cssUnitPattern = /^(\d+(?:\.\d+)?)(px|%|em|rem|vh|vw)$/;
-    const match = String(value).trim().match(cssUnitPattern);
+    const trimmedValue = String(value).trim();
+    const match = trimmedValue.match(cssUnitPattern);
     
     if (match) {
-      return value;
+      return trimmedValue;
     }
     
     console.warn(`Invalid CSS value '${value}', using default '${defaultValue}'`);
@@ -260,8 +261,11 @@ class FWCAMCard extends HTMLElement {
    * Force an immediate render (used after user interactions)
    */
   forceRender() {
-    this._lastRender = Date.now();
     this.render();
+    // Update last render timestamp only after successful render
+    if (this._hass && this._config.entity) {
+      this._lastRender = Date.now();
+    }
   }
 
   /**
