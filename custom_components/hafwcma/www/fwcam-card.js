@@ -32,6 +32,11 @@ class FWCAMCard extends HTMLElement {
     this._hass = null;
     this._entities = {};
     this._lastRender = 0;
+    // State for table sorting and filtering
+    this._sortColumn = 'timestamp';
+    this._sortDirection = 'desc';
+    this._filterYear = '';
+    this._filterMonth = '';
   }
 
   /**
@@ -197,21 +202,14 @@ class FWCAMCard extends HTMLElement {
    * Add a new refueling event
    */
   addRefuelingEvent(eventData) {
-    this.callService('hafwcma', 'add_refuel_event', {
-      config_entry_id: this.getConfigEntryId(),
-      ...eventData
-    });
+    return this.callService('hafwcma', 'add_refuel_event', eventData);
   }
 
   /**
    * Update an existing refueling event
    */
-  updateRefuelingEvent(eventId, eventData) {
-    this.callService('hafwcma', 'update_refuel_event', {
-      config_entry_id: this.getConfigEntryId(),
-      event_id: eventId,
-      ...eventData
-    });
+  updateRefuelingEvent(eventData) {
+    return this.callService('hafwcma', 'update_refuel_event', eventData);
   }
 
   /**
@@ -298,6 +296,9 @@ class FWCAMCard extends HTMLElement {
 
     const recentEvents = entity.attributes.recent_events || [];
     const lastRefueling = entity.attributes.last_refueling || null;
+    
+    // Store events for dialog access
+    this._recentEvents = recentEvents;
 
     this.shadowRoot.innerHTML = `
       ${this.getStyles()}
@@ -313,6 +314,7 @@ class FWCAMCard extends HTMLElement {
           ${this._config.show_refueling_log ? this.renderRefuelingLog(recentEvents, lastRefueling) : ''}
         </div>
       </ha-card>
+      ${this.renderDialog()}
     `;
 
     this.attachEventListeners();
@@ -443,9 +445,33 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
-   * Render refueling log section with inline editing
+   * Render refueling log section with inline editing, sorting, and filtering
    */
   renderRefuelingLog(events, lastRefueling) {
+    // Apply filtering
+    const filteredEvents = this.filterEvents(events);
+    
+    // Apply sorting
+    const sortedEvents = this.sortEvents(filteredEvents);
+    
+    // Get unique years and months for filter dropdowns
+    const years = this.getUniqueYears(events);
+    const months = [
+      { value: '', label: 'All Months' },
+      { value: '01', label: 'January' },
+      { value: '02', label: 'February' },
+      { value: '03', label: 'March' },
+      { value: '04', label: 'April' },
+      { value: '05', label: 'May' },
+      { value: '06', label: 'June' },
+      { value: '07', label: 'July' },
+      { value: '08', label: 'August' },
+      { value: '09', label: 'September' },
+      { value: '10', label: 'October' },
+      { value: '11', label: 'November' },
+      { value: '12', label: 'December' }
+    ];
+    
     return `
       <div class="section">
         <h3>Refueling Log</h3>
@@ -459,27 +485,80 @@ class FWCAMCard extends HTMLElement {
           </div>
         ` : ''}
 
+        <div class="filter-controls">
+          <label>
+            Year:
+            <select class="filter-select" data-filter="year">
+              <option value="">All Years</option>
+              ${years.map(year => `
+                <option value="${year}" ${this._filterYear === year ? 'selected' : ''}>${year}</option>
+              `).join('')}
+            </select>
+          </label>
+          <label>
+            Month:
+            <select class="filter-select" data-filter="month">
+              ${months.map(month => `
+                <option value="${month.value}" ${this._filterMonth === month.value ? 'selected' : ''}>${month.label}</option>
+              `).join('')}
+            </select>
+          </label>
+          ${(this._filterYear || this._filterMonth) ? `
+            <button class="clear-filters-button" data-action="clear-filters">
+              <ha-icon icon="mdi:filter-remove"></ha-icon>
+              <span>Clear Filters</span>
+            </button>
+          ` : ''}
+          <div class="filter-info">
+            Showing ${sortedEvents.length} of ${events.length} events
+          </div>
+        </div>
+
         <div class="table-container">
           <table class="refueling-table">
             <thead>
               <tr>
-                <th>Date/Time</th>
-                <th>Odometer (km)</th>
-                <th>Liters</th>
-                <th>Price/L (€)</th>
-                <th>Total (€)</th>
-                <th>Station</th>
+                <th class="sortable ${this._sortColumn === 'timestamp' ? 'sorted-' + this._sortDirection : ''}" 
+                    data-sort-column="timestamp">
+                  Date/Time
+                  ${this.renderSortIcon('timestamp')}
+                </th>
+                <th class="sortable ${this._sortColumn === 'odometer_km' ? 'sorted-' + this._sortDirection : ''}" 
+                    data-sort-column="odometer_km">
+                  Odometer (km)
+                  ${this.renderSortIcon('odometer_km')}
+                </th>
+                <th class="sortable ${this._sortColumn === 'liters_refueled' ? 'sorted-' + this._sortDirection : ''}" 
+                    data-sort-column="liters_refueled">
+                  Liters
+                  ${this.renderSortIcon('liters_refueled')}
+                </th>
+                <th class="sortable ${this._sortColumn === 'price_per_liter' ? 'sorted-' + this._sortDirection : ''}" 
+                    data-sort-column="price_per_liter">
+                  Price/L (€)
+                  ${this.renderSortIcon('price_per_liter')}
+                </th>
+                <th class="sortable ${this._sortColumn === 'total_cost' ? 'sorted-' + this._sortDirection : ''}" 
+                    data-sort-column="total_cost">
+                  Total (€)
+                  ${this.renderSortIcon('total_cost')}
+                </th>
+                <th class="sortable ${this._sortColumn === 'station_name' ? 'sorted-' + this._sortDirection : ''}" 
+                    data-sort-column="station_name">
+                  Station
+                  ${this.renderSortIcon('station_name')}
+                </th>
                 <th>Quality</th>
                 <th>Confidence</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              ${events.length === 0 ? `
+              ${sortedEvents.length === 0 ? `
                 <tr>
-                  <td colspan="9" class="no-data">No refueling events recorded</td>
+                  <td colspan="9" class="no-data">No refueling events match the current filters</td>
                 </tr>
-              ` : events.slice(0, this._config.rows_per_page).map(event => `
+              ` : sortedEvents.slice(0, this._config.rows_per_page).map(event => `
                 <tr data-event-id="${event.id}">
                   <td>${this.formatDateTime(event.timestamp)}</td>
                   <td>${event.odometer_km || 'N/A'}</td>
@@ -535,6 +614,132 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Render sort icon for table headers
+   */
+  renderSortIcon(column) {
+    if (this._sortColumn !== column) {
+      return '<ha-icon icon="mdi:unfold-more-horizontal" class="sort-icon inactive"></ha-icon>';
+    }
+    const icon = this._sortDirection === 'asc' ? 'mdi:arrow-up' : 'mdi:arrow-down';
+    return `<ha-icon icon="${icon}" class="sort-icon active"></ha-icon>`;
+  }
+
+  /**
+   * Filter events by year and month
+   */
+  filterEvents(events) {
+    if (!events || events.length === 0) return [];
+    
+    return events.filter(event => {
+      if (!event.timestamp) return false;
+      
+      const eventDate = new Date(event.timestamp);
+      const eventYear = eventDate.getFullYear().toString();
+      const eventMonth = (eventDate.getMonth() + 1).toString().padStart(2, '0');
+      
+      // Apply year filter
+      if (this._filterYear && eventYear !== this._filterYear) {
+        return false;
+      }
+      
+      // Apply month filter
+      if (this._filterMonth && eventMonth !== this._filterMonth) {
+        return false;
+      }
+      
+      return true;
+    });
+  }
+
+  /**
+   * Sort events by column and direction
+   */
+  sortEvents(events) {
+    if (!events || events.length === 0) return [];
+    
+    const sorted = [...events].sort((a, b) => {
+      let aVal = a[this._sortColumn];
+      let bVal = b[this._sortColumn];
+      
+      // Handle null/undefined values
+      if (aVal === null || aVal === undefined) aVal = '';
+      if (bVal === null || bVal === undefined) bVal = '';
+      
+      // Convert to comparable types
+      if (this._sortColumn === 'timestamp') {
+        aVal = new Date(aVal).getTime();
+        bVal = new Date(bVal).getTime();
+      } else if (['odometer_km', 'liters_refueled', 'price_per_liter', 'total_cost'].includes(this._sortColumn)) {
+        aVal = parseFloat(aVal) || 0;
+        bVal = parseFloat(bVal) || 0;
+      } else {
+        // String comparison for station_name
+        aVal = String(aVal).toLowerCase();
+        bVal = String(bVal).toLowerCase();
+      }
+      
+      if (aVal < bVal) return this._sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return this._sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    return sorted;
+  }
+
+  /**
+   * Get unique years from events for filter dropdown
+   */
+  getUniqueYears(events) {
+    if (!events || events.length === 0) return [];
+    
+    const years = new Set();
+    events.forEach(event => {
+      if (event.timestamp) {
+        const year = new Date(event.timestamp).getFullYear();
+        years.add(year.toString());
+      }
+    });
+    
+    return Array.from(years).sort((a, b) => b - a); // Sort descending (newest first)
+  }
+
+  /**
+   * Handle sort column click
+   */
+  handleSort(column) {
+    if (this._sortColumn === column) {
+      // Toggle direction if clicking same column
+      this._sortDirection = this._sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      // Set new column with default direction
+      this._sortColumn = column;
+      this._sortDirection = column === 'timestamp' ? 'desc' : 'asc';
+    }
+    this.render();
+  }
+
+  /**
+   * Handle filter change
+   */
+  handleFilterChange(filterType, value) {
+    if (filterType === 'year') {
+      this._filterYear = value;
+    } else if (filterType === 'month') {
+      this._filterMonth = value;
+    }
+    this.render();
+  }
+
+  /**
+   * Clear all filters
+   */
+  clearFilters() {
+    this._filterYear = '';
+    this._filterMonth = '';
+    this.render();
+  }
+
+  /**
    * Attach event listeners to interactive elements
    */
   attachEventListeners() {
@@ -582,28 +787,317 @@ class FWCAMCard extends HTMLElement {
         this.showAddDialog();
       });
     }
+
+    // Sort column headers
+    this.shadowRoot.querySelectorAll('.sortable').forEach(header => {
+      header.addEventListener('click', (e) => {
+        const column = e.currentTarget.dataset.sortColumn;
+        this.handleSort(column);
+      });
+    });
+
+    // Filter dropdowns
+    this.shadowRoot.querySelectorAll('.filter-select').forEach(select => {
+      select.addEventListener('change', (e) => {
+        const filterType = e.target.dataset.filter;
+        const value = e.target.value;
+        this.handleFilterChange(filterType, value);
+      });
+    });
+
+    // Clear filters button
+    const clearFiltersButton = this.shadowRoot.querySelector('.clear-filters-button');
+    if (clearFiltersButton) {
+      clearFiltersButton.addEventListener('click', () => {
+        this.clearFilters();
+      });
+    }
+
+    // Dialog close buttons
+    this.shadowRoot.querySelectorAll('[data-action="close-dialog"]').forEach(button => {
+      button.addEventListener('click', () => {
+        this.closeDialog();
+      });
+    });
+
+    // Dialog form submission
+    const refuelForm = this.shadowRoot.getElementById('refuel-form');
+    if (refuelForm) {
+      refuelForm.addEventListener('submit', (e) => {
+        this.handleFormSubmit(e);
+      });
+    }
+
+    // Close dialog on background click
+    const dialogOverlay = this.shadowRoot.getElementById('refuel-dialog');
+    if (dialogOverlay) {
+      dialogOverlay.addEventListener('click', (e) => {
+        if (e.target === dialogOverlay) {
+          this.closeDialog();
+        }
+      });
+    }
+  }
+
+  /**
+   * Render dialog for adding/editing refueling events
+   */
+  renderDialog() {
+    return `
+      <div id="refuel-dialog" class="dialog-overlay" style="display: none;">
+        <div class="dialog-content">
+          <div class="dialog-header">
+            <h2 id="dialog-title">Add Refueling Event</h2>
+            <button class="dialog-close" data-action="close-dialog">
+              <ha-icon icon="mdi:close"></ha-icon>
+            </button>
+          </div>
+          <div class="dialog-body">
+            <form id="refuel-form">
+              <input type="hidden" id="event-id" name="event_id" value="">
+              
+              <div class="form-row">
+                <label for="timestamp">
+                  Date & Time *
+                  <input type="datetime-local" id="timestamp" name="timestamp" required>
+                </label>
+              </div>
+
+              <div class="form-row">
+                <label for="liters_refueled">
+                  Liters Refueled *
+                  <input type="number" id="liters_refueled" name="liters_refueled" 
+                         min="0" max="200" step="0.1" required>
+                </label>
+                <label for="odometer_km">
+                  Odometer (km)
+                  <input type="number" id="odometer_km" name="odometer_km" 
+                         min="0" max="1000000" step="1">
+                </label>
+              </div>
+
+              <div class="form-row">
+                <label for="price_per_liter">
+                  Price per Liter (€)
+                  <input type="number" id="price_per_liter" name="price_per_liter" 
+                         min="0" max="10" step="0.001">
+                </label>
+                <label for="total_cost">
+                  Total Cost (€)
+                  <input type="number" id="total_cost" name="total_cost" 
+                         min="0" max="500" step="0.01">
+                </label>
+              </div>
+
+              <div class="form-row">
+                <label for="station_name">
+                  Station Name
+                  <input type="text" id="station_name" name="station_name">
+                </label>
+              </div>
+
+              <div class="form-row">
+                <label for="station_address">
+                  Station Address
+                  <input type="text" id="station_address" name="station_address">
+                </label>
+              </div>
+
+              <div class="form-row">
+                <label for="fuel_type">
+                  Fuel Type
+                  <input type="text" id="fuel_type" name="fuel_type" placeholder="e.g., diesel, e5, e10">
+                </label>
+              </div>
+
+              <div class="form-row">
+                <label for="data_quality">
+                  Data Quality
+                  <select id="data_quality" name="data_quality">
+                    <option value="manual">Manual</option>
+                    <option value="auto_detected">Auto Detected</option>
+                    <option value="historical_import">Historical Import</option>
+                  </select>
+                </label>
+                <label for="confidence">
+                  Confidence (0-1)
+                  <input type="number" id="confidence" name="confidence" 
+                         min="0" max="1" step="0.1" value="1.0">
+                </label>
+              </div>
+
+              <div class="dialog-footer">
+                <button type="button" class="cancel-button" data-action="close-dialog">Cancel</button>
+                <button type="submit" class="submit-button">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   /**
    * Show dialog to add a new refueling event
-   * 
-   * NOTE: This is a placeholder implementation. A full dialog implementation
-   * with proper input fields should be added in a future update.
-   * For now, users can add events via the hafwcma.add_refuel_event service.
    */
   showAddDialog() {
-    alert('Add refueling event: Use the hafwcma.add_refuel_event service or Developer Tools → Services to add events manually. A dialog interface will be added in a future update.');
+    const dialog = this.shadowRoot.getElementById('refuel-dialog');
+    const dialogTitle = this.shadowRoot.getElementById('dialog-title');
+    const form = this.shadowRoot.getElementById('refuel-form');
+    
+    // Set title
+    dialogTitle.textContent = 'Add Refueling Event';
+    
+    // Clear form
+    form.reset();
+    this.shadowRoot.getElementById('event-id').value = '';
+    
+    // Set default timestamp to now
+    const now = new Date();
+    const tzOffset = now.getTimezoneOffset() * 60000;
+    const localISOTime = new Date(now - tzOffset).toISOString().slice(0, 16);
+    this.shadowRoot.getElementById('timestamp').value = localISOTime;
+    
+    // Show dialog
+    dialog.style.display = 'flex';
   }
 
   /**
    * Show dialog to edit an existing refueling event
-   * 
-   * NOTE: This is a placeholder implementation. A full dialog implementation
-   * with proper input fields should be added in a future update.
-   * For now, users can edit events via the hafwcma.update_refuel_event service.
    */
   showEditDialog(eventId) {
-    alert(`Edit refueling event ${eventId}: Use the hafwcma.update_refuel_event service or Developer Tools → Services to edit events manually. A dialog interface will be added in a future update.`);
+    const dialog = this.shadowRoot.getElementById('refuel-dialog');
+    const dialogTitle = this.shadowRoot.getElementById('dialog-title');
+    const form = this.shadowRoot.getElementById('refuel-form');
+    
+    // Find event in stored events
+    const event = this._recentEvents ? this._recentEvents.find(e => e.id === parseInt(eventId)) : null;
+    
+    if (!event) {
+      alert(`Event with ID ${eventId} not found`);
+      return;
+    }
+    
+    // Set title
+    dialogTitle.textContent = `Edit Refueling Event #${eventId}`;
+    
+    // Populate form with event data
+    this.shadowRoot.getElementById('event-id').value = eventId;
+    
+    // Convert timestamp to local datetime-local format
+    const eventDate = new Date(event.timestamp);
+    const tzOffset = eventDate.getTimezoneOffset() * 60000;
+    const localISOTime = new Date(eventDate - tzOffset).toISOString().slice(0, 16);
+    this.shadowRoot.getElementById('timestamp').value = localISOTime;
+    
+    this.shadowRoot.getElementById('liters_refueled').value = event.liters_refueled || '';
+    this.shadowRoot.getElementById('odometer_km').value = event.odometer_km || '';
+    this.shadowRoot.getElementById('price_per_liter').value = event.price_per_liter || '';
+    this.shadowRoot.getElementById('total_cost').value = event.total_cost || '';
+    this.shadowRoot.getElementById('station_name').value = event.station_name || '';
+    this.shadowRoot.getElementById('station_address').value = event.station_address || '';
+    this.shadowRoot.getElementById('fuel_type').value = event.fuel_type || '';
+    this.shadowRoot.getElementById('data_quality').value = event.data_quality || 'manual';
+    this.shadowRoot.getElementById('confidence').value = event.confidence !== undefined ? event.confidence : 1.0;
+    
+    // Show dialog
+    dialog.style.display = 'flex';
+  }
+
+  /**
+   * Close the dialog
+   */
+  closeDialog() {
+    const dialog = this.shadowRoot.getElementById('refuel-dialog');
+    dialog.style.display = 'none';
+  }
+
+  /**
+   * Handle form submission
+   */
+  async handleFormSubmit(e) {
+    e.preventDefault();
+    
+    const form = this.shadowRoot.getElementById('refuel-form');
+    const formData = new FormData(form);
+    const eventId = formData.get('event_id');
+    
+    // Build service data
+    const serviceData = {
+      config_entry_id: this.getConfigEntryId(),
+      timestamp: formData.get('timestamp'),
+      liters_refueled: parseFloat(formData.get('liters_refueled'))
+    };
+    
+    // Add optional fields if provided
+    if (formData.get('odometer_km')) {
+      serviceData.odometer_km = parseInt(formData.get('odometer_km'));
+    }
+    if (formData.get('price_per_liter')) {
+      serviceData.price_per_liter = parseFloat(formData.get('price_per_liter'));
+    }
+    if (formData.get('total_cost')) {
+      serviceData.total_cost = parseFloat(formData.get('total_cost'));
+    }
+    if (formData.get('station_name')) {
+      serviceData.station_name = formData.get('station_name');
+    }
+    if (formData.get('station_address')) {
+      serviceData.station_address = formData.get('station_address');
+    }
+    if (formData.get('fuel_type')) {
+      serviceData.fuel_type = formData.get('fuel_type');
+    }
+    if (formData.get('data_quality')) {
+      serviceData.data_quality = formData.get('data_quality');
+    }
+    if (formData.get('confidence')) {
+      serviceData.confidence = parseFloat(formData.get('confidence'));
+    }
+    
+    try {
+      if (eventId) {
+        // Update existing event
+        serviceData.event_id = parseInt(eventId);
+        await this.updateRefuelingEvent(serviceData);
+      } else {
+        // Add new event
+        await this.addRefuelingEvent(serviceData);
+      }
+      
+      // Close dialog
+      this.closeDialog();
+      
+      // Refresh the card after a short delay
+      setTimeout(() => {
+        this._lastRender = 0; // Force re-render
+        if (this._hass) {
+          this.render();
+        }
+      }, SERVICE_CALL_REFRESH_DELAY_MS);
+      
+    } catch (error) {
+      alert(`Error saving refueling event: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get config entry ID from entity
+   */
+  getConfigEntryId() {
+    // Try to extract from entity ID
+    // Format is usually sensor.{car_name}_refueling_log
+    const entityId = this._config.entity;
+    const parts = entityId.split('_');
+    
+    // For now, we need to get this from the entity attributes
+    const entity = this.getEntityState(this._config.entity);
+    if (entity && entity.attributes.config_entry_id) {
+      return entity.attributes.config_entry_id;
+    }
+    
+    // Fallback: show error
+    throw new Error('Config entry ID not found. Please ensure the integration is properly configured.');
   }
 
   /**
@@ -880,6 +1374,238 @@ class FWCAMCard extends HTMLElement {
 
         .add-event-button ha-icon {
           --mdc-icon-size: 20px;
+        }
+
+        /* Sorting Styles */
+        .sortable {
+          cursor: pointer;
+          user-select: none;
+          position: relative;
+        }
+
+        .sortable:hover {
+          background: var(--secondary-background-color);
+        }
+
+        .sort-icon {
+          --mdc-icon-size: 16px;
+          vertical-align: middle;
+          margin-left: 4px;
+        }
+
+        .sort-icon.inactive {
+          opacity: 0.3;
+        }
+
+        .sort-icon.active {
+          opacity: 1;
+          color: var(--primary-color);
+        }
+
+        .sorted-asc,
+        .sorted-desc {
+          background: var(--secondary-background-color);
+        }
+
+        /* Filter Styles */
+        .filter-controls {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 16px;
+          margin-bottom: 16px;
+          padding: 12px;
+          background: var(--secondary-background-color);
+          border-radius: 8px;
+        }
+
+        .filter-controls label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 14px;
+          color: var(--primary-text-color);
+        }
+
+        .filter-select {
+          padding: 6px 10px;
+          border: 1px solid var(--divider-color);
+          border-radius: 4px;
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          font-size: 14px;
+          cursor: pointer;
+        }
+
+        .filter-select:focus {
+          outline: none;
+          border-color: var(--primary-color);
+        }
+
+        .clear-filters-button {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          background: transparent;
+          color: var(--primary-color);
+          border: 1px solid var(--primary-color);
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 14px;
+          transition: all 0.2s;
+        }
+
+        .clear-filters-button:hover {
+          background: var(--primary-color);
+          color: white;
+        }
+
+        .clear-filters-button ha-icon {
+          --mdc-icon-size: 16px;
+        }
+
+        .filter-info {
+          margin-left: auto;
+          font-size: 13px;
+          color: var(--secondary-text-color);
+        }
+
+        /* Dialog Styles */
+        .dialog-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          backdrop-filter: blur(2px);
+        }
+
+        .dialog-content {
+          background: var(--card-background-color);
+          border-radius: 8px;
+          max-width: 600px;
+          width: 90%;
+          max-height: 90vh;
+          overflow-y: auto;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .dialog-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 20px;
+          border-bottom: 1px solid var(--divider-color);
+        }
+
+        .dialog-header h2 {
+          margin: 0;
+          font-size: 20px;
+          color: var(--primary-text-color);
+        }
+
+        .dialog-close {
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          padding: 4px;
+          color: var(--secondary-text-color);
+          transition: color 0.2s;
+        }
+
+        .dialog-close:hover {
+          color: var(--primary-text-color);
+        }
+
+        .dialog-close ha-icon {
+          --mdc-icon-size: 24px;
+        }
+
+        .dialog-body {
+          padding: 20px;
+        }
+
+        .form-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          margin-bottom: 16px;
+        }
+
+        .form-row:has(> :only-child) {
+          grid-template-columns: 1fr;
+        }
+
+        .form-row label {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          font-size: 14px;
+          color: var(--primary-text-color);
+          font-weight: 500;
+        }
+
+        .form-row input,
+        .form-row select {
+          padding: 10px;
+          border: 1px solid var(--divider-color);
+          border-radius: 4px;
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          font-size: 14px;
+        }
+
+        .form-row input:focus,
+        .form-row select:focus {
+          outline: none;
+          border-color: var(--primary-color);
+        }
+
+        .dialog-footer {
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+          margin-top: 24px;
+          padding-top: 16px;
+          border-top: 1px solid var(--divider-color);
+        }
+
+        .cancel-button,
+        .submit-button {
+          padding: 10px 20px;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+          transition: all 0.2s;
+        }
+
+        .cancel-button {
+          background: transparent;
+          color: var(--secondary-text-color);
+          border: 1px solid var(--divider-color);
+        }
+
+        .cancel-button:hover {
+          background: var(--secondary-background-color);
+          color: var(--primary-text-color);
+        }
+
+        .submit-button {
+          background: var(--primary-color);
+          color: white;
+        }
+
+        .submit-button:hover {
+          background: var(--primary-color-dark, var(--primary-color));
+          opacity: 0.9;
         }
 
         .error {
