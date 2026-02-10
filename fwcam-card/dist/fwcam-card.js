@@ -258,6 +258,7 @@ class FWCAMCard extends HTMLElement {
 
   /**
    * Force an immediate render (used after user interactions)
+   * Note: _lastRender will be updated by render() after successful completion
    */
   forceRender() {
     this.render();
