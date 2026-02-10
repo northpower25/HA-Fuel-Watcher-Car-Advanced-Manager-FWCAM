@@ -1430,6 +1430,8 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
                 "total_cost": event.get("total_cost"),
                 "station_name": event.get("station_name"),
                 "fuel_type": event.get("fuel_type"),
+                "data_quality": event.get("data_quality", "manual"),
+                "confidence": event.get("confidence", 1.0),
             }
             recent_events.append(event_info)
         
