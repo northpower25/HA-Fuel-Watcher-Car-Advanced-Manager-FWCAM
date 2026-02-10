@@ -239,18 +239,6 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
-   * Get config entry ID from entity
-   */
-  getConfigEntryId() {
-    const entity = this.getEntityState(this._config.entity);
-    if (!entity || !entity.attributes.config_entry_id) {
-      console.error('Cannot find config_entry_id');
-      return null;
-    }
-    return entity.attributes.config_entry_id;
-  }
-
-  /**
    * Format date/time for display
    */
   formatDateTime(dateString) {
@@ -856,7 +844,7 @@ class FWCAMCard extends HTMLElement {
             <form id="refuel-form">
               <input type="hidden" id="event-id" name="event_id" value="">
               
-              <div class="form-row">
+              <div class="form-row full-width">
                 <label for="timestamp">
                   Date & Time *
                   <input type="datetime-local" id="timestamp" name="timestamp" required>
@@ -889,21 +877,21 @@ class FWCAMCard extends HTMLElement {
                 </label>
               </div>
 
-              <div class="form-row">
+              <div class="form-row full-width">
                 <label for="station_name">
                   Station Name
                   <input type="text" id="station_name" name="station_name">
                 </label>
               </div>
 
-              <div class="form-row">
+              <div class="form-row full-width">
                 <label for="station_address">
                   Station Address
                   <input type="text" id="station_address" name="station_address">
                 </label>
               </div>
 
-              <div class="form-row">
+              <div class="form-row full-width">
                 <label for="fuel_type">
                   Fuel Type
                   <input type="text" id="fuel_type" name="fuel_type" placeholder="e.g., diesel, e5, e10">
@@ -1533,7 +1521,7 @@ class FWCAMCard extends HTMLElement {
           margin-bottom: 16px;
         }
 
-        .form-row:has(> :only-child) {
+        .form-row.full-width {
           grid-template-columns: 1fr;
         }
 
