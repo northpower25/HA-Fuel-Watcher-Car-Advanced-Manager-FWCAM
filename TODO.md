@@ -1,5 +1,24 @@
 # TODO List for haFWCMA
 
+## 🎯 New: Geolocation Feature (In Planning)
+
+### Konzept erstellt / Concept Created ✅
+- [x] **Geolocation-basierte Tankstellen-Näherungserkennung** - Comprehensive concept documents created
+  - See `docs/GEOLOCATION_CONCEPT.md` (German)
+  - See `docs/GEOLOCATION_CONCEPT_EN.md` (English)
+  - See `docs/GEOLOCATION_SUMMARY.md` (Quick summary)
+  - **Status:** Awaiting review and approval before implementation
+  - **Effort:** ~20-30 hours for MVP (Phase 1)
+  - **Features planned:**
+    - Sensor for N cheapest stations in configurable radius
+    - Binary sensor for proximity alerts (when near cheap station)
+    - Configurable thresholds (count, radius, distance)
+    - Anti-spam mechanism with cooldown
+    - Integration with existing vehicle position tracking
+    - Automation examples for Telegram/HA Companion App
+
+---
+
 ## High Priority
 
 ### Core Functionality
