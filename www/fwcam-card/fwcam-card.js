@@ -64,9 +64,10 @@ class FWCAMCard extends HTMLElement {
    * Set Home Assistant instance
    */
   set hass(hass) {
+    // Always store the hass instance
     this._hass = hass;
     
-    // Only throttle if config is initialized
+    // Skip throttling check if config not yet initialized
     if (!this._config || !this._config.refresh_interval) {
       return;
     }
