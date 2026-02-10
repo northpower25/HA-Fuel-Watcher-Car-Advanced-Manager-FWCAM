@@ -1104,6 +1104,9 @@ class FWCAMCard extends HTMLElement {
     // Setup station autocomplete
     this._setupStationAutocomplete();
     
+    // Setup timestamp change listener to recalculate odometer
+    this._setupOdometerRecalculation();
+    
     // Show dialog
     dialog.style.display = 'flex';
   }
@@ -1252,6 +1255,34 @@ class FWCAMCard extends HTMLElement {
         option.value = `${station.name}${station.city ? ' ' + station.city : ''}${station.street ? ' ' + station.street : ''}`;
         option.dataset.address = station.address;
         datalist.appendChild(option);
+      }
+    });
+  }
+
+  /**
+   * Setup odometer recalculation when timestamp changes (Add dialog only)
+   */
+  _setupOdometerRecalculation() {
+    const timestampInput = this.shadowRoot.getElementById('timestamp');
+    const odometerInput = this.shadowRoot.getElementById('odometer_km');
+    const eventIdInput = this.shadowRoot.getElementById('event-id');
+    
+    // Only for Add dialog (not Edit)
+    if (eventIdInput.value) {
+      return; // This is Edit dialog, skip
+    }
+    
+    // Remove existing listener
+    const newTimestampInput = timestampInput.cloneNode(true);
+    timestampInput.parentNode.replaceChild(newTimestampInput, timestampInput);
+    
+    newTimestampInput.addEventListener('change', () => {
+      const newTimestamp = newTimestampInput.value;
+      const estimatedOdometer = this.estimateOdometer(newTimestamp);
+      
+      if (estimatedOdometer) {
+        odometerInput.value = estimatedOdometer;
+        odometerInput.setAttribute('placeholder', `Suggested: ${estimatedOdometer} km`);
       }
     });
   }
