@@ -1,5 +1,11 @@
 # FWCAM Card - Fuel Watcher Car Advanced Manager Card
 
+> **⚠️ DEPRECATION NOTICE**: This directory is deprecated. For HACS installation, the card files are now in `fwcam-card/dist/`. 
+> 
+> **For manual installations**: You can continue to use files from this directory, but we recommend switching to the new structure for better HACS compatibility.
+> 
+> See the main [fwcam-card/README.md](../../fwcam-card/README.md) for updated installation instructions.
+
 A custom Lovelace card for the Fuel Watcher Car Advanced Manager (FWCAM) Home Assistant integration.
 
 ## Features
