@@ -27,7 +27,9 @@ Todo entities in Home Assistant are designed for task management (shopping lists
 - ✅ **Control Panel**: Quick access buttons for all integration functions
 - ✅ **Settings Management**: Inline editing of all integration settings
 - ✅ **Refueling Log Table**: View, edit, and delete refueling events
-- ✅ **Add Events**: Manually add new refueling events
+  - **Sortable columns**: Click headers to sort by Date, Odometer, Liters, Price, Total, or Station
+  - **Filtering**: Filter events by year and month
+- ✅ **Add/Edit Events**: Full-featured dialogs for adding and editing refueling events
 - ✅ **Data Quality Indicators**: Color-coded quality and confidence scores
 - ✅ **Responsive Design**: Works on desktop and mobile
 - ✅ **Auto-Detection**: Automatically finds all related entities
@@ -119,12 +121,16 @@ table_min_width: 100%      # Minimum table width
 - Prediction Calculation Interval (0.5-24 hours)
 
 **Refueling Log Table:**
+- **Sortable columns**: Click any column header to sort (Date/Time, Odometer, Liters, Price, Total, Station)
+- **Filter controls**: Filter by year and month
+- **Add/Edit dialogs**: Full-featured dialogs for adding and editing events
 - Date/Time of refueling
 - Odometer reading (km)
 - Liters refueled
 - Price per liter (€)
 - Total cost (€)
-- Station name
+- Station name and address
+- Fuel type
 - Data quality indicator (Manual/Auto/Historical)
 - Confidence score (0-100%)
 - Edit/Delete buttons for each event

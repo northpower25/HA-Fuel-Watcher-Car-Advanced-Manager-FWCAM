@@ -27,7 +27,9 @@ ToDo-Entitäten in Home Assistant sind für Aufgabenverwaltung (Einkaufslisten, 
 - ✅ **Bedienfeld**: Schnellzugriff-Buttons für alle Integrationsfunktionen
 - ✅ **Einstellungsverwaltung**: Inline-Bearbeitung aller Integrationseinstellungen
 - ✅ **Tankprotokoll-Tabelle**: Anzeigen, Bearbeiten und Löschen von Tankvorgängen
-- ✅ **Ereignisse hinzufügen**: Manuelle Eingabe neuer Tankvorgänge
+  - **Sortierbare Spalten**: Klicken Sie auf Spaltenüberschriften zum Sortieren nach Datum, Kilometerstand, Liter, Preis, Summe oder Tankstelle
+  - **Filterung**: Filtern Sie Ereignisse nach Jahr und Monat
+- ✅ **Ereignisse hinzufügen/bearbeiten**: Vollwertige Dialoge zum Hinzufügen und Bearbeiten von Tankvorgängen
 - ✅ **Datenqualitätsindikatoren**: Farbcodierte Qualitäts- und Vertrauens-Scores
 - ✅ **Responsives Design**: Funktioniert auf Desktop und Mobile
 - ✅ **Auto-Erkennung**: Findet automatisch alle zugehörigen Entitäten
@@ -119,12 +121,16 @@ table_min_width: 100%      # Minimale Tabellenbreite
 - Vorhersage-Berechnungsintervall (0,5-24 Stunden)
 
 **Tankprotokoll-Tabelle:**
+- **Sortierbare Spalten**: Klicken Sie auf Spaltenüberschriften zum Sortieren nach Datum/Uhrzeit, Kilometerstand, Liter, Preis, Summe oder Tankstelle
+- **Filter-Steuerung**: Filtern nach Jahr und Monat
+- **Hinzufügen/Bearbeiten-Dialoge**: Vollwertige Dialoge zum Hinzufügen und Bearbeiten von Ereignissen
 - Datum/Uhrzeit des Tankvorgangs
 - Kilometerstand (km)
 - Getankte Liter
 - Preis pro Liter (€)
 - Gesamtkosten (€)
-- Tankstellenname
+- Tankstellenname und -adresse
+- Kraftstofftyp
 - Datenqualitätsindikator (Manuell/Auto/Historisch)
 - Vertrauens-Score (0-100%)
 - Bearbeiten/Löschen-Buttons für jedes Ereignis

@@ -12,10 +12,12 @@ A custom Lovelace card for the Fuel Watcher Car Advanced Manager (FWCAM) Home As
 - **Control Panel**: Quick access buttons for refreshing fuel prices, updating predictions, testing connection, and importing historical data
 - **Settings Management**: Inline editing of integration settings (search radius, update interval, etc.)
 - **Refueling Log**: 
-  - View all refueling events in a table format
+  - View all refueling events in a sortable table format
+  - **Sortable columns**: Click headers to sort by Date, Odometer, Liters, Price, Total, or Station
+  - **Filtering**: Filter events by year and month
+  - **Add/Edit dialogs**: Full-featured dialogs for adding and editing refueling events
   - Color-coded data quality and confidence indicators
-  - Inline editing capabilities (edit and delete events)
-  - Add new refueling events manually
+  - Edit and delete buttons for each event
 - **Responsive Design**: Adapts to different screen sizes
 - **Material Design**: Follows Home Assistant's design language
 

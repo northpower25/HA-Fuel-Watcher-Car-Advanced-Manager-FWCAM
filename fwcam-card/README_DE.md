@@ -12,10 +12,12 @@ Eine benutzerdefinierte Lovelace-Karte für die Fuel Watcher Car Advanced Manage
 - **Bedienfeld**: Schnellzugriff-Schaltflächen zum Aktualisieren von Kraftstoffpreisen, Aktualisieren von Vorhersagen, Testen der Verbindung und Importieren historischer Daten
 - **Einstellungsverwaltung**: Inline-Bearbeitung von Integrationseinstellungen (Suchradius, Aktualisierungsintervall usw.)
 - **Tankbuch**: 
-  - Anzeige aller Tankvorgänge im Tabellenformat
+  - Anzeige aller Tankvorgänge in einer sortierbaren Tabelle
+  - **Sortierbare Spalten**: Klicken Sie auf Spaltenüberschriften zum Sortieren nach Datum, Kilometerstand, Liter, Preis, Summe oder Tankstelle
+  - **Filterung**: Filtern Sie Ereignisse nach Jahr und Monat
+  - **Hinzufügen/Bearbeiten-Dialoge**: Vollwertige Dialoge zum Hinzufügen und Bearbeiten von Tankvorgängen
   - Farbcodierte Datenqualitäts- und Vertrauensindikatoren
-  - Inline-Bearbeitungsfunktionen (Bearbeiten und Löschen von Einträgen)
-  - Manuelles Hinzufügen neuer Tankvorgänge
+  - Bearbeiten- und Löschen-Schaltflächen für jeden Eintrag
 - **Responsives Design**: Passt sich verschiedenen Bildschirmgrößen an
 - **Material Design**: Folgt der Design-Sprache von Home Assistant
 
