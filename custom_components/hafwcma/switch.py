@@ -64,8 +64,8 @@ class ManualRefreshSwitch(SwitchEntity):
         """
         self._coordinator = coordinator
         self._config_entry = config_entry
-        self._attr_name = f"{vehicle_name} Manual Refresh"
-        self._attr_unique_id = f"{config_entry.entry_id}_manual_refresh"
+        self._attr_name = f"{vehicle_name} Fuel Price Refresh"
+        self._attr_unique_id = f"{config_entry.entry_id}_fuel_price_refresh"
         self._attr_is_on = False
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -121,8 +121,8 @@ class ManualPredictionSwitch(SwitchEntity):
         """
         self._coordinator = coordinator
         self._config_entry = config_entry
-        self._attr_name = f"{vehicle_name} Manual Prediction"
-        self._attr_unique_id = f"{config_entry.entry_id}_manual_prediction"
+        self._attr_name = f"{vehicle_name} Consumption Prediction"
+        self._attr_unique_id = f"{config_entry.entry_id}_consumption_prediction"
         self._attr_is_on = False
         self._last_prediction_time = None
         self._last_prediction_result = None
