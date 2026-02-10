@@ -164,10 +164,12 @@ class FWCAMCard extends HTMLElement {
    * Call a Home Assistant service
    */
   callService(domain, service, serviceData = {}) {
-    if (!this._hass) return;
-    this._hass.callService(domain, service, serviceData);
-    // Force render after service calls to show immediate feedback
-    setTimeout(() => this.forceRender(), SERVICE_CALL_REFRESH_DELAY_MS);
+    if (!this._hass) return Promise.reject(new Error('Home Assistant not available'));
+    
+    return this._hass.callService(domain, service, serviceData).then(() => {
+      // Force render after service calls to show immediate feedback
+      setTimeout(() => this.forceRender(), SERVICE_CALL_REFRESH_DELAY_MS);
+    });
   }
 
   /**
@@ -1079,8 +1081,8 @@ class FWCAMCard extends HTMLElement {
       return entity.attributes.config_entry_id;
     }
     
-    // Fallback: show error
-    throw new Error('Config entry ID not found. Please ensure the integration is properly configured.');
+    // Fallback: show error with troubleshooting tips
+    throw new Error('Config entry ID not found. Please ensure:\n1. The integration is properly configured\n2. The sensor entity exists and is available\n3. Home Assistant has been restarted after installation\n4. The entity is: ' + this._config.entity);
   }
 
   /**
