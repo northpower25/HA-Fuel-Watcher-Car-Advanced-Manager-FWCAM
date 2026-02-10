@@ -129,6 +129,7 @@ The integration creates the following sensors for each configured vehicle:
 - **Range**: Estimated driving range in kilometers
 - **Nearest Station**: Name and details of closest station
 - **Days Until Refuel**: Predicted days until refueling needed (consumption prediction)
+- **Refueling Log**: Complete history of all refueling events with quality indicators (see [Refueling Log Guide](docs/REFUELING_LOG_GUIDE.md))
 - **Average Consumption History**: Historical average consumption with attributes for today, last week, last 14 days, and last month
 - **Average Consumption Forecast**: Forecasted average consumption with attributes for tomorrow, next week, next 14 days, and next month (currently uses the same prediction for all periods; future enhancements will add time-specific forecasting)
 - **API Debug**: API request/response debug information for troubleshooting
@@ -212,6 +213,31 @@ Each sensor provides additional attributes:
 - `next_month_consumption`: Forecasted consumption for next 30 days (L/100km)
 - `next_month_confidence`: Confidence level of forecast (0-1)
 - `next_month_data_source`: Data source for forecast
+
+#### Refueling Log Sensor
+The sensor value shows the total number of refueling events recorded. The following attributes provide detailed information:
+- `status`: Summary status text (e.g., "4 refueling events recorded")
+- `total_events`: Total number of refueling events in the log
+- `last_refueling`: Information about the most recent refueling (timestamp, liters, cost, station)
+- `recent_events`: List of the 10 most recent refueling events with full details:
+  - `id`: Unique refueling event ID
+  - `timestamp`: Date and time of refueling
+  - `odometer_km`: Odometer reading at refueling
+  - `liters_refueled`: Amount of fuel added
+  - `price_per_liter`: Price per liter
+  - `total_cost`: Total cost of refueling
+  - `station_name`: Name of the station
+  - `fuel_type`: Type of fuel (e5, e10, diesel)
+  - `data_quality`: Quality indicator (`manual`, `auto_detected`, or `historical_import`)
+  - `confidence`: Confidence score (0.0-1.0, higher is better)
+
+For detailed information about displaying and managing the refueling log, including:
+- GUI display options (not compatible with ToDo List cards)
+- Data quality indicators and confidence scores
+- Filtering by quality and confidence
+- Manual editing and correction workflows
+
+See the [Refueling Log Guide](docs/REFUELING_LOG_GUIDE.md) (also available in [German](docs/REFUELING_LOG_GUIDE_DE.md)).
 
 #### Nearest Station Sensor
 - `station_address`: Full address
@@ -317,7 +343,7 @@ automation:
 
 ## Automatic Fuel Log
 
-The integration includes an **automatic fuel log** feature that tracks all your refueling events with comprehensive details:
+The integration includes an **automatic fuel log** feature that tracks all your refueling events with comprehensive details and **data quality indicators** to help you identify events that may need manual review.
 
 ### Refueling Detection
 
@@ -332,6 +358,29 @@ The system automatically detects refueling events when the tank level increases 
 - **Total Cost**: Automatically calculated from liters × price per liter
 - **Location**: GPS coordinates of the refueling event
 - **Fuel Type**: Type of fuel (E5, E10, Diesel)
+- **Data Quality** (NEW): Indicator showing the source of the event (`manual`, `auto_detected`, `historical_import`)
+- **Confidence Score** (NEW): Quality score (0.0-1.0) based on data availability and reasonableness
+
+### Data Quality Indicators
+
+Each refueling event includes quality indicators to help prioritize manual review and correction:
+
+- **Confidence Score**: Calculated from odometer availability (40%), price availability (30%), and reasonable refueling amount (30%)
+- **Quality Levels**:
+  - `manual`: Manually entered events (highest quality, confidence 1.0)
+  - `auto_detected`: Automatically detected during normal operation (high quality)
+  - `historical_import`: Detected from historical data import (may need review if confidence < 0.7)
+
+Use these indicators to filter events that need attention and ensure data accuracy. See the [Refueling Log Guide](docs/REFUELING_LOG_GUIDE.md) for detailed filtering examples.
+
+### Historical Data Import
+
+The integration can import historical refueling events from Home Assistant's recorder:
+- Automatically runs on first setup (90 days lookback)
+- Can be triggered manually via the "Import Historical Data" button
+- Includes duplicate detection to prevent reimporting the same events
+- Assigns appropriate quality indicators and confidence scores
+- See detailed import results in the button's state attributes
 
 ### Data Storage
 
