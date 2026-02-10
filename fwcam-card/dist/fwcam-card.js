@@ -71,7 +71,6 @@ class FWCAMCard extends HTMLElement {
     const intervalMs = (this._config.refresh_interval || 300) * 1000;
     
     if (now - this._lastRender >= intervalMs) {
-      this._lastRender = now;
       this.render();
     }
   }
@@ -262,10 +261,6 @@ class FWCAMCard extends HTMLElement {
    */
   forceRender() {
     this.render();
-    // Update last render timestamp only after successful render
-    if (this._hass && this._config.entity) {
-      this._lastRender = Date.now();
-    }
   }
 
   /**
@@ -306,6 +301,9 @@ class FWCAMCard extends HTMLElement {
     `;
 
     this.attachEventListeners();
+    
+    // Update last render timestamp only after successful render
+    this._lastRender = Date.now();
   }
 
   /**
