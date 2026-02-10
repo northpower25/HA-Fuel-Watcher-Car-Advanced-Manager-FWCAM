@@ -76,6 +76,10 @@ from .utils.statistics_engine import estimate_days_left
 
 _LOGGER = logging.getLogger(__name__)
 
+# Constants for tank percentage validation
+MIN_TANK_PERCENTAGE = 0.0
+MAX_TANK_PERCENTAGE = 100.0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -114,6 +118,7 @@ async def async_setup_entry(
         ConsumptionPredictionSensor(coordinator, config_entry, vehicle_name),
         ConsumptionHistorySensor(coordinator, config_entry, vehicle_name),
         ConsumptionForecastSensor(coordinator, config_entry, vehicle_name),
+        RefuelingLogSensor(coordinator, config_entry, vehicle_name),
     ]
 
     async_add_entities(sensors)
@@ -702,13 +707,31 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Error handling refueling detection: %s", err)
         
         # Build data structure
-        # Calculate tank percentage if we have both level and capacity
+        # Calculate tank percentage and liters from vehicle data
         tank_percentage = None
+        tank_level_liters = None
         tank_level = vehicle_data.get("tank_level")
+        tank_level_unit = vehicle_data.get("tank_level_unit")
+        tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0)
+        
         if tank_level is not None:
-            tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0)
-            if tank_capacity and tank_capacity > 0:
-                tank_percentage = (tank_level / tank_capacity) * 100
+            # Check if tank level is already a percentage or in liters
+            if tank_level_unit and tank_level_unit.lower() in ("%", "percent", "percentage"):
+                # Tank level is already a percentage, use it directly
+                tank_percentage = tank_level
+                # Calculate liters from percentage if we have tank capacity
+                if tank_capacity and tank_capacity > 0:
+                    tank_level_liters = (tank_level / 100.0) * tank_capacity
+            else:
+                # Tank level is in liters, use it directly
+                tank_level_liters = tank_level
+                # Convert to percentage if we have tank capacity
+                if tank_capacity and tank_capacity > 0:
+                    tank_percentage = (tank_level / tank_capacity) * 100
+            
+            # Clamp tank percentage to valid range (0-100%)
+            if tank_percentage is not None:
+                tank_percentage = max(MIN_TANK_PERCENTAGE, min(MAX_TANK_PERCENTAGE, tank_percentage))
         
         # Get price trend and statistics
         price_trend = None
@@ -782,10 +805,17 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.warning("Error calculating consumption forecast: %s", err)
         
+        # Get refueling log for the refueling log sensor
+        refueling_log = None
+        try:
+            refueling_log = await storage.get_refueling_log(self.hass, self.config_entry)
+        except Exception as err:
+            _LOGGER.warning("Error getting refueling log: %s", err)
+        
         data = {
             "fuel_price": fuel_price,
             "last_price_timestamp": last_price_timestamp,
-            "tank_level": tank_level,
+            "tank_level": tank_level_liters,  # Always in liters for consistency
             "tank_percentage": tank_percentage,
             "range": range_km,
             "odometer": vehicle_data.get("odometer_km"),
@@ -807,6 +837,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "consumption_prediction": consumption_prediction,  # Add consumption prediction
             "consumption_history": consumption_history,  # Add consumption history
             "consumption_forecast": consumption_forecast,  # Add consumption forecast
+            "refueling_log": refueling_log,  # Add refueling log
         }
         
         # Apply randomization for next update interval
@@ -1172,10 +1203,27 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return the average consumption for today."""
+        """Return the overall average consumption based on available historical data.
+        
+        Prioritizes longer time periods for more accurate overall average:
+        1. Last month (if available)
+        2. Last 14 days (if available)
+        3. Last week (if available)
+        4. Today (as fallback)
+        """
         history = self.coordinator.data.get("consumption_history")
-        if history and history.get("today"):
-            return history["today"].get("avg_consumption_l_per_100km")
+        if not history:
+            return None
+        
+        # Try to get the most comprehensive average, prioritizing longer periods
+        # Use a loop to eliminate duplication
+        for period_key in ["last_month", "last_14_days", "last_week", "today"]:
+            period_data = history.get(period_key)
+            if period_data:
+                consumption = period_data.get("avg_consumption_l_per_100km")
+                if consumption is not None:
+                    return consumption
+        
         return None
     
     @property
@@ -1306,5 +1354,101 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes["next_month_data_source"] = month.get("data_source", "unknown")
         
         return attributes
+
+
+class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing refueling events log with detailed information.
+    
+    Displays the total number of refueling events as the state and provides
+    detailed information about each refueling event in the attributes.
+    This allows users to review and track their refueling history.
+    """
+
+    _attr_icon = "mdi:gas-station"
+    _attr_state_class = None
+    _attr_device_class = None
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._attr_name = f"{vehicle_name} Refueling Log"
+        self._attr_unique_id = f"{config_entry.entry_id}_refueling_log"
+
+    @property
+    def native_value(self) -> int:
+        """Return the total number of refueling events."""
+        refueling_log = self.coordinator.data.get("refueling_log")
+        return len(refueling_log) if refueling_log else 0
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return detailed refueling events as attributes.
+        
+        Returns the last 10 refueling events with all details to allow
+        users to review and verify detected refuelings.
+        """
+        refueling_log = self.coordinator.data.get("refueling_log")
+        
+        if not refueling_log:
+            return {
+                "total_events": 0,
+                "last_refueling": None,
+                "recent_events": [],
+                "status": "No refueling events recorded",
+            }
+        
+        # Filter out events without timestamps and sort by timestamp (newest first)
+        # Use a sentinel value that sorts to the beginning (will be at end after reverse)
+        events_with_timestamps = [e for e in refueling_log if e.get("timestamp")]
+        sorted_log = sorted(
+            events_with_timestamps,
+            key=lambda x: x.get("timestamp", ""),
+            reverse=True
+        )
+        
+        # Get the last 10 events for display
+        recent_events = []
+        for event in sorted_log[:10]:
+            event_info = {
+                "id": event.get("id"),
+                "timestamp": event.get("timestamp"),
+                "odometer_km": event.get("odometer_km"),
+                "liters_refueled": event.get("liters_refueled"),
+                "price_per_liter": event.get("price_per_liter"),
+                "total_cost": event.get("total_cost"),
+                "station_name": event.get("station_name"),
+                "fuel_type": event.get("fuel_type"),
+            }
+            recent_events.append(event_info)
+        
+        # Get the most recent refueling
+        last_refueling = None
+        if sorted_log:
+            last_event = sorted_log[0]
+            last_refueling = {
+                "timestamp": last_event.get("timestamp"),
+                "liters": last_event.get("liters_refueled"),
+                "cost": last_event.get("total_cost"),
+                "station": last_event.get("station_name"),
+            }
+        
+        return {
+            "total_events": len(refueling_log),
+            "last_refueling": last_refueling,
+            "recent_events": recent_events,
+            "status": f"{len(refueling_log)} refueling events recorded",
+        }
 
 

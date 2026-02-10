@@ -76,37 +76,43 @@ async def check_data_sufficiency(
             "reason": str,
         }
     """
+    from .storage import get_refueling_log
+    
     odometer_history = await get_odometer_history(hass, entry)
-    tank_history = await get_tank_history(hass, entry)
+    refueling_log = await get_refueling_log(hass, entry)
     
     odometer_points = len(odometer_history)
-    tank_points = len(tank_history)
+    refuel_count = len(refueling_log)
     
-    # Count refueling events with valid consumption data
+    # Count refueling events with valid data (odometer and fuel amount)
+    # We need at least 2 refueling events to calculate consumption
     consumption_events = sum(
-        1 for event in tank_history 
-        if event.get("consumption_rate") and event.get("consumption_rate") > 0
+        1 for event in refueling_log 
+        if (event.get("odometer_km") is not None and 
+            event.get("liters_refueled") is not None and
+            event.get("liters_refueled", 0) > 0)
     )
     
+    # We need sufficient odometer history AND at least 2 refueling events to calculate consumption
     sufficient = (
         odometer_points >= min_data_points 
-        and consumption_events >= max(2, min_data_points // 2)
+        and consumption_events >= 2  # Need at least 2 refueling events
     )
     
     if sufficient:
-        reason = f"Sufficient data available ({odometer_points} odometer points, {consumption_events} consumption events)"
+        reason = f"Sufficient data available ({odometer_points} odometer points, {consumption_events} refueling events)"
     else:
-        reason = f"Insufficient data ({odometer_points}/{min_data_points} odometer points, {consumption_events} consumption events)"
+        reason = f"Insufficient data ({odometer_points}/{min_data_points} odometer points, {consumption_events} refueling events, need at least 2)"
     
     _LOGGER.debug(
-        "Data sufficiency check: sufficient=%s, odometer=%d, tank=%d, consumption=%d",
-        sufficient, odometer_points, tank_points, consumption_events
+        "Data sufficiency check: sufficient=%s, odometer=%d, refuelings=%d, consumption_events=%d",
+        sufficient, odometer_points, refuel_count, consumption_events
     )
     
     return {
         "sufficient": sufficient,
         "odometer_points": odometer_points,
-        "tank_points": tank_points,
+        "tank_points": refuel_count,  # Kept for backward compatibility - actually contains refuel count, not tank history points
         "consumption_events": consumption_events,
         "reason": reason,
     }
@@ -119,7 +125,7 @@ async def calculate_historical_consumption(
 ) -> Dict[str, Any]:
     """Calculate consumption statistics from historical data.
     
-    Analyzes odometer and tank level changes to determine:
+    Analyzes odometer and refueling events to determine:
     - Average daily kilometers
     - Average fuel consumption rate (L/100km)
     - Consumption trend (increasing/decreasing/stable)
@@ -139,13 +145,18 @@ async def calculate_historical_consumption(
             "data_points": int,
         }
     """
+    from .storage import calculate_consumption_history
+    
     odometer_history = await get_odometer_history(hass, entry)
-    tank_history = await get_tank_history(hass, entry)
+    
+    # Use the storage.calculate_consumption_history function which properly calculates
+    # consumption from refueling_log data
+    consumption_data = await calculate_consumption_history(hass, entry, days=lookback_days)
     
     if not odometer_history or len(odometer_history) < 2:
         return {
             "avg_daily_km": 0.0,
-            "avg_consumption_rate": 0.0,
+            "avg_consumption_rate": consumption_data.get("avg_consumption_l_per_100km") or 0.0,
             "trend": "unknown",
             "confidence": 0.0,
             "data_points": 0,
@@ -161,6 +172,7 @@ async def calculate_historical_consumption(
     ]
     
     # Calculate average daily kilometers
+    avg_daily_km = 0.0
     if len(recent_odometer) >= 2:
         sorted_odo = sorted(recent_odometer, key=lambda x: _parse_timestamp(x.get("ts", "")))
         first_entry = sorted_odo[0]
@@ -176,48 +188,28 @@ async def calculate_historical_consumption(
             if days_elapsed > 0:
                 km_driven = last_km - first_km
                 avg_daily_km = km_driven / days_elapsed
-            else:
-                avg_daily_km = 0.0
-        else:
-            avg_daily_km = 0.0
-    else:
-        avg_daily_km = 0.0
     
-    # Calculate average consumption rate from refueling events
-    recent_tank = [
-        event for event in tank_history
-        if _parse_timestamp(event.get("timestamp", "")) and
-           _parse_timestamp(event.get("timestamp", "")) >= cutoff_time and
-           event.get("consumption_rate") and
-           1.0 <= event.get("consumption_rate", 0) <= 50.0  # Sanity check
-    ]
+    # Get average consumption rate from refueling data
+    avg_consumption_rate = consumption_data.get("avg_consumption_l_per_100km") or 0.0
+    refuel_count = consumption_data.get("refuel_count", 0)
     
-    if recent_tank:
-        consumption_rates = [event.get("consumption_rate", 0) for event in recent_tank]
-        avg_consumption_rate = sum(consumption_rates) / len(consumption_rates)
+    # Calculate trend by comparing shorter vs longer periods
+    trend = "stable"
+    if refuel_count >= 4:
+        # Compare last 7 days vs full period
+        short_period = await calculate_consumption_history(hass, entry, days=min(7, lookback_days // 2))
+        short_consumption = short_period.get("avg_consumption_l_per_100km")
         
-        # Calculate trend from first half vs second half
-        if len(consumption_rates) >= 4:
-            mid_point = len(consumption_rates) // 2
-            first_half_avg = sum(consumption_rates[:mid_point]) / mid_point
-            second_half_avg = sum(consumption_rates[mid_point:]) / (len(consumption_rates) - mid_point)
-            
-            diff_percent = ((second_half_avg - first_half_avg) / first_half_avg) * 100
+        if short_consumption and avg_consumption_rate > 0:
+            diff_percent = ((short_consumption - avg_consumption_rate) / avg_consumption_rate) * 100
             
             if diff_percent > 5:
                 trend = "increasing"
             elif diff_percent < -5:
                 trend = "decreasing"
-            else:
-                trend = "stable"
-        else:
-            trend = "stable"
-    else:
-        avg_consumption_rate = 0.0
-        trend = "unknown"
     
     # Calculate confidence based on data points
-    data_points = len(recent_odometer) + len(recent_tank)
+    data_points = len(recent_odometer) + refuel_count
     if data_points >= 10:
         confidence = 1.0
     elif data_points >= 5:
