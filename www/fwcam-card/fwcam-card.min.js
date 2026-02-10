@@ -66,9 +66,14 @@ class FWCAMCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     
+    // Only throttle if config is initialized
+    if (!this._config || !this._config.refresh_interval) {
+      return;
+    }
+    
     // Throttle rendering based on refresh_interval (in seconds)
     const now = Date.now();
-    const intervalMs = (this._config.refresh_interval || 300) * 1000;
+    const intervalMs = this._config.refresh_interval * 1000;
     
     if (now - this._lastRender >= intervalMs) {
       this.render();
