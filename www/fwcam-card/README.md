@@ -32,7 +32,7 @@ resources:
 
 ### HACS Installation (Recommended)
 
-> **Note**: HACS installation will be available once this card is published to HACS default repository.
+> **Note**: HACS installation will be available once this card is published to the HACS default repository.
 
 1. Open HACS in your Home Assistant
 2. Go to "Frontend" section
@@ -106,6 +106,8 @@ The refueling log shows:
 - **Quality**: Data quality indicator (manual, auto_detected, historical_import)
 - **Confidence**: Confidence score of the detection (0-100%)
 - **Actions**: Edit and delete buttons
+
+**Note on Editing**: The current version uses service calls for editing. Click the edit or add button to see instructions for using the `hafwcma.add_refuel_event` and `hafwcma.update_refuel_event` services. A visual dialog interface for editing will be added in a future update.
 
 ### Data Quality Indicators
 

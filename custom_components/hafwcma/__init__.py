@@ -122,7 +122,14 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             return
         
         event_id = call.data["event_id"]
-        updates = {k: v for k, v in call.data.items() if k not in ["config_entry_id", "event_id"]}
+        
+        # Build updates dictionary with only valid fields
+        valid_fields = [
+            "timestamp", "liters_refueled", "odometer_km", "price_per_liter",
+            "total_cost", "station_name", "station_address", "fuel_type",
+            "data_quality", "confidence"
+        ]
+        updates = {k: v for k, v in call.data.items() if k in valid_fields}
         
         await update_refueling_record(hass, entry, event_id, updates)
         _LOGGER.info("Updated refuel event ID %s", event_id)

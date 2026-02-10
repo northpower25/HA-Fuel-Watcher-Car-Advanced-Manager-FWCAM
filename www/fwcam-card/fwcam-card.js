@@ -516,20 +516,24 @@ class FWCAMCard extends HTMLElement {
 
   /**
    * Show dialog to add a new refueling event
+   * 
+   * NOTE: This is a placeholder implementation. A full dialog implementation
+   * with proper input fields should be added in a future update.
+   * For now, users can add events via the hafwcma.add_refuel_event service.
    */
   showAddDialog() {
-    // TODO: Implement dialog for adding refueling events
-    // For now, show a simple alert
-    alert('Add refueling event dialog - To be implemented with a proper dialog component');
+    alert('Add refueling event: Use the hafwcma.add_refuel_event service or Developer Tools → Services to add events manually. A dialog interface will be added in a future update.');
   }
 
   /**
    * Show dialog to edit an existing refueling event
+   * 
+   * NOTE: This is a placeholder implementation. A full dialog implementation
+   * with proper input fields should be added in a future update.
+   * For now, users can edit events via the hafwcma.update_refuel_event service.
    */
   showEditDialog(eventId) {
-    // TODO: Implement dialog for editing refueling events
-    // For now, show a simple alert
-    alert(`Edit refueling event ${eventId} - To be implemented with a proper dialog component`);
+    alert(`Edit refueling event ${eventId}: Use the hafwcma.update_refuel_event service or Developer Tools → Services to edit events manually. A dialog interface will be added in a future update.`);
   }
 
   /**
