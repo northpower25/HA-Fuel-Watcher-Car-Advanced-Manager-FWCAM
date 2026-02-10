@@ -150,8 +150,58 @@ After setup, you should see new sensor entities:
 - Ensure chat ID is correct
 - Check that you've started a chat with the bot
 
+## Installing the Lovelace Card (Optional but Recommended)
+
+The FWCAM integration includes a custom Lovelace card for a beautiful, all-in-one dashboard.
+
+### HACS Installation (Recommended)
+
+1. Open HACS in your Home Assistant instance
+2. Go to "Frontend" section
+3. Click the three dots menu (⋮) in the top right
+4. Select "Custom repositories"
+5. Enter the same repository URL:
+   ```
+   https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM
+   ```
+6. Select "Lovelace" as the category
+7. Click "Add"
+8. Search for "FWCAM Lovelace Card" in the Frontend section
+9. Click "Download"
+10. Restart Home Assistant
+11. Clear your browser cache (Ctrl+Shift+R or Cmd+Shift+R)
+
+### Manual Card Installation
+
+1. Copy `fwcam-card/dist/fwcam-card.js` to your `config/www/fwcam-card/` directory
+2. Add the resource in your Lovelace configuration:
+
+```yaml
+resources:
+  - url: /local/fwcam-card/fwcam-card.js
+    type: module
+```
+
+3. Restart Home Assistant
+4. Clear your browser cache
+
+### Adding the Card to Your Dashboard
+
+1. Edit your dashboard
+2. Add a new card
+3. Search for "FWCAM Card" in the card picker
+4. Configure the card:
+
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+```
+
+For more information, see the [Card Documentation](../fwcam-card/README.md).
+
 ## Next Steps
 
+- Install the Lovelace card (see above)
 - Configure [automations](AUTOMATIONS.md)
 - Customize your dashboard
 - Set up notifications

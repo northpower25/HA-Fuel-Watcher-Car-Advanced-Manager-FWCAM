@@ -34,17 +34,28 @@ ToDo-Entitäten in Home Assistant sind für Aufgabenverwaltung (Einkaufslisten, 
 
 #### Installation
 
+**HACS Installation (Empfohlen):**
+1. Öffnen Sie HACS in Ihrem Home Assistant
+2. Gehen Sie zum Abschnitt "Frontend"
+3. Klicken Sie auf die drei Punkte oben rechts
+4. Wählen Sie "Benutzerdefinierte Repositories"
+5. Fügen Sie die Repository-URL hinzu: `https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM`
+6. Wählen Sie die Kategorie "Lovelace"
+7. Klicken Sie auf "Hinzufügen"
+8. Suchen Sie "FWCAM Lovelace Card" in der Liste
+9. Klicken Sie auf "Herunterladen"
+10. Starten Sie Home Assistant neu
+11. Leeren Sie Ihren Browser-Cache (Strg+Umschalt+R)
+
 **Manuelle Installation:**
-1. Kopieren Sie `/www/fwcam-card/fwcam-card.js` aus diesem Repository in Ihr Home Assistant `config/www/fwcam-card/` Verzeichnis
+1. Kopieren Sie `fwcam-card/dist/fwcam-card.js` aus diesem Repository in Ihr Home Assistant `config/www/fwcam-card/` Verzeichnis
 2. Fügen Sie die Ressource in Ihrer Lovelace-Konfiguration hinzu (Konfiguration → Dashboards → Ressourcen):
    ```yaml
    url: /local/fwcam-card/fwcam-card.js
    type: module
    ```
-3. Laden Sie Ihren Browser-Cache neu (Strg+F5)
-
-**HACS Installation (Zukünftig):**
-> Hinweis: HACS-Installation wird verfügbar sein, sobald diese Karte im HACS-Standard-Repository veröffentlicht ist.
+3. Starten Sie Home Assistant neu
+4. Leeren Sie Ihren Browser-Cache (Strg+Umschalt+R)
 
 #### Grundlegende Verwendung
 
