@@ -8,6 +8,7 @@ from telegram import Bot
 from telegram.error import TelegramError
 
 from . import MessageService, MessagingError
+from ..const import TELEGRAM_METHOD_INTEGRATION, TELEGRAM_METHOD_DIRECT_API
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -49,7 +50,6 @@ class TelegramNotifier(MessageService):
         )
         
         # Store which method is being used
-        from .const import TELEGRAM_METHOD_INTEGRATION, TELEGRAM_METHOD_DIRECT_API
         self.telegram_method = (
             TELEGRAM_METHOD_INTEGRATION if self._use_ha_service else TELEGRAM_METHOD_DIRECT_API
         )

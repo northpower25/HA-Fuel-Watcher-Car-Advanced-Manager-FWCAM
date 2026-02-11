@@ -575,20 +575,25 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
         
+        # Common setup instructions
+        common_instructions = (
+            "Optional: Configure Telegram for notifications\n\n"
+            "To get your Telegram Bot Token:\n"
+            "1. Open Telegram and search for @BotFather\n"
+            "2. Send /newbot and follow instructions\n"
+            "3. Copy the token provided\n\n"
+            "To get your Chat ID:\n"
+            "1. Search for @userinfobot in Telegram\n"
+            "2. Start a chat and it will show your Chat ID\n\n"
+        )
+        
         # Build description based on whether telegram_bot is available
         if telegram_bot_available:
             telegram_info = (
                 "✅ <b>Telegram Bot Integration Detected</b>\n\n"
                 "The Home Assistant telegram_bot integration is available. "
                 "This enables bidirectional communication (sending and receiving messages).\n\n"
-                "Optional: Configure Telegram for notifications\n\n"
-                "To get your Telegram Bot Token:\n"
-                "1. Open Telegram and search for @BotFather\n"
-                "2. Send /newbot and follow instructions\n"
-                "3. Copy the token provided\n\n"
-                "To get your Chat ID:\n"
-                "1. Search for @userinfobot in Telegram\n"
-                "2. Start a chat and it will show your Chat ID\n\n"
+                + common_instructions +
                 "<i>💡 Tip: Use the same bot token in the telegram_bot integration for full features.</i>"
             )
         else:
@@ -596,14 +601,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "ℹ️ <b>Telegram Bot Integration Not Found</b>\n\n"
                 "The telegram_bot integration is not configured. "
                 "Only one-way notifications (sending messages) will be available.\n\n"
-                "Optional: Configure Telegram for notifications\n\n"
-                "To get your Telegram Bot Token:\n"
-                "1. Open Telegram and search for @BotFather\n"
-                "2. Send /newbot and follow instructions\n"
-                "3. Copy the token provided\n\n"
-                "To get your Chat ID:\n"
-                "1. Search for @userinfobot in Telegram\n"
-                "2. Start a chat and it will show your Chat ID\n\n"
+                + common_instructions +
                 "<i>💡 Tip: Configure the telegram_bot integration for bidirectional features.</i>"
             )
 

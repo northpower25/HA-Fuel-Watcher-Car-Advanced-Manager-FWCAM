@@ -15,7 +15,6 @@ CONF_VEHICLE_NAME: Final = "vehicle_name"
 CONF_TELEGRAM_TOKEN: Final = "telegram_token"
 CONF_TELEGRAM_CHAT_ID: Final = "telegram_chat_id"
 CONF_TELEGRAM_METHOD: Final = "telegram_method"  # "integration" or "direct_api"
-CONF_TELEGRAM_BOT_NAME: Final = "telegram_bot_name"  # Name of telegram_bot platform if using integration
 CONF_PROVIDER: Final = "provider"
 CONF_UPDATE_INTERVAL: Final = "update_interval"
 
