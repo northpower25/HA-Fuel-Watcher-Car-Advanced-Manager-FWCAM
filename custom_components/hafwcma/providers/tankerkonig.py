@@ -548,10 +548,19 @@ class TankerkoenigProvider(FuelPriceProvider):
 
             # Log detailed station info for debugging
             _LOGGER.debug(
-                "Parsed station '%s' (API name: '%s'): address='%s', e5=%s, e10=%s, diesel=%s, open=%s",
+                "Parsed station '%s' (API name: '%s', brand: '%s', place: '%s', street: '%s'): "
+                "address='%s' (raw: street='%s', number='%s', postcode='%s', city='%s'), "
+                "e5=%s, e10=%s, diesel=%s, open=%s",
                 station.name,
                 api_name,
+                brand,
+                place,
+                street,
                 station.address,
+                street,
+                house_number,
+                post_code,
+                place,
                 station.price_e5,
                 station.price_e10,
                 station.price_diesel,
