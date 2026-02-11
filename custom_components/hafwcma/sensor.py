@@ -44,26 +44,38 @@ from .const import (
     ATTR_TANK_LEVEL,
     ATTR_URGENCY,
     CONF_API_KEY,
+    CONF_CHEAP_STATIONS_COUNT,
+    CONF_CHEAP_STATIONS_RADIUS,
     CONF_CONSUMPTION_MIN_DATA_POINTS,
     CONF_CONSUMPTION_PREDICTION_INTERVAL,
     CONF_FUEL_TYPE,
     CONF_LATITUDE,
     CONF_LONGITUDE,
+    CONF_MIN_TANK_LEVEL_FOR_ALERTS,
     CONF_ODOMETER_ENTITY,
     CONF_POSITION_ENTITY,
     CONF_PROVIDER,
+    CONF_PROXIMITY_ALERT_DISTANCE,
+    CONF_PROXIMITY_ALERTS_ENABLED,
     CONF_RADIUS,
     CONF_RANGE_ENTITY,
     CONF_TANK_CAPACITY,
     CONF_TANK_LEVEL_ENTITY,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
+    DEFAULT_CHEAP_STATIONS_COUNT,
+    DEFAULT_CHEAP_STATIONS_RADIUS,
     DEFAULT_CONSUMPTION_MIN_DATA_POINTS,
     DEFAULT_CONSUMPTION_PREDICTION_INTERVAL,
+    DEFAULT_MIN_TANK_LEVEL_FOR_ALERTS,
+    DEFAULT_PROXIMITY_ALERT_DISTANCE,
+    DEFAULT_PROXIMITY_ALERTS_ENABLED,
     DEFAULT_TANK_CAPACITY,
     DEFAULT_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL_JITTER_PERCENT,
     DOMAIN,
+    GEOLOCATION_ALERT_COOLDOWN,
+    GEOLOCATION_HYSTERESIS_FACTOR,
     PROVIDER_TANKERKONIG,
 )
 from .providers.tankerkonig import TankerkoenigProvider
@@ -74,6 +86,13 @@ from .utils.consumption_prediction import predict_days_until_refuel, store_predi
 from .utils.prediction_engine import evaluate_refuel_strategy, get_prediction_summary
 from .utils.price_engine import compute_price_trend, get_price_statistics
 from .utils.statistics_engine import estimate_days_left
+from .utils.geolocation import (
+    ProximityTracker,
+    enrich_station_data,
+    find_nearest_cheap_station,
+    format_alert_message,
+    get_navigation_urls,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,6 +139,7 @@ async def async_setup_entry(
         ConsumptionHistorySensor(coordinator, config_entry, vehicle_name),
         ConsumptionForecastSensor(coordinator, config_entry, vehicle_name),
         RefuelingLogSensor(coordinator, config_entry, vehicle_name),
+        NearbyCheapStationsSensor(coordinator, config_entry, vehicle_name),
     ]
 
     async_add_entities(sensors)
@@ -161,6 +181,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._session = None
         self._api_debug_info = None  # Store debug info about API requests/responses
         self._last_consumption_prediction = None  # Store last consumption prediction time
+        self._proximity_tracker = ProximityTracker(
+            cooldown_seconds=GEOLOCATION_ALERT_COOLDOWN,
+            hysteresis_factor=GEOLOCATION_HYSTERESIS_FACTOR,
+        )  # Track proximity alerts
         
         _LOGGER.info(
             "Coordinator initialized with randomized update interval: %.1f minutes (base: %d, jitter: ±%.1f)",
@@ -598,6 +622,154 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     self._api_debug_info["error_type"] = type(err).__name__
                     _LOGGER.error("Error fetching data from provider: %s", err, exc_info=True)
                     # Continue with cached/placeholder data
+            
+            # Process geolocation-based features (nearby cheap stations & proximity alerts)
+            nearby_cheap_stations_data = None
+            proximity_alert_data = None
+            
+            # Only process geolocation if vehicle position is available
+            vehicle_lat = vehicle_data.get("latitude")
+            vehicle_lon = vehicle_data.get("longitude")
+            
+            if vehicle_lat is not None and vehicle_lon is not None and position_entity:
+                try:
+                    # Get geolocation configuration
+                    proximity_enabled = options.get(CONF_PROXIMITY_ALERTS_ENABLED, DEFAULT_PROXIMITY_ALERTS_ENABLED)
+                    cheap_stations_count = options.get(CONF_CHEAP_STATIONS_COUNT, DEFAULT_CHEAP_STATIONS_COUNT)
+                    cheap_stations_radius = options.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
+                    proximity_distance = options.get(CONF_PROXIMITY_ALERT_DISTANCE, DEFAULT_PROXIMITY_ALERT_DISTANCE)
+                    min_tank_level = options.get(CONF_MIN_TANK_LEVEL_FOR_ALERTS, DEFAULT_MIN_TANK_LEVEL_FOR_ALERTS)
+                    
+                    # Fetch stations for geolocation (using larger radius for cheap stations search)
+                    if self._provider and provider == PROVIDER_TANKERKONIG:
+                        try:
+                            geo_stations = await self._provider.get_stations_nearby(
+                                vehicle_lat, vehicle_lon, cheap_stations_radius, fuel_type
+                            )
+                            
+                            if geo_stations:
+                                # Filter open stations with valid prices
+                                geo_stations_valid = [
+                                    s for s in geo_stations
+                                    if s.get_price(fuel_type) is not None and s.is_open
+                                ]
+                                
+                                if geo_stations_valid:
+                                    # Sort by price
+                                    geo_stations_valid.sort(key=lambda s: s.get_price(fuel_type))
+                                    
+                                    # Get N cheapest stations
+                                    cheapest_stations = geo_stations_valid[:cheap_stations_count]
+                                    
+                                    # Convert to dict format with enriched data
+                                    stations_list = []
+                                    for station in cheapest_stations:
+                                        station_dict = {
+                                            "id": station.station_id,
+                                            "name": station.name,
+                                            "brand": station.brand,
+                                            "address": f"{station.address}, {station.city}",
+                                            "lat": station.latitude,
+                                            "latitude": station.latitude,
+                                            "lng": station.longitude,
+                                            "longitude": station.longitude,
+                                            "price": station.get_price(fuel_type),
+                                            "fuel_type": fuel_type,
+                                            "is_open": station.is_open,
+                                        }
+                                        # Enrich with distance and navigation
+                                        enriched = enrich_station_data(station_dict, vehicle_lat, vehicle_lon)
+                                        stations_list.append(enriched)
+                                    
+                                    nearby_cheap_stations_data = {
+                                        "count": len(stations_list),
+                                        "stations": stations_list,
+                                        "search_radius_km": cheap_stations_radius,
+                                        "vehicle_latitude": vehicle_lat,
+                                        "vehicle_longitude": vehicle_lon,
+                                        "max_stations": cheap_stations_count,
+                                    }
+                                    
+                                    _LOGGER.info(
+                                        "Found %d cheap stations within %.1f km of vehicle",
+                                        len(stations_list),
+                                        cheap_stations_radius,
+                                    )
+                                    
+                                    # Check for proximity alerts (only if enabled)
+                                    if proximity_enabled and stations_list:
+                                        # Check tank level condition
+                                        should_alert_tank = True
+                                        if tank_percentage is not None and min_tank_level > 0:
+                                            should_alert_tank = tank_percentage < min_tank_level
+                                        
+                                        if should_alert_tank:
+                                            # Find nearest station within proximity threshold
+                                            nearest_cheap = find_nearest_cheap_station(
+                                                stations_list,
+                                                vehicle_lat,
+                                                vehicle_lon,
+                                                proximity_distance,
+                                            )
+                                            
+                                            if nearest_cheap:
+                                                # Check if we should alert for this station
+                                                station_id = nearest_cheap.get("id")
+                                                distance = nearest_cheap.get("distance_km", 999)
+                                                
+                                                if self._proximity_tracker.should_alert(
+                                                    station_id, distance, proximity_distance
+                                                ):
+                                                    # Generate alert
+                                                    nav_urls = nearest_cheap.get("navigation_urls", {})
+                                                    alert_msg = format_alert_message(
+                                                        station_name=nearest_cheap.get("name", ""),
+                                                        distance_km=distance,
+                                                        price=nearest_cheap.get("price", 0),
+                                                        fuel_type=fuel_type,
+                                                        address=nearest_cheap.get("address", ""),
+                                                        navigation_url=nav_urls.get("google_maps", ""),
+                                                    )
+                                                    
+                                                    proximity_alert_data = {
+                                                        "is_near": True,
+                                                        "station": nearest_cheap,
+                                                        "threshold_km": proximity_distance,
+                                                        "alert_message": alert_msg,
+                                                    }
+                                                    
+                                                    _LOGGER.info(
+                                                        "Proximity alert: Near cheap station %s (%.1f km)",
+                                                        nearest_cheap.get("name"),
+                                                        distance,
+                                                    )
+                                                else:
+                                                    # Within threshold but cooldown/hysteresis preventing alert
+                                                    proximity_alert_data = {"is_near": False}
+                                            else:
+                                                # No cheap station within proximity threshold
+                                                proximity_alert_data = {"is_near": False}
+                                        else:
+                                            # Tank level too high for alerts
+                                            proximity_alert_data = {"is_near": False}
+                                            _LOGGER.debug(
+                                                "Proximity alerts disabled: tank level %.1f%% >= %.1f%%",
+                                                tank_percentage or 0,
+                                                min_tank_level,
+                                            )
+                                    else:
+                                        # Proximity alerts disabled
+                                        proximity_alert_data = {"is_near": False}
+                                else:
+                                    _LOGGER.debug("No valid stations found for geolocation features")
+                            else:
+                                _LOGGER.debug("No stations found within geolocation radius %.1f km", cheap_stations_radius)
+                        except Exception as err:
+                            _LOGGER.warning("Error fetching geolocation data: %s", err)
+                except Exception as err:
+                    _LOGGER.warning("Error processing geolocation features: %s", err)
+            else:
+                _LOGGER.debug("Geolocation features disabled: vehicle position not available")
                     
         except Exception as err:
             if self._api_debug_info:
@@ -839,6 +1011,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "consumption_history": consumption_history,  # Add consumption history
             "consumption_forecast": consumption_forecast,  # Add consumption forecast
             "refueling_log": refueling_log,  # Add refueling log
+            "nearby_cheap_stations": nearby_cheap_stations_data,  # Add geolocation data
+            "proximity_alert": proximity_alert_data,  # Add proximity alert data
         }
         
         # Apply randomization for next update interval
@@ -1462,5 +1636,83 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
             "recent_events": recent_events,
             "status": f"{len(refueling_log)} refueling events recorded",
         }
+
+
+class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing nearby cheap fuel stations based on vehicle location."""
+    
+    _attr_icon = "mdi:map-marker-multiple"
+    _attr_state_class = None
+    _attr_device_class = None
+    
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._vehicle_name = vehicle_name
+        
+        # Generate unique ID
+        self._attr_unique_id = f"{config_entry.entry_id}_nearby_cheap_stations"
+        self._attr_name = f"{vehicle_name} Nearby Cheap Stations"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+    
+    @property
+    def native_value(self) -> int | None:
+        """Return the number of nearby cheap stations."""
+        if not self.coordinator.data:
+            return None
+        
+        nearby_data = self.coordinator.data.get("nearby_cheap_stations")
+        if not nearby_data:
+            return 0
+        
+        return nearby_data.get("count", 0)
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        if not self.coordinator.data:
+            return {}
+        
+        nearby_data = self.coordinator.data.get("nearby_cheap_stations")
+        if not nearby_data:
+            return {
+                "stations": [],
+                "search_radius_km": None,
+                "vehicle_latitude": None,
+                "vehicle_longitude": None,
+                "max_stations": None,
+            }
+        
+        return {
+            "stations": nearby_data.get("stations", []),
+            "search_radius_km": nearby_data.get("search_radius_km"),
+            "vehicle_latitude": nearby_data.get("vehicle_latitude"),
+            "vehicle_longitude": nearby_data.get("vehicle_longitude"),
+            "max_stations": nearby_data.get("max_stations"),
+        }
+    
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
 
 
