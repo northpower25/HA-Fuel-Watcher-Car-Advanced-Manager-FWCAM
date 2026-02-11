@@ -11,9 +11,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_PROXIMITY_ALERTS_ENABLED,
+    CONF_TELEGRAM_CHAT_ID,
+    CONF_TELEGRAM_METHOD,
+    CONF_TELEGRAM_TOKEN,
     CONF_VEHICLE_NAME,
     DEFAULT_PROXIMITY_ALERTS_ENABLED,
     DOMAIN,
+    TELEGRAM_METHOD_DIRECT_API,
+    TELEGRAM_METHOD_INTEGRATION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,6 +48,12 @@ async def async_setup_entry(
         ManualPredictionSwitch(coordinator, config_entry, vehicle_name),
         ProximityAlertsSwitch(coordinator, config_entry, vehicle_name, hass),
     ]
+    
+    # Add TelegramTestSwitch if telegram is configured
+    telegram_token = config_entry.data.get(CONF_TELEGRAM_TOKEN)
+    telegram_chat_id = config_entry.data.get(CONF_TELEGRAM_CHAT_ID)
+    if telegram_token and telegram_chat_id:
+        switches.append(TelegramTestSwitch(coordinator, config_entry, vehicle_name, hass))
 
     async_add_entities(switches)
 
@@ -286,3 +297,173 @@ class ProximityAlertsSwitch(SwitchEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_PROXIMITY_ALERTS_ENABLED] = False
         self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
+
+
+class TelegramTestSwitch(SwitchEntity):
+    """Switch to test Telegram API connection and method."""
+    
+    _attr_icon = "mdi:telegram"
+    _attr_has_entity_name = True
+    
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the switch.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+            hass: Home Assistant instance
+        """
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = "Telegram API Test"
+        self._attr_unique_id = f"{config_entry.entry_id}_telegram_test"
+        self._attr_is_on = False
+        
+        # Test result attributes
+        self._last_test_timestamp = None
+        self._method_used = None
+        self._supports_bidirectional = False
+        self._last_send_result = None
+        self._last_receive_result = None
+        self._last_received_message = None
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+        
+        # Determine method on initialization
+        self._update_method_info()
+    
+    def _update_method_info(self) -> None:
+        """Update information about which Telegram method is being used."""
+        # Check if telegram_bot integration is loaded
+        if "telegram_bot" in self._hass.config.components:
+            self._method_used = TELEGRAM_METHOD_INTEGRATION
+            self._supports_bidirectional = True
+        else:
+            self._method_used = TELEGRAM_METHOD_DIRECT_API
+            self._supports_bidirectional = False
+    
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on the switch - trigger Telegram API test."""
+        from homeassistant.util import dt as dt_util
+        from telegram import Bot
+        from telegram.error import TelegramError
+        
+        _LOGGER.info("Telegram API test triggered")
+        self._attr_is_on = True
+        self.async_write_ha_state()
+        
+        # Update method info
+        self._update_method_info()
+        self._last_test_timestamp = dt_util.now().isoformat()
+        
+        # Get configuration
+        telegram_token = self._config_entry.data.get(CONF_TELEGRAM_TOKEN)
+        telegram_chat_id = self._config_entry.data.get(CONF_TELEGRAM_CHAT_ID)
+        
+        if not telegram_token or not telegram_chat_id:
+            _LOGGER.error("Telegram not configured")
+            self._last_send_result = "error_not_configured"
+            self._attr_is_on = False
+            self.async_write_ha_state()
+            return
+        
+        # Test sending message
+        try:
+            test_message = (
+                "🧪 <b>Telegram API Test</b>\n\n"
+                f"Method: <code>{self._method_used}</code>\n"
+                f"Timestamp: {self._last_test_timestamp}\n\n"
+                "✅ Send test successful!"
+            )
+            
+            if self._method_used == TELEGRAM_METHOD_INTEGRATION:
+                # Use Home Assistant's telegram_bot service
+                await self._hass.services.async_call(
+                    "telegram_bot",
+                    "send_message",
+                    {
+                        "target": telegram_chat_id,
+                        "message": test_message,
+                        "parse_mode": "HTML",
+                    },
+                    blocking=True,
+                )
+                _LOGGER.info("Test message sent via telegram_bot integration")
+            else:
+                # Use direct Bot API
+                bot = Bot(token=telegram_token)
+                await bot.send_message(
+                    chat_id=telegram_chat_id,
+                    text=test_message,
+                    parse_mode="HTML",
+                )
+                _LOGGER.info("Test message sent via direct Bot API")
+            
+            self._last_send_result = "success"
+            
+            # For bidirectional test, we would need to set up a listener
+            # This is simplified for now - actual implementation would require
+            # listening for telegram_text events if using integration
+            if self._supports_bidirectional:
+                # Note: Actual receive test would require event listener setup
+                # For now, we just indicate it's supported
+                self._last_receive_result = "supported_not_tested"
+                _LOGGER.info("Bidirectional communication is supported via telegram_bot integration")
+            else:
+                self._last_receive_result = "not_supported"
+                _LOGGER.info("Bidirectional communication not supported with direct API")
+            
+        except TelegramError as err:
+            _LOGGER.error("Telegram API test failed: %s", err)
+            self._last_send_result = f"error: {err}"
+            self._last_receive_result = "not_tested"
+        except Exception as err:
+            _LOGGER.error("Unexpected error during Telegram test: %s", err)
+            self._last_send_result = f"error: {err}"
+            self._last_receive_result = "not_tested"
+        
+        # Auto turn off after test
+        self._attr_is_on = False
+        self.async_write_ha_state()
+    
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off the switch - does nothing as it auto-turns off."""
+        self._attr_is_on = False
+        self.async_write_ha_state()
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes about the test results."""
+        attrs = {
+            "method_used": self._method_used or "not_determined",
+            "supports_bidirectional": self._supports_bidirectional,
+        }
+        
+        if self._last_test_timestamp:
+            attrs["last_test_timestamp"] = self._last_test_timestamp
+        
+        if self._last_send_result:
+            attrs["last_send_result"] = self._last_send_result
+        
+        if self._last_receive_result:
+            attrs["last_receive_result"] = self._last_receive_result
+        
+        if self._last_received_message:
+            attrs["last_received_message"] = self._last_received_message
+        
+        return attrs
+

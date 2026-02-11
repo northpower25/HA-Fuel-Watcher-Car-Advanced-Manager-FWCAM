@@ -14,6 +14,8 @@ CONF_TANK_CAPACITY: Final = "tank_capacity"
 CONF_VEHICLE_NAME: Final = "vehicle_name"
 CONF_TELEGRAM_TOKEN: Final = "telegram_token"
 CONF_TELEGRAM_CHAT_ID: Final = "telegram_chat_id"
+CONF_TELEGRAM_METHOD: Final = "telegram_method"  # "integration" or "direct_api"
+CONF_TELEGRAM_BOT_NAME: Final = "telegram_bot_name"  # Name of telegram_bot platform if using integration
 CONF_PROVIDER: Final = "provider"
 CONF_UPDATE_INTERVAL: Final = "update_interval"
 
@@ -78,6 +80,15 @@ FUEL_TYPES: Final = [
     FUEL_TYPE_E5,
     FUEL_TYPE_E10,
     FUEL_TYPE_DIESEL,
+]
+
+# Telegram method types
+TELEGRAM_METHOD_INTEGRATION: Final = "integration"  # Use Home Assistant's telegram_bot integration
+TELEGRAM_METHOD_DIRECT_API: Final = "direct_api"  # Use direct Telegram Bot API
+
+TELEGRAM_METHODS: Final = [
+    TELEGRAM_METHOD_INTEGRATION,
+    TELEGRAM_METHOD_DIRECT_API,
 ]
 
 # Provider types
