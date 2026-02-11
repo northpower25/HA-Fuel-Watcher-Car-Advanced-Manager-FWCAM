@@ -1346,6 +1346,7 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = "Days Until Refuel"
         self._attr_unique_id = f"{config_entry.entry_id}_days_until_refuel"
         self._last_prediction_update = None
+        self._last_known_value = None
         
         # Device info for grouping
         self._attr_device_info = {
@@ -1360,8 +1361,12 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
         """Return the days until refueling is needed."""
         prediction = self.coordinator.data.get("consumption_prediction")
         if prediction:
-            return prediction.get("days_until_refuel")
-        return None
+            days = prediction.get("days_until_refuel")
+            if days is not None:
+                self._last_known_value = days
+                return days
+        # Fallback to last known value if current value is None
+        return self._last_known_value
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -1466,7 +1471,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             if period_data:
                 consumption = period_data.get("avg_consumption_l_per_100km")
                 if consumption is not None:
-                    return consumption
+                    return round(consumption, 2)
         
         return None
     
