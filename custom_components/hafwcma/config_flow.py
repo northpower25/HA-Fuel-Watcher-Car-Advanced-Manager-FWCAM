@@ -63,8 +63,80 @@ _LOGGER = logging.getLogger(__name__)
 
 # Timeout for API validation tests (in seconds)
 API_TEST_TIMEOUT = 10
-# Note: TELEGRAM_RESPONSE_TIMEOUT reserved for future Phase 3 enhancement
-# when implementing polling/webhook-based response handling
+# Timeout for waiting for Telegram response (in seconds) - Phase 3
+TELEGRAM_RESPONSE_TIMEOUT = 120  # 2 minutes
+# Poll interval for checking Telegram updates (in seconds)
+TELEGRAM_POLL_INTERVAL = 2
+
+
+async def async_poll_telegram_response(
+    bot_token: str,
+    chat_id: str,
+    timeout: int = TELEGRAM_RESPONSE_TIMEOUT,
+) -> str | None:
+    """Poll for Telegram response from user.
+    
+    Uses Telegram's getUpdates API to poll for new messages from the specified chat.
+    
+    Args:
+        bot_token: Telegram bot token
+        chat_id: Chat ID to monitor for responses
+        timeout: Maximum time to wait for response in seconds
+        
+    Returns:
+        Response text from user or None if timeout
+        
+    Raises:
+        Exception: If polling fails
+    """
+    try:
+        bot = Bot(token=bot_token)
+        
+        # Get the current update offset to only receive new messages
+        # Start from the latest update to avoid processing old messages
+        updates = await bot.get_updates(limit=100, timeout=1)
+        if updates:
+            # Mark all existing updates as processed by setting offset to last update + 1
+            offset = updates[-1].update_id + 1
+        else:
+            # No existing updates - use offset 0 which will start from the first new update
+            offset = 0
+        
+        _LOGGER.info("Starting Telegram response polling (timeout: %d seconds)", timeout)
+        
+        start_time = asyncio.get_event_loop().time()
+        while (asyncio.get_event_loop().time() - start_time) < timeout:
+            # Poll for updates
+            updates = await bot.get_updates(
+                offset=offset,
+                timeout=TELEGRAM_POLL_INTERVAL,
+                allowed_updates=["message"],
+            )
+            
+            # Check if we received any messages
+            for update in updates:
+                if update.message and str(update.message.chat_id) == str(chat_id):
+                    # Found a response from the correct chat
+                    response_text = update.message.text or "[No text content]"
+                    _LOGGER.info("Received Telegram response: %s", response_text[:50])
+                    return response_text
+                
+                # Update offset to acknowledge this update
+                offset = update.update_id + 1
+            
+            # Brief sleep before next poll
+            await asyncio.sleep(0.5)
+        
+        _LOGGER.warning("Telegram response polling timed out after %d seconds", timeout)
+        return None
+        
+    except TelegramError as err:
+        _LOGGER.error("Telegram polling error: %s", err)
+        raise Exception(f"Telegram Error: {err}") from err
+    except Exception as err:
+        _LOGGER.error("Unexpected error during Telegram polling: %s", err)
+        raise
+
 
 
 async def async_test_fuel_api(
@@ -566,11 +638,13 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_validate_telegram(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Validate Telegram API configuration.
+        """Validate Telegram API configuration with response handling (Phase 3).
         
-        This step sends a test message and allows the user to verify
-        the Telegram integration works. For MVP, we just verify the
-        message can be sent successfully.
+        This step:
+        1. Sends a test message to the user
+        2. Waits for the user to respond
+        3. Displays the received response
+        4. Allows continuation to next step
         
         Args:
             user_input: User action (continue, skip, or back)
@@ -581,9 +655,9 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         
         # If no user input, this is the first time showing this step
-        # We need to send the test message
+        # We need to send the test message and wait for response
         if user_input is None:
-            _LOGGER.debug("Testing Telegram connection...")
+            _LOGGER.debug("Testing Telegram connection and waiting for response...")
             
             try:
                 # Send test message
@@ -592,15 +666,38 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     chat_id=self.data[CONF_TELEGRAM_CHAT_ID],
                 )
                 
-                # Show success message
-                return self.async_show_form(
-                    step_id="validate_telegram",
-                    data_schema=vol.Schema({}),
-                    description_placeholders={
-                        "message": "Test message sent successfully! Please check your Telegram to verify you received it.",
-                        "error_details": "",  # Empty for success case
-                    },
+                # Poll for user response (Phase 3 enhancement)
+                response_text = await async_poll_telegram_response(
+                    bot_token=self.data[CONF_TELEGRAM_TOKEN],
+                    chat_id=self.data[CONF_TELEGRAM_CHAT_ID],
+                    timeout=TELEGRAM_RESPONSE_TIMEOUT,
                 )
+                
+                if response_text:
+                    # User responded - sanitize and show success with their response
+                    # Limit length and remove potentially problematic characters
+                    sanitized_response = response_text[:200].replace('\n', ' ').replace('\r', '')
+                    return self.async_show_form(
+                        step_id="validate_telegram",
+                        data_schema=vol.Schema({}),
+                        description_placeholders={
+                            "message": f"✅ Thanks for your response!\n\nYou replied: \"{sanitized_response}\"\n\nNow I can also receive information from you! 😊",
+                            "error_details": "",
+                            "waiting": "",
+                        },
+                    )
+                else:
+                    # Timeout - no response received
+                    _LOGGER.warning("Telegram response timeout - no reply received")
+                    return self.async_show_form(
+                        step_id="validate_telegram",
+                        data_schema=vol.Schema({}),
+                        description_placeholders={
+                            "message": f"⏱️ Test message sent, but no response received within {TELEGRAM_RESPONSE_TIMEOUT} seconds.\n\nYou can continue anyway - the message sending works!",
+                            "error_details": "",
+                            "waiting": "",
+                        },
+                    )
                 
             except Exception as err:
                 # Show error message
@@ -613,8 +710,9 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data_schema=vol.Schema({}),
                     errors=errors,
                     description_placeholders={
-                        "message": "",  # Empty for error case
+                        "message": "",
                         "error_details": error_msg,
+                        "waiting": "",
                     },
                 )
         

@@ -53,10 +53,11 @@
 - [x] Translations for all new UI strings (DE/EN)
 
 #### Future Enhancements (Phase 3 - Optional)
-- [ ] Implement response waiting mechanism for Telegram
-  - [ ] Polling-based or webhook-based response handling
-  - [ ] Display waiting screen with instructions
-  - [ ] Process received response and display confirmation
+- [x] Implement response waiting mechanism for Telegram
+  - [x] Polling-based response handling (implemented 2026-02-11)
+  - [x] Display waiting screen with instructions
+  - [x] Process received response and display confirmation
+  - [x] Timeout handling (120 seconds)
 - [ ] Advanced retry mechanisms
 - [ ] Skip options for advanced users
 - [ ] Enhanced loading indicators
