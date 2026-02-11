@@ -63,79 +63,6 @@ _LOGGER = logging.getLogger(__name__)
 
 # Timeout for API validation tests (in seconds)
 API_TEST_TIMEOUT = 10
-# Timeout for waiting for Telegram response (in seconds) - Phase 3
-TELEGRAM_RESPONSE_TIMEOUT = 120  # 2 minutes
-# Poll interval for checking Telegram updates (in seconds)
-TELEGRAM_POLL_INTERVAL = 2
-
-
-async def async_poll_telegram_response(
-    bot_token: str,
-    chat_id: str,
-    timeout: int = TELEGRAM_RESPONSE_TIMEOUT,
-) -> str | None:
-    """Poll for Telegram response from user.
-    
-    Uses Telegram's getUpdates API to poll for new messages from the specified chat.
-    
-    Args:
-        bot_token: Telegram bot token
-        chat_id: Chat ID to monitor for responses
-        timeout: Maximum time to wait for response in seconds
-        
-    Returns:
-        Response text from user or None if timeout
-        
-    Raises:
-        Exception: If polling fails
-    """
-    try:
-        bot = Bot(token=bot_token)
-        
-        # Get the current update offset to only receive new messages
-        # Start from the latest update to avoid processing old messages
-        updates = await bot.get_updates(limit=100, timeout=1)
-        if updates:
-            # Mark all existing updates as processed by setting offset to last update + 1
-            offset = updates[-1].update_id + 1
-        else:
-            # No existing updates - use offset 0 which will start from the first new update
-            offset = 0
-        
-        _LOGGER.info("Starting Telegram response polling (timeout: %d seconds)", timeout)
-        
-        start_time = asyncio.get_event_loop().time()
-        while (asyncio.get_event_loop().time() - start_time) < timeout:
-            # Poll for updates
-            updates = await bot.get_updates(
-                offset=offset,
-                timeout=TELEGRAM_POLL_INTERVAL,
-                allowed_updates=["message"],
-            )
-            
-            # Check if we received any messages
-            for update in updates:
-                if update.message and str(update.message.chat_id) == str(chat_id):
-                    # Found a response from the correct chat
-                    response_text = update.message.text or "[No text content]"
-                    _LOGGER.info("Received Telegram response: %s", response_text[:50])
-                    return response_text
-                
-                # Update offset to acknowledge this update
-                offset = update.update_id + 1
-            
-            # Brief sleep before next poll
-            await asyncio.sleep(0.5)
-        
-        _LOGGER.warning("Telegram response polling timed out after %d seconds", timeout)
-        return None
-        
-    except TelegramError as err:
-        _LOGGER.error("Telegram polling error: %s", err)
-        raise Exception(f"Telegram Error: {err}") from err
-    except Exception as err:
-        _LOGGER.error("Unexpected error during Telegram polling: %s", err)
-        raise
 
 
 
@@ -228,6 +155,10 @@ async def async_send_telegram_test_message(
 ) -> bool:
     """Send a test message via Telegram.
     
+    This is a simple send-only test to verify the bot token and chat ID are valid.
+    For bidirectional communication, users should configure Home Assistant's 
+    telegram_bot integration separately.
+    
     Args:
         bot_token: Telegram bot token
         chat_id: Chat ID to send message to
@@ -243,9 +174,13 @@ async def async_send_telegram_test_message(
         
         message_text = (
             "🚗 <b>FWCMA Test Message</b>\n\n"
-            "Your car says: 'I'm ready for intelligent refueling decision notifications! "
-            "Please reply to this message so I can verify you can reach me.'\n\n"
-            "👉 Just send any reply to continue setup."
+            "✅ Success! Your Telegram configuration is working.\n\n"
+            "haFWCMA can now send you notifications about:\n"
+            "• Fuel price alerts\n"
+            "• Refueling recommendations\n"
+            "• Low tank warnings\n\n"
+            "<i>Note: For bidirectional features (e.g., logging refueling via Telegram), "
+            "please configure Home Assistant's telegram_bot integration.</i>"
         )
         
         await bot.send_message(
@@ -655,49 +590,30 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         
         # If no user input, this is the first time showing this step
-        # We need to send the test message and wait for response
+        # Send the test message to verify configuration
         if user_input is None:
-            _LOGGER.debug("Testing Telegram connection and waiting for response...")
+            _LOGGER.debug("Testing Telegram connection...")
             
             try:
-                # Send test message
+                # Send test message (no polling to avoid conflicts)
                 await async_send_telegram_test_message(
                     bot_token=self.data[CONF_TELEGRAM_TOKEN],
                     chat_id=self.data[CONF_TELEGRAM_CHAT_ID],
                 )
                 
-                # Poll for user response (Phase 3 enhancement)
-                response_text = await async_poll_telegram_response(
-                    bot_token=self.data[CONF_TELEGRAM_TOKEN],
-                    chat_id=self.data[CONF_TELEGRAM_CHAT_ID],
-                    timeout=TELEGRAM_RESPONSE_TIMEOUT,
+                # Success - show confirmation
+                return self.async_show_form(
+                    step_id="validate_telegram",
+                    data_schema=vol.Schema({}),
+                    description_placeholders={
+                        "message": "✅ Test message sent successfully!\n\nYour Telegram configuration is working.\n\n"
+                                 "ℹ️ <b>For bidirectional communication:</b>\n"
+                                 "To enable advanced features like logging refueling via Telegram commands, "
+                                 "please also configure Home Assistant's <i>telegram_bot</i> integration with the same bot token.",
+                        "error_details": "",
+                        "waiting": "",
+                    },
                 )
-                
-                if response_text:
-                    # User responded - sanitize and show success with their response
-                    # Limit length and remove potentially problematic characters
-                    sanitized_response = response_text[:200].replace('\n', ' ').replace('\r', '')
-                    return self.async_show_form(
-                        step_id="validate_telegram",
-                        data_schema=vol.Schema({}),
-                        description_placeholders={
-                            "message": f"✅ Thanks for your response!\n\nYou replied: \"{sanitized_response}\"\n\nNow I can also receive information from you! 😊",
-                            "error_details": "",
-                            "waiting": "",
-                        },
-                    )
-                else:
-                    # Timeout - no response received
-                    _LOGGER.warning("Telegram response timeout - no reply received")
-                    return self.async_show_form(
-                        step_id="validate_telegram",
-                        data_schema=vol.Schema({}),
-                        description_placeholders={
-                            "message": f"⏱️ Test message sent, but no response received within {TELEGRAM_RESPONSE_TIMEOUT} seconds.\n\nYou can continue anyway - the message sending works!",
-                            "error_details": "",
-                            "waiting": "",
-                        },
-                    )
                 
             except Exception as err:
                 # Show error message

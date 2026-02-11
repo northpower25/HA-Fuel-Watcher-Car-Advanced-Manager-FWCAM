@@ -77,11 +77,16 @@ entity: sensor.my_car_refueling_log
 - Automatic fallback to configuration values when insufficient historical data
 - **Stable fuel price display** - sensors retain last successful values with timestamps
 
-### 📱 Telegram Notifications
+### 📱 Telegram Notifications & Bidirectional Communication
 - Price alerts for favorite stations
 - Low fuel level warnings
 - Refueling recommendations
 - Customizable notification triggers
+- **NEW: Bidirectional communication support** via Home Assistant's telegram_bot integration
+- **NEW: Telegram commands** for status queries and future refueling logging
+- **Conflict-free implementation** - no more "getUpdates" errors
+
+📖 **[Complete Telegram Setup Guide](docs/TELEGRAM_SETUP.md)** | **[German Guide](docs/TELEGRAM_SETUP_DE.md)**
 
 ### 🎯 Home Assistant Integration
 - Config Flow UI for easy setup

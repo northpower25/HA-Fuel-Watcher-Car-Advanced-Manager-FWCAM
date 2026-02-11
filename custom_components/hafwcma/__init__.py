@@ -267,9 +267,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "options": entry.options,
     }
     
-    # TODO: Initialize providers (Tankerkönig, etc.)
-    # TODO: Initialize messaging (Telegram)
-    # TODO: Initialize forecast engine
+    # Initialize Telegram event handler for bidirectional communication
+    from .const import CONF_TELEGRAM_CHAT_ID, CONF_TELEGRAM_TOKEN
+    from .telegram_handler import TelegramEventHandler
+    
+    telegram_chat_id = entry.data.get(CONF_TELEGRAM_CHAT_ID)
+    telegram_token = entry.data.get(CONF_TELEGRAM_TOKEN)
+    
+    if telegram_chat_id and telegram_token:
+        telegram_handler = TelegramEventHandler(hass, entry, telegram_chat_id)
+        await telegram_handler.async_setup()
+        hass.data[DOMAIN][entry.entry_id]["telegram_handler"] = telegram_handler
+        _LOGGER.info("Telegram event handler initialized for bidirectional communication")
+    else:
+        _LOGGER.debug("Telegram not configured, skipping event handler setup")
     
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     
@@ -338,6 +349,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         True if unload was successful
     """
     _LOGGER.info("Unloading haFWCMA config entry: %s", entry.entry_id)
+    
+    # Cleanup Telegram event handler
+    telegram_handler = hass.data[DOMAIN][entry.entry_id].get("telegram_handler")
+    if telegram_handler:
+        await telegram_handler.async_unload()
     
     # Cleanup coordinator
     coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")

@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from telegram import Bot
 from telegram.error import TelegramError
 
 from . import MessageService, MessagingError
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,25 +19,49 @@ class TelegramNotifier(MessageService):
     """Telegram notification service implementation.
     
     Sends notifications about fuel prices, tank status, and recommendations
-    via Telegram bot.
+    via Telegram. Uses Home Assistant's telegram_bot service if available,
+    otherwise falls back to direct bot usage.
     
     Attributes:
-        bot: Telegram Bot instance
+        hass: Home Assistant instance (optional, for using HA's telegram_bot service)
+        bot: Telegram Bot instance (fallback for direct usage)
         chat_id: Default chat ID for messages
     """
 
-    def __init__(self, bot_token: str, chat_id: str) -> None:
+    def __init__(
+        self,
+        bot_token: str,
+        chat_id: str,
+        hass: HomeAssistant | None = None,
+    ) -> None:
         """Initialize Telegram notifier.
         
         Args:
             bot_token: Telegram bot token
             chat_id: Chat ID to send messages to
+            hass: Home Assistant instance (optional, for using HA's service)
         """
+        self.hass = hass
         self.bot = Bot(token=bot_token)
         self.chat_id = chat_id
+        self._use_ha_service = (
+            hass is not None and "telegram_bot" in hass.config.components
+        )
+        
+        if self._use_ha_service:
+            _LOGGER.info(
+                "TelegramNotifier using Home Assistant's telegram_bot service"
+            )
+        else:
+            _LOGGER.info(
+                "TelegramNotifier using direct bot API (telegram_bot integration not found)"
+            )
 
     async def send_message(self, message: str, **kwargs) -> bool:
         """Send a text message via Telegram.
+        
+        Uses Home Assistant's telegram_bot service if available,
+        otherwise uses direct bot API.
         
         Args:
             message: Message text to send
@@ -49,20 +76,38 @@ class TelegramNotifier(MessageService):
             MessagingError: If sending fails
         """
         chat_id = kwargs.get("chat_id", self.chat_id)
-        parse_mode = kwargs.get("parse_mode", None)
+        parse_mode = kwargs.get("parse_mode", "HTML")
 
         try:
-            await self.bot.send_message(
-                chat_id=chat_id,
-                text=message,
-                parse_mode=parse_mode,
-            )
+            if self._use_ha_service and self.hass:
+                # Use Home Assistant's telegram_bot service
+                await self.hass.services.async_call(
+                    "telegram_bot",
+                    "send_message",
+                    {
+                        "target": chat_id,
+                        "message": message,
+                        "parse_mode": parse_mode,
+                    },
+                    blocking=True,
+                )
+            else:
+                # Fallback to direct bot API
+                await self.bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    parse_mode=parse_mode,
+                )
+            
             _LOGGER.debug("Telegram message sent successfully")
             return True
 
         except TelegramError as err:
             _LOGGER.error("Failed to send Telegram message: %s", err)
             raise MessagingError(f"Telegram error: {err}") from err
+        except Exception as err:
+            _LOGGER.error("Failed to send Telegram message: %s", err)
+            raise MessagingError(f"Error: {err}") from err
 
     async def send_price_alert(
         self,
