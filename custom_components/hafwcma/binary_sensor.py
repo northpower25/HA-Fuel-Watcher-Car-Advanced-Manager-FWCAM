@@ -82,7 +82,7 @@ class ProximityAlertSensor(CoordinatorEntity, BinarySensorEntity):
         
         # Generate unique ID
         self._attr_unique_id = f"{config_entry.entry_id}_near_cheap_station"
-        self._attr_name = f"{vehicle_name} Near Cheap Station"
+        self._attr_name = "Near Cheap Station"
         
         # Device info for grouping
         self._attr_device_info = {
