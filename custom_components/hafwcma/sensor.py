@@ -1037,6 +1037,7 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
 
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = f"{CURRENCY_EURO}/L"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -1052,9 +1053,17 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
-        self._attr_name = f"{vehicle_name} Fuel Price"
+        self._attr_name = "Fuel Price"
         self._attr_unique_id = f"{config_entry.entry_id}_fuel_price"
         self._config_entry = config_entry
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> float | None:
@@ -1096,6 +1105,7 @@ class TankLevelSensor(CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "%"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -1111,9 +1121,17 @@ class TankLevelSensor(CoordinatorEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
-        self._attr_name = f"{vehicle_name} Tank Level"
+        self._attr_name = "Tank Level"
         self._attr_unique_id = f"{config_entry.entry_id}_tank_level"
         self._config_entry = config_entry
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> float | None:
@@ -1145,6 +1163,7 @@ class RangeSensor(CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:map-marker-distance"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -1160,8 +1179,16 @@ class RangeSensor(CoordinatorEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
-        self._attr_name = f"{vehicle_name} Range"
+        self._attr_name = "Range"
         self._attr_unique_id = f"{config_entry.entry_id}_range"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> float | None:
@@ -1183,6 +1210,7 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing cheapest fuel station within radius."""
 
     _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -1198,8 +1226,16 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
-        self._attr_name = f"{vehicle_name} Cheapest Station"
+        self._attr_name = "Cheapest Station"
         self._attr_unique_id = f"{config_entry.entry_id}_nearest_station"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> str | None:
@@ -1237,6 +1273,7 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing API debug information."""
 
     _attr_icon = "mdi:api"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -1252,8 +1289,16 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
-        self._attr_name = f"{vehicle_name} API Debug"
+        self._attr_name = "API Debug"
         self._attr_unique_id = f"{config_entry.entry_id}_api_debug"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> str | None:
@@ -1281,6 +1326,7 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
     _attr_icon = "mdi:fuel"
     _attr_native_unit_of_measurement = "days"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -1297,9 +1343,17 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
         """
         super().__init__(coordinator)
         self._config_entry = config_entry
-        self._attr_name = f"{vehicle_name} Days Until Refuel"
+        self._attr_name = "Days Until Refuel"
         self._attr_unique_id = f"{config_entry.entry_id}_days_until_refuel"
         self._last_prediction_update = None
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> float | None:
@@ -1363,6 +1417,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "L/100km"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = None
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -1379,8 +1434,16 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         """
         super().__init__(coordinator)
         self._config_entry = config_entry
-        self._attr_name = f"{vehicle_name} Average Consumption History"
+        self._attr_name = "Average Consumption History"
         self._attr_unique_id = f"{config_entry.entry_id}_consumption_history"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> float | None:
@@ -1464,6 +1527,7 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "L/100km"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = None
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -1480,8 +1544,16 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
         """
         super().__init__(coordinator)
         self._config_entry = config_entry
-        self._attr_name = f"{vehicle_name} Average Consumption Forecast"
+        self._attr_name = "Average Consumption Forecast"
         self._attr_unique_id = f"{config_entry.entry_id}_consumption_forecast"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> float | None:
@@ -1548,6 +1620,7 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
     _attr_icon = "mdi:gas-station"
     _attr_state_class = None
     _attr_device_class = None
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -1564,8 +1637,16 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
         """
         super().__init__(coordinator)
         self._config_entry = config_entry
-        self._attr_name = f"{vehicle_name} Refueling Log"
+        self._attr_name = "Refueling Log"
         self._attr_unique_id = f"{config_entry.entry_id}_refueling_log"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> int:
@@ -1644,6 +1725,7 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
     _attr_icon = "mdi:map-marker-multiple"
     _attr_state_class = None
     _attr_device_class = None
+    _attr_has_entity_name = True
     
     def __init__(
         self,
@@ -1664,7 +1746,7 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
         
         # Generate unique ID
         self._attr_unique_id = f"{config_entry.entry_id}_nearby_cheap_stations"
-        self._attr_name = f"{vehicle_name} Nearby Cheap Stations"
+        self._attr_name = "Nearby Cheap Stations"
         
         # Device info for grouping
         self._attr_device_info = {

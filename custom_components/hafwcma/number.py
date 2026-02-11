@@ -88,6 +88,7 @@ class SearchRadiusNumber(NumberEntity):
     _attr_native_max_value = 25.0
     _attr_native_step = 0.5
     _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -107,8 +108,16 @@ class SearchRadiusNumber(NumberEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Station Search Radius"
+        self._attr_name = "Station Search Radius"
         self._attr_unique_id = f"{config_entry.entry_id}_station_search_radius"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> float:
@@ -142,6 +151,7 @@ class UpdateIntervalNumber(NumberEntity):
     _attr_native_max_value = float(MAX_UPDATE_INTERVAL)
     _attr_native_step = 1.0
     _attr_native_unit_of_measurement = "min"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -161,8 +171,16 @@ class UpdateIntervalNumber(NumberEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} API Update Interval"
+        self._attr_name = "API Update Interval"
         self._attr_unique_id = f"{config_entry.entry_id}_update_interval"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> float:
@@ -198,6 +216,7 @@ class ConsumptionMinDataPointsNumber(NumberEntity):
     _attr_native_min_value = float(MIN_CONSUMPTION_MIN_DATA_POINTS)
     _attr_native_max_value = float(MAX_CONSUMPTION_MIN_DATA_POINTS)
     _attr_native_step = 1.0
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -217,8 +236,16 @@ class ConsumptionMinDataPointsNumber(NumberEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Consumption Min Data Points"
+        self._attr_name = "Consumption Min Data Points"
         self._attr_unique_id = f"{config_entry.entry_id}_consumption_min_data_points"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> float:
@@ -255,6 +282,7 @@ class ConsumptionPredictionIntervalNumber(NumberEntity):
     _attr_native_max_value = MAX_CONSUMPTION_PREDICTION_INTERVAL
     _attr_native_step = 0.5
     _attr_native_unit_of_measurement = "h"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -274,8 +302,16 @@ class ConsumptionPredictionIntervalNumber(NumberEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Consumption Prediction Interval"
+        self._attr_name = "Consumption Prediction Interval"
         self._attr_unique_id = f"{config_entry.entry_id}_consumption_prediction_interval"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     @property
     def native_value(self) -> float:
@@ -313,6 +349,7 @@ class ProximityAlertDistanceNumber(NumberEntity):
     _attr_native_max_value = MAX_PROXIMITY_ALERT_DISTANCE
     _attr_native_step = 0.1
     _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_has_entity_name = True
     
     def __init__(
         self,
@@ -325,8 +362,16 @@ class ProximityAlertDistanceNumber(NumberEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Proximity Alert Distance"
+        self._attr_name = "Proximity Alert Distance"
         self._attr_unique_id = f"{config_entry.entry_id}_proximity_alert_distance"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
     
     @property
     def native_value(self) -> float:
@@ -350,6 +395,7 @@ class CheapStationsCountNumber(NumberEntity):
     _attr_native_min_value = float(MIN_CHEAP_STATIONS_COUNT)
     _attr_native_max_value = float(MAX_CHEAP_STATIONS_COUNT)
     _attr_native_step = 1.0
+    _attr_has_entity_name = True
     
     def __init__(
         self,
@@ -362,8 +408,16 @@ class CheapStationsCountNumber(NumberEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Cheap Stations Count"
+        self._attr_name = "Cheap Stations Count"
         self._attr_unique_id = f"{config_entry.entry_id}_cheap_stations_count"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
     
     @property
     def native_value(self) -> float:
@@ -388,6 +442,7 @@ class CheapStationsRadiusNumber(NumberEntity):
     _attr_native_max_value = MAX_CHEAP_STATIONS_RADIUS
     _attr_native_step = 0.5
     _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_has_entity_name = True
     
     def __init__(
         self,
@@ -400,8 +455,16 @@ class CheapStationsRadiusNumber(NumberEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Cheap Stations Radius"
+        self._attr_name = "Cheap Stations Radius"
         self._attr_unique_id = f"{config_entry.entry_id}_cheap_stations_radius"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
     
     @property
     def native_value(self) -> float:
@@ -426,6 +489,7 @@ class MinTankLevelForAlertsNumber(NumberEntity):
     _attr_native_max_value = 100.0
     _attr_native_step = 5.0
     _attr_native_unit_of_measurement = "%"
+    _attr_has_entity_name = True
     
     def __init__(
         self,
@@ -438,8 +502,16 @@ class MinTankLevelForAlertsNumber(NumberEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Min Tank Level For Alerts"
+        self._attr_name = "Min Tank Level For Alerts"
         self._attr_unique_id = f"{config_entry.entry_id}_min_tank_level_for_alerts"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
     
     @property
     def native_value(self) -> float:

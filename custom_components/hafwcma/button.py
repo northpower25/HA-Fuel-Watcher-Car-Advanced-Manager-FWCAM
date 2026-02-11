@@ -62,6 +62,7 @@ class TestProviderConnectionButton(ButtonEntity):
     """Button to test provider API connection and display results."""
 
     _attr_icon = "mdi:api"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -81,9 +82,17 @@ class TestProviderConnectionButton(ButtonEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Test API Connection"
+        self._attr_name = "Test API Connection"
         self._attr_unique_id = f"{config_entry.entry_id}_test_connection"
         self._last_result: dict[str, Any] = {}
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     async def async_press(self) -> None:
         """Handle button press - test API connection."""
@@ -245,6 +254,7 @@ class ImportHistoricalDataButton(ButtonEntity):
     """Button to import historical vehicle data from recorder."""
 
     _attr_icon = "mdi:database-import"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -264,9 +274,17 @@ class ImportHistoricalDataButton(ButtonEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Import Historical Data"
+        self._attr_name = "Import Historical Data"
         self._attr_unique_id = f"{config_entry.entry_id}_import_historical_data"
         self._last_result: dict[str, Any] = {}
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     async def async_press(self) -> None:
         """Handle button press - import historical data."""
@@ -317,6 +335,7 @@ class RefreshVehicleDataButton(ButtonEntity):
     """Button to manually refresh vehicle data from source entities."""
 
     _attr_icon = "mdi:car-sync"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -336,9 +355,17 @@ class RefreshVehicleDataButton(ButtonEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Refresh Vehicle Data"
+        self._attr_name = "Refresh Vehicle Data"
         self._attr_unique_id = f"{config_entry.entry_id}_refresh_vehicle_data"
         self._last_refresh_time: str | None = None
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     async def async_press(self) -> None:
         """Handle button press - refresh vehicle data."""
