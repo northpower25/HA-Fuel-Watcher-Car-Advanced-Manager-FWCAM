@@ -43,6 +43,7 @@ class VehicleDataTracker:
         self._tank_capacity = tank_capacity
         self._pending_refuel_liters = 0.0  # Track accumulated refuel for merging
         self._pending_refuel_start = None  # Start time of current refuel session
+        self._refuel_session_start_snapshot: VehicleSnapshot | None = None  # Snapshot at start of refuel session
         
     def update(self, vehicle_data: dict[str, Any]) -> dict[str, Any]:
         """Update with new vehicle data and detect changes.
@@ -103,28 +104,31 @@ class VehicleDataTracker:
                 else:
                     # This is a new refueling session or merge window expired
                     # Report any pending refuel first
-                    if self._pending_refuel_liters > 0:
+                    if self._pending_refuel_liters > 0 and self._refuel_session_start_snapshot is not None:
                         result["refueling_detected"] = True
                         result["fuel_added"] = self._pending_refuel_liters
-                        result["refuel_timestamp"] = self._last_refuel_timestamp.isoformat() if self._last_refuel_timestamp else None
-                        result["refuel_odometer_km"] = self._previous_snapshot.odometer_km
-                        result["refuel_latitude"] = self._previous_snapshot.latitude
-                        result["refuel_longitude"] = self._previous_snapshot.longitude
+                        result["refuel_timestamp"] = self._pending_refuel_start.isoformat()
+                        result["refuel_odometer_km"] = self._refuel_session_start_snapshot.odometer_km
+                        result["refuel_latitude"] = self._refuel_session_start_snapshot.latitude
+                        result["refuel_longitude"] = self._refuel_session_start_snapshot.longitude
                         
                         _LOGGER.info(
-                            "Refueling session complete: %.2f liters added at odometer %.1f km",
+                            "Refueling session complete: %.2f liters added at %s (odometer: %.1f km)",
                             self._pending_refuel_liters,
-                            self._previous_snapshot.odometer_km or 0,
+                            self._pending_refuel_start.isoformat(),
+                            self._refuel_session_start_snapshot.odometer_km or 0,
                         )
                     
                     # Start new refueling session
                     self._pending_refuel_liters = tank_diff
                     self._pending_refuel_start = self._current_snapshot.timestamp
+                    self._refuel_session_start_snapshot = self._current_snapshot
                     self._last_refuel_timestamp = self._current_snapshot.timestamp
                     
                     _LOGGER.debug(
-                        "New refueling session started: +%.2f liters",
+                        "New refueling session started: +%.2f liters at %s",
                         tank_diff,
+                        self._current_snapshot.timestamp.isoformat(),
                     )
             elif self._pending_refuel_liters > 0:
                 # No more increases detected, finalize pending refuel if merge window expired
@@ -132,23 +136,26 @@ class VehicleDataTracker:
                     self._pending_refuel_start is not None
                     and (self._current_snapshot.timestamp - self._pending_refuel_start).total_seconds()
                     > self.REFUEL_MERGE_TIME_WINDOW_SECONDS
+                    and self._refuel_session_start_snapshot is not None
                 ):
                     result["refueling_detected"] = True
                     result["fuel_added"] = self._pending_refuel_liters
-                    result["refuel_timestamp"] = self._last_refuel_timestamp.isoformat() if self._last_refuel_timestamp else None
-                    result["refuel_odometer_km"] = self._current_snapshot.odometer_km
-                    result["refuel_latitude"] = self._current_snapshot.latitude
-                    result["refuel_longitude"] = self._current_snapshot.longitude
+                    result["refuel_timestamp"] = self._pending_refuel_start.isoformat()
+                    result["refuel_odometer_km"] = self._refuel_session_start_snapshot.odometer_km
+                    result["refuel_latitude"] = self._refuel_session_start_snapshot.latitude
+                    result["refuel_longitude"] = self._refuel_session_start_snapshot.longitude
                     
                     _LOGGER.info(
-                        "Refueling session complete: %.2f liters added at odometer %.1f km",
+                        "Refueling session complete: %.2f liters added at %s (odometer: %.1f km)",
                         self._pending_refuel_liters,
-                        self._current_snapshot.odometer_km or 0,
+                        self._pending_refuel_start.isoformat(),
+                        self._refuel_session_start_snapshot.odometer_km or 0,
                     )
                     
                     # Reset pending refuel
                     self._pending_refuel_liters = 0.0
                     self._pending_refuel_start = None
+                    self._refuel_session_start_snapshot = None
         
         # Calculate fuel consumption (only if no refueling)
         if (
