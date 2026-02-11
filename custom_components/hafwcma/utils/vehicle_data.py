@@ -100,6 +100,15 @@ async def async_get_device_tracker_coordinates(
     latitude = state.attributes.get(ATTR_LATITUDE)
     longitude = state.attributes.get(ATTR_LONGITUDE)
     
+    _LOGGER.debug(
+        "Device tracker %s: state=%s, lat=%s, lon=%s, attributes=%s",
+        entity_id,
+        state.state,
+        latitude,
+        longitude,
+        state.attributes.keys() if state.attributes else None,
+    )
+    
     if latitude is not None and longitude is not None:
         try:
             return (float(latitude), float(longitude))

@@ -631,6 +631,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             vehicle_lat = vehicle_data.get("latitude")
             vehicle_lon = vehicle_data.get("longitude")
             
+            _LOGGER.debug(
+                "Geolocation data - lat: %s, lon: %s, position_entity: %s",
+                vehicle_lat,
+                vehicle_lon,
+                position_entity,
+            )
+            
             if vehicle_lat is not None and vehicle_lon is not None and position_entity:
                 try:
                     # Get geolocation configuration
