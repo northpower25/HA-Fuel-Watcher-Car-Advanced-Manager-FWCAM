@@ -88,6 +88,18 @@
           "fallback_daily_km_saturday": "Estimated daily driving distance for Saturday",
           "fallback_daily_km_sunday": "Estimated daily driving distance for Sunday"
         }
+      },
+      "validate_api": {
+        "title": "API Connection Test",
+        "description": "Testing API connection with your credentials...\n\n{stations}\n\n{error_details}",
+        "data": {},
+        "data_description": {}
+      },
+      "validate_telegram": {
+        "title": "Telegram Connection Test",
+        "description": "Testing Telegram connection...\n\n{message}\n\n{error_details}",
+        "data": {},
+        "data_description": {}
       }
     },
     "error": {
@@ -95,6 +107,9 @@
       "cannot_connect": "Failed to connect to Tankerkönig API",
       "invalid_entity": "Entity does not exist in Home Assistant",
       "not_device_tracker": "Position entity must be a device_tracker",
+      "entity_validation_failed": "Failed to validate entities. Please check your Home Assistant configuration.",
+      "api_test_failed": "API connection test failed. Please check your API key and try again.",
+      "telegram_test_failed": "Telegram connection test failed. Please check your bot token and chat ID.",
       "unknown": "Unexpected error occurred"
     },
     "abort": {
