@@ -275,23 +275,34 @@ async def async_step_telegram_response(
 
 ## Decision
 
-**Deferred** - Feature is postponed for the following reasons:
+**Implemented** - Feature has been successfully implemented:
 
-1. High complexity for marginal benefit
-2. Users can manually test API configuration after setup
-3. Telegram test requires complex state management
-4. Other features have higher priority
-5. Can be added later as separate enhancement
+1. ✅ Phase 1 (MVP): API validation with basic error handling
+2. ✅ Phase 2 (Basic): Telegram validation with simple test message sending
+3. ⏸️ Phase 3 (Optional): Advanced features like webhook-based response handling for Telegram can be added later
 
-## Next Steps (when implementing)
+## Implemented Features
 
-1. Proof of Concept for API validation
-2. Design review with community
-3. Implementation Phase 1
-4. Beta testing with selected users
-5. Feedback integration
-6. Implementation Phase 2
-7. Full release
+### API Validation
+- Test API connection with home coordinates during config flow
+- Display top 5 found stations with name, address, and prices
+- Detailed error messages on API failures
+- "Back" navigation on errors to correct API configuration
+
+### Telegram Validation
+- Send test message when setting up Telegram integration
+- Confirmation of successful sending
+- Error handling with detailed error messages
+- Option to correct on failures
+- Optional: Skip if Telegram is not configured
+
+## Next Steps (Optional Enhancements)
+
+1. ⏸️ Webhook-based response handling for Telegram (Phase 3)
+2. ⏸️ Polling mechanism for Telegram responses
+3. ⏸️ Advanced retry mechanisms
+4. ⏸️ Skip options for advanced users
+5. ⏸️ Enhanced logging and diagnostics
 
 ## References
 
@@ -305,4 +316,4 @@ async def async_step_telegram_response(
 **Created**: 2026-02-11  
 **Last Updated**: 2026-02-11  
 **Author**: Development Team  
-**Status**: Deferred
+**Status**: Implemented (MVP + Basic)

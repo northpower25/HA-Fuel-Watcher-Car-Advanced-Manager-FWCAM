@@ -275,23 +275,34 @@ async def async_step_telegram_response(
 
 ## Entscheidung
 
-**Deferred** - Feature wird zunächst zurückgestellt aus folgenden Gründen:
+**Implemented** - Feature wurde erfolgreich implementiert:
 
-1. Hohe Komplexität für marginalen Nutzen
-2. Benutzer können API-Konfiguration nach Setup manuell testen
-3. Telegram-Test erfordert komplexes State-Management
-4. Andere Features haben höhere Priorität
-5. Kann später als separate Enhancement hinzugefügt werden
+1. ✅ Phase 1 (MVP): API-Validierung mit grundlegender Fehlerbehandlung
+2. ✅ Phase 2 (Basis): Telegram-Validierung mit einfachem Test-Nachricht-Versand
+3. ⏸️ Phase 3 (Optional): Erweiterte Features wie Webhook-basiertes Antwort-Handling für Telegram können später hinzugefügt werden
 
-## Nächste Schritte (bei Implementierung)
+## Implementierte Features
 
-1. Proof of Concept für API-Validierung
-2. Design Review mit Community
-3. Implementierung Phase 1
-4. Beta-Testing mit ausgewählten Benutzern
-5. Feedback-Integration
-6. Implementierung Phase 2
-7. Vollständiger Release
+### API-Validierung
+- Test der API-Verbindung mit Home-Koordinaten während des Config Flows
+- Anzeige der Top 5 gefundenen Tankstellen mit Namen, Adresse und Preisen
+- Detaillierte Fehlermeldungen bei API-Fehlern
+- "Zurück"-Navigation bei Fehlern zur Korrektur der API-Konfiguration
+
+### Telegram-Validierung
+- Senden einer Test-Nachricht beim Einrichten der Telegram-Integration
+- Bestätigung des erfolgreichen Versands
+- Fehlerbehandlung mit detaillierten Fehlermeldungen
+- Möglichkeit zur Korrektur bei Fehlern
+- Optional: Überspringen wenn Telegram nicht konfiguriert wird
+
+## Nächste Schritte (Optional Enhancements)
+
+1. ⏸️ Webhook-basiertes Antwort-Handling für Telegram (Phase 3)
+2. ⏸️ Polling-Mechanismus für Telegram-Antworten
+3. ⏸️ Erweiterte Retry-Mechanismen
+4. ⏸️ Skip-Optionen für erfahrene Benutzer
+5. ⏸️ Erweiterte Logging und Diagnostics
 
 ## Referenzen
 
@@ -305,4 +316,4 @@ async def async_step_telegram_response(
 **Erstellt**: 2026-02-11  
 **Letzte Aktualisierung**: 2026-02-11  
 **Autor**: Development Team  
-**Status**: Deferred
+**Status**: Implemented (MVP + Basic)
