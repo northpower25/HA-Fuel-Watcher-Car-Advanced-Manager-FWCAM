@@ -1,15 +1,19 @@
 """Config flow for haFWCMA integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
+import aiohttp
+from telegram import Bot
+from telegram.error import TelegramError
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_API_KEY, CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.data_entry_flow import AbortFlow, FlowResult
 from homeassistant.helpers import entity_registry as er, selector
 import homeassistant.helpers.config_validation as cv
 
@@ -56,6 +60,171 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Timeout for API validation tests (in seconds)
+API_TEST_TIMEOUT = 10
+# Note: TELEGRAM_RESPONSE_TIMEOUT reserved for future Phase 3 enhancement
+# when implementing polling/webhook-based response handling
+
+
+async def async_test_fuel_api(
+    hass: HomeAssistant,
+    provider: str,
+    api_key: str,
+    latitude: float,
+    longitude: float,
+    radius: float,
+    fuel_type: str,
+) -> list[dict[str, Any]]:
+    """Test fuel price API connection and return station data.
+    
+    Args:
+        hass: Home Assistant instance
+        provider: Provider name (e.g., 'tankerkonig')
+        api_key: API key for the provider
+        latitude: Latitude for search
+        longitude: Longitude for search
+        radius: Search radius in km
+        fuel_type: Type of fuel to search for
+        
+    Returns:
+        List of station dictionaries with name, address, and prices
+        
+    Raises:
+        Exception: If API test fails
+    """
+    from .providers.tankerkonig import TankerkoenigProvider
+    from .providers import ProviderError
+    
+    # Create a temporary session for testing
+    async with aiohttp.ClientSession() as session:
+        # Currently only supports TankerKönig
+        if provider == PROVIDER_TANKERKONIG:
+            provider_instance = TankerkoenigProvider(api_key, session)
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+        
+        try:
+            # Get stations from API with timeout
+            stations = await asyncio.wait_for(
+                provider_instance.get_stations_nearby(
+                    latitude=latitude,
+                    longitude=longitude,
+                    radius=radius,
+                    fuel_type=fuel_type,
+                ),
+                timeout=API_TEST_TIMEOUT,
+            )
+            
+            # Format station data for display (limit to top 5 stations)
+            station_list = []
+            for station in stations[:5]:
+                station_dict = {
+                    "name": station.name,
+                    "brand": station.brand,
+                    "address": f"{station.address}, {station.city}",
+                    "distance": round(station.distance, 2),
+                }
+                
+                # Add prices if available
+                if station.price_e5 is not None:
+                    station_dict["price_e5"] = round(station.price_e5, 3)
+                if station.price_e10 is not None:
+                    station_dict["price_e10"] = round(station.price_e10, 3)
+                if station.price_diesel is not None:
+                    station_dict["price_diesel"] = round(station.price_diesel, 3)
+                    
+                station_list.append(station_dict)
+            
+            _LOGGER.info("API test successful: Found %d stations", len(stations))
+            return station_list
+            
+        except asyncio.TimeoutError as err:
+            _LOGGER.error("API test timed out after %d seconds", API_TEST_TIMEOUT)
+            raise Exception(f"API request timed out after {API_TEST_TIMEOUT} seconds") from err
+        except ProviderError as err:
+            _LOGGER.error("API test failed: %s", err)
+            raise Exception(f"API Error: {err}") from err
+        except Exception as err:
+            _LOGGER.error("Unexpected error during API test: %s", err)
+            raise
+
+
+async def async_send_telegram_test_message(
+    bot_token: str,
+    chat_id: str,
+) -> bool:
+    """Send a test message via Telegram.
+    
+    Args:
+        bot_token: Telegram bot token
+        chat_id: Chat ID to send message to
+        
+    Returns:
+        True if message was sent successfully
+        
+    Raises:
+        Exception: If sending fails
+    """
+    try:
+        bot = Bot(token=bot_token)
+        
+        message_text = (
+            "🚗 <b>FWCMA Test Message</b>\n\n"
+            "Your car says: 'I'm ready for intelligent refueling decision notifications! "
+            "Please reply to this message so I can verify you can reach me.'\n\n"
+            "👉 Just send any reply to continue setup."
+        )
+        
+        await bot.send_message(
+            chat_id=chat_id,
+            text=message_text,
+            parse_mode="HTML",
+        )
+        
+        _LOGGER.info("Telegram test message sent successfully")
+        return True
+        
+    except TelegramError as err:
+        _LOGGER.error("Failed to send Telegram test message: %s", err)
+        raise Exception(f"Telegram Error: {err}") from err
+    except Exception as err:
+        _LOGGER.error("Unexpected error sending Telegram message: %s", err)
+        raise
+
+
+def format_station_list_for_display(stations: list[dict[str, Any]]) -> str:
+    """Format station list for display in config flow.
+    
+    Args:
+        stations: List of station dictionaries
+        
+    Returns:
+        Formatted string for display
+    """
+    if not stations:
+        return "No stations found in the specified radius."
+    
+    lines = [f"✅ Found {len(stations)} station(s):\n"]
+    
+    for i, station in enumerate(stations, 1):
+        lines.append(f"\n{i}. **{station['name']}** ({station['brand']})")
+        lines.append(f"   📍 {station['address']}")
+        lines.append(f"   📏 Distance: {station['distance']} km")
+        
+        # Add prices
+        prices = []
+        if "price_e5" in station:
+            prices.append(f"E5: €{station['price_e5']:.3f}")
+        if "price_e10" in station:
+            prices.append(f"E10: €{station['price_e10']:.3f}")
+        if "price_diesel" in station:
+            prices.append(f"Diesel: €{station['price_diesel']:.3f}")
+        
+        if prices:
+            lines.append(f"   💰 Prices: {' | '.join(prices)}")
+    
+    return "\n".join(lines)
 
 
 async def async_validate_entity(hass: HomeAssistant, entity_id: str) -> bool:
@@ -105,14 +274,13 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # TODO: Validate API key with selected provider
-            # For now, just check if it's provided
+            # Check if API key is provided
             if not user_input.get(CONF_API_KEY):
                 errors["base"] = "invalid_api_key"
             else:
-                # Store data and move to vehicle setup
+                # Store data and move to API validation
                 self.data = user_input
-                return await self.async_step_vehicle()
+                return await self.async_step_validate_api()
 
         # Show form for provider and API configuration
         data_schema = vol.Schema(
@@ -164,6 +332,77 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "api_info": "Get your API key from https://creativecommons.tankerkoenig.de"
             },
         )
+
+    async def async_step_validate_api(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Validate fuel price API configuration.
+        
+        This step tests the API connection with the provided credentials
+        and displays a list of found stations or an error message.
+        
+        Args:
+            user_input: User action (continue or back)
+            
+        Returns:
+            Form showing test results or next step
+        """
+        errors: dict[str, str] = {}
+        
+        # If no user input, this is the first time showing this step
+        # We need to test the API
+        if user_input is None:
+            _LOGGER.debug("Testing API connection...")
+            
+            try:
+                # Test API with home coordinates
+                stations = await async_test_fuel_api(
+                    hass=self.hass,
+                    provider=self.data[CONF_PROVIDER],
+                    api_key=self.data[CONF_API_KEY],
+                    latitude=self.hass.config.latitude,
+                    longitude=self.hass.config.longitude,
+                    radius=self.data[CONF_RADIUS],
+                    fuel_type=self.data[CONF_FUEL_TYPE],
+                )
+                
+                # Format station list for display
+                station_display = format_station_list_for_display(stations)
+                
+                # Show success with station list
+                return self.async_show_form(
+                    step_id="validate_api",
+                    data_schema=vol.Schema({}),
+                    description_placeholders={
+                        "stations": station_display,
+                        "error_details": "",  # Empty for success case
+                    },
+                )
+                
+            except Exception as err:
+                # Show error message
+                error_msg = str(err)
+                _LOGGER.error("API validation failed: %s", error_msg)
+                errors["base"] = "api_test_failed"
+                
+                return self.async_show_form(
+                    step_id="validate_api",
+                    data_schema=vol.Schema({}),
+                    errors=errors,
+                    description_placeholders={
+                        "stations": "",  # Empty for error case
+                        "error_details": error_msg,
+                    },
+                )
+        
+        # User has clicked a button - check if they want to go back or continue
+        # If there are errors, allow going back
+        if errors.get("base") == "api_test_failed":
+            # Go back to API configuration
+            return await self.async_step_user(self.data)
+        
+        # Success - continue to vehicle setup
+        return await self.async_step_vehicle()
 
     async def async_step_vehicle(
         self, user_input: dict[str, Any] | None = None
@@ -296,8 +535,17 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Merge all data
             self.data.update(user_input)
             
-            # Move to prediction engine configuration
-            return await self.async_step_prediction()
+            # If both Telegram token and chat ID are provided, validate them
+            telegram_token = user_input.get(CONF_TELEGRAM_TOKEN, "")
+            telegram_chat_id = user_input.get(CONF_TELEGRAM_CHAT_ID, "")
+            
+            if telegram_token and telegram_chat_id:
+                # Move to Telegram validation
+                return await self.async_step_validate_telegram()
+            else:
+                # Skip validation if Telegram is not configured
+                # Move to prediction engine configuration
+                return await self.async_step_prediction()
 
         data_schema = vol.Schema(
             {
@@ -314,6 +562,70 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "telegram_info": "Optional: Configure Telegram for notifications\n\nTo get your Telegram Bot Token:\n1. Open Telegram and search for @BotFather\n2. Send /newbot and follow instructions\n3. Copy the token provided\n\nTo get your Chat ID:\n1. Search for @userinfobot in Telegram\n2. Start a chat and it will show your Chat ID"
             },
         )
+    
+    async def async_step_validate_telegram(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Validate Telegram API configuration.
+        
+        This step sends a test message and allows the user to verify
+        the Telegram integration works. For MVP, we just verify the
+        message can be sent successfully.
+        
+        Args:
+            user_input: User action (continue, skip, or back)
+            
+        Returns:
+            Form showing test results or next step
+        """
+        errors: dict[str, str] = {}
+        
+        # If no user input, this is the first time showing this step
+        # We need to send the test message
+        if user_input is None:
+            _LOGGER.debug("Testing Telegram connection...")
+            
+            try:
+                # Send test message
+                await async_send_telegram_test_message(
+                    bot_token=self.data[CONF_TELEGRAM_TOKEN],
+                    chat_id=self.data[CONF_TELEGRAM_CHAT_ID],
+                )
+                
+                # Show success message
+                return self.async_show_form(
+                    step_id="validate_telegram",
+                    data_schema=vol.Schema({}),
+                    description_placeholders={
+                        "message": "Test message sent successfully! Please check your Telegram to verify you received it.",
+                        "error_details": "",  # Empty for success case
+                    },
+                )
+                
+            except Exception as err:
+                # Show error message
+                error_msg = str(err)
+                _LOGGER.error("Telegram validation failed: %s", error_msg)
+                errors["base"] = "telegram_test_failed"
+                
+                return self.async_show_form(
+                    step_id="validate_telegram",
+                    data_schema=vol.Schema({}),
+                    errors=errors,
+                    description_placeholders={
+                        "message": "",  # Empty for error case
+                        "error_details": error_msg,
+                    },
+                )
+        
+        # User has clicked a button - check if they want to go back or continue
+        # If there are errors, allow going back
+        if errors.get("base") == "telegram_test_failed":
+            # Go back to Telegram configuration
+            return await self.async_step_telegram(self.data)
+        
+        # Success - continue to prediction setup
+        return await self.async_step_prediction()
     
     async def async_step_prediction(
         self, user_input: dict[str, Any] | None = None

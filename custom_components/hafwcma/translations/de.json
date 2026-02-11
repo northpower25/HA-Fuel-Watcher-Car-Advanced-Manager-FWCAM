@@ -88,6 +88,18 @@
           "fallback_daily_km_saturday": "Geschätzte tägliche Fahrtstrecke für Samstag",
           "fallback_daily_km_sunday": "Geschätzte tägliche Fahrtstrecke für Sonntag"
         }
+      },
+      "validate_api": {
+        "title": "API-Verbindungstest",
+        "description": "Teste API-Verbindung mit Ihren Zugangsdaten...\n\n{stations}\n\n{error_details}",
+        "data": {},
+        "data_description": {}
+      },
+      "validate_telegram": {
+        "title": "Telegram-Verbindungstest",
+        "description": "Teste Telegram-Verbindung...\n\n{message}\n\n{error_details}",
+        "data": {},
+        "data_description": {}
       }
     },
     "error": {
@@ -95,6 +107,9 @@
       "cannot_connect": "Verbindung zur Tankerkönig API fehlgeschlagen",
       "invalid_entity": "Entität existiert nicht in Home Assistant",
       "not_device_tracker": "Positionsentität muss ein device_tracker sein",
+      "entity_validation_failed": "Fehler beim Validieren der Entitäten. Bitte überprüfen Sie Ihre Home Assistant Konfiguration.",
+      "api_test_failed": "API-Verbindungstest fehlgeschlagen. Bitte überprüfen Sie Ihren API-Schlüssel und versuchen Sie es erneut.",
+      "telegram_test_failed": "Telegram-Verbindungstest fehlgeschlagen. Bitte überprüfen Sie Ihren Bot-Token und Chat-ID.",
       "unknown": "Ein unerwarteter Fehler ist aufgetreten"
     },
     "abort": {
