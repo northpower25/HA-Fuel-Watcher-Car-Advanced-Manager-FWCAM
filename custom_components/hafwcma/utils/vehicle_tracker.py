@@ -70,7 +70,7 @@ class VehicleDataTracker:
         ):
             tank_diff = self._current_snapshot.tank_level - self._previous_snapshot.tank_level
             
-            # Refueling detected if tank increased by more than 5 liters/percent
+            # Refueling detected if tank increased by more than 2 liters/percent
             # Avoid duplicate detection within 5 minutes of last refuel
             time_since_last_refuel = None
             if self._last_refuel_timestamp:
@@ -78,7 +78,7 @@ class VehicleDataTracker:
                     self._current_snapshot.timestamp - self._last_refuel_timestamp
                 ).total_seconds()
             
-            if tank_diff > 5 and (
+            if tank_diff > 2 and (
                 time_since_last_refuel is None or time_since_last_refuel > 300
             ):
                 result["refueling_detected"] = True

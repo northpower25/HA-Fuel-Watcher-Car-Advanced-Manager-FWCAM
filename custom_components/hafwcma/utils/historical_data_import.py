@@ -29,7 +29,7 @@ from .storage import (
 _LOGGER = logging.getLogger(__name__)
 
 # Constants for historical data import configuration
-REFUEL_DETECTION_THRESHOLD_LITERS = 5  # Minimum tank level increase to detect refueling
+REFUEL_DETECTION_THRESHOLD_LITERS = 2  # Minimum tank level increase to detect refueling
 REFUEL_DETECTION_MIN_TIME_GAP_MINUTES = 5  # Minimum time between refuelings
 ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS = 1  # Maximum time difference for odometer lookup
 PRICE_LOOKUP_WINDOW_DAYS = 7  # Maximum age of price data to use for historical events
