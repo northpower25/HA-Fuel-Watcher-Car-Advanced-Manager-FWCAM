@@ -12,10 +12,13 @@ class FuelStation:
     
     Attributes:
         station_id: Unique identifier for the station
-        name: Station name
+        name: Station name (formatted as [brand] [place] [street])
         brand: Station brand/chain
-        address: Street address
-        city: City name
+        address: Full formatted address ([street] [houseNumber], [postCode] [place])
+        city: City name (place)
+        street: Street name (raw from API)
+        house_number: House number (raw from API)
+        post_code: Postal code (raw from API)
         latitude: Geographic latitude
         longitude: Geographic longitude
         distance: Distance from reference point in km
@@ -31,9 +34,12 @@ class FuelStation:
     brand: str
     address: str
     city: str
-    latitude: float
-    longitude: float
-    distance: float
+    street: str = ""
+    house_number: str = ""
+    post_code: str = ""
+    latitude: float = 0.0
+    longitude: float = 0.0
+    distance: float = 0.0
     price_e5: Optional[float] = None
     price_e10: Optional[float] = None
     price_diesel: Optional[float] = None

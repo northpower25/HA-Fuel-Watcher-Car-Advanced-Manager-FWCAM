@@ -124,7 +124,7 @@ async def async_test_fuel_api(
                 station_dict = {
                     "name": station.name,
                     "brand": station.brand,
-                    "address": f"{station.address}, {station.city}",
+                    "address": station.address,
                     "distance": round(station.distance, 2),
                 }
                 
