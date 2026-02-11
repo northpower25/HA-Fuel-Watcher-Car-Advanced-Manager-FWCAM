@@ -198,6 +198,12 @@
       },
       "consumption_prediction": {
         "name": "Consumption Prediction"
+      },
+      "proximity_alerts": {
+        "name": "Proximity Alerts"
+      },
+      "telegram_test": {
+        "name": "Telegram API Test"
       }
     },
     "number": {
