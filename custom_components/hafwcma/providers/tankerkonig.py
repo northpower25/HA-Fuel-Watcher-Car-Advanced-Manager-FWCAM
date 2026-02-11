@@ -116,6 +116,82 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return EARTH_RADIUS_KM * c
 
 
+def _format_station_name(brand: str, place: str, street: str, api_name: str) -> str:
+    """Format station name according to specification.
+    
+    Builds station name as [brand] [place] [street].
+    If any of these fields are missing or empty, falls back to API name.
+    
+    Args:
+        brand: Station brand/chain
+        place: City/place name
+        street: Street name
+        api_name: Original name from API (fallback)
+        
+    Returns:
+        Formatted station name
+    """
+    # Clean and filter non-empty components
+    components = []
+    
+    if brand and brand.strip():
+        components.append(brand.strip())
+    if place and place.strip():
+        components.append(place.strip())
+    if street and street.strip():
+        components.append(street.strip())
+    
+    # If we have all three components, use them
+    if len(components) >= 3:
+        return " ".join(components)
+    
+    # Otherwise, fall back to API name
+    return api_name if api_name else "Unknown"
+
+
+def _format_station_address(street: str, house_number: str, post_code: str, place: str) -> str:
+    """Format station address according to specification.
+    
+    Builds address as [street] [houseNumber], [postCode] [place].
+    
+    Args:
+        street: Street name
+        house_number: House number
+        post_code: Postal code
+        place: City/place name
+        
+    Returns:
+        Formatted address
+    """
+    # Build street address part
+    street_parts = []
+    if street and street.strip():
+        street_parts.append(street.strip())
+    if house_number and house_number.strip():
+        street_parts.append(house_number.strip())
+    
+    street_address = " ".join(street_parts) if street_parts else ""
+    
+    # Build city part
+    city_parts = []
+    if post_code and post_code.strip():
+        city_parts.append(post_code.strip())
+    if place and place.strip():
+        city_parts.append(place.strip())
+    
+    city_address = " ".join(city_parts) if city_parts else ""
+    
+    # Combine with comma separator
+    if street_address and city_address:
+        return f"{street_address}, {city_address}"
+    elif street_address:
+        return street_address
+    elif city_address:
+        return city_address
+    else:
+        return ""
+
+
 class TankerkoenigProvider(FuelPriceProvider):
     """Provider for Tankerkönig fuel price API.
 
@@ -439,12 +515,27 @@ class TankerkoenigProvider(FuelPriceProvider):
                     elif fuel_type == "diesel":
                         price_diesel = single_price
 
+            # Extract address components from API
+            api_name = data.get("name", "Unknown")
+            brand = data.get("brand", "")
+            street = data.get("street", "")
+            house_number = data.get("houseNumber", "")
+            post_code = data.get("postCode", "")
+            place = data.get("place", "")
+            
+            # Format station name and address according to specification
+            formatted_name = _format_station_name(brand, place, street, api_name)
+            formatted_address = _format_station_address(street, house_number, post_code, place)
+
             station = FuelStation(
                 station_id=data.get("id", ""),
-                name=data.get("name", "Unknown"),
-                brand=data.get("brand", "Unknown"),
-                address=data.get("street", "") + " " + data.get("houseNumber", ""),
-                city=data.get("place", ""),
+                name=formatted_name,
+                brand=brand,
+                address=formatted_address,
+                city=place,
+                street=street,
+                house_number=house_number,
+                post_code=post_code,
                 latitude=station_lat,
                 longitude=station_lon,
                 distance=distance,
@@ -457,15 +548,14 @@ class TankerkoenigProvider(FuelPriceProvider):
 
             # Log detailed station info for debugging
             _LOGGER.debug(
-                "Parsed station '%s': e5=%s, e10=%s, diesel=%s, open=%s (raw price obj: %s, single price: %s, isOpen=%s)",
+                "Parsed station '%s' (API name: '%s'): address='%s', e5=%s, e10=%s, diesel=%s, open=%s",
                 station.name,
+                api_name,
+                station.address,
                 station.price_e5,
                 station.price_e10,
                 station.price_diesel,
                 station.is_open,
-                price_obj,
-                data.get("price") if fuel_type else "N/A",
-                data.get("isOpen"),
             )
 
             return station
