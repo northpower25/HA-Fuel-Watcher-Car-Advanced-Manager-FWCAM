@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 import logging
 from typing import Any
 
@@ -64,8 +63,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # Timeout for API validation tests (in seconds)
 API_TEST_TIMEOUT = 10
-# Timeout for Telegram response (in seconds)
-TELEGRAM_RESPONSE_TIMEOUT = 120
+# Note: TELEGRAM_RESPONSE_TIMEOUT reserved for future Phase 3 enhancement
+# when implementing polling/webhook-based response handling
 
 
 async def async_test_fuel_api(
@@ -171,7 +170,7 @@ async def async_send_telegram_test_message(
         bot = Bot(token=bot_token)
         
         message_text = (
-            "🚗 <b>FWCAM Test Message</b>\n\n"
+            "🚗 <b>FWCMA Test Message</b>\n\n"
             "Your car says: 'I'm ready for intelligent refueling decision notifications! "
             "Please reply to this message so I can verify you can reach me.'\n\n"
             "👉 Just send any reply to continue setup."
@@ -376,7 +375,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data_schema=vol.Schema({}),
                     description_placeholders={
                         "stations": station_display,
-                        "test_result": "success",
+                        "error_details": "",  # Empty for success case
                     },
                 )
                 
@@ -391,8 +390,8 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data_schema=vol.Schema({}),
                     errors=errors,
                     description_placeholders={
+                        "stations": "",  # Empty for error case
                         "error_details": error_msg,
-                        "test_result": "error",
                     },
                 )
         
@@ -598,8 +597,8 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     step_id="validate_telegram",
                     data_schema=vol.Schema({}),
                     description_placeholders={
-                        "test_result": "success",
                         "message": "Test message sent successfully! Please check your Telegram to verify you received it.",
+                        "error_details": "",  # Empty for success case
                     },
                 )
                 
@@ -614,7 +613,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data_schema=vol.Schema({}),
                     errors=errors,
                     description_placeholders={
-                        "test_result": "error",
+                        "message": "",  # Empty for error case
                         "error_details": error_msg,
                     },
                 )
