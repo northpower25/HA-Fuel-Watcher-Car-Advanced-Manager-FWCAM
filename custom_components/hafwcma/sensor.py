@@ -955,7 +955,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         try:
             consumption_prediction = await self._update_consumption_prediction(
                 range_km=range_km,
-                tank_level=tank_level,
+                tank_level=tank_level_liters,  # Use tank level in liters for consistency
                 tank_capacity=options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0),
             )
             # If no new prediction (interval not passed), keep existing prediction from previous data
