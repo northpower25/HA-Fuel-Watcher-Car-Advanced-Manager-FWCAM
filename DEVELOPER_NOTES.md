@@ -307,7 +307,190 @@ Different car integrations handle location differently:
 
 **Recommendation**: Always use attributes for maximum compatibility.
 
+## Config Flow Architecture and Testing Patterns
+
+### Current Config Flow Structure
+
+The integration uses a multi-step config flow for initial setup:
+
+```
+async_step_user (API Configuration)
+  ↓
+async_step_vehicle (Vehicle Settings)
+  ↓
+async_step_vehicle_entities (Entity Selection)
+  ↓
+async_step_telegram (Optional Notifications)
+  ↓
+async_step_prediction (Prediction Settings)
+  ↓
+async_create_entry (Complete Setup)
+```
+
+### API Validation Considerations
+
+**Current State**: The config flow has a TODO comment for API validation (line 108-109 in config_flow.py):
+
+```python
+# TODO: Validate API key with selected provider
+# For now, just check if it's provided
+```
+
+### Deferred Feature: API Testing in Config Flow
+
+A comprehensive API testing feature has been **deferred** for future implementation. See `docs/FEATURE_API_TESTING_CONFIG_FLOW.md` for full details.
+
+**Why Deferred:**
+1. High complexity for marginal benefit
+2. Users can test manually after setup via test buttons
+3. Requires complex async state management
+4. Other features have higher priority
+
+**If Implementing in the Future:**
+
+#### Design Patterns for Async Validation
+
+When adding API validation to config flows:
+
+1. **Keep validation optional** - Don't block setup on temporary API issues
+2. **Use separate validation steps** - Don't mix validation with data entry
+3. **Provide clear feedback** - Show loading states, success, and detailed errors
+4. **Allow retry/skip** - Users should be able to retry or skip validation
+5. **Manage state carefully** - Use instance variables for cross-step data
+
+#### Example Pattern for API Validation
+
+```python
+async def async_step_validate_api(
+    self, user_input: dict[str, Any] | None = None
+) -> FlowResult:
+    """Validate API configuration (optional step)."""
+    
+    if user_input is None:
+        # First time showing this step - perform validation
+        errors = {}
+        result_message = ""
+        
+        try:
+            # Test API with stored configuration
+            test_result = await self._test_api_connection()
+            result_message = self._format_success_message(test_result)
+        except Exception as err:
+            errors["base"] = "api_test_failed"
+            result_message = str(err)
+        
+        # Show result with option to continue or go back
+        return self.async_show_form(
+            step_id="validate_api",
+            data_schema=vol.Schema({
+                vol.Optional("skip_validation", default=False): bool,
+            }),
+            errors=errors,
+            description_placeholders={
+                "test_result": result_message,
+            },
+        )
+    else:
+        # User clicked next - continue regardless of validation result
+        return await self.async_step_vehicle()
+
+async def _test_api_connection(self) -> dict:
+    """Test API connection with current configuration."""
+    from .providers.tankerkonig import TankerkoenigProvider
+    
+    provider = TankerkoenigProvider(
+        api_key=self.data[CONF_API_KEY],
+        hass=self.hass,
+    )
+    
+    # Use home coordinates for test
+    stations = await provider.get_stations_nearby(
+        latitude=self.hass.config.latitude,
+        longitude=self.hass.config.longitude,
+        radius=self.data.get(CONF_RADIUS, 5.0),
+        fuel_type=self.data.get(CONF_FUEL_TYPE, "e5"),
+    )
+    
+    return {
+        "station_count": len(stations),
+        "stations": stations[:3],  # Top 3 for display
+    }
+```
+
+#### Telegram Validation Challenges
+
+Telegram validation is particularly complex:
+
+1. **Async Response Waiting**: Need to wait for user reply
+2. **Timeout Handling**: Must handle cases where user doesn't reply
+3. **State Persistence**: Must store state between config flow steps
+4. **Webhook Setup**: Ideally use webhooks, but polling is simpler
+5. **Cleanup**: Must clean up listeners/webhooks on abort
+
+**Recommended Approach** (if implementing):
+- Use simple polling for MVP (check for message every 5s for 2 minutes)
+- Store test message ID in instance variable
+- Implement timeout with clear user feedback
+- Provide "Skip Test" option for advanced users
+
+#### Config Flow Best Practices
+
+1. **Progressive Disclosure**: Start with essential fields, add advanced options later
+2. **Validation**: Validate on form submission, show errors inline
+3. **Error Messages**: Provide actionable error messages
+4. **Help Text**: Use `description_placeholders` for contextual help
+5. **Defaults**: Provide sensible defaults for all optional fields
+6. **Entity Selection**: Use `selector.EntitySelector` for entity picking
+7. **Translations**: All strings must have translations in `strings.json`
+
+#### Testing Config Flows
+
+**Manual Testing Checklist:**
+- [ ] All steps can be completed successfully
+- [ ] Back/forward navigation works correctly
+- [ ] Errors are shown and clearable
+- [ ] Required fields are validated
+- [ ] Optional fields can be skipped
+- [ ] Entity selectors filter correctly
+- [ ] Translations are correct (DE/EN)
+- [ ] Abort scenarios clean up properly
+- [ ] Multiple instances can be created
+- [ ] Options flow works for reconfiguration
+
+**Automated Testing** (when test infrastructure exists):
+- Mock all external dependencies (APIs, Home Assistant)
+- Test happy path and error scenarios
+- Test state persistence between steps
+- Test abort/cleanup scenarios
+
+### State Management in Config Flows
+
+**Instance Variables for Cross-Step Data:**
+
+```python
+class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    VERSION = 1
+    
+    def __init__(self):
+        """Initialize config flow."""
+        self.data = {}  # Accumulate data across steps
+        self._test_results = None  # Store validation results
+        self._telegram_message_id = None  # For Telegram testing
+```
+
+**Best Practices:**
+- Use `self.data` to accumulate configuration across steps
+- Use separate instance variables for temporary state
+- Clean up temporary state in `async_create_entry()`
+- Handle missing state gracefully (users might navigate back)
+
+### Resources
+
+- [Config Flow Handler Documentation](https://developers.home-assistant.io/docs/config_entries_config_flow_handler)
+- [Config Flow Options Documentation](https://developers.home-assistant.io/docs/config_entries_options_flow_handler)
+- [Selector Documentation](https://developers.home-assistant.io/docs/data_entry_flow_index/#selectors)
+
 ---
 
-**Last Updated**: 2024-02-11
+**Last Updated**: 2026-02-11
 **Maintainer**: @northpower25
