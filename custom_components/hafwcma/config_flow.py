@@ -39,6 +39,7 @@ from .const import (
     CONF_TANK_CAPACITY,
     CONF_TANK_LEVEL_ENTITY,
     CONF_TELEGRAM_CHAT_ID,
+    CONF_TELEGRAM_METHOD,
     CONF_TELEGRAM_TOKEN,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
@@ -57,6 +58,8 @@ from .const import (
     PROVIDER_NAMES,
     PROVIDER_TANKERKONIG,
     PROVIDERS,
+    TELEGRAM_METHOD_DIRECT_API,
+    TELEGRAM_METHOD_INTEGRATION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -530,6 +533,8 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle Telegram notification configuration (optional).
         
+        Detects if telegram_bot integration is available and provides appropriate options.
+        
         Args:
             user_input: User provided Telegram configuration
             
@@ -537,10 +542,19 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             Form to display or next step
         """
         errors: dict[str, str] = {}
+        
+        # Check if telegram_bot integration is loaded
+        telegram_bot_available = "telegram_bot" in self.hass.config.components
 
         if user_input is not None:
             # Merge all data
             self.data.update(user_input)
+            
+            # Store the method being used
+            if telegram_bot_available:
+                self.data[CONF_TELEGRAM_METHOD] = TELEGRAM_METHOD_INTEGRATION
+            else:
+                self.data[CONF_TELEGRAM_METHOD] = TELEGRAM_METHOD_DIRECT_API
             
             # If both Telegram token and chat ID are provided, validate them
             telegram_token = user_input.get(CONF_TELEGRAM_TOKEN, "")
@@ -560,25 +574,55 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_TELEGRAM_CHAT_ID): str,
             }
         )
+        
+        # Common setup instructions
+        common_instructions = (
+            "Optional: Configure Telegram for notifications\n\n"
+            "To get your Telegram Bot Token:\n"
+            "1. Open Telegram and search for @BotFather\n"
+            "2. Send /newbot and follow instructions\n"
+            "3. Copy the token provided\n\n"
+            "To get your Chat ID:\n"
+            "1. Search for @userinfobot in Telegram\n"
+            "2. Start a chat and it will show your Chat ID\n\n"
+        )
+        
+        # Build description based on whether telegram_bot is available
+        if telegram_bot_available:
+            telegram_info = (
+                "✅ <b>Telegram Bot Integration Detected</b>\n\n"
+                "The Home Assistant telegram_bot integration is available. "
+                "This enables bidirectional communication (sending and receiving messages).\n\n"
+                + common_instructions +
+                "<i>💡 Tip: Use the same bot token in the telegram_bot integration for full features.</i>"
+            )
+        else:
+            telegram_info = (
+                "ℹ️ <b>Telegram Bot Integration Not Found</b>\n\n"
+                "The telegram_bot integration is not configured. "
+                "Only one-way notifications (sending messages) will be available.\n\n"
+                + common_instructions +
+                "<i>💡 Tip: Configure the telegram_bot integration for bidirectional features.</i>"
+            )
 
         return self.async_show_form(
             step_id="telegram",
             data_schema=data_schema,
             errors=errors,
             description_placeholders={
-                "telegram_info": "Optional: Configure Telegram for notifications\n\nTo get your Telegram Bot Token:\n1. Open Telegram and search for @BotFather\n2. Send /newbot and follow instructions\n3. Copy the token provided\n\nTo get your Chat ID:\n1. Search for @userinfobot in Telegram\n2. Start a chat and it will show your Chat ID"
+                "telegram_info": telegram_info
             },
         )
     
     async def async_step_validate_telegram(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Validate Telegram API configuration with response handling (Phase 3).
+        """Validate Telegram API configuration with test message.
         
         This step:
         1. Sends a test message to the user
-        2. Waits for the user to respond
-        3. Displays the received response
+        2. Reports which method is being used (integration vs direct API)
+        3. Displays success or error
         4. Allows continuation to next step
         
         Args:
@@ -594,6 +638,10 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is None:
             _LOGGER.debug("Testing Telegram connection...")
             
+            # Determine method being used
+            telegram_bot_available = "telegram_bot" in self.hass.config.components
+            method_used = TELEGRAM_METHOD_INTEGRATION if telegram_bot_available else TELEGRAM_METHOD_DIRECT_API
+            
             try:
                 # Send test message (no polling to avoid conflicts)
                 await async_send_telegram_test_message(
@@ -601,15 +649,32 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     chat_id=self.data[CONF_TELEGRAM_CHAT_ID],
                 )
                 
+                # Build success message based on method
+                if method_used == TELEGRAM_METHOD_INTEGRATION:
+                    success_msg = (
+                        "✅ Test message sent successfully!\n\n"
+                        "Your Telegram configuration is working.\n\n"
+                        "🔄 <b>Method:</b> Using Home Assistant's telegram_bot integration\n"
+                        "✨ <b>Features:</b> Bidirectional communication is available!\n\n"
+                        "<i>You can send commands to the bot and receive responses.</i>"
+                    )
+                else:
+                    success_msg = (
+                        "✅ Test message sent successfully!\n\n"
+                        "Your Telegram configuration is working.\n\n"
+                        "📤 <b>Method:</b> Using Direct Bot API\n"
+                        "📝 <b>Features:</b> One-way notifications only\n\n"
+                        "ℹ️ <b>For bidirectional communication:</b>\n"
+                        "To enable advanced features like logging refueling via Telegram commands, "
+                        "please configure Home Assistant's <i>telegram_bot</i> integration with the same bot token."
+                    )
+                
                 # Success - show confirmation
                 return self.async_show_form(
                     step_id="validate_telegram",
                     data_schema=vol.Schema({}),
                     description_placeholders={
-                        "message": "✅ Test message sent successfully!\n\nYour Telegram configuration is working.\n\n"
-                                 "ℹ️ <b>For bidirectional communication:</b>\n"
-                                 "To enable advanced features like logging refueling via Telegram commands, "
-                                 "please also configure Home Assistant's <i>telegram_bot</i> integration with the same bot token.",
+                        "message": success_msg,
                         "error_details": "",
                         "waiting": "",
                     },

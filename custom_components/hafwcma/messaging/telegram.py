@@ -8,6 +8,7 @@ from telegram import Bot
 from telegram.error import TelegramError
 
 from . import MessageService, MessagingError
+from ..const import TELEGRAM_METHOD_INTEGRATION, TELEGRAM_METHOD_DIRECT_API
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -48,13 +49,18 @@ class TelegramNotifier(MessageService):
             hass is not None and "telegram_bot" in hass.config.components
         )
         
+        # Store which method is being used
+        self.telegram_method = (
+            TELEGRAM_METHOD_INTEGRATION if self._use_ha_service else TELEGRAM_METHOD_DIRECT_API
+        )
+        
         if self._use_ha_service:
             _LOGGER.info(
-                "TelegramNotifier using Home Assistant's telegram_bot service"
+                "TelegramNotifier using Home Assistant's telegram_bot service (bidirectional communication available)"
             )
         else:
             _LOGGER.info(
-                "TelegramNotifier using direct bot API (telegram_bot integration not found)"
+                "TelegramNotifier using direct bot API (one-way notifications only - telegram_bot integration not found)"
             )
 
     async def send_message(self, message: str, **kwargs) -> bool:
