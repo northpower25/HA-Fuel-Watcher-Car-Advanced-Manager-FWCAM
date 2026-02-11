@@ -217,6 +217,7 @@ class TelegramEventHandler:
         status_lines = ["🚗 <b>Vehicle Status</b>\n"]
         
         # Get vehicle data from coordinator
+        # Note: Field names match the coordinator's data structure
         if hasattr(coordinator, "data") and coordinator.data:
             vehicle_data = coordinator.data.get("vehicle", {})
             
