@@ -233,7 +233,81 @@ To maintain backward compatibility in future versions:
 3. Show warnings in logs for deprecated features
 4. Keep deprecated features for at least 2 major versions before removal
 
+## Device Tracker and Geolocation Handling
+
+### Latitude/Longitude Attribute Handling
+
+**Issue**: Many car device_tracker entities store GPS coordinates as attributes rather than in the state value. The state often contains a zone name like "home", "work", or "not_home".
+
+**Example**:
+```
+device_tracker.my_car_location
+  state: "home"
+  attributes:
+    latitude: 53.76
+    longitude: 9.67
+    gps_accuracy: 0
+```
+
+### Solution Implementation
+
+The integration handles this pattern in `custom_components/hafwcma/utils/vehicle_data.py` in the `async_get_device_tracker_coordinates()` function:
+
+1. **Primary Method**: Extract coordinates from attributes
+   ```python
+   latitude = state.attributes.get(ATTR_LATITUDE)
+   longitude = state.attributes.get(ATTR_LONGITUDE)
+   ```
+
+2. **Fallback Method**: Parse state value if it contains coordinates (rare)
+   ```python
+   parts = state.state.split(",")
+   if len(parts) == 2:
+       return (float(parts[0].strip()), float(parts[1].strip()))
+   ```
+
+3. **Zone Handling**: If state contains a zone name and no attributes, return None
+   - The integration cannot automatically resolve zone names to coordinates
+   - This is intentional to avoid incorrect location data
+
+### Debug Logging
+
+When troubleshooting geolocation issues, check the logs for:
+
+```
+Device tracker device_tracker.my_car: state=home, lat=53.76, lon=9.67, attributes=dict_keys([...])
+Geolocation data - lat: 53.76, lon: 9.67, position_entity: device_tracker.my_car
+```
+
+If coordinates show as `None`, verify:
+1. The device_tracker entity has `latitude` and `longitude` attributes
+2. The attribute names match Home Assistant standards (`latitude`/`longitude`, not `lat`/`lon`)
+3. The entity is not in an `unknown` or `unavailable` state
+
+### Best Practices for Future Development
+
+When adding geolocation features:
+
+1. **Always check attributes first** for coordinates
+2. **Handle None values gracefully** - not all trackers provide coordinates
+3. **Add debug logging** to help users troubleshoot
+4. **Document coordinate requirements** in the configuration flow
+
+### Common Car Integration Patterns
+
+Different car integrations handle location differently:
+
+| Integration | State Value | Coordinates Location |
+|-------------|-------------|---------------------|
+| Tesla | Zone name | `latitude`/`longitude` attributes |
+| BMW Connected Drive | Zone name | `latitude`/`longitude` attributes |
+| Volkswagen We Connect | Zone name | `latitude`/`longitude` attributes |
+| Generic GPS Tracker | Coordinates | `latitude`/`longitude` attributes |
+| OwnTracks | Zone name | `latitude`/`longitude` attributes |
+
+**Recommendation**: Always use attributes for maximum compatibility.
+
 ---
 
-**Last Updated**: 2024-02-10
+**Last Updated**: 2024-02-11
 **Maintainer**: @northpower25
