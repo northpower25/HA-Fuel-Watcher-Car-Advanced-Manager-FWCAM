@@ -1001,6 +1001,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "odometer": vehicle_data.get("odometer_km"),
             "latitude": latitude,
             "longitude": longitude,
+            "location_source": location_source,  # Add location source for position data
             "nearest_station": nearest_station or {
                 "name": "No station found",
                 "address": "",
@@ -1089,6 +1090,11 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
             ATTR_DISTANCE: station.get("distance"),
             ATTR_FORECAST_TREND: self.coordinator.data.get("forecast_trend"),
         }
+        
+        # Add location source information
+        location_source = self.coordinator.data.get("location_source")
+        if location_source:
+            attributes["location_source"] = location_source
         
         # Add timestamp of last successful price fetch
         last_price_timestamp = self.coordinator.data.get("last_price_timestamp")
@@ -1794,15 +1800,23 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
                 "vehicle_latitude": None,
                 "vehicle_longitude": None,
                 "max_stations": None,
+                "location_source": None,
             }
         
-        return {
+        attributes = {
             "stations": nearby_data.get("stations", []),
             "search_radius_km": nearby_data.get("search_radius_km"),
             "vehicle_latitude": nearby_data.get("vehicle_latitude"),
             "vehicle_longitude": nearby_data.get("vehicle_longitude"),
             "max_stations": nearby_data.get("max_stations"),
         }
+        
+        # Add location source information
+        location_source = self.coordinator.data.get("location_source")
+        if location_source:
+            attributes["location_source"] = location_source
+        
+        return attributes
     
     @property
     def available(self) -> bool:
