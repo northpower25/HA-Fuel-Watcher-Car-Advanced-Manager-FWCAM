@@ -279,7 +279,7 @@ async def async_step_telegram_response(
 
 1. ✅ Phase 1 (MVP): API-Validierung mit grundlegender Fehlerbehandlung
 2. ✅ Phase 2 (Basis): Telegram-Validierung mit einfachem Test-Nachricht-Versand
-3. ⏸️ Phase 3 (Optional): Erweiterte Features wie Webhook-basiertes Antwort-Handling für Telegram können später hinzugefügt werden
+3. ✅ Phase 3 (Optional): Polling-basiertes Antwort-Handling für Telegram (implementiert 2026-02-11)
 
 ## Implementierte Features
 
@@ -291,6 +291,9 @@ async def async_step_telegram_response(
 
 ### Telegram-Validierung
 - Senden einer Test-Nachricht beim Einrichten der Telegram-Integration
+- **NEU (Phase 3)**: Polling-Mechanismus wartet auf Benutzer-Antwort (120 Sekunden Timeout)
+- **NEU (Phase 3)**: Anzeige der Benutzer-Antwort bei Erfolg
+- **NEU (Phase 3)**: Timeout-Benachrichtigung wenn keine Antwort empfangen
 - Bestätigung des erfolgreichen Versands
 - Fehlerbehandlung mit detaillierten Fehlermeldungen
 - Möglichkeit zur Korrektur bei Fehlern
@@ -298,11 +301,10 @@ async def async_step_telegram_response(
 
 ## Nächste Schritte (Optional Enhancements)
 
-1. ⏸️ Webhook-basiertes Antwort-Handling für Telegram (Phase 3)
-2. ⏸️ Polling-Mechanismus für Telegram-Antworten
-3. ⏸️ Erweiterte Retry-Mechanismen
-4. ⏸️ Skip-Optionen für erfahrene Benutzer
-5. ⏸️ Erweiterte Logging und Diagnostics
+1. ⏸️ Webhook-basiertes Antwort-Handling für Telegram (alternative zu Polling)
+2. ⏸️ Erweiterte Retry-Mechanismen
+3. ⏸️ Skip-Optionen für erfahrene Benutzer
+4. ⏸️ Erweiterte Logging und Diagnostics
 
 ## Referenzen
 
@@ -316,4 +318,4 @@ async def async_step_telegram_response(
 **Erstellt**: 2026-02-11  
 **Letzte Aktualisierung**: 2026-02-11  
 **Autor**: Development Team  
-**Status**: Implemented (MVP + Basic)
+**Status**: Implemented (MVP + Basic + Phase 3 Polling)
