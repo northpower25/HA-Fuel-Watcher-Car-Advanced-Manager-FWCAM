@@ -51,6 +51,7 @@ class ManualRefreshSwitch(SwitchEntity):
     """Switch to manually trigger fuel price data refresh."""
 
     _attr_icon = "mdi:refresh"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -67,9 +68,17 @@ class ManualRefreshSwitch(SwitchEntity):
         """
         self._coordinator = coordinator
         self._config_entry = config_entry
-        self._attr_name = f"{vehicle_name} Fuel Price Refresh"
+        self._attr_name = "Fuel Price Refresh"
         self._attr_unique_id = f"{config_entry.entry_id}_fuel_price_refresh"
         self._attr_is_on = False
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the switch - trigger manual refresh."""
@@ -108,6 +117,7 @@ class ManualPredictionSwitch(SwitchEntity):
     """Switch to manually trigger range/consumption prediction calculation."""
 
     _attr_icon = "mdi:chart-line"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -124,11 +134,19 @@ class ManualPredictionSwitch(SwitchEntity):
         """
         self._coordinator = coordinator
         self._config_entry = config_entry
-        self._attr_name = f"{vehicle_name} Consumption Prediction"
+        self._attr_name = "Consumption Prediction"
         self._attr_unique_id = f"{config_entry.entry_id}_consumption_prediction"
         self._attr_is_on = False
         self._last_prediction_time = None
         self._last_prediction_result = None
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the switch - trigger manual prediction."""
@@ -225,6 +243,7 @@ class ProximityAlertsSwitch(SwitchEntity):
     """Switch to enable/disable proximity alerts for cheap stations."""
     
     _attr_icon = "mdi:bell-alert"
+    _attr_has_entity_name = True
     
     def __init__(
         self,
@@ -237,8 +256,16 @@ class ProximityAlertsSwitch(SwitchEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{vehicle_name} Proximity Alerts"
+        self._attr_name = "Proximity Alerts"
         self._attr_unique_id = f"{config_entry.entry_id}_proximity_alerts"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
     
     @property
     def is_on(self) -> bool:
