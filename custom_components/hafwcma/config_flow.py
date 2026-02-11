@@ -93,8 +93,14 @@ async def async_poll_telegram_response(
         bot = Bot(token=bot_token)
         
         # Get the current update offset to only receive new messages
-        updates = await bot.get_updates(limit=1)
-        offset = updates[0].update_id + 1 if updates else None
+        # Start from the latest update to avoid processing old messages
+        updates = await bot.get_updates(limit=100, timeout=1)
+        if updates:
+            # Mark all existing updates as processed by setting offset to last update + 1
+            offset = updates[-1].update_id + 1
+        else:
+            # No existing updates - use offset 0 which will start from the first new update
+            offset = 0
         
         _LOGGER.info("Starting Telegram response polling (timeout: %d seconds)", timeout)
         
@@ -668,12 +674,14 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 
                 if response_text:
-                    # User responded - show success with their response
+                    # User responded - sanitize and show success with their response
+                    # Limit length and remove potentially problematic characters
+                    sanitized_response = response_text[:200].replace('\n', ' ').replace('\r', '')
                     return self.async_show_form(
                         step_id="validate_telegram",
                         data_schema=vol.Schema({}),
                         description_placeholders={
-                            "message": f"✅ Thanks for your response!\n\nYou replied: \"{response_text}\"\n\nNow I can also receive information from you! 😊",
+                            "message": f"✅ Thanks for your response!\n\nYou replied: \"{sanitized_response}\"\n\nNow I can also receive information from you! 😊",
                             "error_details": "",
                             "waiting": "",
                         },
