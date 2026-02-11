@@ -10,7 +10,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_PROXIMITY_ALERTS_ENABLED,
     CONF_VEHICLE_NAME,
+    DEFAULT_PROXIMITY_ALERTS_ENABLED,
     DOMAIN,
 )
 
@@ -39,6 +41,7 @@ async def async_setup_entry(
     switches = [
         ManualRefreshSwitch(coordinator, config_entry, vehicle_name),
         ManualPredictionSwitch(coordinator, config_entry, vehicle_name),
+        ProximityAlertsSwitch(coordinator, config_entry, vehicle_name, hass),
     ]
 
     async_add_entities(switches)
@@ -216,3 +219,43 @@ class ManualPredictionSwitch(SwitchEntity):
         if self._last_prediction_result:
             attrs["last_prediction_result"] = self._last_prediction_result
         return attrs
+
+
+class ProximityAlertsSwitch(SwitchEntity):
+    """Switch to enable/disable proximity alerts for cheap stations."""
+    
+    _attr_icon = "mdi:bell-alert"
+    
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the switch."""
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = f"{vehicle_name} Proximity Alerts"
+        self._attr_unique_id = f"{config_entry.entry_id}_proximity_alerts"
+    
+    @property
+    def is_on(self) -> bool:
+        """Return true if proximity alerts are enabled."""
+        options = self._config_entry.options
+        return options.get(CONF_PROXIMITY_ALERTS_ENABLED, DEFAULT_PROXIMITY_ALERTS_ENABLED)
+    
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on proximity alerts."""
+        _LOGGER.info("Enabling proximity alerts")
+        new_options = dict(self._config_entry.options)
+        new_options[CONF_PROXIMITY_ALERTS_ENABLED] = True
+        self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
+    
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off proximity alerts."""
+        _LOGGER.info("Disabling proximity alerts")
+        new_options = dict(self._config_entry.options)
+        new_options[CONF_PROXIMITY_ALERTS_ENABLED] = False
+        self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)

@@ -11,21 +11,35 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_CHEAP_STATIONS_COUNT,
+    CONF_CHEAP_STATIONS_RADIUS,
     CONF_CONSUMPTION_MIN_DATA_POINTS,
     CONF_CONSUMPTION_PREDICTION_INTERVAL,
+    CONF_MIN_TANK_LEVEL_FOR_ALERTS,
+    CONF_PROXIMITY_ALERT_DISTANCE,
     CONF_RADIUS,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
+    DEFAULT_CHEAP_STATIONS_COUNT,
+    DEFAULT_CHEAP_STATIONS_RADIUS,
     DEFAULT_CONSUMPTION_MIN_DATA_POINTS,
     DEFAULT_CONSUMPTION_PREDICTION_INTERVAL,
+    DEFAULT_MIN_TANK_LEVEL_FOR_ALERTS,
+    DEFAULT_PROXIMITY_ALERT_DISTANCE,
     DEFAULT_RADIUS,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
+    MAX_CHEAP_STATIONS_COUNT,
+    MAX_CHEAP_STATIONS_RADIUS,
     MAX_CONSUMPTION_MIN_DATA_POINTS,
     MAX_CONSUMPTION_PREDICTION_INTERVAL,
+    MAX_PROXIMITY_ALERT_DISTANCE,
     MAX_UPDATE_INTERVAL,
+    MIN_CHEAP_STATIONS_COUNT,
+    MIN_CHEAP_STATIONS_RADIUS,
     MIN_CONSUMPTION_MIN_DATA_POINTS,
     MIN_CONSUMPTION_PREDICTION_INTERVAL,
+    MIN_PROXIMITY_ALERT_DISTANCE,
     MIN_UPDATE_INTERVAL,
 )
 
@@ -56,6 +70,10 @@ async def async_setup_entry(
         UpdateIntervalNumber(coordinator, config_entry, vehicle_name, hass),
         ConsumptionMinDataPointsNumber(coordinator, config_entry, vehicle_name, hass),
         ConsumptionPredictionIntervalNumber(coordinator, config_entry, vehicle_name, hass),
+        ProximityAlertDistanceNumber(coordinator, config_entry, vehicle_name, hass),
+        CheapStationsCountNumber(coordinator, config_entry, vehicle_name, hass),
+        CheapStationsRadiusNumber(coordinator, config_entry, vehicle_name, hass),
+        MinTankLevelForAlertsNumber(coordinator, config_entry, vehicle_name, hass),
     ]
 
     async_add_entities(numbers)
@@ -284,3 +302,154 @@ class ConsumptionPredictionIntervalNumber(NumberEntity):
             options=new_options,
         )
 
+
+
+class ProximityAlertDistanceNumber(NumberEntity):
+    """Number entity for proximity alert distance threshold."""
+    
+    _attr_icon = "mdi:map-marker-distance"
+    _attr_mode = NumberMode.BOX
+    _attr_native_min_value = MIN_PROXIMITY_ALERT_DISTANCE
+    _attr_native_max_value = MAX_PROXIMITY_ALERT_DISTANCE
+    _attr_native_step = 0.1
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the number entity."""
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = f"{vehicle_name} Proximity Alert Distance"
+        self._attr_unique_id = f"{config_entry.entry_id}_proximity_alert_distance"
+    
+    @property
+    def native_value(self) -> float:
+        """Return the current proximity alert distance."""
+        options = self._config_entry.options
+        return float(options.get(CONF_PROXIMITY_ALERT_DISTANCE, DEFAULT_PROXIMITY_ALERT_DISTANCE))
+    
+    async def async_set_native_value(self, value: float) -> None:
+        """Update the proximity alert distance."""
+        _LOGGER.info("Updating proximity alert distance to %.1f km", value)
+        new_options = dict(self._config_entry.options)
+        new_options[CONF_PROXIMITY_ALERT_DISTANCE] = value
+        self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
+
+
+class CheapStationsCountNumber(NumberEntity):
+    """Number entity for number of cheap stations to track."""
+    
+    _attr_icon = "mdi:counter"
+    _attr_mode = NumberMode.BOX
+    _attr_native_min_value = float(MIN_CHEAP_STATIONS_COUNT)
+    _attr_native_max_value = float(MAX_CHEAP_STATIONS_COUNT)
+    _attr_native_step = 1.0
+    
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the number entity."""
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = f"{vehicle_name} Cheap Stations Count"
+        self._attr_unique_id = f"{config_entry.entry_id}_cheap_stations_count"
+    
+    @property
+    def native_value(self) -> float:
+        """Return the current cheap stations count."""
+        options = self._config_entry.options
+        return float(options.get(CONF_CHEAP_STATIONS_COUNT, DEFAULT_CHEAP_STATIONS_COUNT))
+    
+    async def async_set_native_value(self, value: float) -> None:
+        """Update the cheap stations count."""
+        _LOGGER.info("Updating cheap stations count to %d", int(value))
+        new_options = dict(self._config_entry.options)
+        new_options[CONF_CHEAP_STATIONS_COUNT] = int(value)
+        self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
+
+
+class CheapStationsRadiusNumber(NumberEntity):
+    """Number entity for cheap stations search radius."""
+    
+    _attr_icon = "mdi:radius-outline"
+    _attr_mode = NumberMode.BOX
+    _attr_native_min_value = MIN_CHEAP_STATIONS_RADIUS
+    _attr_native_max_value = MAX_CHEAP_STATIONS_RADIUS
+    _attr_native_step = 0.5
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the number entity."""
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = f"{vehicle_name} Cheap Stations Radius"
+        self._attr_unique_id = f"{config_entry.entry_id}_cheap_stations_radius"
+    
+    @property
+    def native_value(self) -> float:
+        """Return the current cheap stations radius."""
+        options = self._config_entry.options
+        return float(options.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS))
+    
+    async def async_set_native_value(self, value: float) -> None:
+        """Update the cheap stations radius."""
+        _LOGGER.info("Updating cheap stations radius to %.1f km", value)
+        new_options = dict(self._config_entry.options)
+        new_options[CONF_CHEAP_STATIONS_RADIUS] = value
+        self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
+
+
+class MinTankLevelForAlertsNumber(NumberEntity):
+    """Number entity for minimum tank level threshold for proximity alerts."""
+    
+    _attr_icon = "mdi:gauge-empty"
+    _attr_mode = NumberMode.BOX
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 100.0
+    _attr_native_step = 5.0
+    _attr_native_unit_of_measurement = "%"
+    
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the number entity."""
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = f"{vehicle_name} Min Tank Level For Alerts"
+        self._attr_unique_id = f"{config_entry.entry_id}_min_tank_level_for_alerts"
+    
+    @property
+    def native_value(self) -> float:
+        """Return the current minimum tank level for alerts."""
+        options = self._config_entry.options
+        return float(options.get(CONF_MIN_TANK_LEVEL_FOR_ALERTS, DEFAULT_MIN_TANK_LEVEL_FOR_ALERTS))
+    
+    async def async_set_native_value(self, value: float) -> None:
+        """Update the minimum tank level for alerts."""
+        _LOGGER.info("Updating min tank level for alerts to %.0f%%", value)
+        new_options = dict(self._config_entry.options)
+        new_options[CONF_MIN_TANK_LEVEL_FOR_ALERTS] = value
+        self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)

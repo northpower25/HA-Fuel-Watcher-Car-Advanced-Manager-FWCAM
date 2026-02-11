@@ -122,7 +122,48 @@ ATTR_CONFIDENCE: Final = "confidence"
 ATTR_AVG_CONSUMPTION_RATE: Final = "avg_consumption_rate"
 ATTR_DATA_POINTS_USED: Final = "data_points_used"
 
+# Geolocation configuration keys
+CONF_PROXIMITY_ALERT_DISTANCE: Final = "proximity_alert_distance"
+CONF_CHEAP_STATIONS_COUNT: Final = "cheap_stations_count"
+CONF_CHEAP_STATIONS_RADIUS: Final = "cheap_stations_radius"
+CONF_PROXIMITY_ALERTS_ENABLED: Final = "proximity_alerts_enabled"
+CONF_MIN_TANK_LEVEL_FOR_ALERTS: Final = "min_tank_level_for_alerts"
+
+# Geolocation defaults
+DEFAULT_PROXIMITY_ALERT_DISTANCE: Final = 1.5  # km
+MIN_PROXIMITY_ALERT_DISTANCE: Final = 0.1  # km
+MAX_PROXIMITY_ALERT_DISTANCE: Final = 10.0  # km
+DEFAULT_CHEAP_STATIONS_COUNT: Final = 5
+MIN_CHEAP_STATIONS_COUNT: Final = 1
+MAX_CHEAP_STATIONS_COUNT: Final = 20
+DEFAULT_CHEAP_STATIONS_RADIUS: Final = 15.0  # km
+MIN_CHEAP_STATIONS_RADIUS: Final = 1.0  # km
+MAX_CHEAP_STATIONS_RADIUS: Final = 50.0  # km
+DEFAULT_MIN_TANK_LEVEL_FOR_ALERTS: Final = 30.0  # percentage
+DEFAULT_PROXIMITY_ALERTS_ENABLED: Final = False  # opt-in
+
+# Geolocation update intervals
+GEOLOCATION_API_UPDATE_INTERVAL: Final = 600  # 10 minutes in seconds
+GEOLOCATION_PROXIMITY_CHECK_INTERVAL: Final = 30  # 30 seconds
+GEOLOCATION_PROXIMITY_CHECK_STATIONARY: Final = 300  # 5 minutes when stationary
+GEOLOCATION_ALERT_COOLDOWN: Final = 1800  # 30 minutes in seconds
+GEOLOCATION_HYSTERESIS_FACTOR: Final = 1.3  # 30% more distance to reset
+
+# Additional attributes for geolocation
+ATTR_STATIONS: Final = "stations"
+ATTR_SEARCH_RADIUS_KM: Final = "search_radius_km"
+ATTR_VEHICLE_LATITUDE: Final = "vehicle_latitude"
+ATTR_VEHICLE_LONGITUDE: Final = "vehicle_longitude"
+ATTR_MAX_STATIONS: Final = "max_stations"
+ATTR_PROXIMITY_THRESHOLD_KM: Final = "proximity_threshold_km"
+ATTR_NAVIGATION_URLS: Final = "navigation_urls"
+ATTR_ALERT_MESSAGE: Final = "alert_message"
+ATTR_IS_OPEN: Final = "is_open"
+ATTR_BRAND: Final = "brand"
+ATTR_FUEL_TYPE: Final = "fuel_type"
+
 # Events
 EVENT_FUEL_PRICE_ALERT: Final = f"{DOMAIN}_fuel_price_alert"
 EVENT_TANK_LOW: Final = f"{DOMAIN}_tank_low"
 EVENT_REFUEL_RECOMMENDATION: Final = f"{DOMAIN}_refuel_recommendation"
+EVENT_NEAR_CHEAP_STATION: Final = f"{DOMAIN}_near_cheap_station"
