@@ -142,7 +142,7 @@ def _format_station_name(brand: str, place: str, street: str, api_name: str) -> 
         components.append(street.strip())
     
     # If we have all three components, use them
-    if len(components) >= 3:
+    if len(components) == 3:
         return " ".join(components)
     
     # Otherwise, fall back to API name
