@@ -176,7 +176,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             update_interval=timedelta(minutes=randomized_minutes),
         )
         self.config_entry = config_entry
-        self.vehicle_tracker = VehicleDataTracker()
+        
+        # Get tank capacity from config for percentage-based refueling detection
+        tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(
+            CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY
+        )
+        self.vehicle_tracker = VehicleDataTracker(tank_capacity=tank_capacity)
+        
         self._provider = None
         self._session = None
         self._api_debug_info = None  # Store debug info about API requests/responses
