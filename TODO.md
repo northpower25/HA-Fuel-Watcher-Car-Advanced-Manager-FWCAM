@@ -19,6 +19,79 @@
 
 ---
 
+## 🔄 Deferred Features (Future Enhancements)
+
+### API Testing in Config Flow
+**Status**: Deferred / In Planning  
+**Priority**: Medium  
+**Estimated Effort**: 15-20 hours  
+**Documentation**: See `docs/FEATURE_API_TESTING_CONFIG_FLOW.md` (DE) and `docs/FEATURE_API_TESTING_CONFIG_FLOW_EN.md` (EN)
+
+**Reason for Deferral**: High implementation complexity for marginal user benefit. Users can test API configuration after setup via existing test buttons and manual verification.
+
+#### Feature Scope
+- [ ] **Fuel Price API Validation during Config Flow**
+  - [ ] Implement `async_step_validate_api` in config_flow.py
+  - [ ] Test API connection with home coordinates
+  - [ ] Display list of found stations on success
+    - [ ] Station name, address, prices (e5, e10, diesel)
+  - [ ] Show detailed error message on failure
+  - [ ] Add "OK" button to continue or "Back" button to retry
+  - [ ] Implement retry mechanism for failed connections
+  - [ ] Add skip option for advanced users
+
+- [ ] **Telegram API Validation during Config Flow**
+  - [ ] Implement `async_step_validate_telegram` in config_flow.py
+  - [ ] Send test message with title and instructions
+  - [ ] Implement response waiting mechanism
+    - [ ] Polling-based (Phase 1) or webhook-based (Phase 2)
+  - [ ] Display waiting screen with instructions
+  - [ ] Add "Back" and "Cancel" buttons during wait
+  - [ ] Implement timeout handling (2 minutes)
+  - [ ] Process received response and display confirmation
+  - [ ] Implement `async_step_telegram_response` for response handling
+  - [ ] Add rollback functionality on cancel
+
+#### Technical Requirements
+- [ ] State management for multi-step validation flows
+- [ ] Async API call handling during config flow
+- [ ] Error handling for various API error scenarios
+- [ ] Timeout management for Telegram responses
+- [ ] Loading indicators during API calls
+- [ ] Translations for all new UI strings (DE/EN)
+
+#### Acceptance Criteria
+- [ ] API test completes within 5 seconds
+- [ ] Telegram test has 2-minute timeout
+- [ ] Error messages are clear and actionable
+- [ ] Users can navigate back to fix configuration
+- [ ] Setup can be cancelled without leaving orphaned data
+- [ ] All strings are properly translated
+
+#### Dependencies
+- Home Assistant Config Flow Framework
+- python-telegram-bot library (for Telegram testing)
+- Existing provider implementations (TankerKönig)
+- aiohttp for async HTTP requests
+
+#### Implementation Phases
+1. **Phase 1 (MVP - 8-10h)**: API validation with basic error handling
+2. **Phase 2 (Basic - 10-12h)**: Telegram validation with polling
+3. **Phase 3 (Optional - 5-8h)**: Webhooks, retry mechanisms, enhanced UX
+
+#### Alternatives Considered
+- Post-setup validation via services (simpler, less integrated)
+- Optional test buttons in options flow (lower priority)
+- Better documentation instead of automated tests
+- Separate test integration for validation only
+
+#### Related Issues
+- Original request: GitHub Discussion 2026-02-11
+- Config flow TODO: Line 108-109 in config_flow.py
+- Testing improvements: Can be combined with future test infrastructure
+
+---
+
 ## High Priority
 
 ### Core Functionality
@@ -230,4 +303,4 @@
 
 **Note**: This is a living document. Items will be added, removed, or reprioritized based on user feedback and development progress.
 
-Last updated: 2026-02-09
+Last updated: 2026-02-11

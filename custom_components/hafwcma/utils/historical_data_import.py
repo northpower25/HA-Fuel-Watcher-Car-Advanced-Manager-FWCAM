@@ -350,6 +350,16 @@ async def _import_tank_history_and_detect_refueling(
         previous_level = None
         previous_time = None
         
+        # Determine if tank level is in percentage or liters from first valid state
+        tank_level_in_percentage = False
+        for state in tank_states[tank_level_entity]:
+            if state.state not in ["unknown", "unavailable", "none", None]:
+                unit = state.attributes.get("unit_of_measurement", "").lower()
+                if unit in ["%", "percent", "percentage"]:
+                    tank_level_in_percentage = True
+                    _LOGGER.debug("Tank level entity uses percentage unit: %s", unit)
+                break
+        
         for state in tank_states[tank_level_entity]:
             try:
                 # Skip if state is unknown or unavailable
@@ -357,6 +367,11 @@ async def _import_tank_history_and_detect_refueling(
                     continue
                 
                 current_level = float(state.state)
+                
+                # Convert percentage to liters if needed
+                if tank_level_in_percentage:
+                    current_level = (current_level / 100.0) * tank_capacity
+                
                 current_time = state.last_changed
                 
                 # Detect refueling: significant increase in tank level
