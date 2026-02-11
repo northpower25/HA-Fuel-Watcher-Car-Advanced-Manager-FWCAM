@@ -29,8 +29,9 @@ from .storage import (
 _LOGGER = logging.getLogger(__name__)
 
 # Constants for historical data import configuration
-REFUEL_DETECTION_THRESHOLD_LITERS = 5  # Minimum tank level increase to detect refueling
-REFUEL_DETECTION_MIN_TIME_GAP_MINUTES = 5  # Minimum time between refuelings
+REFUEL_DETECTION_THRESHOLD_PERCENT = 4.0  # Minimum tank level increase (as percentage of tank capacity) to detect refueling
+REFUEL_MERGE_TIME_WINDOW_MINUTES = 15  # Time window to merge multiple refueling events into one
+REFUEL_DETECTION_MIN_TIME_GAP_MINUTES = 5  # Minimum time between separate refuelings (deprecated - use merge window)
 ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS = 1  # Maximum time difference for odometer lookup
 PRICE_LOOKUP_WINDOW_DAYS = 7  # Maximum age of price data to use for historical events
 SECONDS_PER_HOUR = 3600  # Number of seconds in an hour
@@ -350,6 +351,9 @@ async def _import_tank_history_and_detect_refueling(
         previous_level = None
         previous_time = None
         
+        # Track potential refueling events to merge close ones
+        pending_refuel_events = []
+        
         # Determine if tank level is in percentage or liters from first valid state
         tank_level_in_percentage = False
         for state in tank_states[tank_level_entity]:
@@ -359,6 +363,15 @@ async def _import_tank_history_and_detect_refueling(
                     tank_level_in_percentage = True
                     _LOGGER.debug("Tank level entity uses percentage unit: %s", unit)
                 break
+        
+        # Calculate threshold in liters based on percentage
+        threshold_liters = (REFUEL_DETECTION_THRESHOLD_PERCENT / 100.0) * tank_capacity
+        _LOGGER.debug(
+            "Using percentage-based threshold: %.1f%% = %.2f liters (tank capacity: %.1fL)",
+            REFUEL_DETECTION_THRESHOLD_PERCENT,
+            threshold_liters,
+            tank_capacity,
+        )
         
         for state in tank_states[tank_level_entity]:
             try:
@@ -379,65 +392,30 @@ async def _import_tank_history_and_detect_refueling(
                     level_increase = current_level - previous_level
                     
                     # Refueling detected if increase exceeds threshold
-                    # and time gap is sufficient (to avoid duplicate detections)
-                    if level_increase > REFUEL_DETECTION_THRESHOLD_LITERS:
-                        time_gap = (current_time - previous_time).total_seconds() / 60
-                        if time_gap > REFUEL_DETECTION_MIN_TIME_GAP_MINUTES:
-                            # Check if this refueling is a duplicate
-                            is_duplicate = False
-                            for existing_ts in existing_timestamps:
-                                time_diff_hours = abs((current_time - existing_ts).total_seconds()) / SECONDS_PER_HOUR
-                                if time_diff_hours < DUPLICATE_DETECTION_WINDOW_HOURS:
-                                    is_duplicate = True
-                                    _LOGGER.debug(
-                                        "Skipping duplicate refueling at %s (existing: %s)",
-                                        current_time.isoformat(),
-                                        existing_ts.isoformat(),
-                                    )
-                                    break
-                            
-                            if is_duplicate:
-                                continue
-                            
-                            # Find closest odometer reading
-                            odometer_km = _find_closest_odometer(odometer_lookup, current_time)
-                            
-                            # Get current price from integration data (if available)
-                            price_per_liter = await _get_current_price(hass, entry, current_time)
-                            
-                            # Calculate confidence based on data availability
-                            confidence = _calculate_confidence(
-                                odometer_km=odometer_km,
-                                price_per_liter=price_per_liter,
-                                level_increase=level_increase,
-                                tank_capacity=tank_capacity,
-                            )
-                            
-                            # Create refueling event with quality indicators
-                            event_data = {
-                                "timestamp": current_time.isoformat(),
-                                "odometer_km": odometer_km,
-                                "station_name": "Historical Import",
-                                "liters_refueled": level_increase,
-                                "price_per_liter": price_per_liter,
-                                "total_cost": level_increase * price_per_liter if price_per_liter else None,
-                                "latitude": None,
-                                "longitude": None,
-                                "fuel_type": fuel_type,
-                                "data_quality": "historical_import",
-                                "confidence": confidence,
-                            }
-                            
-                            await add_refuel_event(hass, entry, event_data)
-                            existing_timestamps.add(current_time)  # Add to prevent duplicates in same import
-                            refuel_count += 1
-                            
+                    if level_increase > threshold_liters:
+                        # Check if this refueling is a duplicate
+                        is_duplicate = False
+                        for existing_ts in existing_timestamps:
+                            time_diff_hours = abs((current_time - existing_ts).total_seconds()) / SECONDS_PER_HOUR
+                            if time_diff_hours < DUPLICATE_DETECTION_WINDOW_HOURS:
+                                is_duplicate = True
+                                _LOGGER.debug(
+                                    "Skipping duplicate refueling at %s (existing: %s)",
+                                    current_time.isoformat(),
+                                    existing_ts.isoformat(),
+                                )
+                                break
+                        
+                        if not is_duplicate:
+                            # Add to pending events for potential merging
+                            pending_refuel_events.append({
+                                "timestamp": current_time,
+                                "liters": level_increase,
+                            })
                             _LOGGER.debug(
-                                "Detected historical refueling: +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
+                                "Detected potential refueling: +%.2fL at %s",
                                 level_increase,
                                 current_time.isoformat(),
-                                odometer_km or 0,
-                                confidence,
                             )
                 
                 previous_level = current_level
@@ -446,6 +424,66 @@ async def _import_tank_history_and_detect_refueling(
             except (ValueError, TypeError) as err:
                 _LOGGER.debug("Skipping invalid tank level state: %s (%s)", state.state, err)
                 continue
+        
+        # Merge refueling events that occur within the merge time window
+        merged_events = _merge_refueling_events(pending_refuel_events, REFUEL_MERGE_TIME_WINDOW_MINUTES)
+        
+        # Create refueling log entries for merged events
+        for merged_event in merged_events:
+            current_time = merged_event["timestamp"]
+            level_increase = merged_event["liters"]
+            merged_count = merged_event.get("merged_count", 1)
+            
+            # Find closest odometer reading
+            odometer_km = _find_closest_odometer(odometer_lookup, current_time)
+            
+            # Get current price from integration data (if available)
+            price_per_liter = await _get_current_price(hass, entry, current_time)
+            
+            # Calculate confidence based on data availability
+            confidence = _calculate_confidence(
+                odometer_km=odometer_km,
+                price_per_liter=price_per_liter,
+                level_increase=level_increase,
+                tank_capacity=tank_capacity,
+            )
+            
+            # Create refueling event with quality indicators
+            event_data = {
+                "timestamp": current_time.isoformat(),
+                "odometer_km": odometer_km,
+                "station_name": "Historical Import",
+                "liters_refueled": level_increase,
+                "price_per_liter": price_per_liter,
+                "total_cost": level_increase * price_per_liter if price_per_liter else None,
+                "latitude": None,
+                "longitude": None,
+                "fuel_type": fuel_type,
+                "data_quality": "historical_import",
+                "confidence": confidence,
+            }
+            
+            await add_refuel_event(hass, entry, event_data)
+            existing_timestamps.add(current_time)  # Add to prevent duplicates in same import
+            refuel_count += 1
+            
+            if merged_count > 1:
+                _LOGGER.info(
+                    "Detected historical refueling (merged %d events): +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
+                    merged_count,
+                    level_increase,
+                    current_time.isoformat(),
+                    odometer_km or 0,
+                    confidence,
+                )
+            else:
+                _LOGGER.debug(
+                    "Detected historical refueling: +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
+                    level_increase,
+                    current_time.isoformat(),
+                    odometer_km or 0,
+                    confidence,
+                )
         
         # Log summary if any refuelings were detected
         if refuel_count > 0:
@@ -459,6 +497,70 @@ async def _import_tank_history_and_detect_refueling(
         raise
     
     return refuel_count
+
+
+def _merge_refueling_events(
+    events: list[dict[str, Any]],
+    merge_window_minutes: float,
+) -> list[dict[str, Any]]:
+    """Merge refueling events that occur within a time window.
+    
+    When multiple tank level increases occur close together (e.g., sensor updates
+    during a single refueling session), merge them into a single event.
+    
+    Args:
+        events: List of refueling events with 'timestamp' and 'liters' keys
+        merge_window_minutes: Time window in minutes to consider events as part of same refueling
+        
+    Returns:
+        List of merged refueling events
+    """
+    if not events:
+        return []
+    
+    # Sort events by timestamp
+    sorted_events = sorted(events, key=lambda x: x["timestamp"])
+    
+    merged = []
+    current_group = None
+    
+    for event in sorted_events:
+        if current_group is None:
+            # Start a new group
+            current_group = {
+                "timestamp": event["timestamp"],
+                "liters": event["liters"],
+                "merged_count": 1,
+            }
+        else:
+            # Check if this event should be merged with current group
+            time_diff_minutes = (event["timestamp"] - current_group["timestamp"]).total_seconds() / 60
+            
+            if time_diff_minutes <= merge_window_minutes:
+                # Merge into current group
+                current_group["liters"] += event["liters"]
+                current_group["merged_count"] += 1
+                _LOGGER.debug(
+                    "Merging refueling event at %s (+%.2fL) with event at %s (time diff: %.1f min)",
+                    event["timestamp"].isoformat(),
+                    event["liters"],
+                    current_group["timestamp"].isoformat(),
+                    time_diff_minutes,
+                )
+            else:
+                # Time gap too large, save current group and start new one
+                merged.append(current_group)
+                current_group = {
+                    "timestamp": event["timestamp"],
+                    "liters": event["liters"],
+                    "merged_count": 1,
+                }
+    
+    # Don't forget the last group
+    if current_group is not None:
+        merged.append(current_group)
+    
+    return merged
 
 
 def _find_closest_odometer(
