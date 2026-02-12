@@ -29,6 +29,21 @@ from .storage import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Simple state-like class for wrapping long-term statistics data
+class _StateLike:
+    """Minimal state-like object to wrap long-term statistics data."""
+    
+    def __init__(self, value: float, timestamp: datetime) -> None:
+        """Initialize state-like object.
+        
+        Args:
+            value: The sensor value
+            timestamp: The timestamp for this value
+        """
+        self.state = str(value)
+        self.last_changed = timestamp
+        self.attributes = {}
+
 # Constants for historical data import configuration
 REFUEL_DETECTION_THRESHOLD_PERCENT = 3.5  # Minimum tank level increase (as percentage of tank capacity) to detect refueling
 REFUEL_MERGE_TIME_WINDOW_MINUTES = 15  # Time window to merge multiple refueling events into one
@@ -325,14 +340,7 @@ async def _import_odometer_history(
             
             # Convert long-term statistics to state-like objects
             for data_point in long_term_data:
-                # Create a minimal state-like object
-                class StateLike:
-                    def __init__(self, value, timestamp):
-                        self.state = str(value)
-                        self.last_changed = timestamp
-                        self.attributes = {}
-                
-                all_states.append(StateLike(data_point["value"], data_point["timestamp"]))
+                all_states.append(_StateLike(data_point["value"], data_point["timestamp"]))
             
             _LOGGER.info("Retrieved %d data points from long-term statistics", len(long_term_data))
         
@@ -368,7 +376,7 @@ async def _import_odometer_history(
             
             _LOGGER.info(
                 "Retrieved %d odometer states from short-term history",
-                len([s for s in all_states if hasattr(s, '__class__') and 'State' in s.__class__.__name__]),
+                sum(1 for s in all_states if hasattr(s, '__class__') and 'State' in s.__class__.__name__),
             )
         
         if not all_states:
@@ -498,14 +506,7 @@ async def _import_tank_history_and_detect_refueling(
             
             # Convert long-term statistics to state-like objects
             for data_point in long_term_data:
-                # Create a minimal state-like object
-                class TankStateLike:
-                    def __init__(self, value, timestamp):
-                        self.state = str(value)
-                        self.last_changed = timestamp
-                        self.attributes = {}
-                
-                all_tank_states.append(TankStateLike(data_point["value"], data_point["timestamp"]))
+                all_tank_states.append(_StateLike(data_point["value"], data_point["timestamp"]))
             
             _LOGGER.info("Retrieved %d tank level data points from long-term statistics", len(long_term_data))
         
@@ -597,13 +598,7 @@ async def _import_tank_history_and_detect_refueling(
             
             # Convert long-term statistics to state-like objects
             for data_point in long_term_odo_data:
-                class OdometerStateLike:
-                    def __init__(self, value, timestamp):
-                        self.state = str(value)
-                        self.last_changed = timestamp
-                        self.attributes = {}
-                
-                all_odometer_states.append(OdometerStateLike(data_point["value"], data_point["timestamp"]))
+                all_odometer_states.append(_StateLike(data_point["value"], data_point["timestamp"]))
         
         # Fetch short-term history for recent odometer data
         short_term_start = max(start_time, short_term_cutoff)
