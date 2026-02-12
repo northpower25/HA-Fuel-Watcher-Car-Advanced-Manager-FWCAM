@@ -123,6 +123,7 @@
         "description": "haFWCMA Integrationsoptionen konfigurieren",
         "data": {
           "provider": "Kraftstoffpreis-Anbieter (Dropdown-Auswahl)",
+          "api_key": "API-Schlüssel (Von Tankerkönig-Website erhalten)",
           "update_interval": "Aktualisierungsintervall in Minuten (1-60, z.B. 5)",
           "radius": "Suchradius in km (z.B. 5.0)",
           "fuel_type": "Kraftstoffart (Dropdown-Auswahl)",
@@ -147,6 +148,7 @@
         },
         "data_description": {
           "provider": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter",
+          "api_key": "Geben Sie Ihren Tankerkönig API-Schlüssel ein",
           "update_interval": "Wie oft nach Preisaktualisierungen gesucht werden soll",
           "radius": "Maximale Entfernung zur Suche nach Tankstellen",
           "fuel_type": "Kraftstoffart für Ihr Fahrzeug",

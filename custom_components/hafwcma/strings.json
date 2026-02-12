@@ -123,6 +123,7 @@
         "description": "Configure haFWCMA integration options",
         "data": {
           "provider": "Fuel Price Provider (Select from dropdown)",
+          "api_key": "API Key (Get from Tankerkönig website)",
           "update_interval": "Update Interval in minutes (1-60, e.g., 5)",
           "radius": "Search Radius in km (e.g., 5.0)",
           "fuel_type": "Fuel Type (Select from dropdown)",
@@ -147,6 +148,7 @@
         },
         "data_description": {
           "provider": "Choose your fuel price data provider",
+          "api_key": "Enter your Tankerkönig API key",
           "update_interval": "How often to check for price updates",
           "radius": "Maximum distance to search for gas stations",
           "fuel_type": "Type of fuel your vehicle uses",

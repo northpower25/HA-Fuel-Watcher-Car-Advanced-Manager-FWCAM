@@ -961,6 +961,10 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
         if provider_value not in PROVIDERS:
             provider_value = PROVIDER_TANKERKONIG
             
+        api_key_value = current_options.get(CONF_API_KEY, "")
+        if not api_key_value:
+            api_key_value = current_config.get(CONF_API_KEY, "")
+            
         update_interval_value = current_options.get(CONF_UPDATE_INTERVAL)
         if update_interval_value is None or update_interval_value == "":
             update_interval_value = current_config.get(CONF_UPDATE_INTERVAL)
@@ -1081,6 +1085,11 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
+                vol.Optional(
+                    CONF_API_KEY,
+                    default=api_key_value,
+                    description={"suggested_value": api_key_value},
+                ): str,
                 vol.Optional(
                     CONF_UPDATE_INTERVAL,
                     default=update_interval_value,
