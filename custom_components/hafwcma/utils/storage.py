@@ -17,6 +17,7 @@ Based on the fuel_watcher storage architecture.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -276,9 +277,15 @@ async def add_refuel_event(
     data["next_refuel_id"] = next_id + 1
     
     # Create complete refueling record with ID
+    # Ensure timestamp is always stored as a string
+    timestamp = event_data.get("timestamp")
+    if timestamp is not None and isinstance(timestamp, datetime):
+        # Convert datetime object to ISO format string
+        timestamp = timestamp.isoformat()
+    
     refuel_record = {
         "id": next_id,
-        "timestamp": event_data.get("timestamp"),
+        "timestamp": timestamp,
         "odometer_km": event_data.get("odometer_km"),
         "station_name": event_data.get("station_name"),
         "station_address": event_data.get("station_address"),
@@ -644,6 +651,10 @@ async def calculate_consumption_history(
     """Calculate average consumption for a historical period.
     
     Calculates consumption based on refueling events and odometer changes.
+    Events are filtered by timestamp, then sorted chronologically for consumption calculation.
+    
+    Implementation note: Filtered events are stored as (datetime, event) tuples
+    to enable consistent chronological sorting regardless of original timestamp format.
     
     Args:
         hass: Home Assistant instance
@@ -672,14 +683,101 @@ async def calculate_consumption_history(
     # Calculate cutoff timestamp
     cutoff = dt_util.now() - timedelta(days=days)
     
+    _LOGGER.debug(
+        "calculate_consumption_history(%d days): cutoff=%s, now=%s",
+        days, cutoff, dt_util.now()
+    )
+    
     # Filter events within period
     relevant_events = []
     for event in refueling_log:
+        timestamp_value = event.get("timestamp", "")
+        event_time = None
+        
         try:
-            event_time = dt_util.parse_datetime(event.get("timestamp", ""))
-            if event_time and event_time >= cutoff:
-                relevant_events.append(event)
-        except (ValueError, TypeError):
+            # Handle both string and datetime objects
+            # While timestamps should always be stored as strings (see add_refuel_event),
+            # we handle datetime objects here for robustness in case of:
+            # - Legacy data from older versions
+            # - Direct data manipulation/import
+            # - Race conditions during updates
+            if isinstance(timestamp_value, str):
+                event_time = dt_util.parse_datetime(timestamp_value)
+            elif isinstance(timestamp_value, datetime):  # It's already a datetime object
+                event_time = timestamp_value
+                _LOGGER.debug(
+                    "Event id=%s: timestamp is already a datetime object: %s",
+                    event.get("id"),
+                    event_time
+                )
+            else:
+                _LOGGER.debug(
+                    "Event id=%s: timestamp has unexpected type %s: %s",
+                    event.get("id"),
+                    type(timestamp_value),
+                    timestamp_value
+                )
+                continue
+            
+            if not event_time:
+                _LOGGER.debug(
+                    "Event id=%s timestamp=%s -> parse returned None",
+                    event.get("id"),
+                    timestamp_value
+                )
+                continue
+        except (ValueError, TypeError) as e:
+            _LOGGER.debug(
+                "Event id=%s timestamp=%s -> parse failed: %s",
+                event.get("id"),
+                timestamp_value,
+                e
+            )
+            continue
+        
+        # Ensure event_time is timezone-aware for proper comparison (outside try-except)
+        try:
+            if event_time.tzinfo is None:
+                # If event_time is naive, make it aware using the default timezone
+                event_time = dt_util.as_local(event_time)
+                _LOGGER.debug(
+                    "Event id=%s: converted naive datetime to timezone-aware: %s",
+                    event.get("id"),
+                    event_time
+                )
+        except (ValueError, TypeError) as e:
+            _LOGGER.debug(
+                "Event id=%s: timezone conversion failed: %s",
+                event.get("id"),
+                e
+            )
+            continue
+        
+        # Now do the comparison
+        try:
+            should_include = event_time >= cutoff
+            _LOGGER.debug(
+                "Event id=%s timestamp=%s -> parsed=%s -> included=%s (cutoff=%s)",
+                event.get("id"),
+                timestamp_value,
+                event_time,
+                should_include,
+                cutoff
+            )
+            
+            if should_include:
+                # Store as tuple (datetime, event) for chronological sorting
+                relevant_events.append((event_time, event))
+        except TypeError as e:
+            _LOGGER.error(
+                "Event id=%s: Comparison failed between event_time=%s (tzinfo=%s) and cutoff=%s (tzinfo=%s): %s",
+                event.get("id"),
+                event_time,
+                event_time.tzinfo,
+                cutoff,
+                cutoff.tzinfo,
+                e
+            )
             continue
     
     _LOGGER.debug(
@@ -691,7 +789,7 @@ async def calculate_consumption_history(
         # Need at least 2 refueling events to calculate consumption
         # But we can still calculate total cost from available events
         total_cost = 0.0
-        for event in relevant_events:
+        for event_time, event in relevant_events:
             price_per_liter = event.get("price_per_liter")
             liters_refueled = event.get("liters_refueled")
             if price_per_liter is not None and liters_refueled is not None:
@@ -705,8 +803,13 @@ async def calculate_consumption_history(
             "total_cost": round(total_cost, 2) if total_cost > 0 else 0.0,
         }
     
-    # Sort by timestamp
-    relevant_events.sort(key=lambda x: x.get("timestamp", ""))
+    # Sort by normalized timestamp (first element of tuple)
+    relevant_events.sort(key=lambda x: x[0])
+    
+    _LOGGER.debug(
+        "calculate_consumption_history(%d days): sorted %d events for consumption calc",
+        days, len(relevant_events)
+    )
     
     # Calculate total distance and fuel consumed
     # Logic: Fuel from refueling event i is consumed between event i and event i+1
@@ -714,12 +817,18 @@ async def calculate_consumption_history(
     total_liters = 0
     
     for i in range(len(relevant_events) - 1):
-        curr_event = relevant_events[i]
-        next_event = relevant_events[i + 1]
+        curr_time, curr_event = relevant_events[i]
+        next_time, next_event = relevant_events[i + 1]
         
         curr_odometer = curr_event.get("odometer_km")
         next_odometer = next_event.get("odometer_km")
         liters_refueled = curr_event.get("liters_refueled")
+        
+        _LOGGER.debug(
+            "Pair [%d->%d]: curr_odo=%s next_odo=%s liters=%s",
+            curr_event.get("id"), next_event.get("id"),
+            curr_odometer, next_odometer, liters_refueled
+        )
         
         # Fuel from current refueling was consumed to reach next refueling
         # Use explicit None checks to handle 0 values correctly
@@ -730,15 +839,36 @@ async def calculate_consumption_history(
             if km_driven > 0 and liters_refueled > 0:
                 total_km += km_driven
                 total_liters += liters_refueled
+                _LOGGER.debug(
+                    "Pair [%d->%d]: km_driven=%s consumed=%s L (running totals: %s km, %s L)",
+                    curr_event.get("id"), next_event.get("id"),
+                    km_driven, liters_refueled, total_km, total_liters
+                )
+            else:
+                _LOGGER.debug(
+                    "Pair [%d->%d]: SKIPPED (km_driven=%s <= 0 or liters=%s <= 0)",
+                    curr_event.get("id"), next_event.get("id"),
+                    km_driven, liters_refueled
+                )
+        else:
+            _LOGGER.debug(
+                "Pair [%d->%d]: SKIPPED (missing odometer or liters data)",
+                curr_event.get("id"), next_event.get("id")
+            )
     
     # Calculate average consumption
     avg_consumption = None
     if total_km > 0:
         avg_consumption = (total_liters / total_km) * 100
     
+    _LOGGER.debug(
+        "calculate_consumption_history(%d days): RESULT total_km=%s, total_liters=%s, avg_consumption=%s L/100km",
+        days, total_km, total_liters, avg_consumption
+    )
+    
     # Calculate total cost from refueling events in this period
     total_cost = 0.0
-    for event in relevant_events:
+    for event_time, event in relevant_events:
         price_per_liter = event.get("price_per_liter")
         liters_refueled = event.get("liters_refueled")
         if price_per_liter is not None and liters_refueled is not None:
