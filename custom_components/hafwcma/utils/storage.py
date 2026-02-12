@@ -687,11 +687,14 @@ async def calculate_consumption_history(
     relevant_events = []
     for event in refueling_log:
         timestamp_value = event.get("timestamp", "")
+        event_time = None
+        
         try:
             # Handle both string and datetime objects
+            from datetime import datetime
             if isinstance(timestamp_value, str):
                 event_time = dt_util.parse_datetime(timestamp_value)
-            elif hasattr(timestamp_value, 'tzinfo'):  # It's already a datetime object
+            elif isinstance(timestamp_value, datetime):  # It's already a datetime object
                 event_time = timestamp_value
                 _LOGGER.debug(
                     "Event id=%s: timestamp is already a datetime object: %s",
@@ -714,8 +717,17 @@ async def calculate_consumption_history(
                     timestamp_value
                 )
                 continue
-            
-            # Ensure event_time is timezone-aware for proper comparison
+        except (ValueError, TypeError) as e:
+            _LOGGER.debug(
+                "Event id=%s timestamp=%s -> parse failed: %s",
+                event.get("id"),
+                timestamp_value,
+                e
+            )
+            continue
+        
+        # Ensure event_time is timezone-aware for proper comparison (outside try-except)
+        try:
             if event_time.tzinfo is None:
                 # If event_time is naive, make it aware using the default timezone
                 event_time = dt_util.as_local(event_time)
@@ -726,14 +738,13 @@ async def calculate_consumption_history(
                 )
         except (ValueError, TypeError) as e:
             _LOGGER.debug(
-                "Event id=%s timestamp=%s -> parse failed: %s",
+                "Event id=%s: timezone conversion failed: %s",
                 event.get("id"),
-                timestamp_value,
                 e
             )
             continue
         
-        # Now do the comparison (outside try/except to catch any comparison errors)
+        # Now do the comparison
         try:
             should_include = event_time >= cutoff
             _LOGGER.debug(
@@ -746,6 +757,8 @@ async def calculate_consumption_history(
             )
             
             if should_include:
+                # Store the normalized timestamp back to the event for consistent sorting
+                event["_normalized_timestamp"] = event_time
                 relevant_events.append(event)
         except TypeError as e:
             _LOGGER.error(
@@ -782,8 +795,8 @@ async def calculate_consumption_history(
             "total_cost": round(total_cost, 2) if total_cost > 0 else 0.0,
         }
     
-    # Sort by timestamp
-    relevant_events.sort(key=lambda x: x.get("timestamp", ""))
+    # Sort by normalized timestamp (datetime objects)
+    relevant_events.sort(key=lambda x: x.get("_normalized_timestamp", dt_util.now()))
     
     _LOGGER.debug(
         "calculate_consumption_history(%d days): sorted %d events for consumption calc",
