@@ -279,7 +279,7 @@ async def add_refuel_event(
     # Create complete refueling record with ID
     # Ensure timestamp is always stored as a string
     timestamp = event_data.get("timestamp")
-    if timestamp and hasattr(timestamp, 'isoformat'):
+    if timestamp and isinstance(timestamp, datetime):
         # Convert datetime object to ISO format string
         timestamp = timestamp.isoformat()
     
@@ -692,6 +692,11 @@ async def calculate_consumption_history(
         
         try:
             # Handle both string and datetime objects
+            # While timestamps should always be stored as strings (see add_refuel_event),
+            # we handle datetime objects here for robustness in case of:
+            # - Legacy data from older versions
+            # - Direct data manipulation/import
+            # - Race conditions during updates
             if isinstance(timestamp_value, str):
                 event_time = dt_util.parse_datetime(timestamp_value)
             elif isinstance(timestamp_value, datetime):  # It's already a datetime object
@@ -757,7 +762,7 @@ async def calculate_consumption_history(
             )
             
             if should_include:
-                # Store event with normalized timestamp in a tuple to avoid mutating original
+                # Store as tuple (datetime, event) for chronological sorting
                 relevant_events.append((event_time, event))
         except TypeError as e:
             _LOGGER.error(
