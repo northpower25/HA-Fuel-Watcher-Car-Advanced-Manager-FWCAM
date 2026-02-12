@@ -720,9 +720,92 @@ async def calculate_consumption_history(
     if total_km > 0:
         avg_consumption = (total_liters / total_km) * 100
     
+    # Calculate total cost from refueling events in this period
+    total_cost = 0.0
+    for event in relevant_events:
+        price_per_liter = event.get("price_per_liter")
+        liters_refueled = event.get("liters_refueled")
+        if price_per_liter is not None and liters_refueled is not None:
+            total_cost += price_per_liter * liters_refueled
+    
     return {
         "avg_consumption_l_per_100km": avg_consumption,
         "total_liters": total_liters,
         "total_km": total_km,
         "refuel_count": len(relevant_events),
+        "total_cost": round(total_cost, 2) if total_cost > 0 else 0.0,
     }
+
+
+async def get_last_refuel_price(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> float | None:
+    """Get the price per liter from the most recent refueling event.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Price per liter from last refueling or None if not available
+    """
+    data = await load_data(hass, entry)
+    refueling_log = data.get("refueling_log", [])
+    
+    if not refueling_log:
+        return None
+    
+    # Sort by timestamp to get the most recent
+    sorted_log = sorted(
+        refueling_log,
+        key=lambda x: x.get("timestamp", ""),
+        reverse=True
+    )
+    
+    # Return price from most recent refueling
+    return sorted_log[0].get("price_per_liter")
+
+
+async def calculate_average_price(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    days: int = 7,
+) -> float | None:
+    """Calculate average price per liter over a period.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        days: Number of days to look back
+        
+    Returns:
+        Average price per liter or None if not available
+    """
+    from datetime import timedelta
+    from homeassistant.util import dt as dt_util
+    
+    data = await load_data(hass, entry)
+    refueling_log = data.get("refueling_log", [])
+    
+    if not refueling_log:
+        return None
+    
+    # Calculate cutoff timestamp
+    cutoff = dt_util.now() - timedelta(days=days)
+    
+    # Filter events within period and collect prices
+    prices = []
+    for event in refueling_log:
+        try:
+            event_time = dt_util.parse_datetime(event.get("timestamp", ""))
+            price_per_liter = event.get("price_per_liter")
+            if event_time and event_time >= cutoff and price_per_liter is not None:
+                prices.append(price_per_liter)
+        except (ValueError, TypeError):
+            continue
+    
+    if not prices:
+        return None
+    
+    return sum(prices) / len(prices)

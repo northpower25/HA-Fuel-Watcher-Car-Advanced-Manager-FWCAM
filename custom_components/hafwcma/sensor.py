@@ -395,10 +395,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
     ) -> dict[str, Any]:
         """Calculate consumption forecast for different time periods.
         
-        Uses ML prediction engine to forecast consumption patterns. Currently returns
-        the same average consumption rate for all periods. Future enhancements will add
-        time-specific forecasting with weekday/weekend patterns, seasonal variations,
-        and historical trends.
+        Uses ML prediction engine to forecast consumption patterns. Includes cost forecasts
+        based on historical price data and expected consumption.
         
         Args:
             consumption_prediction: Current consumption prediction data
@@ -406,28 +404,78 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         Returns:
             Dictionary with consumption forecasts for tomorrow, next week, next 14 days, next month
         """
+        from .utils.storage import get_last_refuel_price, calculate_average_price
+        
         if not consumption_prediction:
             periods = ["tomorrow", "next_week", "next_14_days", "next_month"]
             return {period: None for period in periods}
         
         # Get average consumption rate and confidence from prediction
         avg_consumption_rate = consumption_prediction.get("avg_consumption_rate")
+        avg_daily_km = consumption_prediction.get("avg_daily_km", 0.0)
         confidence = consumption_prediction.get("confidence", 0.0)
         data_source = consumption_prediction.get("data_source", "unknown")
         
-        # Create forecast with current average consumption rate
-        forecast_base = {
+        if not avg_consumption_rate:
+            periods = ["tomorrow", "next_week", "next_14_days", "next_month"]
+            return {period: None for period in periods}
+        
+        # Get price data for cost forecasting
+        last_price = await get_last_refuel_price(self.hass, self.config_entry)
+        avg_price_7d = await calculate_average_price(self.hass, self.config_entry, days=7)
+        avg_price_14d = await calculate_average_price(self.hass, self.config_entry, days=14)
+        avg_price_30d = await calculate_average_price(self.hass, self.config_entry, days=30)
+        
+        # Calculate cost forecasts for each period
+        # Cost = (daily_km * days * consumption_rate / 100) * price_per_liter
+        
+        # Tomorrow (1 day)
+        tomorrow_forecast = {
             "avg_consumption_l_per_100km": avg_consumption_rate,
             "confidence": confidence,
             "data_source": data_source,
         }
+        if last_price and avg_daily_km > 0:
+            liters_needed = (avg_daily_km * avg_consumption_rate) / 100
+            tomorrow_forecast["forecast_cost"] = round(liters_needed * last_price, 2)
         
-        # Return same forecast for all periods (future: time-specific forecasting)
-        periods = ["tomorrow", "next_week", "next_14_days", "next_month"]
-        return {
-            period: forecast_base.copy() if avg_consumption_rate else None
-            for period in periods
+        # Next week (7 days)
+        next_week_forecast = {
+            "avg_consumption_l_per_100km": avg_consumption_rate,
+            "confidence": confidence,
+            "data_source": data_source,
         }
+        if avg_price_7d and avg_daily_km > 0:
+            liters_needed = (avg_daily_km * 7 * avg_consumption_rate) / 100
+            next_week_forecast["forecast_cost"] = round(liters_needed * avg_price_7d, 2)
+        
+        # Next 14 days
+        next_14_days_forecast = {
+            "avg_consumption_l_per_100km": avg_consumption_rate,
+            "confidence": confidence,
+            "data_source": data_source,
+        }
+        if avg_price_14d and avg_daily_km > 0:
+            liters_needed = (avg_daily_km * 14 * avg_consumption_rate) / 100
+            next_14_days_forecast["forecast_cost"] = round(liters_needed * avg_price_14d, 2)
+        
+        # Next month (30 days)
+        next_month_forecast = {
+            "avg_consumption_l_per_100km": avg_consumption_rate,
+            "confidence": confidence,
+            "data_source": data_source,
+        }
+        if avg_price_30d and avg_daily_km > 0:
+            liters_needed = (avg_daily_km * 30 * avg_consumption_rate) / 100
+            next_month_forecast["forecast_cost"] = round(liters_needed * avg_price_30d, 2)
+        
+        return {
+            "tomorrow": tomorrow_forecast,
+            "next_week": next_week_forecast,
+            "next_14_days": next_14_days_forecast,
+            "next_month": next_month_forecast,
+        }
+
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -1514,6 +1562,8 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return consumption statistics for different time periods."""
         history = self.coordinator.data.get("consumption_history")
+        consumption_prediction = self.coordinator.data.get("consumption_prediction")
+        
         if not history:
             return {
                 "today": None,
@@ -1532,6 +1582,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             attributes["today_km"] = today.get("total_km", 0)
             attributes["today_liters"] = today.get("total_liters", 0)
             attributes["today_refuel_count"] = today.get("refuel_count", 0)
+            attributes["today_cost"] = today.get("total_cost", 0.0)
         
         # Last week
         if history.get("last_week"):
@@ -1540,6 +1591,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             attributes["last_week_km"] = week.get("total_km", 0)
             attributes["last_week_liters"] = week.get("total_liters", 0)
             attributes["last_week_refuel_count"] = week.get("refuel_count", 0)
+            attributes["last_week_cost"] = week.get("total_cost", 0.0)
         
         # Last 14 days
         if history.get("last_14_days"):
@@ -1548,6 +1600,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             attributes["last_14_days_km"] = two_weeks.get("total_km", 0)
             attributes["last_14_days_liters"] = two_weeks.get("total_liters", 0)
             attributes["last_14_days_refuel_count"] = two_weeks.get("refuel_count", 0)
+            attributes["last_14_days_cost"] = two_weeks.get("total_cost", 0.0)
         
         # Last month
         if history.get("last_month"):
@@ -1556,6 +1609,32 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             attributes["last_month_km"] = month.get("total_km", 0)
             attributes["last_month_liters"] = month.get("total_liters", 0)
             attributes["last_month_refuel_count"] = month.get("refuel_count", 0)
+            attributes["last_month_cost"] = month.get("total_cost", 0.0)
+        
+        # Add metadata from consumption_prediction if available
+        if consumption_prediction:
+            from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+            options = self._config_entry.options
+            config = self._config_entry.data
+            min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
+                CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+            )
+            
+            attributes["data_source"] = consumption_prediction.get("data_source", "unknown")
+            attributes["data_points_used"] = consumption_prediction.get("data_points_used", 0)
+            
+            # Calculate and add data points percentage
+            data_points_used = consumption_prediction.get("data_points_used", 0)
+            if min_data_points > 0:
+                data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
+                attributes["data_points_percentage"] = round(data_points_percentage, 1)
+            else:
+                attributes["data_points_percentage"] = 0.0
+            attributes["data_points_required"] = min_data_points
+            
+            # Add last prediction time
+            if consumption_prediction.get("last_prediction_time"):
+                attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
         
         return attributes
 
@@ -1607,6 +1686,8 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return forecasted consumption for different time periods."""
         forecast = self.coordinator.data.get("consumption_forecast")
+        consumption_prediction = self.coordinator.data.get("consumption_prediction")
+        
         if not forecast:
             return {
                 "tomorrow": None,
@@ -1624,6 +1705,9 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes["tomorrow_consumption"] = tomorrow.get("avg_consumption_l_per_100km")
             attributes["tomorrow_confidence"] = tomorrow.get("confidence", 0.0)
             attributes["tomorrow_data_source"] = tomorrow.get("data_source", "unknown")
+            # Add cost forecast (will be set by coordinator)
+            if tomorrow.get("forecast_cost") is not None:
+                attributes["tomorrow_cost"] = tomorrow.get("forecast_cost")
         
         # Next week
         if forecast.get("next_week"):
@@ -1631,6 +1715,9 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes["next_week_consumption"] = week.get("avg_consumption_l_per_100km")
             attributes["next_week_confidence"] = week.get("confidence", 0.0)
             attributes["next_week_data_source"] = week.get("data_source", "unknown")
+            # Add cost forecast (will be set by coordinator)
+            if week.get("forecast_cost") is not None:
+                attributes["next_week_cost"] = week.get("forecast_cost")
         
         # Next 14 days
         if forecast.get("next_14_days"):
@@ -1638,6 +1725,9 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes["next_14_days_consumption"] = two_weeks.get("avg_consumption_l_per_100km")
             attributes["next_14_days_confidence"] = two_weeks.get("confidence", 0.0)
             attributes["next_14_days_data_source"] = two_weeks.get("data_source", "unknown")
+            # Add cost forecast (will be set by coordinator)
+            if two_weeks.get("forecast_cost") is not None:
+                attributes["next_14_days_cost"] = two_weeks.get("forecast_cost")
         
         # Next month
         if forecast.get("next_month"):
@@ -1645,6 +1735,33 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes["next_month_consumption"] = month.get("avg_consumption_l_per_100km")
             attributes["next_month_confidence"] = month.get("confidence", 0.0)
             attributes["next_month_data_source"] = month.get("data_source", "unknown")
+            # Add cost forecast (will be set by coordinator)
+            if month.get("forecast_cost") is not None:
+                attributes["next_month_cost"] = month.get("forecast_cost")
+        
+        # Add metadata from consumption_prediction if available
+        if consumption_prediction:
+            from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+            options = self._config_entry.options
+            config = self._config_entry.data
+            min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
+                CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+            )
+            
+            attributes["data_points_used"] = consumption_prediction.get("data_points_used", 0)
+            
+            # Calculate and add data points percentage
+            data_points_used = consumption_prediction.get("data_points_used", 0)
+            if min_data_points > 0:
+                data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
+                attributes["data_points_percentage"] = round(data_points_percentage, 1)
+            else:
+                attributes["data_points_percentage"] = 0.0
+            attributes["data_points_required"] = min_data_points
+            
+            # Add last prediction time
+            if consumption_prediction.get("last_prediction_time"):
+                attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
         
         return attributes
 
