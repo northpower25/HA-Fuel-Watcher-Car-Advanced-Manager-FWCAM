@@ -1545,6 +1545,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         """
         history = self.coordinator.data.get("consumption_history")
         if not history:
+            _LOGGER.debug("ConsumptionHistorySensor: No consumption_history data available")
             return None
         
         # Try to get the most comprehensive average, prioritizing longer periods
@@ -1554,8 +1555,17 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             if period_data:
                 consumption = period_data.get("avg_consumption_l_per_100km")
                 if consumption is not None:
+                    _LOGGER.debug(
+                        "ConsumptionHistorySensor: Using %s consumption: %.2f L/100km",
+                        period_key, consumption
+                    )
                     return round(consumption, 2)
         
+        _LOGGER.warning(
+            "ConsumptionHistorySensor: No consumption data available in any period. "
+            "This may indicate insufficient refueling events. Need at least 2 refueling "
+            "events with odometer readings in a period to calculate consumption."
+        )
         return None
     
     @property

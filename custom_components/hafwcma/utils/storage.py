@@ -660,11 +660,13 @@ async def calculate_consumption_history(
     refueling_log = data.get("refueling_log", [])
     
     if not refueling_log:
+        _LOGGER.debug("No refueling log data available for consumption calculation")
         return {
             "avg_consumption_l_per_100km": None,
             "total_liters": 0,
             "total_km": 0,
             "refuel_count": 0,
+            "total_cost": 0.0,
         }
     
     # Calculate cutoff timestamp
@@ -680,13 +682,27 @@ async def calculate_consumption_history(
         except (ValueError, TypeError):
             continue
     
+    _LOGGER.debug(
+        "calculate_consumption_history(%d days): found %d/%d events in period",
+        days, len(relevant_events), len(refueling_log)
+    )
+    
     if len(relevant_events) < 2:
         # Need at least 2 refueling events to calculate consumption
+        # But we can still calculate total cost from available events
+        total_cost = 0.0
+        for event in relevant_events:
+            price_per_liter = event.get("price_per_liter")
+            liters_refueled = event.get("liters_refueled")
+            if price_per_liter is not None and liters_refueled is not None:
+                total_cost += price_per_liter * liters_refueled
+        
         return {
             "avg_consumption_l_per_100km": None,
             "total_liters": 0,
             "total_km": 0,
             "refuel_count": len(relevant_events),
+            "total_cost": round(total_cost, 2) if total_cost > 0 else 0.0,
         }
     
     # Sort by timestamp
