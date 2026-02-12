@@ -355,6 +355,7 @@ async def _import_odometer_history(
             
             chunk_days = 7  # Query 7 days at a time
             current_start = short_term_start
+            short_term_count = 0
             
             while current_start < end_time:
                 current_end = min(current_start + timedelta(days=chunk_days), end_time)
@@ -370,13 +371,15 @@ async def _import_odometer_history(
                 )
                 
                 if chunk_states and odometer_entity in chunk_states:
+                    chunk_count = len(chunk_states[odometer_entity])
                     all_states.extend(chunk_states[odometer_entity])
+                    short_term_count += chunk_count
                 
                 current_start = current_end
             
             _LOGGER.info(
                 "Retrieved %d odometer states from short-term history",
-                sum(1 for s in all_states if hasattr(s, '__class__') and 'State' in s.__class__.__name__),
+                short_term_count,
             )
         
         if not all_states:
@@ -652,8 +655,8 @@ async def _import_tank_history_and_detect_refueling(
         tank_level_in_percentage = False
         for state in all_tank_states:
             if state.state not in INVALID_SENSOR_STATES:
-                # Check if state has attributes (might not have them in stat-like objects from long-term stats)
-                unit = getattr(state, 'attributes', {}).get("unit_of_measurement", "").lower()
+                # Both real State objects and _StateLike have attributes property
+                unit = state.attributes.get("unit_of_measurement", "").lower()
                 if unit in ["%", "percent", "percentage"]:
                     tank_level_in_percentage = True
                     _LOGGER.debug("Tank level entity uses percentage unit: %s", unit)
