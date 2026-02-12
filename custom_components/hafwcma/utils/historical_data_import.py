@@ -354,7 +354,7 @@ async def _import_tank_history_and_detect_refueling(
         if odometer_states_dict and odometer_entity in odometer_states_dict:
             for state in odometer_states_dict[odometer_entity]:
                 try:
-                    if state.state not in ["unknown", "unavailable", "none", None]:
+                    if state.state not in ["unknown", "unavailable", "none", None, ""]:
                         odometer_lookup[state.last_changed] = float(state.state)
                 except (ValueError, TypeError):
                     continue
@@ -369,7 +369,7 @@ async def _import_tank_history_and_detect_refueling(
         # Determine if tank level is in percentage or liters from first valid state
         tank_level_in_percentage = False
         for state in tank_states[tank_level_entity]:
-            if state.state not in ["unknown", "unavailable", "none", None]:
+            if state.state not in ["unknown", "unavailable", "none", None, ""]:
                 unit = state.attributes.get("unit_of_measurement", "").lower()
                 if unit in ["%", "percent", "percentage"]:
                     tank_level_in_percentage = True
