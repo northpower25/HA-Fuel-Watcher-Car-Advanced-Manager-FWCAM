@@ -434,7 +434,7 @@ async def _import_odometer_history(
         _LOGGER.info(
             "Imported %d odometer readings (sampled from %d total states)",
             count,
-            len(states[odometer_entity]),
+            len(all_states),
         )
         
     except Exception as err:
