@@ -540,7 +540,7 @@ async def _import_tank_history_and_detect_refueling(
                                 )
                                 break
                         
-                         if not is_duplicate:
+                        if not is_duplicate:
                             # Add to pending events for potential merging
                             pending_refuel_events.append({
                                 "timestamp": current_time,
