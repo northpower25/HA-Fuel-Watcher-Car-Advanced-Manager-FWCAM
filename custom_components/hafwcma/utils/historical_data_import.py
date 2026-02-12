@@ -273,6 +273,9 @@ async def _fetch_long_term_statistics(
                 # stat["start"] contains the datetime for this hourly period
                 timestamp = stat.get("start")
                 if timestamp:
+                    # Convert float timestamp to datetime if needed
+                    if isinstance(timestamp, (int, float)):
+                        timestamp = dt_util.utc_from_timestamp(timestamp)
                     result.append({
                         "timestamp": timestamp,
                         "value": value,
