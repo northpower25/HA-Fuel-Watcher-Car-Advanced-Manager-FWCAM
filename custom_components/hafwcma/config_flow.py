@@ -395,6 +395,9 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.error("API validation failed: %s", error_msg)
                 errors["base"] = "api_test_failed"
                 
+                # Store error in data for display
+                self.data["_api_error"] = error_msg
+                
                 return self.async_show_form(
                     step_id="validate_api",
                     data_schema=vol.Schema({}),
@@ -405,10 +408,12 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
         
-        # User has clicked a button - check if they want to go back or continue
-        # If there are errors, allow going back
-        if errors.get("base") == "api_test_failed":
-            # Go back to API configuration
+        # User has clicked a button after seeing results
+        # Check if there was an API error
+        if "_api_error" in self.data:
+            # Remove the temporary error flag
+            del self.data["_api_error"]
+            # Go back to API configuration with current data prepopulated
             return await self.async_step_user(self.data)
         
         # Success - continue to vehicle setup
@@ -686,6 +691,9 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.error("Telegram validation failed: %s", error_msg)
                 errors["base"] = "telegram_test_failed"
                 
+                # Store error in data for display
+                self.data["_telegram_error"] = error_msg
+                
                 return self.async_show_form(
                     step_id="validate_telegram",
                     data_schema=vol.Schema({}),
@@ -697,10 +705,12 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
         
-        # User has clicked a button - check if they want to go back or continue
-        # If there are errors, allow going back
-        if errors.get("base") == "telegram_test_failed":
-            # Go back to Telegram configuration
+        # User has clicked a button after seeing results
+        # Check if there was a Telegram error
+        if "_telegram_error" in self.data:
+            # Remove the temporary error flag
+            del self.data["_telegram_error"]
+            # Go back to Telegram configuration with current data prepopulated
             return await self.async_step_telegram(self.data)
         
         # Success - continue to prediction setup
