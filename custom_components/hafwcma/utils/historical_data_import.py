@@ -37,6 +37,7 @@ PRICE_LOOKUP_WINDOW_DAYS = 7  # Maximum age of price data to use for historical 
 SECONDS_PER_HOUR = 3600  # Number of seconds in an hour
 DUPLICATE_DETECTION_WINDOW_HOURS = 24  # Window for detecting duplicate refuelings
 PERCENTAGE_MULTIPLIER = 100  # Multiplier for converting decimals to percentages
+INVALID_SENSOR_STATES = ["unknown", "unavailable", "none", None, ""]  # States to ignore when processing sensor data
 
 
 async def import_historical_vehicle_data(
@@ -239,7 +240,7 @@ async def _import_odometer_history(
         for state in states[odometer_entity]:
             try:
                 # Skip if state is unknown or unavailable
-                if state.state in ["unknown", "unavailable", "none", None]:
+                if state.state in INVALID_SENSOR_STATES:
                     continue
                 
                 # Parse odometer value
@@ -354,7 +355,7 @@ async def _import_tank_history_and_detect_refueling(
         if odometer_states_dict and odometer_entity in odometer_states_dict:
             for state in odometer_states_dict[odometer_entity]:
                 try:
-                    if state.state not in ["unknown", "unavailable", "none", None, ""]:
+                    if state.state not in INVALID_SENSOR_STATES:
                         odometer_lookup[state.last_changed] = float(state.state)
                 except (ValueError, TypeError):
                     continue
@@ -369,7 +370,7 @@ async def _import_tank_history_and_detect_refueling(
         # Determine if tank level is in percentage or liters from first valid state
         tank_level_in_percentage = False
         for state in tank_states[tank_level_entity]:
-            if state.state not in ["unknown", "unavailable", "none", None, ""]:
+            if state.state not in INVALID_SENSOR_STATES:
                 unit = state.attributes.get("unit_of_measurement", "").lower()
                 if unit in ["%", "percent", "percentage"]:
                     tank_level_in_percentage = True
@@ -388,7 +389,7 @@ async def _import_tank_history_and_detect_refueling(
         for state in tank_states[tank_level_entity]:
             try:
                 # Skip if state is unknown or unavailable
-                if state.state in ["unknown", "unavailable", "none", None]:
+                if state.state in INVALID_SENSOR_STATES:
                     continue
                 
                 current_level = float(state.state)
