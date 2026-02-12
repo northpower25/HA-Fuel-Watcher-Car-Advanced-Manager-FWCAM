@@ -1000,22 +1000,17 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.warning("Error calculating consumption forecast: %s", err)
         
-        # Get refueling log for the refueling log sensor
+        # Get refueling log and retrieval metadata from storage (single load operation)
         refueling_log = None
-        try:
-            refueling_log = await storage.get_refueling_log(self.hass, self.config_entry)
-        except Exception as err:
-            _LOGGER.warning("Error getting refueling log: %s", err)
-        
-        # Get retrieval metadata from storage
         last_vehicle_data_refresh = None
         last_historical_import = None
         try:
             stored_data = await storage.load_data(self.hass, self.config_entry)
+            refueling_log = stored_data.get("refueling_log", [])
             last_vehicle_data_refresh = stored_data.get("last_vehicle_data_refresh")
             last_historical_import = stored_data.get("last_historical_import")
         except Exception as err:
-            _LOGGER.warning("Error getting retrieval metadata: %s", err)
+            _LOGGER.warning("Error getting refueling log and metadata: %s", err)
         
         data = {
             "fuel_price": fuel_price,
