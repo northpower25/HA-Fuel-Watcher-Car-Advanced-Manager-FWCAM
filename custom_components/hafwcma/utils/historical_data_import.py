@@ -18,6 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
 from homeassistant.components.recorder import get_instance, history
+from homeassistant.components.recorder.statistics import statistics_during_period
 
 from .storage import (
     add_odometer_observation,
@@ -38,6 +39,8 @@ SECONDS_PER_HOUR = 3600  # Number of seconds in an hour
 DUPLICATE_DETECTION_WINDOW_HOURS = 24  # Window for detecting duplicate refuelings
 PERCENTAGE_MULTIPLIER = 100  # Multiplier for converting decimals to percentages
 INVALID_SENSOR_STATES = ["unknown", "unavailable", "none", None, ""]  # States to ignore when processing sensor data
+SHORT_TERM_HISTORY_DAYS = 10  # Home Assistant default history retention (short-term)
+LONG_TERM_STATISTICS_OVERLAP_DAYS = 1  # Overlap between short-term and long-term queries to ensure no gaps
 
 
 async def import_historical_vehicle_data(
@@ -198,6 +201,84 @@ async def import_historical_vehicle_data(
     return result
 
 
+async def _fetch_long_term_statistics(
+    hass: HomeAssistant,
+    entity_id: str,
+    start_time: datetime,
+    end_time: datetime,
+) -> list[dict[str, Any]]:
+    """Fetch long-term statistics for an entity.
+    
+    This function queries Home Assistant's long-term statistics database
+    which retains hourly aggregated data indefinitely (unlike short-term
+    history which is typically purged after 10 days).
+    
+    Args:
+        hass: Home Assistant instance
+        entity_id: Entity ID to fetch statistics for
+        start_time: Start of time range
+        end_time: End of time range
+        
+    Returns:
+        List of state-like dictionaries with 'timestamp' and 'value' keys
+    """
+    _LOGGER.debug(
+        "Fetching long-term statistics for %s from %s to %s",
+        entity_id,
+        start_time.isoformat(),
+        end_time.isoformat(),
+    )
+    
+    try:
+        # Get recorder instance to use async_add_executor_job
+        recorder_instance = get_instance(hass)
+        
+        # Fetch statistics using recorder's executor for proper database access
+        stats = await recorder_instance.async_add_executor_job(
+            statistics_during_period,
+            hass,
+            start_time,
+            end_time,
+            {entity_id},
+            "hour",
+            None,
+            {"mean", "state"},
+        )
+        
+        if not stats or entity_id not in stats:
+            _LOGGER.debug("No long-term statistics found for %s", entity_id)
+            return []
+        
+        # Convert statistics to state-like objects
+        result = []
+        for stat in stats[entity_id]:
+            # Try to get the most appropriate value: state (last value) or mean
+            value = stat.get("state") or stat.get("mean")
+            if value is not None:
+                # stat["start"] contains the datetime for this hourly period
+                timestamp = stat.get("start")
+                if timestamp:
+                    result.append({
+                        "timestamp": timestamp,
+                        "value": value,
+                    })
+        
+        _LOGGER.info(
+            "Retrieved %d data points from long-term statistics for %s",
+            len(result),
+            entity_id,
+        )
+        return result
+        
+    except Exception as err:
+        _LOGGER.warning(
+            "Failed to fetch long-term statistics for %s: %s",
+            entity_id,
+            err,
+        )
+        return []
+
+
 async def _import_odometer_history(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -220,47 +301,89 @@ async def _import_odometer_history(
     count = 0
     
     try:
-        # Get historical states from recorder
-        # Use chunking to ensure we get all states
-        _LOGGER.info("Retrieving odometer states in chunks to ensure complete data retrieval...")
+        # Split the time range into short-term (recent) and long-term (older) periods
+        now = dt_util.now()
+        short_term_cutoff = now - timedelta(days=SHORT_TERM_HISTORY_DAYS - LONG_TERM_STATISTICS_OVERLAP_DAYS)
         
-        chunk_days = 7  # Query 7 days at a time
         all_states = []
-        current_start = start_time
         
-        while current_start < end_time:
-            current_end = min(current_start + timedelta(days=chunk_days), end_time)
-            
-            chunk_states = await hass.async_add_executor_job(
-                history.state_changes_during_period,
-                hass,
-                current_start,
-                current_end,
-                odometer_entity,
+        # Fetch long-term statistics for older data (if applicable)
+        if start_time < short_term_cutoff:
+            long_term_end = min(short_term_cutoff, end_time)
+            _LOGGER.info(
+                "Fetching odometer data from long-term statistics (%s to %s)",
+                start_time.isoformat(),
+                long_term_end.isoformat(),
             )
             
-            if chunk_states and odometer_entity in chunk_states:
-                all_states.extend(chunk_states[odometer_entity])
+            long_term_data = await _fetch_long_term_statistics(
+                hass,
+                odometer_entity,
+                start_time,
+                long_term_end,
+            )
             
-            current_start = current_end
+            # Convert long-term statistics to state-like objects
+            for data_point in long_term_data:
+                # Create a minimal state-like object
+                class StateLike:
+                    def __init__(self, value, timestamp):
+                        self.state = str(value)
+                        self.last_changed = timestamp
+                        self.attributes = {}
+                
+                all_states.append(StateLike(data_point["value"], data_point["timestamp"]))
+            
+            _LOGGER.info("Retrieved %d data points from long-term statistics", len(long_term_data))
         
-        # Create the expected dictionary structure
-        states = {odometer_entity: all_states} if all_states else {}
+        # Fetch short-term history for recent data
+        short_term_start = max(start_time, short_term_cutoff)
+        if short_term_start < end_time:
+            _LOGGER.info(
+                "Retrieving odometer states from short-term history (%s to %s) in chunks...",
+                short_term_start.isoformat(),
+                end_time.isoformat(),
+            )
+            
+            chunk_days = 7  # Query 7 days at a time
+            current_start = short_term_start
+            
+            while current_start < end_time:
+                current_end = min(current_start + timedelta(days=chunk_days), end_time)
+                
+                # Use recorder instance for proper database access
+                recorder_instance = get_instance(hass)
+                chunk_states = await recorder_instance.async_add_executor_job(
+                    history.state_changes_during_period,
+                    hass,
+                    current_start,
+                    current_end,
+                    odometer_entity,
+                )
+                
+                if chunk_states and odometer_entity in chunk_states:
+                    all_states.extend(chunk_states[odometer_entity])
+                
+                current_start = current_end
+            
+            _LOGGER.info(
+                "Retrieved %d odometer states from short-term history",
+                len([s for s in all_states if hasattr(s, '__class__') and 'State' in s.__class__.__name__]),
+            )
         
-        if not states or odometer_entity not in states:
+        if not all_states:
             _LOGGER.warning("No historical states found for odometer entity: %s", odometer_entity)
             return 0
         
         _LOGGER.info(
-            "Retrieved %d odometer states from recorder (using %d-day chunks)",
-            len(states[odometer_entity]),
-            chunk_days,
+            "Retrieved total of %d odometer data points (long-term statistics + short-term history)",
+            len(all_states),
         )
         
         # Process states in chronological order, but sample to avoid overwhelming storage
         # Keep one reading per day max to reduce data volume
         states_by_day = {}
-        for state in states[odometer_entity]:
+        for state in all_states:
             try:
                 # Skip if state is unknown or unavailable
                 if state.state in INVALID_SENSOR_STATES:
@@ -351,63 +474,98 @@ async def _import_tank_history_and_detect_refueling(
                 except (ValueError, TypeError):
                     pass
         
-        # Get historical states from recorder
-        # To avoid hitting database query limits, we chunk the time period into smaller intervals
-        # This ensures we get ALL states even if there are thousands of them
-        _LOGGER.info("Retrieving tank level states in chunks to ensure complete data retrieval...")
+        # Split the time range into short-term (recent) and long-term (older) periods
+        now = dt_util.now()
+        short_term_cutoff = now - timedelta(days=SHORT_TERM_HISTORY_DAYS - LONG_TERM_STATISTICS_OVERLAP_DAYS)
         
-        chunk_days = 7  # Query 7 days at a time
         all_tank_states = []
-        current_start = start_time
         
-        while current_start < end_time:
-            current_end = min(current_start + timedelta(days=chunk_days), end_time)
-            
-            _LOGGER.debug(
-                "Querying chunk: %s to %s",
-                current_start.isoformat(),
-                current_end.isoformat(),
+        # Fetch long-term statistics for older data (if applicable)
+        if start_time < short_term_cutoff:
+            long_term_end = min(short_term_cutoff, end_time)
+            _LOGGER.info(
+                "Fetching tank level data from long-term statistics (%s to %s)",
+                start_time.isoformat(),
+                long_term_end.isoformat(),
             )
             
-            chunk_states = await hass.async_add_executor_job(
-                history.state_changes_during_period,
+            long_term_data = await _fetch_long_term_statistics(
                 hass,
-                current_start,
-                current_end,
                 tank_level_entity,
+                start_time,
+                long_term_end,
             )
             
-            if chunk_states and tank_level_entity in chunk_states:
-                all_tank_states.extend(chunk_states[tank_level_entity])
-                _LOGGER.debug(
-                    "Retrieved %d states from chunk, total so far: %d",
-                    len(chunk_states[tank_level_entity]),
-                    len(all_tank_states),
-                )
+            # Convert long-term statistics to state-like objects
+            for data_point in long_term_data:
+                # Create a minimal state-like object
+                class TankStateLike:
+                    def __init__(self, value, timestamp):
+                        self.state = str(value)
+                        self.last_changed = timestamp
+                        self.attributes = {}
+                
+                all_tank_states.append(TankStateLike(data_point["value"], data_point["timestamp"]))
             
-            current_start = current_end
+            _LOGGER.info("Retrieved %d tank level data points from long-term statistics", len(long_term_data))
         
-        # Create the expected dictionary structure
-        tank_states = {tank_level_entity: all_tank_states} if all_tank_states else {}
+        # Fetch short-term history for recent data
+        short_term_start = max(start_time, short_term_cutoff)
+        if short_term_start < end_time:
+            _LOGGER.info(
+                "Retrieving tank level states from short-term history (%s to %s) in chunks...",
+                short_term_start.isoformat(),
+                end_time.isoformat(),
+            )
+            
+            chunk_days = 7  # Query 7 days at a time
+            current_start = short_term_start
+            
+            while current_start < end_time:
+                current_end = min(current_start + timedelta(days=chunk_days), end_time)
+                
+                _LOGGER.debug(
+                    "Querying chunk: %s to %s",
+                    current_start.isoformat(),
+                    current_end.isoformat(),
+                )
+                
+                # Use recorder instance for proper database access
+                recorder_instance = get_instance(hass)
+                chunk_states = await recorder_instance.async_add_executor_job(
+                    history.state_changes_during_period,
+                    hass,
+                    current_start,
+                    current_end,
+                    tank_level_entity,
+                )
+                
+                if chunk_states and tank_level_entity in chunk_states:
+                    all_tank_states.extend(chunk_states[tank_level_entity])
+                    _LOGGER.debug(
+                        "Retrieved %d states from chunk, total so far: %d",
+                        len(chunk_states[tank_level_entity]),
+                        len(all_tank_states),
+                    )
+                
+                current_start = current_end
         
-        if not tank_states or tank_level_entity not in tank_states:
+        if not all_tank_states:
             _LOGGER.warning("No historical states found for tank level entity: %s", tank_level_entity)
             return 0
         
         # Log how many states were retrieved
-        num_tank_states = len(tank_states[tank_level_entity])
         _LOGGER.info(
-            "Retrieved %d tank level states from recorder for period %s to %s (using %d-day chunks)",
-            num_tank_states,
+            "Retrieved total of %d tank level data points (long-term statistics + short-term history) for period %s to %s",
+            len(all_tank_states),
             start_time.isoformat(),
             end_time.isoformat(),
-            chunk_days,
         )
         
         # Log first and last timestamps to verify order
-        if tank_states[tank_level_entity]:
-            first_state = tank_states[tank_level_entity][0]
-            last_state = tank_states[tank_level_entity][-1]
+        if all_tank_states:
+            first_state = all_tank_states[0]
+            last_state = all_tank_states[-1]
             _LOGGER.info(
                 "State range: first=%s (state=%s), last=%s (state=%s)",
                 first_state.last_changed.isoformat(),
@@ -416,35 +574,64 @@ async def _import_tank_history_and_detect_refueling(
                 last_state.state,
             )
         
-        # Get odometer states for same period (also use chunking for consistency)
-        _LOGGER.debug("Retrieving odometer states in chunks...")
+        # Get odometer states for same period (also use long-term statistics + short-term history)
+        _LOGGER.debug("Retrieving odometer states with long-term statistics support...")
         
         all_odometer_states = []
-        current_start = start_time
         
-        while current_start < end_time:
-            current_end = min(current_start + timedelta(days=chunk_days), end_time)
-            
-            chunk_states = await hass.async_add_executor_job(
-                history.state_changes_during_period,
-                hass,
-                current_start,
-                current_end,
-                odometer_entity,
+        # Fetch long-term statistics for older odometer data (if applicable)
+        if start_time < short_term_cutoff:
+            long_term_end = min(short_term_cutoff, end_time)
+            _LOGGER.debug(
+                "Fetching odometer data from long-term statistics for lookup (%s to %s)",
+                start_time.isoformat(),
+                long_term_end.isoformat(),
             )
             
-            if chunk_states and odometer_entity in chunk_states:
-                all_odometer_states.extend(chunk_states[odometer_entity])
+            long_term_odo_data = await _fetch_long_term_statistics(
+                hass,
+                odometer_entity,
+                start_time,
+                long_term_end,
+            )
             
-            current_start = current_end
+            # Convert long-term statistics to state-like objects
+            for data_point in long_term_odo_data:
+                class OdometerStateLike:
+                    def __init__(self, value, timestamp):
+                        self.state = str(value)
+                        self.last_changed = timestamp
+                        self.attributes = {}
+                
+                all_odometer_states.append(OdometerStateLike(data_point["value"], data_point["timestamp"]))
         
-        # Create the expected dictionary structure
-        odometer_states_dict = {odometer_entity: all_odometer_states} if all_odometer_states else {}
+        # Fetch short-term history for recent odometer data
+        short_term_start = max(start_time, short_term_cutoff)
+        if short_term_start < end_time:
+            chunk_days = 7
+            current_start = short_term_start
+            
+            while current_start < end_time:
+                current_end = min(current_start + timedelta(days=chunk_days), end_time)
+                
+                # Use recorder instance for proper database access
+                recorder_instance = get_instance(hass)
+                chunk_states = await recorder_instance.async_add_executor_job(
+                    history.state_changes_during_period,
+                    hass,
+                    current_start,
+                    current_end,
+                    odometer_entity,
+                )
+                
+                if chunk_states and odometer_entity in chunk_states:
+                    all_odometer_states.extend(chunk_states[odometer_entity])
+                
+                current_start = current_end
         
         # Create a lookup for odometer values by timestamp
         odometer_lookup = {}
-        if odometer_states_dict and odometer_entity in odometer_states_dict:
-            for state in odometer_states_dict[odometer_entity]:
+        for state in all_odometer_states:
                 try:
                     if state.state not in INVALID_SENSOR_STATES:
                         odometer_lookup[state.last_changed] = float(state.state)
@@ -468,9 +655,10 @@ async def _import_tank_history_and_detect_refueling(
         
         # Determine if tank level is in percentage or liters from first valid state
         tank_level_in_percentage = False
-        for state in tank_states[tank_level_entity]:
+        for state in all_tank_states:
             if state.state not in INVALID_SENSOR_STATES:
-                unit = state.attributes.get("unit_of_measurement", "").lower()
+                # Check if state has attributes (might not have them in stat-like objects from long-term stats)
+                unit = getattr(state, 'attributes', {}).get("unit_of_measurement", "").lower()
                 if unit in ["%", "percent", "percentage"]:
                     tank_level_in_percentage = True
                     _LOGGER.debug("Tank level entity uses percentage unit: %s", unit)
@@ -491,7 +679,7 @@ async def _import_tank_history_and_detect_refueling(
             DUPLICATE_DETECTION_WINDOW_HOURS,
         )
         
-        for state in tank_states[tank_level_entity]:
+        for state in all_tank_states:
             total_states_processed += 1
             try:
                 # Skip if state is unknown or unavailable
