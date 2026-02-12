@@ -410,10 +410,10 @@ async def _import_tank_history_and_detect_refueling(
             last_state = tank_states[tank_level_entity][-1]
             _LOGGER.info(
                 "State range: first=%s (state=%s), last=%s (state=%s)",
-                first_state.last_changed.isoformat() if hasattr(first_state, 'last_changed') else 'unknown',
-                first_state.state if hasattr(first_state, 'state') else 'unknown',
-                last_state.last_changed.isoformat() if hasattr(last_state, 'last_changed') else 'unknown',
-                last_state.state if hasattr(last_state, 'state') else 'unknown',
+                first_state.last_changed.isoformat(),
+                first_state.state,
+                last_state.last_changed.isoformat(),
+                last_state.state,
             )
         
         # Get odometer states for same period (also use chunking for consistency)
@@ -575,9 +575,14 @@ async def _import_tank_history_and_detect_refueling(
                 
             except (ValueError, TypeError) as err:
                 states_skipped_invalid += 1
+                try:
+                    timestamp_str = state.last_changed.isoformat()
+                except Exception:
+                    timestamp_str = 'unknown'
                 _LOGGER.warning("Skipping invalid tank level state at %s: %s (%s)", 
-                              state.last_changed.isoformat() if hasattr(state, 'last_changed') else 'unknown',
-                              state.state, err)
+                              timestamp_str,
+                              state.state if hasattr(state, 'state') else 'unknown', 
+                              err)
                 continue
         
         # Log processing statistics
