@@ -404,7 +404,7 @@ async def predict_days_until_refuel(
     else:
         # No current vehicle data available - try to estimate from refueling history
         days_until_refuel = None
-        if use_historical and sufficiency["sufficient"]:
+        if use_historical:
             avg_refuel_interval = await _calculate_avg_days_between_refuelings(hass, entry)
             if avg_refuel_interval is not None:
                 days_until_refuel = avg_refuel_interval

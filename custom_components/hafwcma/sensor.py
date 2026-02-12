@@ -1532,6 +1532,43 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "haFWCMA",
             "model": "Fuel Watcher Car Advanced Manager",
         }
+    
+    def _add_prediction_metadata(
+        self,
+        attributes: dict[str, Any],
+        consumption_prediction: dict[str, Any] | None,
+    ) -> None:
+        """Add prediction metadata attributes (data_points, percentage, etc).
+        
+        Args:
+            attributes: Dictionary to add attributes to
+            consumption_prediction: Consumption prediction data
+        """
+        if not consumption_prediction:
+            return
+        
+        from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+        options = self._config_entry.options
+        config = self._config_entry.data
+        min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
+            CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+        )
+        
+        data_points_used = consumption_prediction.get("data_points_used", 0)
+        attributes["data_source"] = consumption_prediction.get("data_source", "unknown")
+        attributes["data_points_used"] = data_points_used
+        
+        # Calculate and add data points percentage
+        if min_data_points > 0:
+            data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
+            attributes["data_points_percentage"] = round(data_points_percentage, 1)
+        else:
+            attributes["data_points_percentage"] = 0.0
+        attributes["data_points_required"] = min_data_points
+        
+        # Add last prediction time
+        if consumption_prediction.get("last_prediction_time"):
+            attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
 
     @property
     def native_value(self) -> float | None:
@@ -1622,29 +1659,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             attributes["last_month_cost"] = month.get("total_cost", 0.0)
         
         # Add metadata from consumption_prediction if available
-        if consumption_prediction:
-            from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
-            options = self._config_entry.options
-            config = self._config_entry.data
-            min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
-                CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
-            )
-            
-            attributes["data_source"] = consumption_prediction.get("data_source", "unknown")
-            attributes["data_points_used"] = consumption_prediction.get("data_points_used", 0)
-            
-            # Calculate and add data points percentage
-            data_points_used = consumption_prediction.get("data_points_used", 0)
-            if min_data_points > 0:
-                data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
-                attributes["data_points_percentage"] = round(data_points_percentage, 1)
-            else:
-                attributes["data_points_percentage"] = 0.0
-            attributes["data_points_required"] = min_data_points
-            
-            # Add last prediction time
-            if consumption_prediction.get("last_prediction_time"):
-                attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
+        self._add_prediction_metadata(attributes, consumption_prediction)
         
         return attributes
 
@@ -1683,6 +1698,42 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "haFWCMA",
             "model": "Fuel Watcher Car Advanced Manager",
         }
+    
+    def _add_prediction_metadata(
+        self,
+        attributes: dict[str, Any],
+        consumption_prediction: dict[str, Any] | None,
+    ) -> None:
+        """Add prediction metadata attributes (data_points, percentage, etc).
+        
+        Args:
+            attributes: Dictionary to add attributes to
+            consumption_prediction: Consumption prediction data
+        """
+        if not consumption_prediction:
+            return
+        
+        from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+        options = self._config_entry.options
+        config = self._config_entry.data
+        min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
+            CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+        )
+        
+        data_points_used = consumption_prediction.get("data_points_used", 0)
+        attributes["data_points_used"] = data_points_used
+        
+        # Calculate and add data points percentage
+        if min_data_points > 0:
+            data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
+            attributes["data_points_percentage"] = round(data_points_percentage, 1)
+        else:
+            attributes["data_points_percentage"] = 0.0
+        attributes["data_points_required"] = min_data_points
+        
+        # Add last prediction time
+        if consumption_prediction.get("last_prediction_time"):
+            attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
 
     @property
     def native_value(self) -> float | None:
@@ -1750,28 +1801,7 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
                 attributes["next_month_cost"] = month.get("forecast_cost")
         
         # Add metadata from consumption_prediction if available
-        if consumption_prediction:
-            from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
-            options = self._config_entry.options
-            config = self._config_entry.data
-            min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
-                CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
-            )
-            
-            attributes["data_points_used"] = consumption_prediction.get("data_points_used", 0)
-            
-            # Calculate and add data points percentage
-            data_points_used = consumption_prediction.get("data_points_used", 0)
-            if min_data_points > 0:
-                data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
-                attributes["data_points_percentage"] = round(data_points_percentage, 1)
-            else:
-                attributes["data_points_percentage"] = 0.0
-            attributes["data_points_required"] = min_data_points
-            
-            # Add last prediction time
-            if consumption_prediction.get("last_prediction_time"):
-                attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
+        self._add_prediction_metadata(attributes, consumption_prediction)
         
         return attributes
 
