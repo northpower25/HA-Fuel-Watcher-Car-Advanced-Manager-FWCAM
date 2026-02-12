@@ -131,7 +131,7 @@ async def import_historical_vehicle_data(
     
     # Check if recorder is available
     try:
-        recorder_instance = get_instance(hass)
+        recorder_instance = await hass.async_add_executor_job(get_instance, hass)
         if not recorder_instance:
             result["reason"] = "Recorder not available"
             result["errors"].append("Home Assistant recorder is not enabled")
@@ -221,18 +221,41 @@ async def _import_odometer_history(
     
     try:
         # Get historical states from recorder
-        # Use history.state_changes_during_period to get state changes
-        states = await hass.async_add_executor_job(
-            history.state_changes_during_period,
-            hass,
-            start_time,
-            end_time,
-            odometer_entity,
-        )
+        # Use chunking to ensure we get all states
+        _LOGGER.info("Retrieving odometer states in chunks to ensure complete data retrieval...")
+        
+        chunk_days = 7  # Query 7 days at a time
+        all_states = []
+        current_start = start_time
+        
+        while current_start < end_time:
+            current_end = min(current_start + timedelta(days=chunk_days), end_time)
+            
+            chunk_states = await hass.async_add_executor_job(
+                history.state_changes_during_period,
+                hass,
+                current_start,
+                current_end,
+                odometer_entity,
+            )
+            
+            if chunk_states and odometer_entity in chunk_states:
+                all_states.extend(chunk_states[odometer_entity])
+            
+            current_start = current_end
+        
+        # Create the expected dictionary structure
+        states = {odometer_entity: all_states} if all_states else {}
         
         if not states or odometer_entity not in states:
             _LOGGER.warning("No historical states found for odometer entity: %s", odometer_entity)
             return 0
+        
+        _LOGGER.info(
+            "Retrieved %d odometer states from recorder (using %d-day chunks)",
+            len(states[odometer_entity]),
+            chunk_days,
+        )
         
         # Process states in chronological order, but sample to avoid overwhelming storage
         # Keep one reading per day max to reduce data volume
@@ -329,13 +352,43 @@ async def _import_tank_history_and_detect_refueling(
                     pass
         
         # Get historical states from recorder
-        tank_states = await hass.async_add_executor_job(
-            history.state_changes_during_period,
-            hass,
-            start_time,
-            end_time,
-            tank_level_entity,
-        )
+        # To avoid hitting database query limits, we chunk the time period into smaller intervals
+        # This ensures we get ALL states even if there are thousands of them
+        _LOGGER.info("Retrieving tank level states in chunks to ensure complete data retrieval...")
+        
+        chunk_days = 7  # Query 7 days at a time
+        all_tank_states = []
+        current_start = start_time
+        
+        while current_start < end_time:
+            current_end = min(current_start + timedelta(days=chunk_days), end_time)
+            
+            _LOGGER.debug(
+                "Querying chunk: %s to %s",
+                current_start.isoformat(),
+                current_end.isoformat(),
+            )
+            
+            chunk_states = await hass.async_add_executor_job(
+                history.state_changes_during_period,
+                hass,
+                current_start,
+                current_end,
+                tank_level_entity,
+            )
+            
+            if chunk_states and tank_level_entity in chunk_states:
+                all_tank_states.extend(chunk_states[tank_level_entity])
+                _LOGGER.debug(
+                    "Retrieved %d states from chunk, total so far: %d",
+                    len(chunk_states[tank_level_entity]),
+                    len(all_tank_states),
+                )
+            
+            current_start = current_end
+        
+        # Create the expected dictionary structure
+        tank_states = {tank_level_entity: all_tank_states} if all_tank_states else {}
         
         if not tank_states or tank_level_entity not in tank_states:
             _LOGGER.warning("No historical states found for tank level entity: %s", tank_level_entity)
@@ -344,20 +397,49 @@ async def _import_tank_history_and_detect_refueling(
         # Log how many states were retrieved
         num_tank_states = len(tank_states[tank_level_entity])
         _LOGGER.info(
-            "Retrieved %d tank level states from recorder for period %s to %s",
+            "Retrieved %d tank level states from recorder for period %s to %s (using %d-day chunks)",
             num_tank_states,
             start_time.isoformat(),
             end_time.isoformat(),
+            chunk_days,
         )
         
-        # Get odometer states for same period
-        odometer_states_dict = await hass.async_add_executor_job(
-            history.state_changes_during_period,
-            hass,
-            start_time,
-            end_time,
-            odometer_entity,
-        )
+        # Log first and last timestamps to verify order
+        if tank_states[tank_level_entity]:
+            first_state = tank_states[tank_level_entity][0]
+            last_state = tank_states[tank_level_entity][-1]
+            _LOGGER.info(
+                "State range: first=%s (state=%s), last=%s (state=%s)",
+                first_state.last_changed.isoformat(),
+                first_state.state,
+                last_state.last_changed.isoformat(),
+                last_state.state,
+            )
+        
+        # Get odometer states for same period (also use chunking for consistency)
+        _LOGGER.debug("Retrieving odometer states in chunks...")
+        
+        all_odometer_states = []
+        current_start = start_time
+        
+        while current_start < end_time:
+            current_end = min(current_start + timedelta(days=chunk_days), end_time)
+            
+            chunk_states = await hass.async_add_executor_job(
+                history.state_changes_during_period,
+                hass,
+                current_start,
+                current_end,
+                odometer_entity,
+            )
+            
+            if chunk_states and odometer_entity in chunk_states:
+                all_odometer_states.extend(chunk_states[odometer_entity])
+            
+            current_start = current_end
+        
+        # Create the expected dictionary structure
+        odometer_states_dict = {odometer_entity: all_odometer_states} if all_odometer_states else {}
         
         # Create a lookup for odometer values by timestamp
         odometer_lookup = {}
@@ -368,6 +450,8 @@ async def _import_tank_history_and_detect_refueling(
                         odometer_lookup[state.last_changed] = float(state.state)
                 except (ValueError, TypeError):
                     continue
+        
+        _LOGGER.info("Built odometer lookup with %d readings", len(odometer_lookup))
         
         # Process tank level states and detect refueling
         previous_level = None
@@ -463,10 +547,11 @@ async def _import_tank_history_and_detect_refueling(
                                 "liters": level_increase,
                             })
                             _LOGGER.info(
-                                "✓ Refueling event detected: +%.2fL at %s (exceeds threshold of %.2fL)",
+                                "✓ Refueling event detected: +%.2fL at %s (exceeds threshold of %.2fL, raw_state=%s)",
                                 level_increase,
                                 current_time.isoformat(),
                                 threshold_liters,
+                                state.state,
                             )
                         else:
                             _LOGGER.info(
@@ -489,7 +574,15 @@ async def _import_tank_history_and_detect_refueling(
                 previous_time = current_time
                 
             except (ValueError, TypeError) as err:
-                _LOGGER.debug("Skipping invalid tank level state: %s (%s)", state.state, err)
+                states_skipped_invalid += 1
+                try:
+                    timestamp_str = state.last_changed.isoformat()
+                except Exception:
+                    timestamp_str = 'unknown'
+                _LOGGER.warning("Skipping invalid tank level state at %s: %s (%s)", 
+                              timestamp_str,
+                              state.state if hasattr(state, 'state') else 'unknown', 
+                              err)
                 continue
         
         # Log processing statistics
@@ -508,11 +601,26 @@ async def _import_tank_history_and_detect_refueling(
             len(pending_refuel_events),
             REFUEL_MERGE_TIME_WINDOW_MINUTES,
         )
+        
+        # Log all pending events before merging
+        if pending_refuel_events:
+            _LOGGER.info("Pending refueling events before merging:")
+            for i, evt in enumerate(pending_refuel_events, 1):
+                _LOGGER.info("  %d. %s: +%.2fL", i, evt["timestamp"].isoformat(), evt["liters"])
+        
         merged_events = _merge_refueling_events(pending_refuel_events, REFUEL_MERGE_TIME_WINDOW_MINUTES)
         _LOGGER.info(
             "After merging: %d refueling event(s) to be added to storage",
             len(merged_events),
         )
+        
+        # Log all merged events
+        if merged_events:
+            _LOGGER.info("Merged refueling events to be saved:")
+            for i, evt in enumerate(merged_events, 1):
+                _LOGGER.info("  %d. %s: +%.2fL (merged_count=%d)", 
+                           i, evt["timestamp"].isoformat(), evt["liters"], 
+                           evt.get("merged_count", 1))
         
         # Create refueling log entries for merged events
         for merged_event in merged_events:
@@ -555,7 +663,8 @@ async def _import_tank_history_and_detect_refueling(
             
             if merged_count > 1:
                 _LOGGER.info(
-                    "Adding merged refueling event: +%.1fL at %s (merged %d events, odometer: %.1f km, confidence: %.2f)",
+                    "✓ Saved merged refueling event #%d: +%.1fL at %s (merged %d events, odometer: %.1f km, confidence: %.2f)",
+                    refuel_count,
                     level_increase,
                     current_time.isoformat(),
                     merged_count,
@@ -564,7 +673,8 @@ async def _import_tank_history_and_detect_refueling(
                 )
             else:
                 _LOGGER.info(
-                    "Adding refueling event: +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
+                    "✓ Saved refueling event #%d: +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
+                    refuel_count,
                     level_increase,
                     current_time.isoformat(),
                     odometer_km or 0,
