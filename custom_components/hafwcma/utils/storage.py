@@ -279,7 +279,7 @@ async def add_refuel_event(
     # Create complete refueling record with ID
     # Ensure timestamp is always stored as a string
     timestamp = event_data.get("timestamp")
-    if timestamp and isinstance(timestamp, datetime):
+    if timestamp is not None and isinstance(timestamp, datetime):
         # Convert datetime object to ISO format string
         timestamp = timestamp.isoformat()
     
@@ -651,6 +651,10 @@ async def calculate_consumption_history(
     """Calculate average consumption for a historical period.
     
     Calculates consumption based on refueling events and odometer changes.
+    Events are filtered by timestamp, then sorted chronologically for consumption calculation.
+    
+    Implementation note: Filtered events are stored as (datetime, event) tuples
+    to enable consistent chronological sorting regardless of original timestamp format.
     
     Args:
         hass: Home Assistant instance
