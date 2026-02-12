@@ -108,8 +108,8 @@
       "invalid_entity": "Entität existiert nicht in Home Assistant",
       "not_device_tracker": "Positionsentität muss ein device_tracker sein",
       "entity_validation_failed": "Fehler beim Validieren der Entitäten. Bitte überprüfen Sie Ihre Home Assistant Konfiguration.",
-      "api_test_failed": "API-Verbindungstest fehlgeschlagen. Bitte überprüfen Sie Ihren API-Schlüssel und versuchen Sie es erneut.",
-      "telegram_test_failed": "Telegram-Verbindungstest fehlgeschlagen. Bitte überprüfen Sie Ihren Bot-Token und Chat-ID.",
+      "api_test_failed": "API-Verbindungstest fehlgeschlagen. Bitte überprüfen Sie Ihren API-Schlüssel und versuchen Sie es erneut. Hinweis: Sie können die API-Einstellungen später in den Integrationsoptionen ändern und die Verbindung mit der Button-Entität 'API-Verbindung testen' prüfen.",
+      "telegram_test_failed": "Telegram-Verbindungstest fehlgeschlagen. Bitte überprüfen Sie Ihren Bot-Token und Chat-ID. Hinweis: Sie können die Telegram-Einstellungen später in den Integrationsoptionen ändern.",
       "unknown": "Ein unerwarteter Fehler ist aufgetreten"
     },
     "abort": {
