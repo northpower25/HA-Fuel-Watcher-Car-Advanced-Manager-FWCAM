@@ -304,7 +304,11 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
-                vol.Required(CONF_API_KEY): str,
+                vol.Required(CONF_API_KEY): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                    )
+                ),
                 vol.Optional(CONF_RADIUS, default=DEFAULT_RADIUS): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1.0,
@@ -575,7 +579,11 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         data_schema = vol.Schema(
             {
-                vol.Optional(CONF_TELEGRAM_TOKEN): str,
+                vol.Optional(CONF_TELEGRAM_TOKEN): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                    )
+                ),
                 vol.Optional(CONF_TELEGRAM_CHAT_ID): str,
             }
         )
@@ -1099,7 +1107,11 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                     CONF_API_KEY,
                     default=api_key_value,
                     description={"suggested_value": api_key_value},
-                ): str,
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                    )
+                ),
                 vol.Optional(
                     CONF_UPDATE_INTERVAL,
                     default=update_interval_value,
@@ -1147,7 +1159,11 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_TELEGRAM_TOKEN,
                     default=telegram_token_value,
-                ): str,
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                    )
+                ),
                 vol.Optional(
                     CONF_TELEGRAM_CHAT_ID,
                     default=telegram_chat_id_value,
