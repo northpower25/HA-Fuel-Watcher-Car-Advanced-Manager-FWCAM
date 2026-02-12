@@ -329,15 +329,7 @@ class ImportHistoricalDataButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with import results."""
-        attrs = dict(self._last_result)
-        
-        # Add timestamp and type if available in result
-        if "timestamp" in self._last_result:
-            attrs["last_import_timestamp"] = self._last_result["timestamp"]
-        if "import_type" in self._last_result:
-            attrs["last_import_type"] = self._last_result["import_type"]
-        
-        return attrs
+        return self._last_result
 
 
 class RefreshVehicleDataButton(ButtonEntity):
@@ -405,6 +397,9 @@ class RefreshVehicleDataButton(ButtonEntity):
         """Return additional attributes."""
         attrs = {}
         if self._last_refresh_time:
+            # Keep old attribute name for backward compatibility
+            attrs["last_refresh_time"] = self._last_refresh_time
+            # Add new attribute name for consistency
             attrs["last_refresh_timestamp"] = self._last_refresh_time
             attrs["last_refresh_type"] = "manual"
         if self._coordinator and hasattr(self._coordinator, "last_update_success"):
