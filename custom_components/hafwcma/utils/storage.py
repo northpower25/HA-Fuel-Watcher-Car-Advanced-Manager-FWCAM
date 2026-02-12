@@ -17,6 +17,7 @@ Based on the fuel_watcher storage architecture.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -691,7 +692,6 @@ async def calculate_consumption_history(
         
         try:
             # Handle both string and datetime objects
-            from datetime import datetime
             if isinstance(timestamp_value, str):
                 event_time = dt_util.parse_datetime(timestamp_value)
             elif isinstance(timestamp_value, datetime):  # It's already a datetime object
@@ -757,9 +757,8 @@ async def calculate_consumption_history(
             )
             
             if should_include:
-                # Store the normalized timestamp back to the event for consistent sorting
-                event["_normalized_timestamp"] = event_time
-                relevant_events.append(event)
+                # Store event with normalized timestamp in a tuple to avoid mutating original
+                relevant_events.append((event_time, event))
         except TypeError as e:
             _LOGGER.error(
                 "Event id=%s: Comparison failed between event_time=%s (tzinfo=%s) and cutoff=%s (tzinfo=%s): %s",
@@ -781,7 +780,7 @@ async def calculate_consumption_history(
         # Need at least 2 refueling events to calculate consumption
         # But we can still calculate total cost from available events
         total_cost = 0.0
-        for event in relevant_events:
+        for event_time, event in relevant_events:
             price_per_liter = event.get("price_per_liter")
             liters_refueled = event.get("liters_refueled")
             if price_per_liter is not None and liters_refueled is not None:
@@ -795,8 +794,8 @@ async def calculate_consumption_history(
             "total_cost": round(total_cost, 2) if total_cost > 0 else 0.0,
         }
     
-    # Sort by normalized timestamp (datetime objects)
-    relevant_events.sort(key=lambda x: x.get("_normalized_timestamp", dt_util.now()))
+    # Sort by normalized timestamp (first element of tuple)
+    relevant_events.sort(key=lambda x: x[0])
     
     _LOGGER.debug(
         "calculate_consumption_history(%d days): sorted %d events for consumption calc",
@@ -809,8 +808,8 @@ async def calculate_consumption_history(
     total_liters = 0
     
     for i in range(len(relevant_events) - 1):
-        curr_event = relevant_events[i]
-        next_event = relevant_events[i + 1]
+        curr_time, curr_event = relevant_events[i]
+        next_time, next_event = relevant_events[i + 1]
         
         curr_odometer = curr_event.get("odometer_km")
         next_odometer = next_event.get("odometer_km")
@@ -860,7 +859,7 @@ async def calculate_consumption_history(
     
     # Calculate total cost from refueling events in this period
     total_cost = 0.0
-    for event in relevant_events:
+    for event_time, event in relevant_events:
         price_per_liter = event.get("price_per_liter")
         liters_refueled = event.get("liters_refueled")
         if price_per_liter is not None and liters_refueled is not None:
