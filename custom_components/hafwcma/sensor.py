@@ -1110,6 +1110,47 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._provider = None
 
 
+def add_prediction_metadata_to_attributes(
+    attributes: dict[str, Any],
+    consumption_prediction: dict[str, Any] | None,
+    config_entry: ConfigEntry,
+) -> None:
+    """Add prediction metadata attributes to a sensor's attributes dict.
+    
+    This is a utility function to avoid code duplication between sensors.
+    
+    Args:
+        attributes: Dictionary to add attributes to (modified in place)
+        consumption_prediction: Consumption prediction data
+        config_entry: Config entry for accessing configuration
+    """
+    if not consumption_prediction:
+        return
+    
+    from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+    options = config_entry.options
+    config = config_entry.data
+    min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
+        CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+    )
+    
+    data_points_used = consumption_prediction.get("data_points_used", 0)
+    attributes["data_source"] = consumption_prediction.get("data_source", "unknown")
+    attributes["data_points_used"] = data_points_used
+    
+    # Calculate and add data points percentage
+    if min_data_points > 0:
+        data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
+        attributes["data_points_percentage"] = round(data_points_percentage, 1)
+    else:
+        attributes["data_points_percentage"] = 0.0
+    attributes["data_points_required"] = min_data_points
+    
+    # Add last prediction time
+    if consumption_prediction.get("last_prediction_time"):
+        attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
+
+
 class FuelPriceSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing current fuel price at nearest station."""
 
@@ -1544,31 +1585,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             attributes: Dictionary to add attributes to
             consumption_prediction: Consumption prediction data
         """
-        if not consumption_prediction:
-            return
-        
-        from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
-        options = self._config_entry.options
-        config = self._config_entry.data
-        min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
-            CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
-        )
-        
-        data_points_used = consumption_prediction.get("data_points_used", 0)
-        attributes["data_source"] = consumption_prediction.get("data_source", "unknown")
-        attributes["data_points_used"] = data_points_used
-        
-        # Calculate and add data points percentage
-        if min_data_points > 0:
-            data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
-            attributes["data_points_percentage"] = round(data_points_percentage, 1)
-        else:
-            attributes["data_points_percentage"] = 0.0
-        attributes["data_points_required"] = min_data_points
-        
-        # Add last prediction time
-        if consumption_prediction.get("last_prediction_time"):
-            attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
+        add_prediction_metadata_to_attributes(attributes, consumption_prediction, self._config_entry)
 
     @property
     def native_value(self) -> float | None:
@@ -1710,30 +1727,7 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes: Dictionary to add attributes to
             consumption_prediction: Consumption prediction data
         """
-        if not consumption_prediction:
-            return
-        
-        from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
-        options = self._config_entry.options
-        config = self._config_entry.data
-        min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
-            CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
-        )
-        
-        data_points_used = consumption_prediction.get("data_points_used", 0)
-        attributes["data_points_used"] = data_points_used
-        
-        # Calculate and add data points percentage
-        if min_data_points > 0:
-            data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
-            attributes["data_points_percentage"] = round(data_points_percentage, 1)
-        else:
-            attributes["data_points_percentage"] = 0.0
-        attributes["data_points_required"] = min_data_points
-        
-        # Add last prediction time
-        if consumption_prediction.get("last_prediction_time"):
-            attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
+        add_prediction_metadata_to_attributes(attributes, consumption_prediction, self._config_entry)
 
     @property
     def native_value(self) -> float | None:
@@ -1766,7 +1760,7 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes["tomorrow_consumption"] = tomorrow.get("avg_consumption_l_per_100km")
             attributes["tomorrow_confidence"] = tomorrow.get("confidence", 0.0)
             attributes["tomorrow_data_source"] = tomorrow.get("data_source", "unknown")
-            # Add cost forecast (will be set by coordinator)
+            # Include cost forecast if calculated by coordinator
             if tomorrow.get("forecast_cost") is not None:
                 attributes["tomorrow_cost"] = tomorrow.get("forecast_cost")
         
@@ -1776,7 +1770,7 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes["next_week_consumption"] = week.get("avg_consumption_l_per_100km")
             attributes["next_week_confidence"] = week.get("confidence", 0.0)
             attributes["next_week_data_source"] = week.get("data_source", "unknown")
-            # Add cost forecast (will be set by coordinator)
+            # Include cost forecast if calculated by coordinator
             if week.get("forecast_cost") is not None:
                 attributes["next_week_cost"] = week.get("forecast_cost")
         
@@ -1786,7 +1780,7 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes["next_14_days_consumption"] = two_weeks.get("avg_consumption_l_per_100km")
             attributes["next_14_days_confidence"] = two_weeks.get("confidence", 0.0)
             attributes["next_14_days_data_source"] = two_weeks.get("data_source", "unknown")
-            # Add cost forecast (will be set by coordinator)
+            # Include cost forecast if calculated by coordinator
             if two_weeks.get("forecast_cost") is not None:
                 attributes["next_14_days_cost"] = two_weeks.get("forecast_cost")
         
@@ -1796,7 +1790,7 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             attributes["next_month_consumption"] = month.get("avg_consumption_l_per_100km")
             attributes["next_month_confidence"] = month.get("confidence", 0.0)
             attributes["next_month_data_source"] = month.get("data_source", "unknown")
-            # Add cost forecast (will be set by coordinator)
+            # Include cost forecast if calculated by coordinator
             if month.get("forecast_cost") is not None:
                 attributes["next_month_cost"] = month.get("forecast_cost")
         
