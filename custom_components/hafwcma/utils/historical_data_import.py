@@ -379,11 +379,17 @@ async def _import_tank_history_and_detect_refueling(
         
         # Calculate threshold in liters based on percentage
         threshold_liters = (REFUEL_DETECTION_THRESHOLD_PERCENT / 100.0) * tank_capacity
-        _LOGGER.debug(
-            "Using percentage-based threshold: %.1f%% = %.2f liters (tank capacity: %.1fL)",
+        _LOGGER.info(
+            "Refueling detection configuration: threshold=%.1f%% (%.2fL), tank_capacity=%.1fL, merge_window=%d min",
             REFUEL_DETECTION_THRESHOLD_PERCENT,
             threshold_liters,
             tank_capacity,
+            REFUEL_MERGE_TIME_WINDOW_MINUTES,
+        )
+        _LOGGER.info(
+            "Existing refueling events in log: %d (will check for duplicates within %d hours)",
+            len(existing_timestamps),
+            DUPLICATE_DETECTION_WINDOW_HOURS,
         )
         
         for state in tank_states[tank_level_entity]:
@@ -404,6 +410,18 @@ async def _import_tank_history_and_detect_refueling(
                 if previous_level is not None:
                     level_increase = current_level - previous_level
                     
+                    # Log all tank level increases (positive changes only) for debugging
+                    if level_increase > 0:
+                        _LOGGER.info(
+                            "Tank level increase detected: +%.2fL at %s (%.1f%% raw, previous=%.2fL, current=%.2fL, threshold=%.2fL)",
+                            level_increase,
+                            current_time.isoformat(),
+                            float(state.state) if tank_level_in_percentage else (level_increase / tank_capacity * 100),
+                            previous_level,
+                            current_level,
+                            threshold_liters,
+                        )
+                    
                     # Refueling detected if increase exceeds threshold
                     if level_increase > threshold_liters:
                         # Check if this refueling is a duplicate
@@ -412,9 +430,10 @@ async def _import_tank_history_and_detect_refueling(
                             time_diff_hours = abs((current_time - existing_ts).total_seconds()) / SECONDS_PER_HOUR
                             if time_diff_hours < DUPLICATE_DETECTION_WINDOW_HOURS:
                                 is_duplicate = True
-                                _LOGGER.debug(
-                                    "Skipping duplicate refueling at %s (existing: %s)",
+                                _LOGGER.warning(
+                                    "Skipping duplicate refueling at %s (within %.1fh of existing event at %s)",
                                     current_time.isoformat(),
+                                    time_diff_hours,
                                     existing_ts.isoformat(),
                                 )
                                 break
@@ -425,8 +444,15 @@ async def _import_tank_history_and_detect_refueling(
                                 "timestamp": current_time,
                                 "liters": level_increase,
                             })
-                            _LOGGER.debug(
-                                "Detected potential refueling: +%.2fL at %s",
+                            _LOGGER.info(
+                                "✓ Refueling event detected: +%.2fL at %s (exceeds threshold of %.2fL)",
+                                level_increase,
+                                current_time.isoformat(),
+                                threshold_liters,
+                            )
+                        else:
+                            _LOGGER.info(
+                                "✗ Refueling event rejected as duplicate: +%.2fL at %s",
                                 level_increase,
                                 current_time.isoformat(),
                             )
@@ -439,7 +465,16 @@ async def _import_tank_history_and_detect_refueling(
                 continue
         
         # Merge refueling events that occur within the merge time window
+        _LOGGER.info(
+            "Processing %d detected refueling event(s) for merging (merge window: %d minutes)",
+            len(pending_refuel_events),
+            REFUEL_MERGE_TIME_WINDOW_MINUTES,
+        )
         merged_events = _merge_refueling_events(pending_refuel_events, REFUEL_MERGE_TIME_WINDOW_MINUTES)
+        _LOGGER.info(
+            "After merging: %d refueling event(s) to be added to storage",
+            len(merged_events),
+        )
         
         # Create refueling log entries for merged events
         for merged_event in merged_events:
@@ -482,16 +517,16 @@ async def _import_tank_history_and_detect_refueling(
             
             if merged_count > 1:
                 _LOGGER.info(
-                    "Detected historical refueling (merged %d events): +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
-                    merged_count,
+                    "Adding merged refueling event: +%.1fL at %s (merged %d events, odometer: %.1f km, confidence: %.2f)",
                     level_increase,
                     current_time.isoformat(),
+                    merged_count,
                     odometer_km or 0,
                     confidence,
                 )
             else:
-                _LOGGER.debug(
-                    "Detected historical refueling: +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
+                _LOGGER.info(
+                    "Adding refueling event: +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
                     level_increase,
                     current_time.isoformat(),
                     odometer_km or 0,
@@ -553,11 +588,12 @@ def _merge_refueling_events(
                 # Merge into current group
                 current_group["liters"] += event["liters"]
                 current_group["merged_count"] += 1
-                _LOGGER.debug(
-                    "Merging refueling event at %s (+%.2fL) with event at %s (time diff: %.1f min)",
+                _LOGGER.info(
+                    "Merging refueling events: %s (+%.2fL) merged with %s (+%.2fL), time diff: %.1f min",
                     event["timestamp"].isoformat(),
                     event["liters"],
                     current_group["timestamp"].isoformat(),
+                    current_group["liters"] - event["liters"],  # Previous total before adding current
                     time_diff_minutes,
                 )
             else:
