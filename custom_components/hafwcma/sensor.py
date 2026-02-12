@@ -344,6 +344,17 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             fallback=7.0,
         )
         
+        # Debug logging before calling prediction
+        _LOGGER.debug(
+            "Calling predict_days_until_refuel with: range_km=%.2f, tank_level=%.2f, tank_capacity=%.2f, "
+            "fallback_daily_km=%.2f, fallback_consumption_rate=%.2f",
+            range_km if range_km is not None else -1,
+            tank_level if tank_level is not None else -1,
+            tank_capacity,
+            fallback_daily_km,
+            fallback_consumption_rate
+        )
+        
         # Run prediction
         prediction = await predict_days_until_refuel(
             self.hass,
@@ -365,6 +376,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             prediction.get("data_source"),
             prediction.get("confidence") or 0,
         )
+        
+        # Debug log the full prediction result
+        _LOGGER.debug("Full prediction result: %s", prediction)
         
         return prediction
 
