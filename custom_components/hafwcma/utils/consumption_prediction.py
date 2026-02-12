@@ -428,6 +428,20 @@ async def predict_days_until_refuel(
     # Determine data source and values
     use_historical = sufficiency["sufficient"] and historical["avg_daily_km"] > 0
     
+    _LOGGER.debug(
+        "Data sufficiency check: sufficient=%s, odometer_points=%d, consumption_events=%d",
+        sufficiency["sufficient"],
+        sufficiency.get("odometer_points", 0),
+        sufficiency.get("consumption_events", 0)
+    )
+    _LOGGER.debug(
+        "Historical data: avg_daily_km=%.2f, avg_consumption_rate=%.2f, confidence=%.2f, data_points=%d",
+        historical.get("avg_daily_km", 0),
+        historical.get("avg_consumption_rate", 0),
+        historical.get("confidence", 0),
+        historical.get("data_points", 0)
+    )
+    
     if ml_enabled and ml_prediction:
         data_source = "ml_enhanced"
         # Use ML weekday pattern for more accurate daily km
@@ -456,12 +470,25 @@ async def predict_days_until_refuel(
     days_until_refuel = None
     weekday_pattern = None
     
+    # Debug logging for input parameters
+    _LOGGER.debug(
+        "predict_days_until_refuel inputs: current_range_km=%.2f, current_tank_level=%.2f, "
+        "tank_capacity=%.2f, avg_daily_km=%.2f, avg_consumption_rate=%.2f, data_source=%s",
+        current_range_km if current_range_km is not None else -1,
+        current_tank_level if current_tank_level is not None else -1,
+        tank_capacity if tank_capacity is not None else -1,
+        avg_daily_km,
+        avg_consumption_rate,
+        data_source
+    )
+    
     # Extract weekday pattern if available from ML prediction
     if ml_enabled and ml_prediction:
         weekday_pattern = ml_prediction.get("weekday_pattern", {})
     
     # Method 1: Use range-based calculation (most accurate when available)
     if current_range_km is not None and current_range_km > 0 and avg_daily_km > 0:
+        _LOGGER.debug("Method 1: Using range-based calculation")
         # If ML prediction has depletion date, use it for better accuracy
         if ml_enabled and ml_prediction.get("predicted_range_depletion_date"):
             try:
@@ -488,9 +515,18 @@ async def predict_days_until_refuel(
             days_until_refuel = current_range_km / avg_daily_km
             _LOGGER.debug("Calculated days_until_refuel from range: %.1f days (%.1f km / %.1f km/day)", 
                          days_until_refuel, current_range_km, avg_daily_km)
+    else:
+        _LOGGER.debug(
+            "Method 1 skipped: current_range_km=%s (>0?=%s), avg_daily_km=%.2f (>0?=%s)",
+            current_range_km,
+            current_range_km is not None and current_range_km > 0,
+            avg_daily_km,
+            avg_daily_km > 0
+        )
     
     # Method 2: Calculate from tank level and consumption rate
     if days_until_refuel is None and current_tank_level is not None and tank_capacity is not None and avg_consumption_rate > 0 and avg_daily_km > 0:
+        _LOGGER.debug("Method 2: Using tank level-based calculation")
         # Calculate estimated range from tank level
         estimated_range_km = (current_tank_level / avg_consumption_rate) * 100
         
@@ -512,9 +548,23 @@ async def predict_days_until_refuel(
                 "Calculated days_until_refuel from tank level: %.1f days (%.1f L → %.1f km / %.1f km/day)",
                 days_until_refuel, current_tank_level, estimated_range_km, avg_daily_km
             )
+    else:
+        if days_until_refuel is None:
+            _LOGGER.debug(
+                "Method 2 skipped: days_until_refuel=%s, current_tank_level=%s, tank_capacity=%s, "
+                "avg_consumption_rate=%.2f (>0?=%s), avg_daily_km=%.2f (>0?=%s)",
+                days_until_refuel,
+                current_tank_level,
+                tank_capacity,
+                avg_consumption_rate,
+                avg_consumption_rate > 0,
+                avg_daily_km,
+                avg_daily_km > 0
+            )
     
     # Method 3: Use average refueling interval from history
     if days_until_refuel is None and use_historical:
+        _LOGGER.debug("Method 3: Using average refueling interval from history")
         avg_refuel_interval = await _calculate_avg_days_between_refuelings(hass, entry)
         if avg_refuel_interval is not None:
             days_until_refuel = avg_refuel_interval
@@ -522,6 +572,66 @@ async def predict_days_until_refuel(
                 "Using average refueling interval from history: %.1f days",
                 avg_refuel_interval
             )
+    else:
+        if days_until_refuel is None:
+            _LOGGER.debug(
+                "Method 3 skipped: days_until_refuel=%s, use_historical=%s",
+                days_until_refuel,
+                use_historical
+            )
+    
+    # Log final result before returning
+    if days_until_refuel is None:
+        _LOGGER.warning(
+            "ALL METHODS FAILED: days_until_refuel is None. "
+            "current_range_km=%s, current_tank_level=%s, tank_capacity=%s, "
+            "avg_daily_km=%.2f, avg_consumption_rate=%.2f, use_historical=%s",
+            current_range_km,
+            current_tank_level,
+            tank_capacity,
+            avg_daily_km,
+            avg_consumption_rate,
+            use_historical
+        )
+        
+        # Safety fallback: Last resort calculation to ensure we return a value when we have the data
+        # This catches edge cases where conditions might be met but calculation didn't happen
+        # (e.g., type mismatches, unexpected None values, etc.)
+        if use_historical and avg_daily_km > 0 and avg_consumption_rate > 0:
+            # Try explicit type conversion and validation before calculation
+            try:
+                # Method A: Calculate from tank_level if all components are present
+                if (current_tank_level is not None and tank_capacity is not None and 
+                    float(current_tank_level) > 0 and float(tank_capacity) > 0 and 
+                    float(avg_consumption_rate) > 0):
+                    estimated_range_km = (float(current_tank_level) / float(avg_consumption_rate)) * 100.0
+                    if estimated_range_km > 0:
+                        days_until_refuel = estimated_range_km / float(avg_daily_km)
+                        _LOGGER.info(
+                            "Safety fallback applied (tank_level): Calculated %.1f days from tank_level %.2f L "
+                            "(estimated range %.1f km / avg_daily_km %.1f)",
+                            days_until_refuel, current_tank_level, estimated_range_km, avg_daily_km
+                        )
+                # Method B: Calculate from range_km if available
+                elif current_range_km is not None and float(current_range_km) > 0:
+                    days_until_refuel = float(current_range_km) / float(avg_daily_km)
+                    _LOGGER.info(
+                        "Safety fallback applied (range_km): Calculated %.1f days from range_km %.1f km / avg_daily_km %.1f",
+                        days_until_refuel, current_range_km, avg_daily_km
+                    )
+                else:
+                    _LOGGER.error(
+                        "Safety fallback failed: Cannot calculate days_until_refuel. "
+                        "Neither range_km nor (tank_level + tank_capacity) are available or valid."
+                    )
+            except (TypeError, ValueError, ZeroDivisionError) as err:
+                _LOGGER.error(
+                    "Safety fallback calculation failed with error: %s. "
+                    "Values: current_range_km=%s, current_tank_level=%s, tank_capacity=%s, "
+                    "avg_daily_km=%.2f, avg_consumption_rate=%.2f",
+                    err, current_range_km, current_tank_level, tank_capacity,
+                    avg_daily_km, avg_consumption_rate
+                )
     
     # Calculate predicted refuel date
     if days_until_refuel is not None and days_until_refuel > 0:
