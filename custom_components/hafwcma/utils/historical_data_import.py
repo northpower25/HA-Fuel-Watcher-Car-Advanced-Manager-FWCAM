@@ -623,15 +623,17 @@ def _merge_refueling_events(
             time_diff_minutes = (event["timestamp"] - current_group["timestamp"]).total_seconds() / 60
             
             if time_diff_minutes <= merge_window_minutes:
+                # Log before merging to show previous state
+                previous_total = current_group["liters"]
                 # Merge into current group
                 current_group["liters"] += event["liters"]
                 current_group["merged_count"] += 1
                 _LOGGER.info(
-                    "Merging refueling events: %s (+%.2fL) merged with %s (+%.2fL), time diff: %.1f min",
+                    "Merging refueling events: %s (+%.2fL) merged with %s (previous total: +%.2fL), time diff: %.1f min",
                     event["timestamp"].isoformat(),
                     event["liters"],
                     current_group["timestamp"].isoformat(),
-                    current_group["liters"] - event["liters"],  # Previous total before adding current
+                    previous_total,
                     time_diff_minutes,
                 )
             else:
