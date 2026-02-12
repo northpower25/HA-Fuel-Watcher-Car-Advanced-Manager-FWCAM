@@ -27,7 +27,7 @@ class VehicleDataTracker:
     """Track vehicle data changes and detect events like refueling."""
     
     # Default threshold as percentage of tank capacity
-    REFUEL_DETECTION_THRESHOLD_PERCENT = 4.0
+    REFUEL_DETECTION_THRESHOLD_PERCENT = 3.5
     # Merge time window for close refueling events (in seconds)
     REFUEL_MERGE_TIME_WINDOW_SECONDS = 900  # 15 minutes
     
