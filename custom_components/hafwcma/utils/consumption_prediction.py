@@ -234,6 +234,60 @@ async def calculate_historical_consumption(
     }
 
 
+async def _calculate_avg_days_between_refuelings(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    lookback_days: int = 90,
+) -> Optional[float]:
+    """Calculate average days between refuelings from historical data.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        lookback_days: Number of days to look back
+        
+    Returns:
+        Average days between refuelings or None if insufficient data
+    """
+    from .storage import get_refueling_log
+    
+    refueling_log = await get_refueling_log(hass, entry)
+    
+    if len(refueling_log) < 2:
+        return None
+    
+    # Filter by lookback period
+    cutoff_time = dt_util.now() - timedelta(days=lookback_days)
+    
+    recent_refuelings = []
+    for event in refueling_log:
+        try:
+            event_time = dt_util.parse_datetime(event.get("timestamp", ""))
+            if event_time and event_time >= cutoff_time:
+                recent_refuelings.append(event_time)
+        except (ValueError, TypeError):
+            continue
+    
+    if len(recent_refuelings) < 2:
+        return None
+    
+    # Sort by time
+    recent_refuelings.sort()
+    
+    # Calculate intervals between consecutive refuelings
+    intervals = []
+    for i in range(len(recent_refuelings) - 1):
+        interval_days = (recent_refuelings[i + 1] - recent_refuelings[i]).total_seconds() / 86400
+        if interval_days > 0:
+            intervals.append(interval_days)
+    
+    if not intervals:
+        return None
+    
+    # Return average interval
+    return sum(intervals) / len(intervals)
+
+
 async def predict_days_until_refuel(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -348,8 +402,16 @@ async def predict_days_until_refuel(
         estimated_range_km = (current_tank_level / avg_consumption_rate) * 100
         days_until_refuel = estimated_range_km / avg_daily_km if avg_daily_km > 0 else None
     else:
-        # Cannot calculate
+        # No current vehicle data available - try to estimate from refueling history
         days_until_refuel = None
+        if use_historical:
+            avg_refuel_interval = await _calculate_avg_days_between_refuelings(hass, entry)
+            if avg_refuel_interval is not None:
+                days_until_refuel = avg_refuel_interval
+                _LOGGER.info(
+                    "Using average refueling interval from history: %.1f days",
+                    avg_refuel_interval
+                )
     
     # Calculate predicted refuel date
     if days_until_refuel is not None and days_until_refuel > 0:
@@ -364,7 +426,7 @@ async def predict_days_until_refuel(
     )
     
     return {
-        "days_until_refuel": round(days_until_refuel, 1) if days_until_refuel else None,
+        "days_until_refuel": round(days_until_refuel, 1) if days_until_refuel is not None else None,
         "predicted_refuel_date": predicted_refuel_date,
         "data_source": data_source,
         "confidence": confidence,
