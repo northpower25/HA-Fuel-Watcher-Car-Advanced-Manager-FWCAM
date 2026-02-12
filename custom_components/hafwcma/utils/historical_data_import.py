@@ -341,6 +341,15 @@ async def _import_tank_history_and_detect_refueling(
             _LOGGER.warning("No historical states found for tank level entity: %s", tank_level_entity)
             return 0
         
+        # Log how many states were retrieved
+        num_tank_states = len(tank_states[tank_level_entity])
+        _LOGGER.info(
+            "Retrieved %d tank level states from recorder for period %s to %s",
+            num_tank_states,
+            start_time.isoformat(),
+            end_time.isoformat(),
+        )
+        
         # Get odometer states for same period
         odometer_states_dict = await hass.async_add_executor_job(
             history.state_changes_during_period,
@@ -366,6 +375,12 @@ async def _import_tank_history_and_detect_refueling(
         
         # Track potential refueling events to merge close ones
         pending_refuel_events = []
+        
+        # Track statistics for debugging
+        total_states_processed = 0
+        states_skipped_invalid = 0
+        states_with_positive_increase = 0
+        states_below_threshold = 0
         
         # Determine if tank level is in percentage or liters from first valid state
         tank_level_in_percentage = False
@@ -393,9 +408,11 @@ async def _import_tank_history_and_detect_refueling(
         )
         
         for state in tank_states[tank_level_entity]:
+            total_states_processed += 1
             try:
                 # Skip if state is unknown or unavailable
                 if state.state in INVALID_SENSOR_STATES:
+                    states_skipped_invalid += 1
                     continue
                 
                 current_level = float(state.state)
@@ -412,6 +429,7 @@ async def _import_tank_history_and_detect_refueling(
                     
                     # Log all tank level increases (positive changes only) for debugging
                     if level_increase > 0:
+                        states_with_positive_increase += 1
                         _LOGGER.info(
                             "Tank level increase detected: +%.2fL at %s (%.1f%% raw, previous=%.2fL, current=%.2fL, threshold=%.2fL)",
                             level_increase,
@@ -456,6 +474,16 @@ async def _import_tank_history_and_detect_refueling(
                                 level_increase,
                                 current_time.isoformat(),
                             )
+                    else:
+                        # Log why it didn't meet threshold
+                        if level_increase > 0:
+                            states_below_threshold += 1
+                            _LOGGER.debug(
+                                "Tank increase below threshold: +%.2fL at %s (threshold: %.2fL)",
+                                level_increase,
+                                current_time.isoformat(),
+                                threshold_liters,
+                            )
                 
                 previous_level = current_level
                 previous_time = current_time
@@ -463,6 +491,16 @@ async def _import_tank_history_and_detect_refueling(
             except (ValueError, TypeError) as err:
                 _LOGGER.debug("Skipping invalid tank level state: %s (%s)", state.state, err)
                 continue
+        
+        # Log processing statistics
+        _LOGGER.info(
+            "Tank level processing complete: processed=%d, skipped_invalid=%d, positive_increases=%d, below_threshold=%d, detected=%d",
+            total_states_processed,
+            states_skipped_invalid,
+            states_with_positive_increase,
+            states_below_threshold,
+            len(pending_refuel_events),
+        )
         
         # Merge refueling events that occur within the merge time window
         _LOGGER.info(
