@@ -271,11 +271,17 @@ def _calculate_days_until_refuel_with_weekday_pattern(
         
         if daily_km <= 0:
             # If no pattern for this weekday, use average of all weekdays
-            daily_km = sum(weekday_pattern.values()) / len(weekday_pattern) if weekday_pattern else 0
+            daily_km = sum(weekday_pattern.values()) / len(weekday_pattern)
         
         if daily_km <= 0:
             # Can't calculate without valid daily km
             return None
+        
+        # Check if this is the last partial day
+        if remaining_km <= daily_km:
+            # Calculate fractional day
+            days_elapsed += remaining_km / daily_km
+            break
         
         remaining_km -= daily_km
         days_elapsed += 1
@@ -466,7 +472,7 @@ async def predict_days_until_refuel(
         # Fallback to simple average if weekday calculation didn't work
         if days_until_refuel is None:
             days_until_refuel = current_range_km / avg_daily_km
-            _LOGGER.debug("Calculated days_until_refuel from range: %.1f days (%.1f km / %.1f km/day)", 
+            _LOGGER.info("Calculated days_until_refuel from range: %.1f days (%.1f km / %.1f km/day)", 
                          days_until_refuel, current_range_km, avg_daily_km)
     
     # Method 2: Calculate from tank level and consumption rate
