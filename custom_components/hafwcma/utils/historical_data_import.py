@@ -131,7 +131,7 @@ async def import_historical_vehicle_data(
     
     # Check if recorder is available
     try:
-        recorder_instance = get_instance(hass)
+        recorder_instance = await hass.async_add_executor_job(get_instance, hass)
         if not recorder_instance:
             result["reason"] = "Recorder not available"
             result["errors"].append("Home Assistant recorder is not enabled")
@@ -350,6 +350,18 @@ async def _import_tank_history_and_detect_refueling(
             end_time.isoformat(),
         )
         
+        # Log first and last timestamps to verify order
+        if tank_states[tank_level_entity]:
+            first_state = tank_states[tank_level_entity][0]
+            last_state = tank_states[tank_level_entity][-1]
+            _LOGGER.info(
+                "State range: first=%s (state=%s), last=%s (state=%s)",
+                first_state.last_changed.isoformat() if hasattr(first_state, 'last_changed') else 'unknown',
+                first_state.state if hasattr(first_state, 'state') else 'unknown',
+                last_state.last_changed.isoformat() if hasattr(last_state, 'last_changed') else 'unknown',
+                last_state.state if hasattr(last_state, 'state') else 'unknown',
+            )
+        
         # Get odometer states for same period
         odometer_states_dict = await hass.async_add_executor_job(
             history.state_changes_during_period,
@@ -456,17 +468,18 @@ async def _import_tank_history_and_detect_refueling(
                                 )
                                 break
                         
-                        if not is_duplicate:
+                         if not is_duplicate:
                             # Add to pending events for potential merging
                             pending_refuel_events.append({
                                 "timestamp": current_time,
                                 "liters": level_increase,
                             })
                             _LOGGER.info(
-                                "✓ Refueling event detected: +%.2fL at %s (exceeds threshold of %.2fL)",
+                                "✓ Refueling event detected: +%.2fL at %s (exceeds threshold of %.2fL, raw_state=%s)",
                                 level_increase,
                                 current_time.isoformat(),
                                 threshold_liters,
+                                state.state,
                             )
                         else:
                             _LOGGER.info(
@@ -489,7 +502,10 @@ async def _import_tank_history_and_detect_refueling(
                 previous_time = current_time
                 
             except (ValueError, TypeError) as err:
-                _LOGGER.debug("Skipping invalid tank level state: %s (%s)", state.state, err)
+                states_skipped_invalid += 1
+                _LOGGER.warning("Skipping invalid tank level state at %s: %s (%s)", 
+                              state.last_changed.isoformat() if hasattr(state, 'last_changed') else 'unknown',
+                              state.state, err)
                 continue
         
         # Log processing statistics
@@ -508,11 +524,26 @@ async def _import_tank_history_and_detect_refueling(
             len(pending_refuel_events),
             REFUEL_MERGE_TIME_WINDOW_MINUTES,
         )
+        
+        # Log all pending events before merging
+        if pending_refuel_events:
+            _LOGGER.info("Pending refueling events before merging:")
+            for i, evt in enumerate(pending_refuel_events, 1):
+                _LOGGER.info("  %d. %s: +%.2fL", i, evt["timestamp"].isoformat(), evt["liters"])
+        
         merged_events = _merge_refueling_events(pending_refuel_events, REFUEL_MERGE_TIME_WINDOW_MINUTES)
         _LOGGER.info(
             "After merging: %d refueling event(s) to be added to storage",
             len(merged_events),
         )
+        
+        # Log all merged events
+        if merged_events:
+            _LOGGER.info("Merged refueling events to be saved:")
+            for i, evt in enumerate(merged_events, 1):
+                _LOGGER.info("  %d. %s: +%.2fL (merged_count=%d)", 
+                           i, evt["timestamp"].isoformat(), evt["liters"], 
+                           evt.get("merged_count", 1))
         
         # Create refueling log entries for merged events
         for merged_event in merged_events:
@@ -555,7 +586,8 @@ async def _import_tank_history_and_detect_refueling(
             
             if merged_count > 1:
                 _LOGGER.info(
-                    "Adding merged refueling event: +%.1fL at %s (merged %d events, odometer: %.1f km, confidence: %.2f)",
+                    "✓ Saved merged refueling event #%d: +%.1fL at %s (merged %d events, odometer: %.1f km, confidence: %.2f)",
+                    refuel_count,
                     level_increase,
                     current_time.isoformat(),
                     merged_count,
@@ -564,7 +596,8 @@ async def _import_tank_history_and_detect_refueling(
                 )
             else:
                 _LOGGER.info(
-                    "Adding refueling event: +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
+                    "✓ Saved refueling event #%d: +%.1fL at %s (odometer: %.1f km, confidence: %.2f)",
+                    refuel_count,
                     level_increase,
                     current_time.isoformat(),
                     odometer_km or 0,
