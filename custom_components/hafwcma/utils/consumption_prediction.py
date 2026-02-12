@@ -234,6 +234,56 @@ async def calculate_historical_consumption(
     }
 
 
+def _calculate_days_until_refuel_with_weekday_pattern(
+    current_range_km: float,
+    weekday_pattern: Dict[int, float],
+    start_date: Optional[datetime] = None,
+) -> Optional[float]:
+    """Calculate days until refuel using weekday-specific driving patterns.
+    
+    This provides more accurate predictions by accounting for different
+    driving distances on different days of the week.
+    
+    Args:
+        current_range_km: Current remaining range in km
+        weekday_pattern: Dictionary mapping weekday (0=Mon, 6=Sun) to avg km driven
+        start_date: Starting date for calculation (defaults to now)
+        
+    Returns:
+        Days until refuel or None if calculation fails
+    """
+    if not weekday_pattern or current_range_km <= 0:
+        return None
+    
+    if start_date is None:
+        start_date = dt_util.now()
+    
+    remaining_km = current_range_km
+    days_elapsed = 0.0
+    current_day = start_date
+    
+    # Simulate day-by-day consumption until range is depleted
+    max_days = 365  # Safety limit to prevent infinite loop
+    
+    while remaining_km > 0 and days_elapsed < max_days:
+        weekday = current_day.weekday()
+        daily_km = weekday_pattern.get(weekday, 0)
+        
+        if daily_km <= 0:
+            # If no pattern for this weekday, use average of all weekdays
+            daily_km = sum(weekday_pattern.values()) / len(weekday_pattern) if weekday_pattern else 0
+        
+        if daily_km <= 0:
+            # Can't calculate without valid daily km
+            return None
+        
+        remaining_km -= daily_km
+        days_elapsed += 1
+        current_day += timedelta(days=1)
+    
+    return days_elapsed if days_elapsed < max_days else None
+
+
 async def _calculate_avg_days_between_refuelings(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -382,36 +432,76 @@ async def predict_days_until_refuel(
         confidence = 0.3  # Low confidence for fallback
         data_points_used = 0
     
-    # Calculate days until refuel
-    if current_range_km is not None and current_range_km > 0:
-        # Use range-based calculation (most accurate)
-        days_until_refuel = current_range_km / avg_daily_km if avg_daily_km > 0 else None
-        
+    # Calculate days until refuel with improved fallback logic
+    days_until_refuel = None
+    weekday_pattern = None
+    
+    # Extract weekday pattern if available from ML prediction
+    if ml_enabled and ml_prediction:
+        weekday_pattern = ml_prediction.get("weekday_pattern", {})
+    
+    # Method 1: Use range-based calculation (most accurate when available)
+    if current_range_km is not None and current_range_km > 0 and avg_daily_km > 0:
         # If ML prediction has depletion date, use it for better accuracy
         if ml_enabled and ml_prediction.get("predicted_range_depletion_date"):
             try:
                 depletion_date = dt_util.parse_datetime(ml_prediction["predicted_range_depletion_date"])
                 if depletion_date:
                     days_until_refuel = (depletion_date - now).total_seconds() / 86400
+                    _LOGGER.debug("Using ML depletion date for days_until_refuel: %.1f days", days_until_refuel)
             except (ValueError, TypeError) as err:
                 _LOGGER.debug("Failed to parse ML depletion date: %s", err)
-                # Use calculated value
-                
-    elif current_tank_level is not None and tank_capacity is not None and avg_consumption_rate > 0:
-        # Calculate range from tank level and consumption rate
-        estimated_range_km = (current_tank_level / avg_consumption_rate) * 100
-        days_until_refuel = estimated_range_km / avg_daily_km if avg_daily_km > 0 else None
-    else:
-        # No current vehicle data available - try to estimate from refueling history
-        days_until_refuel = None
-        if use_historical:
-            avg_refuel_interval = await _calculate_avg_days_between_refuelings(hass, entry)
-            if avg_refuel_interval is not None:
-                days_until_refuel = avg_refuel_interval
+        
+        # Try weekday-aware calculation if we have the pattern and no ML depletion date
+        if days_until_refuel is None and weekday_pattern:
+            days_until_refuel = _calculate_days_until_refuel_with_weekday_pattern(
+                current_range_km, weekday_pattern, now
+            )
+            if days_until_refuel is not None:
                 _LOGGER.info(
-                    "Using average refueling interval from history: %.1f days",
-                    avg_refuel_interval
+                    "Calculated days_until_refuel using weekday pattern: %.1f days for %.1f km",
+                    days_until_refuel, current_range_km
                 )
+        
+        # Fallback to simple average if weekday calculation didn't work
+        if days_until_refuel is None:
+            days_until_refuel = current_range_km / avg_daily_km
+            _LOGGER.debug("Calculated days_until_refuel from range: %.1f days (%.1f km / %.1f km/day)", 
+                         days_until_refuel, current_range_km, avg_daily_km)
+    
+    # Method 2: Calculate from tank level and consumption rate
+    if days_until_refuel is None and current_tank_level is not None and tank_capacity is not None and avg_consumption_rate > 0 and avg_daily_km > 0:
+        # Calculate estimated range from tank level
+        estimated_range_km = (current_tank_level / avg_consumption_rate) * 100
+        
+        # Try weekday-aware calculation if we have the pattern
+        if weekday_pattern:
+            days_until_refuel = _calculate_days_until_refuel_with_weekday_pattern(
+                estimated_range_km, weekday_pattern, now
+            )
+            if days_until_refuel is not None:
+                _LOGGER.info(
+                    "Calculated days_until_refuel from tank level using weekday pattern: %.1f days (%.1f L → %.1f km)",
+                    days_until_refuel, current_tank_level, estimated_range_km
+                )
+        
+        # Fallback to simple average if weekday calculation didn't work
+        if days_until_refuel is None:
+            days_until_refuel = estimated_range_km / avg_daily_km
+            _LOGGER.info(
+                "Calculated days_until_refuel from tank level: %.1f days (%.1f L → %.1f km / %.1f km/day)",
+                days_until_refuel, current_tank_level, estimated_range_km, avg_daily_km
+            )
+    
+    # Method 3: Use average refueling interval from history
+    if days_until_refuel is None and use_historical:
+        avg_refuel_interval = await _calculate_avg_days_between_refuelings(hass, entry)
+        if avg_refuel_interval is not None:
+            days_until_refuel = avg_refuel_interval
+            _LOGGER.info(
+                "Using average refueling interval from history: %.1f days",
+                avg_refuel_interval
+            )
     
     # Calculate predicted refuel date
     if days_until_refuel is not None and days_until_refuel > 0:
@@ -435,6 +525,7 @@ async def predict_days_until_refuel(
         "last_prediction_time": now,
         "data_points_used": data_points_used,
         "ml_prediction": ml_prediction if ml_enabled else None,
+        "weekday_pattern": weekday_pattern if weekday_pattern else None,
     }
 
 

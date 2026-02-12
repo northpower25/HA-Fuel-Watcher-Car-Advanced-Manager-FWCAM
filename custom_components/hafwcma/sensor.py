@@ -1536,6 +1536,19 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
         if prediction.get("predicted_refuel_date"):
             attributes[ATTR_PREDICTED_REFUEL_DATE] = prediction["predicted_refuel_date"].isoformat()
         
+        # Add weekday pattern if available
+        weekday_pattern = prediction.get("weekday_pattern")
+        if weekday_pattern:
+            # Convert weekday numbers to names for better readability
+            weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            formatted_pattern = {}
+            for weekday, km in weekday_pattern.items():
+                if isinstance(weekday, int) and 0 <= weekday < 7:
+                    formatted_pattern[weekday_names[weekday]] = round(km, 1)
+            
+            if formatted_pattern:
+                attributes["weekday_driving_pattern"] = formatted_pattern
+        
         return attributes
 
 
