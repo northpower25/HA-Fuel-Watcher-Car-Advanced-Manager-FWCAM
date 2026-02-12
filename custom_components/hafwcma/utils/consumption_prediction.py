@@ -594,24 +594,43 @@ async def predict_days_until_refuel(
             use_historical
         )
         
-        # Safety fallback: If we have historical data with valid avg_daily_km and avg_consumption_rate,
-        # make a last-ditch estimate even if range_km and tank_level are not available
+        # Safety fallback: Last resort calculation to ensure we return a value when we have the data
+        # This catches edge cases where conditions might be met but calculation didn't happen
+        # (e.g., type mismatches, unexpected None values, etc.)
         if use_historical and avg_daily_km > 0 and avg_consumption_rate > 0:
-            # Try to calculate from tank_level if we have it and didn't already
-            if current_tank_level is not None and tank_capacity is not None and tank_capacity > 0:
-                estimated_range_km = (current_tank_level / avg_consumption_rate) * 100
-                days_until_refuel = estimated_range_km / avg_daily_km
-                _LOGGER.info(
-                    "Safety fallback applied: Calculated %.1f days from tank_level %.2f L "
-                    "(estimated range %.1f km / avg_daily_km %.1f)",
-                    days_until_refuel, current_tank_level, estimated_range_km, avg_daily_km
-                )
-            # Or try from range_km if we have it and didn't already
-            elif current_range_km is not None and current_range_km > 0:
-                days_until_refuel = current_range_km / avg_daily_km
-                _LOGGER.info(
-                    "Safety fallback applied: Calculated %.1f days from range_km %.1f km / avg_daily_km %.1f",
-                    days_until_refuel, current_range_km, avg_daily_km
+            # Try explicit type conversion and validation before calculation
+            try:
+                # Method A: Calculate from tank_level if all components are present
+                if (current_tank_level is not None and tank_capacity is not None and 
+                    float(current_tank_level) > 0 and float(tank_capacity) > 0 and 
+                    float(avg_consumption_rate) > 0):
+                    estimated_range_km = (float(current_tank_level) / float(avg_consumption_rate)) * 100.0
+                    if estimated_range_km > 0:
+                        days_until_refuel = estimated_range_km / float(avg_daily_km)
+                        _LOGGER.info(
+                            "Safety fallback applied (tank_level): Calculated %.1f days from tank_level %.2f L "
+                            "(estimated range %.1f km / avg_daily_km %.1f)",
+                            days_until_refuel, current_tank_level, estimated_range_km, avg_daily_km
+                        )
+                # Method B: Calculate from range_km if available
+                elif current_range_km is not None and float(current_range_km) > 0:
+                    days_until_refuel = float(current_range_km) / float(avg_daily_km)
+                    _LOGGER.info(
+                        "Safety fallback applied (range_km): Calculated %.1f days from range_km %.1f km / avg_daily_km %.1f",
+                        days_until_refuel, current_range_km, avg_daily_km
+                    )
+                else:
+                    _LOGGER.error(
+                        "Safety fallback failed: Cannot calculate days_until_refuel. "
+                        "Neither range_km nor (tank_level + tank_capacity) are available or valid."
+                    )
+            except (TypeError, ValueError, ZeroDivisionError) as err:
+                _LOGGER.error(
+                    "Safety fallback calculation failed with error: %s. "
+                    "Values: current_range_km=%s, current_tank_level=%s, tank_capacity=%s, "
+                    "avg_daily_km=%.2f, avg_consumption_rate=%.2f",
+                    err, current_range_km, current_tank_level, tank_capacity,
+                    avg_daily_km, avg_consumption_rate
                 )
     
     # Calculate predicted refuel date
