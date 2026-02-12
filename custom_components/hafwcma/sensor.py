@@ -486,12 +486,21 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             odometer = vehicle_data.get("odometer_km")
             if odometer is not None:
                 from homeassistant.util import dt as dt_util
+                timestamp = dt_util.now().isoformat()
                 await storage.add_odometer_observation(
                     self.hass,
                     self.config_entry,
                     odometer,
-                    dt_util.now().isoformat(),
+                    timestamp,
                 )
+                
+                # Track automatic vehicle data refresh
+                data = await storage.load_data(self.hass, self.config_entry)
+                data["last_vehicle_data_refresh"] = {
+                    "timestamp": timestamp,
+                    "type": "automatic",
+                }
+                await storage.save_data(self.hass, self.config_entry, data)
         except Exception as err:
             _LOGGER.warning("Error fetching vehicle data: %s", err)
             # Continue with empty vehicle data
@@ -991,12 +1000,17 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.warning("Error calculating consumption forecast: %s", err)
         
-        # Get refueling log for the refueling log sensor
+        # Get refueling log and retrieval metadata from storage (single load operation)
         refueling_log = None
+        last_vehicle_data_refresh = None
+        last_historical_import = None
         try:
-            refueling_log = await storage.get_refueling_log(self.hass, self.config_entry)
+            stored_data = await storage.load_data(self.hass, self.config_entry)
+            refueling_log = stored_data.get("refueling_log", [])
+            last_vehicle_data_refresh = stored_data.get("last_vehicle_data_refresh")
+            last_historical_import = stored_data.get("last_historical_import")
         except Exception as err:
-            _LOGGER.warning("Error getting refueling log: %s", err)
+            _LOGGER.warning("Error getting refueling log and metadata: %s", err)
         
         data = {
             "fuel_price": fuel_price,
@@ -1027,6 +1041,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "refueling_log": refueling_log,  # Add refueling log
             "nearby_cheap_stations": nearby_cheap_stations_data,  # Add geolocation data
             "proximity_alert": proximity_alert_data,  # Add proximity alert data
+            "last_vehicle_data_refresh": last_vehicle_data_refresh,  # Add retrieval metadata
+            "last_historical_import": last_historical_import,  # Add import metadata
         }
         
         # Apply randomization for next update interval
@@ -1734,13 +1750,26 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
                 "station": last_event.get("station_name"),
             }
         
-        return {
+        attrs = {
             "config_entry_id": self._config_entry.entry_id,
             "total_events": len(refueling_log),
             "last_refueling": last_refueling,
             "recent_events": recent_events,
             "status": f"{len(refueling_log)} refueling events recorded",
         }
+        
+        # Add retrieval metadata from coordinator data
+        last_historical_import = self.coordinator.data.get("last_historical_import")
+        if last_historical_import:
+            attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp")
+            attrs["last_historical_import_type"] = last_historical_import.get("type")
+        
+        last_vehicle_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
+        if last_vehicle_refresh:
+            attrs["last_vehicle_data_refresh_timestamp"] = last_vehicle_refresh.get("timestamp")
+            attrs["last_vehicle_data_refresh_type"] = last_vehicle_refresh.get("type")
+        
+        return attrs
 
 
 class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
