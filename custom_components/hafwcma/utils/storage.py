@@ -276,9 +276,15 @@ async def add_refuel_event(
     data["next_refuel_id"] = next_id + 1
     
     # Create complete refueling record with ID
+    # Ensure timestamp is always stored as a string
+    timestamp = event_data.get("timestamp")
+    if timestamp and hasattr(timestamp, 'isoformat'):
+        # Convert datetime object to ISO format string
+        timestamp = timestamp.isoformat()
+    
     refuel_record = {
         "id": next_id,
-        "timestamp": event_data.get("timestamp"),
+        "timestamp": timestamp,
         "odometer_km": event_data.get("odometer_km"),
         "station_name": event_data.get("station_name"),
         "station_address": event_data.get("station_address"),
@@ -680,15 +686,32 @@ async def calculate_consumption_history(
     # Filter events within period
     relevant_events = []
     for event in refueling_log:
-        timestamp_str = event.get("timestamp", "")
+        timestamp_value = event.get("timestamp", "")
         try:
-            event_time = dt_util.parse_datetime(timestamp_str)
+            # Handle both string and datetime objects
+            if isinstance(timestamp_value, str):
+                event_time = dt_util.parse_datetime(timestamp_value)
+            elif hasattr(timestamp_value, 'tzinfo'):  # It's already a datetime object
+                event_time = timestamp_value
+                _LOGGER.debug(
+                    "Event id=%s: timestamp is already a datetime object: %s",
+                    event.get("id"),
+                    event_time
+                )
+            else:
+                _LOGGER.debug(
+                    "Event id=%s: timestamp has unexpected type %s: %s",
+                    event.get("id"),
+                    type(timestamp_value),
+                    timestamp_value
+                )
+                continue
             
             if not event_time:
                 _LOGGER.debug(
                     "Event id=%s timestamp=%s -> parse returned None",
                     event.get("id"),
-                    timestamp_str
+                    timestamp_value
                 )
                 continue
             
@@ -705,7 +728,7 @@ async def calculate_consumption_history(
             _LOGGER.debug(
                 "Event id=%s timestamp=%s -> parse failed: %s",
                 event.get("id"),
-                timestamp_str,
+                timestamp_value,
                 e
             )
             continue
@@ -716,7 +739,7 @@ async def calculate_consumption_history(
             _LOGGER.debug(
                 "Event id=%s timestamp=%s -> parsed=%s -> included=%s (cutoff=%s)",
                 event.get("id"),
-                timestamp_str,
+                timestamp_value,
                 event_time,
                 should_include,
                 cutoff
