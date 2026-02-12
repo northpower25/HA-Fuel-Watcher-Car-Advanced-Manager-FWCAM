@@ -27,7 +27,7 @@ add_refuel_event:
         number:
           min: 0
           max: 200
-          step: 0.1
+          step: 0.001
           unit_of_measurement: "L"
     odometer_km:
       name: Odometer Reading
@@ -142,7 +142,7 @@ update_refuel_event:
         number:
           min: 0
           max: 200
-          step: 0.1
+          step: 0.001
           unit_of_measurement: "L"
     odometer_km:
       name: Odometer Reading
