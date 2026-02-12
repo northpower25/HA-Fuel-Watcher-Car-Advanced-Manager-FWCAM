@@ -593,6 +593,26 @@ async def predict_days_until_refuel(
             avg_consumption_rate,
             use_historical
         )
+        
+        # Safety fallback: If we have historical data with valid avg_daily_km and avg_consumption_rate,
+        # make a last-ditch estimate even if range_km and tank_level are not available
+        if use_historical and avg_daily_km > 0 and avg_consumption_rate > 0:
+            # Try to calculate from tank_level if we have it and didn't already
+            if current_tank_level is not None and tank_capacity is not None and tank_capacity > 0:
+                estimated_range_km = (current_tank_level / avg_consumption_rate) * 100
+                days_until_refuel = estimated_range_km / avg_daily_km
+                _LOGGER.info(
+                    "Safety fallback applied: Calculated %.1f days from tank_level %.2f L "
+                    "(estimated range %.1f km / avg_daily_km %.1f)",
+                    days_until_refuel, current_tank_level, estimated_range_km, avg_daily_km
+                )
+            # Or try from range_km if we have it and didn't already
+            elif current_range_km is not None and current_range_km > 0:
+                days_until_refuel = current_range_km / avg_daily_km
+                _LOGGER.info(
+                    "Safety fallback applied: Calculated %.1f days from range_km %.1f km / avg_daily_km %.1f",
+                    days_until_refuel, current_range_km, avg_daily_km
+                )
     
     # Calculate predicted refuel date
     if days_until_refuel is not None and days_until_refuel > 0:
