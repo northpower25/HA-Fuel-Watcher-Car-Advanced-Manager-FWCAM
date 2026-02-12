@@ -286,6 +286,10 @@ def _calculate_days_until_refuel_with_weekday_pattern(
             # If no pattern for this weekday, use average of all weekdays
             # len(weekday_pattern) > 0 is guaranteed by checks above
             daily_km = sum(weekday_pattern.values()) / len(weekday_pattern)
+            
+            # Safety check: if average is still zero or negative, fail
+            if daily_km <= 0:
+                return None
         
         # Check if this is the last partial day
         if remaining_km <= daily_km:
