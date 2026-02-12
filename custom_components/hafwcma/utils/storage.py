@@ -672,14 +672,68 @@ async def calculate_consumption_history(
     # Calculate cutoff timestamp
     cutoff = dt_util.now() - timedelta(days=days)
     
+    _LOGGER.debug(
+        "calculate_consumption_history(%d days): cutoff=%s, now=%s",
+        days, cutoff, dt_util.now()
+    )
+    
     # Filter events within period
     relevant_events = []
     for event in refueling_log:
+        timestamp_str = event.get("timestamp", "")
         try:
-            event_time = dt_util.parse_datetime(event.get("timestamp", ""))
-            if event_time and event_time >= cutoff:
+            event_time = dt_util.parse_datetime(timestamp_str)
+            
+            if not event_time:
+                _LOGGER.debug(
+                    "Event id=%s timestamp=%s -> parse returned None",
+                    event.get("id"),
+                    timestamp_str
+                )
+                continue
+            
+            # Ensure event_time is timezone-aware for proper comparison
+            if event_time.tzinfo is None:
+                # If event_time is naive, make it aware using the default timezone
+                event_time = dt_util.as_local(event_time)
+                _LOGGER.debug(
+                    "Event id=%s: converted naive datetime to timezone-aware: %s",
+                    event.get("id"),
+                    event_time
+                )
+        except (ValueError, TypeError) as e:
+            _LOGGER.debug(
+                "Event id=%s timestamp=%s -> parse failed: %s",
+                event.get("id"),
+                timestamp_str,
+                e
+            )
+            continue
+        
+        # Now do the comparison (outside try/except to catch any comparison errors)
+        try:
+            should_include = event_time >= cutoff
+            _LOGGER.debug(
+                "Event id=%s timestamp=%s -> parsed=%s -> included=%s (cutoff=%s)",
+                event.get("id"),
+                timestamp_str,
+                event_time,
+                should_include,
+                cutoff
+            )
+            
+            if should_include:
                 relevant_events.append(event)
-        except (ValueError, TypeError):
+        except TypeError as e:
+            _LOGGER.error(
+                "Event id=%s: Comparison failed between event_time=%s (tzinfo=%s) and cutoff=%s (tzinfo=%s): %s",
+                event.get("id"),
+                event_time,
+                event_time.tzinfo,
+                cutoff,
+                cutoff.tzinfo,
+                e
+            )
             continue
     
     _LOGGER.debug(
@@ -708,6 +762,11 @@ async def calculate_consumption_history(
     # Sort by timestamp
     relevant_events.sort(key=lambda x: x.get("timestamp", ""))
     
+    _LOGGER.debug(
+        "calculate_consumption_history(%d days): sorted %d events for consumption calc",
+        days, len(relevant_events)
+    )
+    
     # Calculate total distance and fuel consumed
     # Logic: Fuel from refueling event i is consumed between event i and event i+1
     total_km = 0
@@ -721,6 +780,12 @@ async def calculate_consumption_history(
         next_odometer = next_event.get("odometer_km")
         liters_refueled = curr_event.get("liters_refueled")
         
+        _LOGGER.debug(
+            "Pair [%d->%d]: curr_odo=%s next_odo=%s liters=%s",
+            curr_event.get("id"), next_event.get("id"),
+            curr_odometer, next_odometer, liters_refueled
+        )
+        
         # Fuel from current refueling was consumed to reach next refueling
         # Use explicit None checks to handle 0 values correctly
         if (curr_odometer is not None and next_odometer is not None 
@@ -730,11 +795,32 @@ async def calculate_consumption_history(
             if km_driven > 0 and liters_refueled > 0:
                 total_km += km_driven
                 total_liters += liters_refueled
+                _LOGGER.debug(
+                    "Pair [%d->%d]: km_driven=%s consumed=%s L (running totals: %s km, %s L)",
+                    curr_event.get("id"), next_event.get("id"),
+                    km_driven, liters_refueled, total_km, total_liters
+                )
+            else:
+                _LOGGER.debug(
+                    "Pair [%d->%d]: SKIPPED (km_driven=%s <= 0 or liters=%s <= 0)",
+                    curr_event.get("id"), next_event.get("id"),
+                    km_driven, liters_refueled
+                )
+        else:
+            _LOGGER.debug(
+                "Pair [%d->%d]: SKIPPED (missing odometer or liters data)",
+                curr_event.get("id"), next_event.get("id")
+            )
     
     # Calculate average consumption
     avg_consumption = None
     if total_km > 0:
         avg_consumption = (total_liters / total_km) * 100
+    
+    _LOGGER.debug(
+        "calculate_consumption_history(%d days): RESULT total_km=%s, total_liters=%s, avg_consumption=%s L/100km",
+        days, total_km, total_liters, avg_consumption
+    )
     
     # Calculate total cost from refueling events in this period
     total_cost = 0.0

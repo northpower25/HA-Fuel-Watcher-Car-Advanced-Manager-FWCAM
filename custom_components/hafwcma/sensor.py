@@ -1743,16 +1743,27 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
         forecast = self.coordinator.data.get("consumption_forecast")
         consumption_prediction = self.coordinator.data.get("consumption_prediction")
         
-        if not forecast:
-            return {
-                "tomorrow": None,
-                "next_week": None,
-                "next_14_days": None,
-                "next_month": None,
-                "status": "Waiting for prediction data",
-            }
+        # Initialize attributes with default null values for all forecast periods
+        attributes = {
+            "tomorrow_consumption": None,
+            "tomorrow_confidence": None,
+            "tomorrow_data_source": None,
+            "next_week_consumption": None,
+            "next_week_confidence": None,
+            "next_week_data_source": None,
+            "next_14_days_consumption": None,
+            "next_14_days_confidence": None,
+            "next_14_days_data_source": None,
+            "next_month_consumption": None,
+            "next_month_confidence": None,
+            "next_month_data_source": None,
+        }
         
-        attributes = {}
+        if not forecast:
+            attributes["status"] = "Waiting for prediction data"
+            # Still add metadata even if forecast is missing
+            self._add_prediction_metadata(attributes, consumption_prediction)
+            return attributes
         
         # Tomorrow's forecast
         if forecast.get("tomorrow"):
