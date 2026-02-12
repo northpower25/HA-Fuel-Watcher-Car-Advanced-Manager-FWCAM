@@ -29,7 +29,7 @@ from .storage import (
 _LOGGER = logging.getLogger(__name__)
 
 # Constants for historical data import configuration
-REFUEL_DETECTION_THRESHOLD_PERCENT = 4.0  # Minimum tank level increase (as percentage of tank capacity) to detect refueling
+REFUEL_DETECTION_THRESHOLD_PERCENT = 3.5  # Minimum tank level increase (as percentage of tank capacity) to detect refueling
 REFUEL_MERGE_TIME_WINDOW_MINUTES = 15  # Time window to merge multiple refueling events into one
 REFUEL_DETECTION_MIN_TIME_GAP_MINUTES = 5  # Minimum time between separate refuelings (deprecated - use merge window)
 ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS = 1  # Maximum time difference for odometer lookup
