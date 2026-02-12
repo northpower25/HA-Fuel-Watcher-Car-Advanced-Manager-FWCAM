@@ -252,7 +252,12 @@ def _calculate_days_until_refuel_with_weekday_pattern(
     Returns:
         Days until refuel or None if calculation fails
     """
-    if not weekday_pattern or current_range_km <= 0:
+    # Validate inputs
+    if not weekday_pattern or len(weekday_pattern) == 0 or current_range_km <= 0:
+        return None
+    
+    # Check if all pattern values are non-positive (fail fast)
+    if all(km <= 0 for km in weekday_pattern.values()):
         return None
     
     if start_date is None:
@@ -263,7 +268,9 @@ def _calculate_days_until_refuel_with_weekday_pattern(
     current_day = start_date
     
     # Simulate day-by-day consumption until range is depleted
-    max_days = 365  # Safety limit to prevent infinite loop
+    # Max 365 days safety limit - prevents infinite loop in edge cases
+    # (e.g., if weekday pattern has very low km values)
+    max_days = 365
     
     while remaining_km > 0 and days_elapsed < max_days:
         weekday = current_day.weekday()
@@ -271,10 +278,12 @@ def _calculate_days_until_refuel_with_weekday_pattern(
         
         if daily_km <= 0:
             # If no pattern for this weekday, use average of all weekdays
+            # len(weekday_pattern) > 0 is guaranteed by checks above
             daily_km = sum(weekday_pattern.values()) / len(weekday_pattern)
         
+        # This check is still needed for safety, though it should rarely trigger
+        # given the fail-fast check at function entry
         if daily_km <= 0:
-            # Can't calculate without valid daily km
             return None
         
         # Check if this is the last partial day
