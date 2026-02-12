@@ -293,12 +293,13 @@ class ImportHistoricalDataButton(ButtonEntity):
         try:
             from .utils.historical_data_import import import_historical_vehicle_data
             
-            # Import with force_reimport=True to allow re-importing
+            # Import with force_reimport=True to allow re-importing and mark as manual
             result = await import_historical_vehicle_data(
                 self._hass,
                 self._config_entry,
                 lookback_days=90,
                 force_reimport=True,
+                import_type="manual",
             )
             
             self._last_result = result
@@ -328,7 +329,15 @@ class ImportHistoricalDataButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with import results."""
-        return self._last_result
+        attrs = dict(self._last_result)
+        
+        # Add timestamp and type if available in result
+        if "timestamp" in self._last_result:
+            attrs["last_import_timestamp"] = self._last_result["timestamp"]
+        if "import_type" in self._last_result:
+            attrs["last_import_type"] = self._last_result["import_type"]
+        
+        return attrs
 
 
 class RefreshVehicleDataButton(ButtonEntity):
@@ -374,7 +383,21 @@ class RefreshVehicleDataButton(ButtonEntity):
         # Request coordinator to refresh data (which includes fetching vehicle data)
         if self._coordinator:
             await self._coordinator.async_request_refresh()
-            self._last_refresh_time = dt_util.now().isoformat()
+            timestamp = dt_util.now().isoformat()
+            self._last_refresh_time = timestamp
+            
+            # Store refresh metadata in storage
+            try:
+                from .utils.storage import load_data, save_data
+                data = await load_data(self._hass, self._config_entry)
+                data["last_vehicle_data_refresh"] = {
+                    "timestamp": timestamp,
+                    "type": "manual",
+                }
+                await save_data(self._hass, self._config_entry, data)
+            except Exception as err:
+                _LOGGER.warning("Failed to store refresh metadata: %s", err)
+            
             _LOGGER.info("Vehicle data refresh completed")
 
     @property
@@ -382,7 +405,8 @@ class RefreshVehicleDataButton(ButtonEntity):
         """Return additional attributes."""
         attrs = {}
         if self._last_refresh_time:
-            attrs["last_refresh_time"] = self._last_refresh_time
+            attrs["last_refresh_timestamp"] = self._last_refresh_time
+            attrs["last_refresh_type"] = "manual"
         if self._coordinator and hasattr(self._coordinator, "last_update_success"):
             attrs["last_update_success"] = self._coordinator.last_update_success
         return attrs

@@ -75,6 +75,8 @@ async def load_data(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
             "ml_models": {},  # ML model parameters
             "prediction_history": [],  # List of prediction results for accuracy tracking
             "next_refuel_id": 1,  # Counter for refueling event IDs
+            "last_vehicle_data_refresh": None,  # {ts: str, type: "automatic"|"manual"}
+            "last_historical_import": None,  # {ts: str, type: "automatic"|"manual"}
         }
     return data
 

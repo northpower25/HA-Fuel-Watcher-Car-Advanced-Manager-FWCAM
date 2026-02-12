@@ -44,6 +44,7 @@ async def import_historical_vehicle_data(
     entry: ConfigEntry,
     lookback_days: int = 90,
     force_reimport: bool = False,
+    import_type: str = "automatic",
 ) -> dict[str, Any]:
     """Import historical vehicle data from Home Assistant's recorder.
     
@@ -58,6 +59,7 @@ async def import_historical_vehicle_data(
         entry: Config entry
         lookback_days: Number of days to look back (default: 90)
         force_reimport: If True, reimport even if data already exists
+        import_type: Type of import - "automatic" or "manual" (default: "automatic")
         
     Returns:
         Dictionary with import statistics:
@@ -68,6 +70,8 @@ async def import_historical_vehicle_data(
             "refuel_events_detected": int,
             "date_range": str,
             "errors": list[str],
+            "timestamp": str,
+            "import_type": str,
         }
     """
     from ..const import (
@@ -79,8 +83,9 @@ async def import_historical_vehicle_data(
         DEFAULT_TANK_CAPACITY,
     )
     
-    _LOGGER.info("Starting historical vehicle data import (lookback: %d days)", lookback_days)
+    _LOGGER.info("Starting historical vehicle data import (lookback: %d days, type: %s)", lookback_days, import_type)
     
+    timestamp = dt_util.now().isoformat()
     result = {
         "imported": False,
         "reason": "Not started",
@@ -88,6 +93,8 @@ async def import_historical_vehicle_data(
         "refuel_events_detected": 0,
         "date_range": "",
         "errors": [],
+        "timestamp": timestamp,
+        "import_type": import_type,
     }
     
     # Check if we should skip import (already imported and not forced)
@@ -161,20 +168,25 @@ async def import_historical_vehicle_data(
         result["refuel_events_detected"] = refuel_events
         _LOGGER.info("Detected %d refueling events", refuel_events)
         
-        # Mark import as completed
+        # Mark import as completed and store metadata
         data = await load_data(hass, entry)
         data["historical_import_completed"] = True
-        data["historical_import_timestamp"] = dt_util.now().isoformat()
+        data["historical_import_timestamp"] = timestamp
         data["historical_import_lookback_days"] = lookback_days
+        data["last_historical_import"] = {
+            "timestamp": timestamp,
+            "type": import_type,
+        }
         await save_data(hass, entry, data)
         
         result["imported"] = True
         result["reason"] = "Historical import completed successfully"
         
         _LOGGER.info(
-            "Historical import completed: %d odometer points, %d refuel events",
+            "Historical import completed: %d odometer points, %d refuel events (type: %s)",
             odometer_points,
             refuel_events,
+            import_type,
         )
         
     except Exception as err:
