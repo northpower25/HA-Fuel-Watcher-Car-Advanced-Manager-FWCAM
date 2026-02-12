@@ -221,18 +221,41 @@ async def _import_odometer_history(
     
     try:
         # Get historical states from recorder
-        # Use history.state_changes_during_period to get state changes
-        states = await hass.async_add_executor_job(
-            history.state_changes_during_period,
-            hass,
-            start_time,
-            end_time,
-            odometer_entity,
-        )
+        # Use chunking to ensure we get all states
+        _LOGGER.info("Retrieving odometer states in chunks to ensure complete data retrieval...")
+        
+        chunk_days = 7  # Query 7 days at a time
+        all_states = []
+        current_start = start_time
+        
+        while current_start < end_time:
+            current_end = min(current_start + timedelta(days=chunk_days), end_time)
+            
+            chunk_states = await hass.async_add_executor_job(
+                history.state_changes_during_period,
+                hass,
+                current_start,
+                current_end,
+                odometer_entity,
+            )
+            
+            if chunk_states and odometer_entity in chunk_states:
+                all_states.extend(chunk_states[odometer_entity])
+            
+            current_start = current_end
+        
+        # Create the expected dictionary structure
+        states = {odometer_entity: all_states} if all_states else {}
         
         if not states or odometer_entity not in states:
             _LOGGER.warning("No historical states found for odometer entity: %s", odometer_entity)
             return 0
+        
+        _LOGGER.info(
+            "Retrieved %d odometer states from recorder (using %d-day chunks)",
+            len(states[odometer_entity]),
+            chunk_days,
+        )
         
         # Process states in chronological order, but sample to avoid overwhelming storage
         # Keep one reading per day max to reduce data volume
@@ -329,13 +352,43 @@ async def _import_tank_history_and_detect_refueling(
                     pass
         
         # Get historical states from recorder
-        tank_states = await hass.async_add_executor_job(
-            history.state_changes_during_period,
-            hass,
-            start_time,
-            end_time,
-            tank_level_entity,
-        )
+        # To avoid hitting database query limits, we chunk the time period into smaller intervals
+        # This ensures we get ALL states even if there are thousands of them
+        _LOGGER.info("Retrieving tank level states in chunks to ensure complete data retrieval...")
+        
+        chunk_days = 7  # Query 7 days at a time
+        all_tank_states = []
+        current_start = start_time
+        
+        while current_start < end_time:
+            current_end = min(current_start + timedelta(days=chunk_days), end_time)
+            
+            _LOGGER.debug(
+                "Querying chunk: %s to %s",
+                current_start.isoformat(),
+                current_end.isoformat(),
+            )
+            
+            chunk_states = await hass.async_add_executor_job(
+                history.state_changes_during_period,
+                hass,
+                current_start,
+                current_end,
+                tank_level_entity,
+            )
+            
+            if chunk_states and tank_level_entity in chunk_states:
+                all_tank_states.extend(chunk_states[tank_level_entity])
+                _LOGGER.debug(
+                    "Retrieved %d states from chunk, total so far: %d",
+                    len(chunk_states[tank_level_entity]),
+                    len(all_tank_states),
+                )
+            
+            current_start = current_end
+        
+        # Create the expected dictionary structure
+        tank_states = {tank_level_entity: all_tank_states} if all_tank_states else {}
         
         if not tank_states or tank_level_entity not in tank_states:
             _LOGGER.warning("No historical states found for tank level entity: %s", tank_level_entity)
@@ -344,10 +397,11 @@ async def _import_tank_history_and_detect_refueling(
         # Log how many states were retrieved
         num_tank_states = len(tank_states[tank_level_entity])
         _LOGGER.info(
-            "Retrieved %d tank level states from recorder for period %s to %s",
+            "Retrieved %d tank level states from recorder for period %s to %s (using %d-day chunks)",
             num_tank_states,
             start_time.isoformat(),
             end_time.isoformat(),
+            chunk_days,
         )
         
         # Log first and last timestamps to verify order
@@ -362,14 +416,30 @@ async def _import_tank_history_and_detect_refueling(
                 last_state.state if hasattr(last_state, 'state') else 'unknown',
             )
         
-        # Get odometer states for same period
-        odometer_states_dict = await hass.async_add_executor_job(
-            history.state_changes_during_period,
-            hass,
-            start_time,
-            end_time,
-            odometer_entity,
-        )
+        # Get odometer states for same period (also use chunking for consistency)
+        _LOGGER.debug("Retrieving odometer states in chunks...")
+        
+        all_odometer_states = []
+        current_start = start_time
+        
+        while current_start < end_time:
+            current_end = min(current_start + timedelta(days=chunk_days), end_time)
+            
+            chunk_states = await hass.async_add_executor_job(
+                history.state_changes_during_period,
+                hass,
+                current_start,
+                current_end,
+                odometer_entity,
+            )
+            
+            if chunk_states and odometer_entity in chunk_states:
+                all_odometer_states.extend(chunk_states[odometer_entity])
+            
+            current_start = current_end
+        
+        # Create the expected dictionary structure
+        odometer_states_dict = {odometer_entity: all_odometer_states} if all_odometer_states else {}
         
         # Create a lookup for odometer values by timestamp
         odometer_lookup = {}
@@ -380,6 +450,8 @@ async def _import_tank_history_and_detect_refueling(
                         odometer_lookup[state.last_changed] = float(state.state)
                 except (ValueError, TypeError):
                     continue
+        
+        _LOGGER.info("Built odometer lookup with %d readings", len(odometer_lookup))
         
         # Process tank level states and detect refueling
         previous_level = None
