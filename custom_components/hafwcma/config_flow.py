@@ -1120,7 +1120,7 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                     selector.NumberSelectorConfig(
                         min=10.0,
                         max=200.0,
-                        step=1.0,
+                        step=0.01,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="L",
                     )
