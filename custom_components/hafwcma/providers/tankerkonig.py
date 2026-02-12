@@ -516,12 +516,13 @@ class TankerkoenigProvider(FuelPriceProvider):
                         price_diesel = single_price
 
             # Extract address components from API
-            api_name = data.get("name", "Unknown")
-            brand = data.get("brand", "")
-            street = data.get("street", "")
-            house_number = data.get("houseNumber", "")
-            post_code = data.get("postCode", "")
-            place = data.get("place", "")
+            # Convert all values to strings to handle cases where API returns non-string types
+            api_name = str(data.get("name", "Unknown")) if data.get("name") else "Unknown"
+            brand = str(data.get("brand", "")) if data.get("brand") else ""
+            street = str(data.get("street", "")) if data.get("street") else ""
+            house_number = str(data.get("houseNumber", "")) if data.get("houseNumber") else ""
+            post_code = str(data.get("postCode", "")) if data.get("postCode") else ""
+            place = str(data.get("place", "")) if data.get("place") else ""
             
             # Format station name and address according to specification
             formatted_name = _format_station_name(brand, place, street, api_name)
