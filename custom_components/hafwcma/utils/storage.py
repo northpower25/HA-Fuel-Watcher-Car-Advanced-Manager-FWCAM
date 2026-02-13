@@ -106,6 +106,8 @@ async def add_price_observation(
     station_id: str | None = None,
     station_name: str | None = None,
     station_brand: str | None = None,
+    station_city: str | None = None,
+    station_street: str | None = None,
 ) -> None:
     """Add a price observation to history.
     
@@ -117,6 +119,8 @@ async def add_price_observation(
         station_id: Optional station ID
         station_name: Optional station name
         station_brand: Optional station brand
+        station_city: Optional station city/place
+        station_street: Optional station street
     """
     data = await load_data(hass, entry)
     observation = {
@@ -131,6 +135,10 @@ async def add_price_observation(
         observation["station_name"] = station_name
     if station_brand:
         observation["station_brand"] = station_brand
+    if station_city:
+        observation["station_city"] = station_city
+    if station_street:
+        observation["station_street"] = station_street
     
     data["price_history"].append(observation)
     
