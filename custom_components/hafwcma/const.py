@@ -70,6 +70,10 @@ DEFAULT_CONSUMPTION_PREDICTION_INTERVAL: Final = 6.0  # Hours between prediction
 MIN_CONSUMPTION_PREDICTION_INTERVAL: Final = 0.5  # Minimum 30 minutes
 MAX_CONSUMPTION_PREDICTION_INTERVAL: Final = 24.0  # Maximum 24 hours
 
+# Startup delay configuration to prevent timing issues with entity availability
+STARTUP_DELAY_VEHICLE_DATA_SECONDS: Final = 120  # Delay before fetching vehicle data after HA restart (2 minutes)
+STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS: Final = 120  # Delay before running consumption prediction after HA restart (2 minutes)
+
 # Fuel types
 FUEL_TYPE_E5: Final = "e5"
 FUEL_TYPE_E10: Final = "e10"

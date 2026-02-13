@@ -192,6 +192,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             hysteresis_factor=GEOLOCATION_HYSTERESIS_FACTOR,
         )  # Track proximity alerts
         
+        # Startup delay and caching to prevent timing issues
+        from homeassistant.util import dt as dt_util
+        self._startup_time = dt_util.now()
+        self._cached_vehicle_data = {}  # Cache last known vehicle data
+        self._cached_consumption_prediction = None  # Cache last known prediction
+        
         _LOGGER.info(
             "Coordinator initialized with randomized update interval: %.1f minutes (base: %d, jitter: ±%.1f)",
             randomized_minutes,
@@ -211,6 +217,19 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 self._api_debug_info["last_api_request"] = self._provider.last_api_request
             if hasattr(self._provider, 'last_api_response'):
                 self._api_debug_info["last_api_response"] = self._provider.last_api_response
+
+    def _is_within_startup_delay(self, delay_seconds: int) -> bool:
+        """Check if we're still within the startup delay period.
+        
+        Args:
+            delay_seconds: Number of seconds to delay after startup
+            
+        Returns:
+            True if within startup delay period, False otherwise
+        """
+        from homeassistant.util import dt as dt_util
+        elapsed = (dt_util.now() - self._startup_time).total_seconds()
+        return elapsed < delay_seconds
 
     def _get_randomized_interval(self, base_minutes: int) -> timedelta:
         """Calculate a randomized update interval to avoid simultaneous API calls.
@@ -309,8 +328,18 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             DEFAULT_CONSUMPTION_MIN_DATA_POINTS,
             DEFAULT_CONSUMPTION_PREDICTION_INTERVAL,
             DEFAULT_FALLBACK_DAILY_KM,
+            STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS,
         )
         from .utils.statistics_engine import get_average_consumption_rate
+        
+        # Check if we're within startup delay period
+        if self._is_within_startup_delay(STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS):
+            _LOGGER.debug(
+                "Skipping consumption prediction during startup delay (%.1f seconds remaining)",
+                STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS - (dt_util.now() - self._startup_time).total_seconds()
+            )
+            # Return cached prediction if available
+            return self._cached_consumption_prediction
         
         # Get configuration
         options = self.config_entry.options
@@ -366,6 +395,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             fallback_consumption_rate=fallback_consumption_rate,
             min_data_points=int(min_data_points),
         )
+        
+        # Cache the prediction for startup delay usage
+        self._cached_consumption_prediction = prediction
         
         # Store prediction result for accuracy tracking
         await store_prediction_result(self.hass, self.config_entry, prediction)
@@ -529,14 +561,31 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         odometer = None
         
         try:
-            # Fetch vehicle data from configured entities
-            vehicle_data = await async_get_vehicle_data(
-                self.hass,
-                odometer_entity,
-                tank_level_entity,
-                range_entity,
-                position_entity,
-            )
+            # Check if we're within startup delay period
+            from homeassistant.util import dt as dt_util
+            from .const import STARTUP_DELAY_VEHICLE_DATA_SECONDS
+            within_startup_delay = self._is_within_startup_delay(STARTUP_DELAY_VEHICLE_DATA_SECONDS)
+            
+            if within_startup_delay and self._cached_vehicle_data:
+                # Use cached data during startup delay
+                vehicle_data = self._cached_vehicle_data.copy()
+                _LOGGER.debug(
+                    "Using cached vehicle data during startup delay (%.1f seconds remaining)",
+                    STARTUP_DELAY_VEHICLE_DATA_SECONDS - (dt_util.now() - self._startup_time).total_seconds()
+                )
+            else:
+                # Fetch vehicle data from configured entities
+                vehicle_data = await async_get_vehicle_data(
+                    self.hass,
+                    odometer_entity,
+                    tank_level_entity,
+                    range_entity,
+                    position_entity,
+                )
+                
+                # Cache the data for potential startup delay usage
+                if vehicle_data:
+                    self._cached_vehicle_data = vehicle_data.copy()
             
             _LOGGER.debug("Vehicle data: %s", vehicle_data)
             
@@ -1165,6 +1214,30 @@ def add_prediction_metadata_to_attributes(
         attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
 
 
+def format_weekday_pattern(
+    weekday_pattern: dict[int, float] | None,
+) -> dict[str, float] | None:
+    """Convert weekday pattern from numeric keys to named keys.
+    
+    Args:
+        weekday_pattern: Dictionary with weekday numbers (0-6) as keys and km values
+        
+    Returns:
+        Dictionary with weekday names as keys and rounded km values, or None if input is None
+    """
+    if not weekday_pattern:
+        return None
+    
+    # Convert weekday numbers to names for better readability
+    weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    formatted_pattern = {}
+    for weekday, km in weekday_pattern.items():
+        if isinstance(weekday, int) and 0 <= weekday < 7:
+            formatted_pattern[weekday_names[weekday]] = round(km, 1)
+    
+    return formatted_pattern if formatted_pattern else None
+
+
 class FuelPriceSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing current fuel price at nearest station."""
 
@@ -1291,6 +1364,12 @@ class TankLevelSensor(CoordinatorEntity, SensorEntity):
         tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
         attributes["tank_capacity"] = tank_capacity
         
+        # Add last vehicle data refresh timestamp
+        last_vehicle_data_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
+        if last_vehicle_data_refresh:
+            attributes["last_vehicle_data_refresh"] = last_vehicle_data_refresh.get("timestamp")
+            attributes["last_vehicle_data_refresh_type"] = last_vehicle_data_refresh.get("type")
+        
         return attributes
 
 
@@ -1337,11 +1416,17 @@ class RangeSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
         days_left = self.coordinator.data.get("days_left")
+        attributes = {}
         if days_left is not None:
-            return {
-                ATTR_DAYS_LEFT: days_left,
-            }
-        return {}
+            attributes[ATTR_DAYS_LEFT] = days_left
+        
+        # Add last vehicle data refresh timestamp
+        last_vehicle_data_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
+        if last_vehicle_data_refresh:
+            attributes["last_vehicle_data_refresh"] = last_vehicle_data_refresh.get("timestamp")
+            attributes["last_vehicle_data_refresh_type"] = last_vehicle_data_refresh.get("type")
+        
+        return attributes
 
 
 class NearestStationSensor(CoordinatorEntity, SensorEntity):
@@ -1702,6 +1787,13 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             attributes["last_month_refuel_count"] = month.get("refuel_count", 0)
             attributes["last_month_cost"] = month.get("total_cost", 0.0)
         
+        # Add weekday driving pattern if available in consumption_prediction
+        if consumption_prediction:
+            weekday_pattern = consumption_prediction.get("weekday_pattern")
+            formatted_pattern = format_weekday_pattern(weekday_pattern)
+            if formatted_pattern:
+                attributes["weekday_driving_pattern"] = formatted_pattern
+        
         # Add metadata from consumption_prediction if available
         self._add_prediction_metadata(attributes, consumption_prediction)
         
@@ -1831,6 +1923,13 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             # Include cost forecast if calculated by coordinator
             if month.get("forecast_cost") is not None:
                 attributes["next_month_cost"] = month.get("forecast_cost")
+        
+        # Add weekday driving pattern if available in consumption_prediction
+        if consumption_prediction:
+            weekday_pattern = consumption_prediction.get("weekday_pattern")
+            formatted_pattern = format_weekday_pattern(weekday_pattern)
+            if formatted_pattern:
+                attributes["weekday_driving_pattern"] = formatted_pattern
         
         # Add metadata from consumption_prediction if available
         self._add_prediction_metadata(attributes, consumption_prediction)
