@@ -611,8 +611,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             from .const import STARTUP_DELAY_VEHICLE_DATA_SECONDS
             within_startup_delay = self._is_within_startup_delay(STARTUP_DELAY_VEHICLE_DATA_SECONDS)
             
-            # Use silent mode during startup to suppress "not found" warnings
-            # After startup period, log warnings if entities are missing
+            # Use silent mode during startup delay to suppress "not found" warnings
+            # Silent mode is only used if:
+            # 1. We're within the startup delay period (first 120 seconds), AND
+            # 2. Entities were not found available during the wait check
+            # After startup period or if entities become available, warnings will be logged normally
+            # This allows time for vehicle integrations to load without false warnings
             silent_mode = within_startup_delay and not self._entities_available
             
             if within_startup_delay and self._cached_vehicle_data:

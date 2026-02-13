@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant, State
@@ -280,7 +281,6 @@ async def async_wait_for_entities(
         _LOGGER.debug("No vehicle entities configured to wait for")
         return True  # No entities configured is not an error
     
-    import time
     start_time = time.time()
     
     for attempt in range(max_retries):
