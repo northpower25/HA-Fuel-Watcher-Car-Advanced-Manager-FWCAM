@@ -1212,6 +1212,48 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         except Exception as geo_err:
                             _LOGGER.warning("Error geocoding end location: %s", geo_err)
                     
+                    # Pattern matching
+                    try:
+                        from .utils.trip_patterns import find_matching_patterns
+                        patterns = data.get("trip_patterns", [])
+                        
+                        if patterns:
+                            matching_patterns = find_matching_patterns(trip_data, patterns)
+                            if matching_patterns:
+                                # Use the best matching pattern
+                                best_pattern = matching_patterns[0]
+                                trip_data["pattern_id"] = best_pattern.get("pattern_id")
+                                trip_data["category"] = best_pattern.get("category", "private")
+                                trip_data["purpose"] = best_pattern.get("purpose")
+                                
+                                # Apply anonymization if pattern requires it
+                                if best_pattern.get("is_anonymized", False):
+                                    trip_data["is_anonymized"] = True
+                                    trip_data["start_latitude"] = None
+                                    trip_data["start_longitude"] = None
+                                    trip_data["end_latitude"] = None
+                                    trip_data["end_longitude"] = None
+                                    trip_data["start_address"] = None
+                                    trip_data["end_address"] = None
+                                
+                                # Update pattern statistics
+                                for pattern in patterns:
+                                    if pattern.get("pattern_id") == best_pattern.get("pattern_id"):
+                                        pattern["match_count"] = pattern.get("match_count", 0) + 1
+                                        pattern["last_matched"] = dt_util.now().isoformat()
+                                        break
+                                
+                                data["trip_patterns"] = patterns
+                                await storage.save_data(self.hass, self.config_entry, data)
+                                
+                                _LOGGER.info(
+                                    "Trip matched pattern: %s (ID: %d)",
+                                    best_pattern.get("name"),
+                                    best_pattern.get("pattern_id"),
+                                )
+                    except Exception as pattern_err:
+                        _LOGGER.warning("Error matching trip patterns: %s", pattern_err)
+                    
                     # Save trip to storage
                     trip_id = await storage.add_trip(self.hass, self.config_entry, trip_data)
                     _LOGGER.info(
