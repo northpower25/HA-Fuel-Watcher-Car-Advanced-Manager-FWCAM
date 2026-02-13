@@ -1526,7 +1526,7 @@ def _find_closest_tank_level(
         return None
     
     closest_state = None
-    min_diff = timedelta.max
+    min_diff_seconds = float('inf')
     
     for state in tank_level_states:
         if state.state in INVALID_SENSOR_STATES:
@@ -1534,10 +1534,10 @@ def _find_closest_tank_level(
         
         try:
             state_time = state.last_changed
-            time_diff = abs((target_time - state_time).total_seconds())
+            time_diff_seconds = abs((target_time - state_time).total_seconds())
             
-            if time_diff < min_diff.total_seconds():
-                min_diff = timedelta(seconds=time_diff)
+            if time_diff_seconds < min_diff_seconds:
+                min_diff_seconds = time_diff_seconds
                 closest_state = state
         except Exception:
             continue
@@ -1568,7 +1568,7 @@ def _find_closest_location(
         return None, None
     
     closest_state = None
-    min_diff = timedelta.max
+    min_diff_seconds = float('inf')
     
     for state in location_states:
         if state.state in INVALID_SENSOR_STATES:
@@ -1576,10 +1576,10 @@ def _find_closest_location(
         
         try:
             state_time = state.last_changed
-            time_diff = abs((target_time - state_time).total_seconds())
+            time_diff_seconds = abs((target_time - state_time).total_seconds())
             
-            if time_diff < min_diff.total_seconds():
-                min_diff = timedelta(seconds=time_diff)
+            if time_diff_seconds < min_diff_seconds:
+                min_diff_seconds = time_diff_seconds
                 closest_state = state
         except Exception:
             continue
