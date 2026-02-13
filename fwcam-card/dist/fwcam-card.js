@@ -53,6 +53,7 @@ class FWCAMCard extends HTMLElement {
       entity: config.entity,
       title: config.title || 'Fuel Watcher Car Advanced Manager',
       show_refueling_log: config.show_refueling_log !== false,
+      show_trip_log: config.show_trip_log !== false,
       show_vehicle_info: config.show_vehicle_info !== false,
       show_controls: config.show_controls !== false,
       show_settings: config.show_settings !== false,
@@ -140,9 +141,12 @@ class FWCAMCard extends HTMLElement {
       days_until_refuel: `sensor.${baseName}_days_until_refuel`,
       consumption_history: `sensor.${baseName}_consumption_history`,
       consumption_forecast: `sensor.${baseName}_consumption_forecast`,
+      trip_log_sensor: `sensor.${baseName}_trip_log`,
+      current_trip: `sensor.${baseName}_current_trip`,
       // Switches
       fuel_price_refresh: `switch.${baseName}_fuel_price_refresh`,
       consumption_prediction: `switch.${baseName}_consumption_prediction`,
+      trip_tracking: `switch.${baseName}_trip_tracking`,
       // Numbers
       station_search_radius: `number.${baseName}_station_search_radius`,
       update_interval: `number.${baseName}_update_interval`,
@@ -151,6 +155,7 @@ class FWCAMCard extends HTMLElement {
       // Buttons
       test_connection: `button.${baseName}_test_connection`,
       import_historical_data: `button.${baseName}_import_historical_data`,
+      import_historical_trip_data: `button.${baseName}_import_historical_trip_data`,
       refresh_vehicle_data: `button.${baseName}_refresh_vehicle_data`
     };
   }
@@ -239,6 +244,32 @@ class FWCAMCard extends HTMLElement {
       this.callService('hafwcma', 'delete_refuel_event', {
         config_entry_id: this.getConfigEntryId(),
         event_id: eventId
+      });
+    }
+  }
+
+  /**
+   * Edit a trip
+   */
+  editTrip(tripData) {
+    return this.callService('hafwcma', 'edit_trip', tripData);
+  }
+
+  /**
+   * Delete a trip
+   */
+  deleteTrip(tripId) {
+    const lang = this.getUserLanguage();
+    const confirmMessages = {
+      de: 'Sind Sie sicher, dass Sie diese Fahrt löschen möchten?',
+      en: 'Are you sure you want to delete this trip?'
+    };
+    const message = confirmMessages[lang] || confirmMessages['en'];
+    
+    if (confirm(message)) {
+      this.callService('hafwcma', 'delete_trip', {
+        config_entry_id: this.getConfigEntryId(),
+        trip_id: tripId
       });
     }
   }
@@ -422,8 +453,13 @@ class FWCAMCard extends HTMLElement {
     const recentEvents = entity.attributes.recent_events || [];
     const lastRefueling = entity.attributes.last_refueling || null;
     
+    // Get trip log data if trip log sensor exists
+    const tripLogEntity = this.getEntityState(this._entities.trip_log_sensor);
+    const recentTrips = tripLogEntity?.attributes?.recent_trips || [];
+    
     // Store events for dialog access
     this._recentEvents = recentEvents;
+    this._recentTrips = recentTrips;
 
     this.shadowRoot.innerHTML = `
       ${this.getStyles()}
@@ -437,10 +473,13 @@ class FWCAMCard extends HTMLElement {
           ${this._config.show_controls ? this.renderControls() : ''}
           ${this._config.show_settings ? this.renderSettings() : ''}
           ${this._config.show_refueling_log ? this.renderRefuelingLog(recentEvents, lastRefueling) : ''}
+          ${this._config.show_trip_log ? this.renderTripLog(recentTrips) : ''}
         </div>
       </ha-card>
       ${this.renderDialog()}
+      ${this.renderTripDialog()}
     `;
+
 
     this.attachEventListeners();
     
