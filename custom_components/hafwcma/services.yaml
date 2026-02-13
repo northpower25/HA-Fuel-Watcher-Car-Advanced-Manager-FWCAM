@@ -241,3 +241,293 @@ delete_refuel_event:
           min: 1
           max: 100000
           step: 1
+
+add_trip:
+  name: Add Trip
+  description: Manually add a trip to the logbook
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    timestamp_start:
+      name: Trip Start
+      description: Date and time when trip started (ISO format)
+      required: true
+      example: "2024-01-15T14:30:00"
+      selector:
+        datetime:
+    timestamp_end:
+      name: Trip End
+      description: Date and time when trip ended (ISO format)
+      required: true
+      example: "2024-01-15T15:00:00"
+      selector:
+        datetime:
+    distance_km:
+      name: Distance
+      description: Trip distance in kilometers
+      required: true
+      example: 25.5
+      selector:
+        number:
+          min: 0
+          max: 5000
+          step: 0.1
+          unit_of_measurement: "km"
+    category:
+      name: Category
+      description: Trip category
+      required: false
+      default: "private"
+      example: "business"
+      selector:
+        select:
+          options:
+            - "business"
+            - "private"
+            - "commute"
+    purpose:
+      name: Purpose
+      description: Purpose or description of the trip
+      required: false
+      example: "Client meeting"
+      selector:
+        text:
+    fuel_consumed:
+      name: Fuel Consumed
+      description: Fuel consumed during trip in liters
+      required: false
+      example: 2.5
+      selector:
+        number:
+          min: 0
+          max: 200
+          step: 0.01
+          unit_of_measurement: "L"
+    additional_costs:
+      name: Additional Costs
+      description: Additional costs like tolls or parking in EUR
+      required: false
+      example: 5.50
+      selector:
+        number:
+          min: 0
+          max: 500
+          step: 0.01
+          unit_of_measurement: "€"
+
+edit_trip:
+  name: Edit Trip
+  description: Edit an existing trip in the logbook
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    trip_id:
+      name: Trip ID
+      description: ID of the trip to edit
+      required: true
+      example: 42
+      selector:
+        number:
+          min: 1
+          max: 100000
+          step: 1
+    category:
+      name: Category
+      description: Trip category
+      required: false
+      example: "business"
+      selector:
+        select:
+          options:
+            - "business"
+            - "private"
+            - "commute"
+    purpose:
+      name: Purpose
+      description: Purpose or description of the trip
+      required: false
+      example: "Client meeting"
+      selector:
+        text:
+    additional_costs:
+      name: Additional Costs
+      description: Additional costs like tolls or parking in EUR
+      required: false
+      example: 5.50
+      selector:
+        number:
+          min: 0
+          max: 500
+          step: 0.01
+          unit_of_measurement: "€"
+    notes:
+      name: Notes
+      description: Additional notes about the trip
+      required: false
+      example: "Highway construction detour"
+      selector:
+        text:
+
+delete_trip:
+  name: Delete Trip
+  description: Delete a trip from the logbook
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    trip_id:
+      name: Trip ID
+      description: ID of the trip to delete
+      required: true
+      example: 42
+      selector:
+        number:
+          min: 1
+          max: 100000
+          step: 1
+
+create_pattern:
+  name: Create Trip Pattern
+  description: Create a trip pattern for automatic classification
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    name:
+      name: Pattern Name
+      description: Name for this pattern
+      required: true
+      example: "Commute to Work"
+      selector:
+        text:
+    start_latitude:
+      name: Start Latitude
+      description: Latitude of start location
+      required: true
+      example: 52.5200
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: 0.0001
+    start_longitude:
+      name: Start Longitude
+      description: Longitude of start location
+      required: true
+      example: 13.4050
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: 0.0001
+    end_latitude:
+      name: End Latitude
+      description: Latitude of end location
+      required: true
+      example: 52.5300
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: 0.0001
+    end_longitude:
+      name: End Longitude
+      description: Longitude of end location
+      required: true
+      example: 13.4150
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: 0.0001
+    category:
+      name: Category
+      description: Trip category
+      required: false
+      default: "private"
+      example: "commute"
+      selector:
+        select:
+          options:
+            - "business"
+            - "private"
+            - "commute"
+    purpose:
+      name: Purpose
+      description: Purpose description for matching trips
+      required: false
+      example: "Daily commute"
+      selector:
+        text:
+    is_anonymized:
+      name: Anonymize
+      description: Automatically anonymize matching trips
+      required: false
+      default: false
+      selector:
+        boolean:
+
+export_trips:
+  name: Export Trips
+  description: Export trips to CSV or JSON format
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    format:
+      name: Format
+      description: Export format
+      required: false
+      default: "csv"
+      selector:
+        select:
+          options:
+            - "csv"
+            - "json"
+    date_from:
+      name: From Date
+      description: Export trips from this date (optional)
+      required: false
+      example: "2024-01-01"
+      selector:
+        date:
+    date_to:
+      name: To Date
+      description: Export trips until this date (optional)
+      required: false
+      example: "2024-12-31"
+      selector:
+        date:
+    category:
+      name: Category Filter
+      description: Export only trips of this category (optional)
+      required: false
+      selector:
+        select:
+          options:
+            - "all"
+            - "business"
+            - "private"
+            - "commute"

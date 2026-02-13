@@ -39,6 +39,11 @@ HISTORICAL_IMPORT_STARTUP_DELAY_SECONDS = 10  # Delay before starting background
 SERVICE_ADD_REFUEL_EVENT = "add_refuel_event"
 SERVICE_UPDATE_REFUEL_EVENT = "update_refuel_event"
 SERVICE_DELETE_REFUEL_EVENT = "delete_refuel_event"
+SERVICE_ADD_TRIP = "add_trip"
+SERVICE_EDIT_TRIP = "edit_trip"
+SERVICE_DELETE_TRIP = "delete_trip"
+SERVICE_CREATE_PATTERN = "create_pattern"
+SERVICE_EXPORT_TRIPS = "export_trips"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -72,6 +77,51 @@ SCHEMA_UPDATE_REFUEL_EVENT = vol.Schema({
 SCHEMA_DELETE_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
     vol.Required("event_id"): vol.Coerce(int),
+})
+
+SCHEMA_ADD_TRIP = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("timestamp_start"): cv.string,
+    vol.Required("timestamp_end"): cv.string,
+    vol.Required("distance_km"): vol.Coerce(float),
+    vol.Optional("category"): vol.In(["business", "private", "commute"]),
+    vol.Optional("purpose"): cv.string,
+    vol.Optional("fuel_consumed"): vol.Coerce(float),
+    vol.Optional("additional_costs"): vol.Coerce(float),
+})
+
+SCHEMA_EDIT_TRIP = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("trip_id"): vol.Coerce(int),
+    vol.Optional("category"): vol.In(["business", "private", "commute"]),
+    vol.Optional("purpose"): cv.string,
+    vol.Optional("additional_costs"): vol.Coerce(float),
+    vol.Optional("notes"): cv.string,
+})
+
+SCHEMA_DELETE_TRIP = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("trip_id"): vol.Coerce(int),
+})
+
+SCHEMA_CREATE_PATTERN = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("name"): cv.string,
+    vol.Required("start_latitude"): vol.Coerce(float),
+    vol.Required("start_longitude"): vol.Coerce(float),
+    vol.Required("end_latitude"): vol.Coerce(float),
+    vol.Required("end_longitude"): vol.Coerce(float),
+    vol.Optional("category"): vol.In(["business", "private", "commute"]),
+    vol.Optional("purpose"): cv.string,
+    vol.Optional("is_anonymized"): cv.boolean,
+})
+
+SCHEMA_EXPORT_TRIPS = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Optional("format"): vol.In(["csv", "json"]),
+    vol.Optional("date_from"): cv.string,
+    vol.Optional("date_to"): cv.string,
+    vol.Optional("category"): vol.In(["all", "business", "private", "commute"]),
 })
 
 
@@ -233,6 +283,190 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         else:
             _LOGGER.warning("Coordinator not found for entry %s, UI may not update immediately", entry_id)
     
+    async def handle_add_trip(call: ServiceCall) -> None:
+        """Handle the add_trip service call."""
+        from .utils.storage import add_trip
+        from homeassistant.util import dt as dt_util
+        
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+        
+        trip_data = {
+            "timestamp_start": call.data["timestamp_start"],
+            "timestamp_end": call.data["timestamp_end"],
+            "distance_km": call.data["distance_km"],
+            "category": call.data.get("category", "private"),
+            "purpose": call.data.get("purpose"),
+            "fuel_consumed": call.data.get("fuel_consumed"),
+            "additional_costs": call.data.get("additional_costs", 0.0),
+            "is_manual": True,
+        }
+        
+        trip_id = await add_trip(hass, entry, trip_data)
+        _LOGGER.info("Added trip with ID %s", trip_id)
+        
+        # Trigger coordinator refresh
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+    
+    async def handle_edit_trip(call: ServiceCall) -> None:
+        """Handle the edit_trip service call."""
+        from .utils.storage import update_trip
+        
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+        
+        trip_id = call.data["trip_id"]
+        updates = {
+            k: v for k, v in call.data.items()
+            if k not in ["config_entry_id", "trip_id"] and v is not None
+        }
+        
+        success = await update_trip(hass, entry, trip_id, updates)
+        if success:
+            _LOGGER.info("Updated trip ID %s", trip_id)
+        else:
+            _LOGGER.error("Trip ID %s not found", trip_id)
+        
+        # Trigger coordinator refresh
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+    
+    async def handle_delete_trip(call: ServiceCall) -> None:
+        """Handle the delete_trip service call."""
+        from .utils.storage import delete_trip
+        
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+        
+        trip_id = call.data["trip_id"]
+        success = await delete_trip(hass, entry, trip_id)
+        if success:
+            _LOGGER.info("Deleted trip ID %s", trip_id)
+        else:
+            _LOGGER.error("Trip ID %s not found", trip_id)
+        
+        # Trigger coordinator refresh
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+    
+    async def handle_create_pattern(call: ServiceCall) -> None:
+        """Handle the create_pattern service call."""
+        from .utils.storage import add_trip_pattern
+        from homeassistant.util import dt as dt_util
+        
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+        
+        pattern_data = {
+            "name": call.data["name"],
+            "start_latitude": call.data["start_latitude"],
+            "start_longitude": call.data["start_longitude"],
+            "start_radius_m": 200.0,
+            "end_latitude": call.data["end_latitude"],
+            "end_longitude": call.data["end_longitude"],
+            "end_radius_m": 200.0,
+            "category": call.data.get("category", "private"),
+            "purpose": call.data.get("purpose", ""),
+            "is_anonymized": call.data.get("is_anonymized", False),
+            "is_tax_relevant": False,
+            "match_count": 0,
+            "avg_distance_km": 0.0,
+            "avg_duration_minutes": 0.0,
+            "avg_fuel_consumption": 0.0,
+        }
+        
+        pattern_id = await add_trip_pattern(hass, entry, pattern_data)
+        _LOGGER.info("Created trip pattern with ID %s", pattern_id)
+        
+        # Trigger coordinator refresh
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+    
+    async def handle_export_trips(call: ServiceCall) -> None:
+        """Handle the export_trips service call."""
+        from .utils.storage import get_trips
+        import csv
+        import json
+        from pathlib import Path
+        from homeassistant.util import dt as dt_util
+        
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+        
+        # Get filters
+        format_type = call.data.get("format", "csv")
+        date_from = call.data.get("date_from")
+        date_to = call.data.get("date_to")
+        category = call.data.get("category", "all")
+        
+        # Get trips
+        trips = await get_trips(hass, entry)
+        
+        # Apply filters
+        if category != "all":
+            trips = [t for t in trips if t.get("category") == category]
+        
+        if date_from or date_to:
+            filtered_trips = []
+            for trip in trips:
+                try:
+                    trip_date = dt_util.parse_datetime(trip.get("timestamp_end", ""))
+                    if trip_date:
+                        trip_date_str = trip_date.date().isoformat()
+                        if date_from and trip_date_str < date_from:
+                            continue
+                        if date_to and trip_date_str > date_to:
+                            continue
+                    filtered_trips.append(trip)
+                except (ValueError, TypeError):
+                    filtered_trips.append(trip)
+            trips = filtered_trips
+        
+        # Generate filename
+        filename = f"trips_export_{dt_util.now().strftime('%Y%m%d_%H%M%S')}.{format_type}"
+        filepath = Path(hass.config.path("www")) / filename
+        
+        # Ensure www directory exists
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Export
+        if format_type == "csv":
+            with open(filepath, 'w', newline='', encoding='utf-8') as f:
+                if trips:
+                    writer = csv.DictWriter(f, fieldnames=trips[0].keys())
+                    writer.writeheader()
+                    writer.writerows(trips)
+        else:  # json
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(trips, f, indent=2, ensure_ascii=False)
+        
+        _LOGGER.info("Exported %d trips to %s", len(trips), filepath)
+    
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_REFUEL_EVENT, handle_add_refuel_event, schema=SCHEMA_ADD_REFUEL_EVENT
     )
@@ -241,6 +475,21 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_DELETE_REFUEL_EVENT, handle_delete_refuel_event, schema=SCHEMA_DELETE_REFUEL_EVENT
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_ADD_TRIP, handle_add_trip, schema=SCHEMA_ADD_TRIP
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_EDIT_TRIP, handle_edit_trip, schema=SCHEMA_EDIT_TRIP
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DELETE_TRIP, handle_delete_trip, schema=SCHEMA_DELETE_TRIP
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_CREATE_PATTERN, handle_create_pattern, schema=SCHEMA_CREATE_PATTERN
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_EXPORT_TRIPS, handle_export_trips, schema=SCHEMA_EXPORT_TRIPS
     )
     
     return True
