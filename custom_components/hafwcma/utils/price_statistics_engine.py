@@ -282,12 +282,15 @@ def _calculate_period_statistics(
         
         if previous_prices:
             prev_avg_price = sum(previous_prices) / len(previous_prices)
-            if avg_price > prev_avg_price:
-                trend = "up"
-            elif avg_price < prev_avg_price:
-                trend = "down"
-            else:
+            # Use a threshold to avoid floating-point precision issues
+            # Consider differences less than 0.001 EUR (0.1 cent) as stable
+            price_diff = avg_price - prev_avg_price
+            if abs(price_diff) < 0.001:
                 trend = "stable"
+            elif price_diff > 0:
+                trend = "up"
+            else:
+                trend = "down"
     
     # Get top 3 stations for this period
     top_stations = _calculate_top_stations(period_stations, top_n=3)
