@@ -334,7 +334,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._entities_available = await async_wait_for_entities(
             self.hass,
             entity_ids,
-            max_retries=6,  # 6 attempts = up to 2.5 minutes
+            max_retries=6,  # 6 attempts with 30s delays between retries
             retry_delay=30,  # 30 seconds between attempts
         )
 

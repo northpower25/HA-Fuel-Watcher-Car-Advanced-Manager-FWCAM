@@ -280,6 +280,9 @@ async def async_wait_for_entities(
         _LOGGER.debug("No vehicle entities configured to wait for")
         return True  # No entities configured is not an error
     
+    import time
+    start_time = time.time()
+    
     for attempt in range(max_retries):
         # Check if at least one entity exists
         found_entities = []
@@ -289,10 +292,11 @@ async def async_wait_for_entities(
                 found_entities.append(entity_id)
         
         if found_entities:
+            elapsed = time.time() - start_time
             _LOGGER.info(
                 "Vehicle entities available after %d attempts (%.1f seconds): %s",
                 attempt + 1,
-                attempt * retry_delay,
+                elapsed,
                 ", ".join(found_entities)
             )
             return True
@@ -307,12 +311,13 @@ async def async_wait_for_entities(
             )
             await asyncio.sleep(retry_delay)
         else:
+            elapsed = time.time() - start_time
             _LOGGER.warning(
                 "Vehicle entities not found after %d attempts (%.1f seconds). "
                 "Integration will continue but vehicle data may be unavailable. "
                 "Entities checked: %s",
                 max_retries,
-                (max_retries - 1) * retry_delay,
+                elapsed,
                 ", ".join(entities_to_check)
             )
     
