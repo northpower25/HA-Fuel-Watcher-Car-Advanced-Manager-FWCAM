@@ -52,6 +52,7 @@ async def async_setup_entry(
     buttons = [
         TestProviderConnectionButton(coordinator, config_entry, vehicle_name, hass),
         ImportHistoricalDataButton(coordinator, config_entry, vehicle_name, hass),
+        ImportHistoricalTripDataButton(coordinator, config_entry, vehicle_name, hass),
         RefreshVehicleDataButton(coordinator, config_entry, vehicle_name, hass),
         FuelPriceRefreshButton(coordinator, config_entry, vehicle_name),
         ConsumptionPredictionButton(coordinator, config_entry, vehicle_name),
@@ -332,6 +333,98 @@ class ImportHistoricalDataButton(ButtonEntity):
             _LOGGER.error("Error importing historical data: %s", err, exc_info=True)
         
         # Trigger coordinator update to recalculate predictions with new data
+        if self._coordinator:
+            await self._coordinator.async_request_refresh()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with import results."""
+        return self._last_result
+
+
+class ImportHistoricalTripDataButton(ButtonEntity):
+    """Button to import historical trip data from recorder."""
+
+    _attr_icon = "mdi:database-import-outline"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the button.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+            hass: Home Assistant instance
+        """
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = "Import Historical Trip Data"
+        self._attr_unique_id = f"{config_entry.entry_id}_import_historical_trip_data"
+        self._last_result: dict[str, Any] = {}
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    async def async_press(self) -> None:
+        """Handle button press - import historical trip data."""
+        _LOGGER.info("Manual historical trip data import triggered")
+        
+        try:
+            from .utils.historical_data_import import import_historical_trip_data
+            
+            # Check if trip tracking is enabled
+            trip_tracking_enabled = self._config_entry.data.get("trip_tracking_enabled", False)
+            if not trip_tracking_enabled:
+                self._last_result = {
+                    "imported": False,
+                    "reason": "Trip tracking is not enabled. Please enable trip tracking first.",
+                    "trips_detected": 0,
+                }
+                _LOGGER.warning("Historical trip import skipped: Trip tracking not enabled")
+                return
+            
+            # Import with force_reimport=True to allow re-importing and mark as manual
+            result = await import_historical_trip_data(
+                self._hass,
+                self._config_entry,
+                lookback_days=90,
+                force_reimport=True,
+                import_type="manual",
+            )
+            
+            self._last_result = result
+            
+            if result["imported"]:
+                _LOGGER.info(
+                    "Historical trip import successful: %d trips detected",
+                    result["trips_detected"],
+                )
+            else:
+                _LOGGER.warning("Historical trip import skipped: %s", result["reason"])
+                
+        except Exception as err:
+            self._last_result = {
+                "imported": False,
+                "reason": f"Error: {str(err)}",
+                "error_type": type(err).__name__,
+                "error_details": str(err),
+            }
+            _LOGGER.error("Error importing historical trip data: %s", err, exc_info=True)
+        
+        # Trigger coordinator update to refresh trip statistics
         if self._coordinator:
             await self._coordinator.async_request_refresh()
 

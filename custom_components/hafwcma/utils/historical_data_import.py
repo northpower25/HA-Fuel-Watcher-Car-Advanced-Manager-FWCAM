@@ -1080,3 +1080,541 @@ def _calculate_confidence(
         confidence += 0.15
     
     return round(confidence, 2)
+
+
+# Trip detection constants
+TRIP_DETECTION_MIN_DISTANCE_KM = 0.5  # Minimum distance to consider as a trip
+TRIP_MERGE_TIME_WINDOW_MINUTES = 5  # Time window to merge short stops into single trip
+TRIP_MAX_SPEED_KMH = 300  # Maximum reasonable speed (to filter outliers)
+TRIP_MIN_DURATION_MINUTES = 1  # Minimum trip duration
+
+
+async def import_historical_trip_data(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    lookback_days: int = 90,
+    force_reimport: bool = False,
+    import_type: str = "automatic",
+) -> dict[str, Any]:
+    """Import historical trip data from Home Assistant's recorder.
+    
+    This function queries the recorder for historical states of the configured
+    vehicle entities (odometer, tank level, GPS location) and processes them to:
+    1. Detect historical trips based on odometer changes
+    2. Calculate trip metrics (distance, duration, fuel consumption)
+    3. Build trip history
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        lookback_days: Number of days to look back (default: 90)
+        force_reimport: If True, reimport even if data already exists
+        import_type: Type of import - "automatic" or "manual" (default: "automatic")
+        
+    Returns:
+        Dictionary with import statistics:
+        {
+            "imported": bool,
+            "reason": str,
+            "trips_detected": int,
+            "date_range": str,
+            "errors": list[str],
+            "timestamp": str,
+            "import_type": str,
+        }
+    """
+    from ..const import (
+        CONF_ODOMETER_ENTITY,
+        CONF_TANK_LEVEL_ENTITY,
+        CONF_LOCATION_ENTITY,
+        DOMAIN,
+    )
+    
+    result = {
+        "imported": False,
+        "reason": "Not started",
+        "trips_detected": 0,
+        "date_range": "",
+        "errors": [],
+        "timestamp": dt_util.now().isoformat(),
+        "import_type": import_type,
+    }
+    
+    try:
+        # Check if trip tracking is enabled
+        trip_tracking_enabled = entry.data.get("trip_tracking_enabled", False)
+        if not trip_tracking_enabled:
+            result["reason"] = "Trip tracking is not enabled for this vehicle"
+            _LOGGER.warning(
+                "Historical trip import skipped: Trip tracking not enabled for %s",
+                entry.title,
+            )
+            return result
+        
+        # Load storage data
+        data = await load_data(hass, entry.entry_id)
+        
+        # Check if we should skip import (unless forced)
+        if not force_reimport:
+            last_import = data.get("last_historical_trip_import")
+            if last_import and last_import.get("imported"):
+                result["reason"] = "Historical trip import already completed. Use force_reimport=True to re-import."
+                _LOGGER.info(
+                    "Skipping historical trip import: already imported on %s (type: %s)",
+                    last_import.get("timestamp"),
+                    last_import.get("type"),
+                )
+                return result
+        
+        # Get entity IDs from config
+        odometer_entity = entry.data.get(CONF_ODOMETER_ENTITY)
+        tank_level_entity = entry.data.get(CONF_TANK_LEVEL_ENTITY)
+        location_entity = entry.data.get(CONF_LOCATION_ENTITY)
+        
+        if not odometer_entity:
+            result["reason"] = "No odometer entity configured"
+            result["errors"].append("Odometer entity is required for trip detection")
+            return result
+        
+        # Calculate time range
+        end_time = dt_util.now()
+        start_time = end_time - timedelta(days=lookback_days)
+        result["date_range"] = f"{start_time.date()} to {end_time.date()}"
+        
+        _LOGGER.info(
+            "Starting historical trip import for %s (lookback: %d days, type: %s)",
+            entry.title,
+            lookback_days,
+            import_type,
+        )
+        
+        # Import trip data
+        trips_detected = await _import_trip_history(
+            hass,
+            entry,
+            odometer_entity,
+            tank_level_entity,
+            location_entity,
+            start_time,
+            end_time,
+        )
+        
+        result["trips_detected"] = trips_detected
+        
+        # Store import metadata
+        data["last_historical_trip_import"] = {
+            "imported": True,
+            "timestamp": dt_util.now().isoformat(),
+            "type": import_type,
+            "trips_detected": trips_detected,
+            "lookback_days": lookback_days,
+            "date_range": result["date_range"],
+        }
+        
+        await save_data(hass, entry.entry_id, data)
+        
+        result["imported"] = True
+        result["reason"] = "Historical trip import completed successfully"
+        
+        _LOGGER.info(
+            "Historical trip import completed: %d trips detected (type: %s)",
+            trips_detected,
+            import_type,
+        )
+        
+    except Exception as err:
+        result["reason"] = f"Error during import: {err}"
+        result["errors"].append(str(err))
+        _LOGGER.error("Error importing historical trip data: %s", err, exc_info=True)
+    
+    return result
+
+
+async def _import_trip_history(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    odometer_entity: str,
+    tank_level_entity: str | None,
+    location_entity: str | None,
+    start_time: datetime,
+    end_time: datetime,
+) -> int:
+    """Import trip history from recorder.
+    
+    Detects trips based on odometer changes and calculates trip metrics.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        odometer_entity: Entity ID of odometer sensor
+        tank_level_entity: Entity ID of tank level sensor (optional)
+        location_entity: Entity ID of location sensor (optional)
+        start_time: Start of time range
+        end_time: End of time range
+        
+    Returns:
+        Number of trips detected
+    """
+    trip_count = 0
+    
+    try:
+        # Import odometer history first
+        odometer_points = await _import_odometer_history(
+            hass,
+            entry,
+            odometer_entity,
+            start_time,
+            end_time,
+        )
+        
+        if odometer_points == 0:
+            _LOGGER.warning("No odometer data found for trip detection")
+            return 0
+        
+        # Get tank level history for fuel consumption calculation
+        tank_level_states = []
+        if tank_level_entity:
+            tank_level_states = await _fetch_entity_history(
+                hass,
+                tank_level_entity,
+                start_time,
+                end_time,
+            )
+        
+        # Get location history for GPS coordinates
+        location_states = []
+        if location_entity:
+            location_states = await _fetch_entity_history(
+                hass,
+                location_entity,
+                start_time,
+                end_time,
+            )
+        
+        # Load storage data
+        data = await load_data(hass, entry.entry_id)
+        existing_trips = data.get("trips", [])
+        
+        # Get existing trip timestamps to avoid duplicates
+        existing_timestamps = set()
+        for trip in existing_trips:
+            if trip.get("timestamp_start"):
+                try:
+                    ts = dt_util.parse_datetime(trip["timestamp_start"])
+                    if ts:
+                        existing_timestamps.add(ts)
+                except Exception:
+                    pass
+        
+        # Detect trips from odometer changes
+        odometer_history = data.get("odometer_history", [])
+        if len(odometer_history) < 2:
+            _LOGGER.warning("Insufficient odometer data for trip detection (need at least 2 points)")
+            return 0
+        
+        # Sort odometer history by timestamp
+        sorted_history = sorted(odometer_history, key=lambda x: x.get("timestamp", ""))
+        
+        # Detect trips by analyzing odometer changes
+        _LOGGER.info("Analyzing %d odometer points for trip detection", len(sorted_history))
+        
+        pending_trips = []
+        previous_point = None
+        
+        for current_point in sorted_history:
+            if previous_point is None:
+                previous_point = current_point
+                continue
+            
+            try:
+                # Calculate distance traveled
+                prev_odometer = previous_point.get("value")
+                curr_odometer = current_point.get("value")
+                
+                if prev_odometer is None or curr_odometer is None:
+                    previous_point = current_point
+                    continue
+                
+                distance_km = curr_odometer - prev_odometer
+                
+                # Parse timestamps
+                prev_time = dt_util.parse_datetime(previous_point.get("timestamp"))
+                curr_time = dt_util.parse_datetime(current_point.get("timestamp"))
+                
+                if not prev_time or not curr_time:
+                    previous_point = current_point
+                    continue
+                
+                # Calculate duration
+                duration_seconds = (curr_time - prev_time).total_seconds()
+                duration_minutes = duration_seconds / 60
+                
+                # Check if this is a valid trip
+                if distance_km >= TRIP_DETECTION_MIN_DISTANCE_KM and duration_minutes >= TRIP_MIN_DURATION_MINUTES:
+                    # Calculate average speed (km/h)
+                    avg_speed = (distance_km / duration_seconds) * 3600 if duration_seconds > 0 else 0
+                    
+                    # Filter out unrealistic speeds (likely data errors)
+                    if avg_speed <= TRIP_MAX_SPEED_KMH:
+                        # Check for duplicates
+                        is_duplicate = False
+                        for existing_ts in existing_timestamps:
+                            time_diff_minutes = abs((prev_time - existing_ts).total_seconds()) / 60
+                            if time_diff_minutes < TRIP_MERGE_TIME_WINDOW_MINUTES:
+                                is_duplicate = True
+                                break
+                        
+                        if not is_duplicate:
+                            # Get tank levels for fuel consumption
+                            fuel_level_start = _find_closest_tank_level(tank_level_states, prev_time)
+                            fuel_level_end = _find_closest_tank_level(tank_level_states, curr_time)
+                            
+                            # Calculate fuel consumed
+                            fuel_consumed = None
+                            if fuel_level_start is not None and fuel_level_end is not None and fuel_level_start > fuel_level_end:
+                                fuel_consumed = fuel_level_start - fuel_level_end
+                            
+                            # Get GPS coordinates
+                            start_lat, start_lon = _find_closest_location(location_states, prev_time)
+                            end_lat, end_lon = _find_closest_location(location_states, curr_time)
+                            
+                            # Create trip data
+                            trip_data = {
+                                "timestamp_start": prev_time.isoformat(),
+                                "timestamp_end": curr_time.isoformat(),
+                                "distance_km": round(distance_km, 2),
+                                "odometer_start": round(prev_odometer, 1),
+                                "odometer_end": round(curr_odometer, 1),
+                                "duration_minutes": round(duration_minutes, 1),
+                                "fuel_consumed": round(fuel_consumed, 2) if fuel_consumed else None,
+                                "start_latitude": start_lat,
+                                "start_longitude": start_lon,
+                                "end_latitude": end_lat,
+                                "end_longitude": end_lon,
+                                "category": "private",  # Default category
+                                "data_quality": "historical_import",
+                                "confidence": _calculate_trip_confidence(
+                                    fuel_consumed=fuel_consumed,
+                                    start_lat=start_lat,
+                                    end_lat=end_lat,
+                                ),
+                            }
+                            
+                            pending_trips.append(trip_data)
+                            existing_timestamps.add(prev_time)
+                            
+                            _LOGGER.debug(
+                                "Trip detected: %.1f km from %s to %s (%.1f min, avg speed: %.1f km/h)",
+                                distance_km,
+                                prev_time.isoformat(),
+                                curr_time.isoformat(),
+                                duration_minutes,
+                                avg_speed,
+                            )
+            
+            except Exception as err:
+                _LOGGER.warning("Error processing odometer point: %s", err)
+            
+            previous_point = current_point
+        
+        # Save detected trips
+        _LOGGER.info("Detected %d historical trips", len(pending_trips))
+        
+        from .storage import add_trip
+        
+        for trip_data in pending_trips:
+            try:
+                await add_trip(hass, entry, trip_data)
+                trip_count += 1
+                _LOGGER.debug(
+                    "Saved historical trip: %s to %s (%.1f km)",
+                    trip_data["timestamp_start"],
+                    trip_data["timestamp_end"],
+                    trip_data["distance_km"],
+                )
+            except Exception as err:
+                _LOGGER.error("Error saving trip: %s", err)
+        
+        if trip_count > 0:
+            _LOGGER.info(
+                "Historical trip import completed: detected %d trips from odometer changes",
+                trip_count,
+            )
+        
+    except Exception as err:
+        _LOGGER.error("Error importing trip history: %s", err, exc_info=True)
+        raise
+    
+    return trip_count
+
+
+async def _fetch_entity_history(
+    hass: HomeAssistant,
+    entity_id: str,
+    start_time: datetime,
+    end_time: datetime,
+) -> list[Any]:
+    """Fetch entity history from recorder.
+    
+    Args:
+        hass: Home Assistant instance
+        entity_id: Entity ID to fetch history for
+        start_time: Start of time range
+        end_time: End of time range
+        
+    Returns:
+        List of state objects
+    """
+    try:
+        # Split time range for short-term and long-term data
+        now = dt_util.now()
+        short_term_cutoff = now - timedelta(days=SHORT_TERM_HISTORY_DAYS - LONG_TERM_STATISTICS_OVERLAP_DAYS)
+        
+        all_states = []
+        
+        # Fetch long-term statistics for older data
+        if start_time < short_term_cutoff:
+            long_term_end = min(short_term_cutoff, end_time)
+            long_term_data = await _fetch_long_term_statistics(
+                hass,
+                entity_id,
+                start_time,
+                long_term_end,
+            )
+            
+            for data_point in long_term_data:
+                all_states.append(_StateLike(data_point["value"], data_point["timestamp"]))
+        
+        # Fetch short-term history for recent data
+        if end_time > short_term_cutoff:
+            short_term_start = max(start_time, short_term_cutoff)
+            
+            recorder_instance = get_instance(hass)
+            states = await recorder_instance.async_add_executor_job(
+                history.state_changes_during_period,
+                hass,
+                short_term_start,
+                end_time,
+                entity_id,
+            )
+            
+            if entity_id in states:
+                all_states.extend(states[entity_id])
+        
+        _LOGGER.debug("Retrieved %d states for %s", len(all_states), entity_id)
+        return all_states
+        
+    except Exception as err:
+        _LOGGER.warning("Failed to fetch history for %s: %s", entity_id, err)
+        return []
+
+
+def _find_closest_tank_level(
+    tank_level_states: list[Any],
+    target_time: datetime,
+) -> float | None:
+    """Find the closest tank level reading to a target time.
+    
+    Args:
+        tank_level_states: List of tank level state objects
+        target_time: Target timestamp
+        
+    Returns:
+        Tank level value or None if not found
+    """
+    if not tank_level_states:
+        return None
+    
+    closest_state = None
+    min_diff = timedelta.max
+    
+    for state in tank_level_states:
+        if state.state in INVALID_SENSOR_STATES:
+            continue
+        
+        try:
+            state_time = state.last_changed
+            time_diff = abs((target_time - state_time).total_seconds())
+            
+            if time_diff < min_diff.total_seconds():
+                min_diff = timedelta(seconds=time_diff)
+                closest_state = state
+        except Exception:
+            continue
+    
+    if closest_state:
+        try:
+            return float(closest_state.state)
+        except (ValueError, TypeError):
+            return None
+    
+    return None
+
+
+def _find_closest_location(
+    location_states: list[Any],
+    target_time: datetime,
+) -> tuple[float | None, float | None]:
+    """Find the closest GPS location to a target time.
+    
+    Args:
+        location_states: List of location state objects
+        target_time: Target timestamp
+        
+    Returns:
+        Tuple of (latitude, longitude) or (None, None) if not found
+    """
+    if not location_states:
+        return None, None
+    
+    closest_state = None
+    min_diff = timedelta.max
+    
+    for state in location_states:
+        if state.state in INVALID_SENSOR_STATES:
+            continue
+        
+        try:
+            state_time = state.last_changed
+            time_diff = abs((target_time - state_time).total_seconds())
+            
+            if time_diff < min_diff.total_seconds():
+                min_diff = timedelta(seconds=time_diff)
+                closest_state = state
+        except Exception:
+            continue
+    
+    if closest_state and hasattr(closest_state, "attributes"):
+        lat = closest_state.attributes.get("latitude")
+        lon = closest_state.attributes.get("longitude")
+        return lat, lon
+    
+    return None, None
+
+
+def _calculate_trip_confidence(
+    fuel_consumed: float | None,
+    start_lat: float | None,
+    end_lat: float | None,
+) -> float:
+    """Calculate confidence score for a detected trip.
+    
+    Args:
+        fuel_consumed: Fuel consumed during trip (None if not available)
+        start_lat: Start latitude (None if not available)
+        end_lat: End latitude (None if not available)
+        
+    Returns:
+        Confidence score from 0.0 to 1.0 (higher is better)
+    """
+    confidence = 0.4  # Base confidence for detected trip
+    
+    # Fuel consumption data available (30% weight)
+    if fuel_consumed is not None and fuel_consumed > 0:
+        confidence += 0.3
+    
+    # GPS location data available (30% weight)
+    if start_lat is not None and end_lat is not None:
+        confidence += 0.3
+    
+    return round(confidence, 2)
