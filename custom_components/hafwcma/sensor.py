@@ -1214,6 +1214,30 @@ def add_prediction_metadata_to_attributes(
         attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
 
 
+def format_weekday_pattern(
+    weekday_pattern: dict[int, float] | None,
+) -> dict[str, float] | None:
+    """Convert weekday pattern from numeric keys to named keys.
+    
+    Args:
+        weekday_pattern: Dictionary with weekday numbers (0-6) as keys and km values
+        
+    Returns:
+        Dictionary with weekday names as keys and rounded km values, or None if input is None
+    """
+    if not weekday_pattern:
+        return None
+    
+    # Convert weekday numbers to names for better readability
+    weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    formatted_pattern = {}
+    for weekday, km in weekday_pattern.items():
+        if isinstance(weekday, int) and 0 <= weekday < 7:
+            formatted_pattern[weekday_names[weekday]] = round(km, 1)
+    
+    return formatted_pattern if formatted_pattern else None
+
+
 class FuelPriceSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing current fuel price at nearest station."""
 
@@ -1766,16 +1790,9 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         # Add weekday driving pattern if available in consumption_prediction
         if consumption_prediction:
             weekday_pattern = consumption_prediction.get("weekday_pattern")
-            if weekday_pattern:
-                # Convert weekday numbers to names for better readability
-                weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-                formatted_pattern = {}
-                for weekday, km in weekday_pattern.items():
-                    if isinstance(weekday, int) and 0 <= weekday < 7:
-                        formatted_pattern[weekday_names[weekday]] = round(km, 1)
-                
-                if formatted_pattern:
-                    attributes["weekday_driving_pattern"] = formatted_pattern
+            formatted_pattern = format_weekday_pattern(weekday_pattern)
+            if formatted_pattern:
+                attributes["weekday_driving_pattern"] = formatted_pattern
         
         # Add metadata from consumption_prediction if available
         self._add_prediction_metadata(attributes, consumption_prediction)
@@ -1910,16 +1927,9 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
         # Add weekday driving pattern if available in consumption_prediction
         if consumption_prediction:
             weekday_pattern = consumption_prediction.get("weekday_pattern")
-            if weekday_pattern:
-                # Convert weekday numbers to names for better readability
-                weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-                formatted_pattern = {}
-                for weekday, km in weekday_pattern.items():
-                    if isinstance(weekday, int) and 0 <= weekday < 7:
-                        formatted_pattern[weekday_names[weekday]] = round(km, 1)
-                
-                if formatted_pattern:
-                    attributes["weekday_driving_pattern"] = formatted_pattern
+            formatted_pattern = format_weekday_pattern(weekday_pattern)
+            if formatted_pattern:
+                attributes["weekday_driving_pattern"] = formatted_pattern
         
         # Add metadata from consumption_prediction if available
         self._add_prediction_metadata(attributes, consumption_prediction)
