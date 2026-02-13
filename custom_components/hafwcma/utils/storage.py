@@ -103,6 +103,9 @@ async def add_price_observation(
     entry: ConfigEntry,
     price: float,
     timestamp: str,
+    station_id: str | None = None,
+    station_name: str | None = None,
+    station_brand: str | None = None,
 ) -> None:
     """Add a price observation to history.
     
@@ -111,9 +114,25 @@ async def add_price_observation(
         entry: Config entry
         price: Price in EUR per liter
         timestamp: ISO format timestamp
+        station_id: Optional station ID
+        station_name: Optional station name
+        station_brand: Optional station brand
     """
     data = await load_data(hass, entry)
-    data["price_history"].append({"ts": timestamp, "price": price})
+    observation = {
+        "ts": timestamp,
+        "price": price,
+    }
+    
+    # Add station information if available
+    if station_id:
+        observation["station_id"] = station_id
+    if station_name:
+        observation["station_name"] = station_name
+    if station_brand:
+        observation["station_brand"] = station_brand
+    
+    data["price_history"].append(observation)
     
     # Keep only last 1000 entries
     if len(data["price_history"]) > 1000:
