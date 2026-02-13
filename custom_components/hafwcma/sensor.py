@@ -79,7 +79,7 @@ from .const import (
     PROVIDER_TANKERKONIG,
 )
 from .providers.tankerkonig import TankerkoenigProvider
-from .utils.vehicle_data import async_get_vehicle_data
+from .utils.vehicle_data import async_get_vehicle_data, async_wait_for_entities
 from .utils.vehicle_tracker import VehicleDataTracker
 from .utils import storage
 from .utils.consumption_prediction import predict_days_until_refuel, store_prediction_result
@@ -197,6 +197,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._startup_time = dt_util.now()
         self._cached_vehicle_data = {}  # Cache last known vehicle data
         self._cached_consumption_prediction = None  # Cache last known prediction
+        self._entities_available = False  # Track if vehicle entities are available
+        self._first_successful_fetch = False  # Track if we've had a successful vehicle data fetch
         
         _LOGGER.info(
             "Coordinator initialized with randomized update interval: %.1f minutes (base: %d, jitter: ±%.1f)",
@@ -304,6 +306,35 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         
         _LOGGER.info("Coordinator configuration updated successfully")
 
+    async def _wait_for_vehicle_entities(self) -> None:
+        """Wait for vehicle entities to become available during startup.
+        
+        This method checks if the configured vehicle entities exist and retries
+        with a delay if they don't. This is necessary because vehicle integrations
+        may load after this integration during Home Assistant startup.
+        """
+        if self._entities_available:
+            # Already checked and found entities
+            return
+        
+        config = self.config_entry.data
+        options = self.config_entry.options
+        
+        # Get entity IDs from options first, then config
+        odometer_entity = options.get(CONF_ODOMETER_ENTITY) or config.get(CONF_ODOMETER_ENTITY)
+        tank_level_entity = options.get(CONF_TANK_LEVEL_ENTITY) or config.get(CONF_TANK_LEVEL_ENTITY)
+        range_entity = options.get(CONF_RANGE_ENTITY) or config.get(CONF_RANGE_ENTITY)
+        position_entity = options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY)
+        
+        entity_ids = [odometer_entity, tank_level_entity, range_entity, position_entity]
+        
+        _LOGGER.info("Waiting for vehicle entities to become available...")
+        self._entities_available = await async_wait_for_entities(
+            self.hass,
+            entity_ids,
+            # Use default values from const.py
+        )
+
     async def _update_consumption_prediction(
         self,
         range_km: float | None,
@@ -331,6 +362,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS,
         )
         from .utils.statistics_engine import get_average_consumption_rate
+        
+        # Don't run prediction until we've successfully fetched vehicle data at least once
+        if not self._first_successful_fetch:
+            _LOGGER.debug(
+                "Skipping consumption prediction - waiting for first successful vehicle data fetch"
+            )
+            return self._cached_consumption_prediction
         
         # Check if we're within startup delay period
         if self._is_within_startup_delay(STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS):
@@ -561,10 +599,22 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         odometer = None
         
         try:
+            # Wait for vehicle entities to become available on first update
+            if not self._first_successful_fetch:
+                await self._wait_for_vehicle_entities()
+            
             # Check if we're within startup delay period
             from homeassistant.util import dt as dt_util
             from .const import STARTUP_DELAY_VEHICLE_DATA_SECONDS
             within_startup_delay = self._is_within_startup_delay(STARTUP_DELAY_VEHICLE_DATA_SECONDS)
+            
+            # Use silent mode during startup delay to suppress "not found" warnings
+            # Silent mode is only used if:
+            # 1. We're within the STARTUP_DELAY_VEHICLE_DATA_SECONDS period, AND
+            # 2. Entities were not found available during the wait check
+            # After startup period or if entities become available, warnings will be logged normally
+            # This allows time for vehicle integrations to load without false warnings
+            silent_mode = within_startup_delay and not self._entities_available
             
             if within_startup_delay and self._cached_vehicle_data:
                 # Use cached data during startup delay
@@ -581,9 +631,17 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     tank_level_entity,
                     range_entity,
                     position_entity,
+                    silent=silent_mode,
                 )
                 
-                # Cache the data for potential startup delay usage
+                # Mark first successful fetch if we got any actual data
+                # async_get_vehicle_data always returns a dict, check if any value is not None
+                if any(v is not None for v in vehicle_data.values()):
+                    if not self._first_successful_fetch:
+                        _LOGGER.info("First successful vehicle data fetch completed")
+                        self._first_successful_fetch = True
+                
+                # Cache the data (defensive check, vehicle_data is always a dict but may be empty)
                 if vehicle_data:
                     self._cached_vehicle_data = vehicle_data.copy()
             
