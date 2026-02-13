@@ -78,6 +78,37 @@ async def load_data(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
             "next_refuel_id": 1,  # Counter for refueling event IDs
             "last_vehicle_data_refresh": None,  # {ts: str, type: "automatic"|"manual"}
             "last_historical_import": None,  # {ts: str, type: "automatic"|"manual"}
+            # Trip Tracking
+            "trips": [],  # List of Trip objects (as dicts)
+            "trip_patterns": [],  # List of TripPattern objects
+            "pois": [],  # List of POI objects
+            "next_trip_id": 1,
+            "next_pattern_id": 1,
+            "next_poi_id": 1,
+            "trip_tracking_config": {
+                "enabled": False,
+                "privacy_notice_accepted": False,
+                "privacy_notice_accepted_at": None,
+                "min_trip_distance_km": 0.5,
+                "merge_time_window_seconds": 300,  # 5 minutes
+                "retention_days": 365,
+                "auto_geocode": True,
+                "geocode_service": "nominatim",
+                "anonymization_schedules": [],
+                "tax_mileage_rate_default": 0.30,
+                "tax_mileage_rate_above_20km": 0.38,
+                "include_additional_costs": True,
+            },
+            "trip_statistics": {
+                "total_trips": 0,
+                "total_distance_km": 0.0,
+                "total_fuel_consumed": 0.0,
+                "total_fuel_cost": 0.0,
+                "total_additional_costs": 0.0,
+                "business_trips": 0,
+                "private_trips": 0,
+                "commute_trips": 0,
+            },
         }
     return data
 
@@ -982,3 +1013,283 @@ async def calculate_average_price(
         return None
     
     return sum(prices) / len(prices)
+
+
+# ---------------------------------------------------------------------------
+# Trip Tracking Storage
+# ---------------------------------------------------------------------------
+
+async def add_trip(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    trip_data: dict[str, Any],
+) -> int:
+    """Add a new trip to storage.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        trip_data: Trip data dictionary
+        
+    Returns:
+        Trip ID of the newly created trip
+    """
+    data = await load_data(hass, entry)
+    
+    # Get next trip ID
+    next_id = data.get("next_trip_id", 1)
+    trip_data["trip_id"] = next_id
+    data["next_trip_id"] = next_id + 1
+    
+    # Add timestamps
+    now = dt_util.now().isoformat()
+    trip_data.setdefault("created_at", now)
+    trip_data.setdefault("updated_at", now)
+    
+    # Add trip to storage
+    data["trips"].append(trip_data)
+    
+    # Update statistics
+    stats = data["trip_statistics"]
+    stats["total_trips"] = stats.get("total_trips", 0) + 1
+    stats["total_distance_km"] = stats.get("total_distance_km", 0.0) + trip_data.get("distance_km", 0.0)
+    stats["total_fuel_consumed"] = stats.get("total_fuel_consumed", 0.0) + trip_data.get("fuel_consumed", 0.0)
+    stats["total_fuel_cost"] = stats.get("total_fuel_cost", 0.0) + trip_data.get("fuel_cost", 0.0)
+    stats["total_additional_costs"] = stats.get("total_additional_costs", 0.0) + trip_data.get("additional_costs", 0.0)
+    
+    # Update category counters
+    category = trip_data.get("category", "private")
+    category_key = f"{category}_trips"
+    stats[category_key] = stats.get(category_key, 0) + 1
+    
+    await save_data(hass, entry, data)
+    return next_id
+
+
+async def get_trips(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    limit: int | None = None,
+    category: str | None = None,
+) -> list[dict[str, Any]]:
+    """Get trips from storage.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        limit: Maximum number of trips to return (newest first)
+        category: Filter by category (business, private, commute)
+        
+    Returns:
+        List of trip dictionaries
+    """
+    data = await load_data(hass, entry)
+    trips = data.get("trips", [])
+    
+    # Filter by category if specified
+    if category:
+        trips = [t for t in trips if t.get("category") == category]
+    
+    # Sort by timestamp_end (newest first)
+    trips = sorted(trips, key=lambda x: x.get("timestamp_end", ""), reverse=True)
+    
+    # Apply limit if specified
+    if limit:
+        trips = trips[:limit]
+    
+    return trips
+
+
+async def update_trip(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    trip_id: int,
+    updates: dict[str, Any],
+) -> bool:
+    """Update an existing trip.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        trip_id: ID of the trip to update
+        updates: Dictionary of fields to update
+        
+    Returns:
+        True if trip was found and updated, False otherwise
+    """
+    data = await load_data(hass, entry)
+    trips = data.get("trips", [])
+    
+    for trip in trips:
+        if trip.get("trip_id") == trip_id:
+            # Update timestamp
+            trip["updated_at"] = dt_util.now().isoformat()
+            
+            # Apply updates
+            trip.update(updates)
+            
+            await save_data(hass, entry, data)
+            return True
+    
+    return False
+
+
+async def delete_trip(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    trip_id: int,
+) -> bool:
+    """Delete a trip from storage.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        trip_id: ID of the trip to delete
+        
+    Returns:
+        True if trip was found and deleted, False otherwise
+    """
+    data = await load_data(hass, entry)
+    trips = data.get("trips", [])
+    
+    # Find and remove the trip
+    for i, trip in enumerate(trips):
+        if trip.get("trip_id") == trip_id:
+            removed_trip = trips.pop(i)
+            
+            # Update statistics
+            stats = data["trip_statistics"]
+            stats["total_trips"] = max(0, stats.get("total_trips", 0) - 1)
+            stats["total_distance_km"] = max(0.0, stats.get("total_distance_km", 0.0) - removed_trip.get("distance_km", 0.0))
+            stats["total_fuel_consumed"] = max(0.0, stats.get("total_fuel_consumed", 0.0) - removed_trip.get("fuel_consumed", 0.0))
+            stats["total_fuel_cost"] = max(0.0, stats.get("total_fuel_cost", 0.0) - removed_trip.get("fuel_cost", 0.0))
+            stats["total_additional_costs"] = max(0.0, stats.get("total_additional_costs", 0.0) - removed_trip.get("additional_costs", 0.0))
+            
+            # Update category counters
+            category = removed_trip.get("category", "private")
+            category_key = f"{category}_trips"
+            stats[category_key] = max(0, stats.get(category_key, 0) - 1)
+            
+            await save_data(hass, entry, data)
+            return True
+    
+    return False
+
+
+async def get_trip_patterns(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> list[dict[str, Any]]:
+    """Get all trip patterns from storage.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        List of trip pattern dictionaries
+    """
+    data = await load_data(hass, entry)
+    return data.get("trip_patterns", [])
+
+
+async def add_trip_pattern(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    pattern_data: dict[str, Any],
+) -> int:
+    """Add a new trip pattern to storage.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        pattern_data: Pattern data dictionary
+        
+    Returns:
+        Pattern ID of the newly created pattern
+    """
+    data = await load_data(hass, entry)
+    
+    # Get next pattern ID
+    next_id = data.get("next_pattern_id", 1)
+    pattern_data["pattern_id"] = next_id
+    data["next_pattern_id"] = next_id + 1
+    
+    # Add timestamps
+    now = dt_util.now().isoformat()
+    pattern_data.setdefault("created_at", now)
+    pattern_data.setdefault("updated_at", now)
+    
+    # Add pattern to storage
+    data["trip_patterns"].append(pattern_data)
+    
+    await save_data(hass, entry, data)
+    return next_id
+
+
+async def get_pois(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> list[dict[str, Any]]:
+    """Get all POIs from storage.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        List of POI dictionaries
+    """
+    data = await load_data(hass, entry)
+    return data.get("pois", [])
+
+
+async def add_poi(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    poi_data: dict[str, Any],
+) -> int:
+    """Add a new POI to storage.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        poi_data: POI data dictionary
+        
+    Returns:
+        POI ID of the newly created POI
+    """
+    data = await load_data(hass, entry)
+    
+    # Get next POI ID
+    next_id = data.get("next_poi_id", 1)
+    poi_data["poi_id"] = next_id
+    data["next_poi_id"] = next_id + 1
+    
+    # Add timestamps
+    now = dt_util.now().isoformat()
+    poi_data.setdefault("created_at", now)
+    poi_data.setdefault("updated_at", now)
+    
+    # Add POI to storage
+    data["pois"].append(poi_data)
+    
+    await save_data(hass, entry, data)
+    return next_id
+
+
+async def get_trip_tracking_config(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    """Get trip tracking configuration.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Trip tracking configuration dictionary
+    """
+    data = await load_data(hass, entry)
+    return data.get("trip_tracking_config", {})

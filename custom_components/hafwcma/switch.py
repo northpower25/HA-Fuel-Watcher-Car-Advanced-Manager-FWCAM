@@ -45,6 +45,7 @@ async def async_setup_entry(
 
     switches = [
         ProximityAlertsSwitch(coordinator, config_entry, vehicle_name, hass),
+        TripTrackingSwitch(coordinator, config_entry, vehicle_name, hass),
     ]
 
     async_add_entities(switches)
@@ -97,4 +98,113 @@ class ProximityAlertsSwitch(SwitchEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_PROXIMITY_ALERTS_ENABLED] = False
         self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
+
+
+class TripTrackingSwitch(SwitchEntity):
+    """Switch to enable/disable trip tracking (Fahrtenbuch)."""
+    
+    _attr_icon = "mdi:book-open-variant"
+    _attr_has_entity_name = True
+    
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the switch."""
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = "Trip Tracking"
+        self._attr_unique_id = f"{config_entry.entry_id}_trip_tracking"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+    
+    @property
+    def is_on(self) -> bool:
+        """Return true if trip tracking is enabled."""
+        if self._coordinator and hasattr(self._coordinator, "data"):
+            config = self._coordinator.data.get("trip_tracking_config", {})
+            return config.get("enabled", False)
+        return False
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        attributes = {}
+        
+        if self._coordinator and hasattr(self._coordinator, "data"):
+            config = self._coordinator.data.get("trip_tracking_config", {})
+            stats = self._coordinator.data.get("trip_statistics", {})
+            
+            attributes.update({
+                "privacy_notice_accepted": config.get("privacy_notice_accepted", False),
+                "total_trips": stats.get("total_trips", 0),
+                "total_distance_km": round(stats.get("total_distance_km", 0.0), 2),
+                "business_trips": stats.get("business_trips", 0),
+                "private_trips": stats.get("private_trips", 0),
+                "commute_trips": stats.get("commute_trips", 0),
+            })
+        
+        return attributes
+    
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on trip tracking."""
+        from .utils import storage
+        from homeassistant.util import dt as dt_util
+        
+        _LOGGER.info("Enabling trip tracking")
+        
+        # Load storage data
+        data = await storage.load_data(self._hass, self._config_entry)
+        
+        # Update config
+        config = data.get("trip_tracking_config", {})
+        config["enabled"] = True
+        
+        # Accept privacy notice on first enable
+        if not config.get("privacy_notice_accepted"):
+            config["privacy_notice_accepted"] = True
+            config["privacy_notice_accepted_at"] = dt_util.now().isoformat()
+            _LOGGER.info("Privacy notice accepted for trip tracking")
+        
+        data["trip_tracking_config"] = config
+        
+        # Save to storage
+        await storage.save_data(self._hass, self._config_entry, data)
+        
+        # Update coordinator data
+        if self._coordinator:
+            self._coordinator.data["trip_tracking_config"] = config
+            self._coordinator.async_update_listeners()
+    
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off trip tracking."""
+        from .utils import storage
+        
+        _LOGGER.info("Disabling trip tracking")
+        
+        # Load storage data
+        data = await storage.load_data(self._hass, self._config_entry)
+        
+        # Update config
+        config = data.get("trip_tracking_config", {})
+        config["enabled"] = False
+        data["trip_tracking_config"] = config
+        
+        # Save to storage
+        await storage.save_data(self._hass, self._config_entry, data)
+        
+        # Update coordinator data
+        if self._coordinator:
+            self._coordinator.data["trip_tracking_config"] = config
+            self._coordinator.async_update_listeners()
 
