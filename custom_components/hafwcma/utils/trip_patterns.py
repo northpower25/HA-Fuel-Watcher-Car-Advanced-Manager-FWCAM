@@ -367,9 +367,11 @@ def are_trips_similar(
     
     if dist1 > 0 and dist2 > 0:
         avg_dist = (dist1 + dist2) / 2
-        dist_diff_percent = abs(dist1 - dist2) / avg_dist * 100
-        if dist_diff_percent > distance_tolerance_percent:
-            return False
+        # Additional safety check (should never be zero given the condition above)
+        if avg_dist > 0:
+            dist_diff_percent = abs(dist1 - dist2) / avg_dist * 100
+            if dist_diff_percent > distance_tolerance_percent:
+                return False
     
     return True
 

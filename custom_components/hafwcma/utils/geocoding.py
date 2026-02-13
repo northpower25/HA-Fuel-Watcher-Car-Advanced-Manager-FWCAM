@@ -17,6 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org"
 NOMINATIM_USER_AGENT = "HomeAssistant-haFWCMA/1.0"
 NOMINATIM_RATE_LIMIT_SECONDS = 1.0  # Nominatim requires 1 request per second
+NOMINATIM_REQUEST_TIMEOUT_SECONDS = 10  # Timeout for API requests
 CACHE_EXPIRY_DAYS = 30  # Cache geocoding results for 30 days
 
 
@@ -208,7 +209,7 @@ class NominatimGeocoder:
             
             _LOGGER.debug("Geocoding request: %s with params %s", url, params)
             
-            async with session.get(url, params=params, headers=headers, timeout=10) as response:
+            async with session.get(url, params=params, headers=headers, timeout=NOMINATIM_REQUEST_TIMEOUT_SECONDS) as response:
                 self._last_request_time = dt_util.now()
                 
                 if response.status == 200:

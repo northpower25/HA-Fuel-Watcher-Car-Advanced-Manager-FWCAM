@@ -7,6 +7,9 @@ from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
+# Constants
+HOURS_PER_DAY = 24.0  # Hours in a day for anonymization calculations
+
 
 def should_anonymize_trip(
     trip_start: datetime,
@@ -225,7 +228,7 @@ def get_privacy_summary(
                 pass
         
         # Estimate percentage (assuming trips evenly distributed across day)
-        estimated_anonymized_percent = min(100, (total_hours / 24.0) * 100)
+        estimated_anonymized_percent = min(100, (total_hours / HOURS_PER_DAY) * 100)
     
     return {
         "tracking_enabled": trip_config.get("enabled", False),

@@ -8,6 +8,9 @@ from .trip_patterns import haversine_distance, is_within_radius
 
 _LOGGER = logging.getLogger(__name__)
 
+# Constants for location precision
+LOCATION_PRECISION_DECIMALS = 3  # ~100m precision for grouping locations
+
 
 def find_poi_at_location(
     latitude: float | None,
@@ -140,7 +143,7 @@ def auto_detect_home_work(
         start_lat = trip.get("start_latitude")
         start_lon = trip.get("start_longitude")
         if start_lat and start_lon:
-            key = (round(start_lat, 3), round(start_lon, 3))
+            key = (round(start_lat, LOCATION_PRECISION_DECIMALS), round(start_lon, LOCATION_PRECISION_DECIMALS))
             if key not in location_visits:
                 location_visits[key] = {
                     "latitude": start_lat,
@@ -154,7 +157,7 @@ def auto_detect_home_work(
         end_lat = trip.get("end_latitude")
         end_lon = trip.get("end_longitude")
         if end_lat and end_lon:
-            key = (round(end_lat, 3), round(end_lon, 3))
+            key = (round(end_lat, LOCATION_PRECISION_DECIMALS), round(end_lon, LOCATION_PRECISION_DECIMALS))
             if key not in location_visits:
                 location_visits[key] = {
                     "latitude": end_lat,
@@ -247,8 +250,8 @@ def detect_gas_station_pois(
         if not lat or not lon:
             continue
         
-        # Round to 3 decimals (~100m precision)
-        key = (round(lat, 3), round(lon, 3))
+        # Round to LOCATION_PRECISION_DECIMALS for grouping
+        key = (round(lat, LOCATION_PRECISION_DECIMALS), round(lon, LOCATION_PRECISION_DECIMALS))
         
         if key not in station_visits:
             station_visits[key] = {

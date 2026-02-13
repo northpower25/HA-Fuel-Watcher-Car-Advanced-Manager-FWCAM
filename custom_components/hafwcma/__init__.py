@@ -452,20 +452,27 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         filepath = Path(hass.config.path("www")) / filename
         
         # Ensure www directory exists
-        filepath.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as err:
+            _LOGGER.error("Failed to create export directory: %s", err)
+            return
         
         # Export
-        if format_type == "csv":
-            with open(filepath, 'w', newline='', encoding='utf-8') as f:
-                if trips:
-                    writer = csv.DictWriter(f, fieldnames=trips[0].keys())
-                    writer.writeheader()
-                    writer.writerows(trips)
-        else:  # json
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(trips, f, indent=2, ensure_ascii=False)
-        
-        _LOGGER.info("Exported %d trips to %s", len(trips), filepath)
+        try:
+            if format_type == "csv":
+                with open(filepath, 'w', newline='', encoding='utf-8') as f:
+                    if trips:
+                        writer = csv.DictWriter(f, fieldnames=trips[0].keys())
+                        writer.writeheader()
+                        writer.writerows(trips)
+            else:  # json
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(trips, f, indent=2, ensure_ascii=False)
+            
+            _LOGGER.info("Exported %d trips to %s", len(trips), filepath)
+        except (IOError, OSError) as err:
+            _LOGGER.error("Failed to export trips to %s: %s", filepath, err)
     
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_REFUEL_EVENT, handle_add_refuel_event, schema=SCHEMA_ADD_REFUEL_EVENT
