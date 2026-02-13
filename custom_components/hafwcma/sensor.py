@@ -79,7 +79,7 @@ from .const import (
     PROVIDER_TANKERKONIG,
 )
 from .providers.tankerkonig import TankerkoenigProvider
-from .utils.vehicle_data import async_get_vehicle_data
+from .utils.vehicle_data import async_get_vehicle_data, async_wait_for_entities
 from .utils.vehicle_tracker import VehicleDataTracker
 from .utils import storage
 from .utils.consumption_prediction import predict_days_until_refuel, store_prediction_result
@@ -327,8 +327,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         position_entity = options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY)
         
         entity_ids = [odometer_entity, tank_level_entity, range_entity, position_entity]
-        
-        from .utils.vehicle_data import async_wait_for_entities
         
         _LOGGER.info("Waiting for vehicle entities to become available...")
         self._entities_available = await async_wait_for_entities(

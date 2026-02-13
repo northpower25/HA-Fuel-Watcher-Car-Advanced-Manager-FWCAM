@@ -16,6 +16,14 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
 )
 
+# Import constants - using relative import from parent package
+try:
+    from ..const import ENTITY_WAIT_MAX_RETRIES, ENTITY_WAIT_RETRY_DELAY_SECONDS
+except ImportError:
+    # Fallback defaults if import fails
+    ENTITY_WAIT_MAX_RETRIES = 6
+    ENTITY_WAIT_RETRY_DELAY_SECONDS = 30
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -274,9 +282,6 @@ async def async_wait_for_entities(
     Returns:
         True if at least one entity is found, False if all retries exhausted
     """
-    # Import constants here to avoid circular imports
-    from ..const import ENTITY_WAIT_MAX_RETRIES, ENTITY_WAIT_RETRY_DELAY_SECONDS
-    
     if max_retries is None:
         max_retries = ENTITY_WAIT_MAX_RETRIES
     if retry_delay is None:
