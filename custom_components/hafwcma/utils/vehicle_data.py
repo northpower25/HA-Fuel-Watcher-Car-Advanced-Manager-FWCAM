@@ -256,8 +256,8 @@ async def async_get_vehicle_data(
 async def async_wait_for_entities(
     hass: HomeAssistant,
     entity_ids: list[str],
-    max_retries: int = 6,
-    retry_delay: int = 30,
+    max_retries: int | None = None,
+    retry_delay: int | None = None,
 ) -> bool:
     """Wait for vehicle entities to become available with retries.
     
@@ -268,12 +268,20 @@ async def async_wait_for_entities(
     Args:
         hass: Home Assistant instance
         entity_ids: List of entity IDs to check (empty strings/None will be filtered out)
-        max_retries: Maximum number of retries (default: 6)
-        retry_delay: Seconds to wait between retries (default: 30)
+        max_retries: Maximum number of retries (default from const.ENTITY_WAIT_MAX_RETRIES)
+        retry_delay: Seconds to wait between retries (default from const.ENTITY_WAIT_RETRY_DELAY_SECONDS)
         
     Returns:
         True if at least one entity is found, False if all retries exhausted
     """
+    # Import constants here to avoid circular imports
+    from ..const import ENTITY_WAIT_MAX_RETRIES, ENTITY_WAIT_RETRY_DELAY_SECONDS
+    
+    if max_retries is None:
+        max_retries = ENTITY_WAIT_MAX_RETRIES
+    if retry_delay is None:
+        retry_delay = ENTITY_WAIT_RETRY_DELAY_SECONDS
+    
     # Filter out None and empty strings
     entities_to_check = [e for e in entity_ids if e]
     

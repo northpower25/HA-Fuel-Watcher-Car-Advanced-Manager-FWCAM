@@ -334,8 +334,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._entities_available = await async_wait_for_entities(
             self.hass,
             entity_ids,
-            max_retries=6,  # 6 attempts with 30s delays between retries
-            retry_delay=30,  # 30 seconds between attempts
+            # Use default values from const.py
         )
 
     async def _update_consumption_prediction(
@@ -613,7 +612,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             
             # Use silent mode during startup delay to suppress "not found" warnings
             # Silent mode is only used if:
-            # 1. We're within the startup delay period (first 120 seconds), AND
+            # 1. We're within the STARTUP_DELAY_VEHICLE_DATA_SECONDS period, AND
             # 2. Entities were not found available during the wait check
             # After startup period or if entities become available, warnings will be logged normally
             # This allows time for vehicle integrations to load without false warnings

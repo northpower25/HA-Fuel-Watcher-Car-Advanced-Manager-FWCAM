@@ -74,6 +74,10 @@ MAX_CONSUMPTION_PREDICTION_INTERVAL: Final = 24.0  # Maximum 24 hours
 STARTUP_DELAY_VEHICLE_DATA_SECONDS: Final = 120  # Delay before fetching vehicle data after HA restart (2 minutes)
 STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS: Final = 120  # Delay before running consumption prediction after HA restart (2 minutes)
 
+# Entity availability wait configuration
+ENTITY_WAIT_MAX_RETRIES: Final = 6  # Maximum attempts to check for entity availability
+ENTITY_WAIT_RETRY_DELAY_SECONDS: Final = 30  # Seconds to wait between entity availability checks
+
 # Fuel types
 FUEL_TYPE_E5: Final = "e5"
 FUEL_TYPE_E10: Final = "e10"
