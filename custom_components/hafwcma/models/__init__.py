@@ -1,8 +1,8 @@
 """Data models for haFWCMA integration."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, time
 from typing import Optional
 
 
@@ -157,3 +157,121 @@ class RefuelRecommendation:
     reasoning: str = ""
     urgency: str = "low"
     timestamp: Optional[datetime] = None
+
+
+@dataclass
+class Trip:
+    """Represents a recorded trip in the logbook."""
+    
+    # Identifiers
+    trip_id: int
+    timestamp_start: datetime
+    timestamp_end: datetime
+    
+    # Distance and consumption
+    distance_km: float
+    odometer_start: Optional[float] = None
+    odometer_end: Optional[float] = None
+    fuel_level_start: Optional[float] = None
+    fuel_level_end: Optional[float] = None
+    fuel_consumed: Optional[float] = None
+    consumption_rate: Optional[float] = None  # L/100km
+    
+    # Location data (nullable for anonymized trips)
+    start_latitude: Optional[float] = None
+    start_longitude: Optional[float] = None
+    start_address: Optional[str] = None
+    start_poi_id: Optional[int] = None
+    end_latitude: Optional[float] = None
+    end_longitude: Optional[float] = None
+    end_address: Optional[str] = None
+    end_poi_id: Optional[int] = None
+    
+    # Cost calculation
+    fuel_price_avg: Optional[float] = None
+    fuel_cost: float = 0.0
+    additional_costs: float = 0.0
+    total_cost: float = 0.0
+    tax_mileage_rate: float = 0.30
+    tax_mileage_amount: float = 0.0
+    cost_difference: float = 0.0
+    
+    # Classification
+    purpose: Optional[str] = None
+    category: str = "private"  # "business", "private", "commute"
+    pattern_id: Optional[int] = None
+    is_anonymized: bool = False
+    
+    # Metadata
+    is_manual: bool = False
+    quality_score: float = 1.0
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class TripPattern:
+    """Represents a recognized trip pattern for automatic classification."""
+    
+    # Identifiers
+    pattern_id: int
+    name: str
+    
+    # Pattern definition
+    start_latitude: float
+    start_longitude: float
+    start_radius_m: float = 200.0
+    end_latitude: float = 0.0
+    end_longitude: float = 0.0
+    end_radius_m: float = 200.0
+    
+    # Optional constraints
+    weekdays: Optional[list[int]] = None  # [0-6], None = all days
+    time_window_start: Optional[time] = None
+    time_window_end: Optional[time] = None
+    distance_tolerance_percent: float = 10.0
+    
+    # Classification
+    category: str = "private"  # "business", "private", "commute"
+    purpose: str = ""
+    is_anonymized: bool = False
+    is_tax_relevant: bool = False
+    
+    # Statistics
+    match_count: int = 0
+    avg_distance_km: float = 0.0
+    avg_duration_minutes: float = 0.0
+    avg_fuel_consumption: float = 0.0
+    
+    # Metadata
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    last_matched: Optional[datetime] = None
+
+
+@dataclass
+class PointOfInterest:
+    """Represents a Point of Interest for trip location tagging."""
+    
+    # Identifiers
+    poi_id: int
+    name: str
+    
+    # Location
+    latitude: float
+    longitude: float
+    radius_m: float = 200.0
+    address: Optional[str] = None
+    
+    # Classification
+    poi_type: str = "custom"  # "home", "work", "gas_station", "shop", "parking", "custom"
+    category: Optional[str] = None
+    icon: str = "mdi:map-marker"
+    
+    # Metadata
+    visit_count: int = 0
+    is_favorite: bool = False
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
