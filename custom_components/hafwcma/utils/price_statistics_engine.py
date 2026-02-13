@@ -178,11 +178,11 @@ def _calculate_weekday_statistics(
     for weekday in range(7):
         weekday_name = weekday_names[weekday]
         data = weekday_data[weekday]
+        prices = data["prices"]
         
-        if not data or not data["prices"]:
+        if not prices:
             continue
             
-        prices = data["prices"]
         avg_price = sum(prices) / len(prices)
         
         # Find best timeframe (lowest average price)
