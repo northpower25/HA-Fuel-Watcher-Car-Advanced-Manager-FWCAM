@@ -358,6 +358,30 @@ automation:
           message: "Good time to refuel! Prices are falling and tank is at {{ state_attr('sensor.my_car_tank_level', 'percentage') }}%"
 ```
 
+Example automation using historical price patterns:
+
+```yaml
+automation:
+  - alias: "Best Refuel Time Alert"
+    trigger:
+      - platform: time
+        at: "07:00:00"
+    condition:
+      # Check if today's best timeframe is morning
+      - condition: template
+        value_template: >
+          {% set day_name = now().strftime('%A') %}
+          {% set history = state_attr('sensor.my_car_fuel_price', 'history_price_pattern') %}
+          {{ history and history.get(day_name, {}).get('best_timeframe') == 'morning' }}
+    action:
+      - service: notify.telegram
+        data:
+          message: >
+            Good morning! Today ({{ now().strftime('%A') }}) is a good day to refuel.
+            Best time: {{ state_attr('sensor.my_car_fuel_price', 'history_price_pattern')[now().strftime('%A')]['best_timeframe'] }}
+            Average price: €{{ state_attr('sensor.my_car_fuel_price', 'history_price_pattern')[now().strftime('%A')]['avg_price'] }}/L
+```
+
 Example automation using prediction engine recommendations:
 
 ```yaml
