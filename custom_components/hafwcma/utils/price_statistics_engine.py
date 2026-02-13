@@ -102,6 +102,8 @@ def _calculate_top_stations(
             station_info[station_id] = {
                 "name": obs.get("station_name"),
                 "brand": obs.get("station_brand"),
+                "city": obs.get("station_city"),
+                "street": obs.get("station_street"),
             }
     
     # Calculate average price per station
@@ -109,10 +111,23 @@ def _calculate_top_stations(
     for station_id, prices in station_prices.items():
         avg_price = sum(prices) / len(prices)
         info = station_info.get(station_id, {})
+        
+        # Format station name as [brand] [place] [street] or use name if components missing
+        brand = info.get("brand", "")
+        city = info.get("city", "")
+        street = info.get("street", "")
+        station_name = info.get("name", "Unknown")
+        
+        # Build formatted name if we have brand, city, and street
+        if brand and city and street:
+            formatted_name = f"{brand} {city} {street}"
+        else:
+            # Fall back to stored name
+            formatted_name = station_name
+        
         station_averages.append({
             "station_id": station_id,
-            "station_name": info.get("name", "Unknown"),
-            "station_brand": info.get("brand"),
+            "station_name": formatted_name,
             "avg_price": round(avg_price, 3),
             "observations": len(prices),
         })
@@ -173,7 +188,7 @@ def _calculate_weekday_statistics(
         if obs.get("station_id"):
             weekday_data[weekday]["stations"].append(obs)
     
-    # Calculate statistics for each weekday
+    # Calculate statistics for each weekday - always show all 7 weekdays
     result = {}
     for weekday in range(7):
         weekday_name = weekday_names[weekday]
@@ -181,6 +196,18 @@ def _calculate_weekday_statistics(
         prices = data["prices"]
         
         if not prices:
+            # No data for this weekday - show "Waiting for more data"
+            result[weekday_name] = {
+                "avg_price": "Waiting for more data",
+                "best_timeframe": "Waiting for more data",
+                "observations": 0,
+            }
+            # Add placeholder top stations
+            result[weekday_name]["top_stations"] = [
+                {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+            ]
             continue
             
         avg_price = sum(prices) / len(prices)
@@ -201,19 +228,26 @@ def _calculate_weekday_statistics(
         
         result[weekday_name] = {
             "avg_price": round(avg_price, 3),
-            "best_timeframe": best_timeframe,
+            "best_timeframe": best_timeframe if best_timeframe else "Waiting for more data",
             "observations": len(prices),
         }
         
-        if top_stations:
-            result[weekday_name]["top_stations"] = [
-                {
-                    "name": s["station_name"],
-                    "brand": s["station_brand"],
-                    "avg_price": s["avg_price"],
-                }
-                for s in top_stations
-            ]
+        # Always show 3 station slots
+        formatted_stations = []
+        for i in range(3):
+            if i < len(top_stations):
+                formatted_stations.append({
+                    "name": top_stations[i]["station_name"],
+                    "avg_price": top_stations[i]["avg_price"],
+                })
+            else:
+                # Fill missing slots with "Waiting for more data"
+                formatted_stations.append({
+                    "name": "Waiting for more data",
+                    "avg_price": "Waiting for more data",
+                })
+        
+        result[weekday_name]["top_stations"] = formatted_stations
     
     return result
 
@@ -264,7 +298,7 @@ def _calculate_period_statistics(
     avg_price = sum(period_prices) / len(period_prices)
     
     # Calculate trend if previous period is provided
-    trend = None
+    trend = "Waiting for more data"
     if previous_start_date and previous_end_date:
         previous_prices = []
         for obs in price_history:
@@ -298,20 +332,25 @@ def _calculate_period_statistics(
     result = {
         "avg_price": round(avg_price, 3),
         "observations": len(period_prices),
+        "trend": trend,
     }
     
-    if trend:
-        result["trend"] = trend
+    # Always show 3 station slots with proper formatting
+    formatted_stations = []
+    for i in range(3):
+        if i < len(top_stations):
+            formatted_stations.append({
+                "name": top_stations[i]["station_name"],
+                "avg_price": top_stations[i]["avg_price"],
+            })
+        else:
+            # Fill missing slots with "Waiting for more data"
+            formatted_stations.append({
+                "name": "Waiting for more data",
+                "avg_price": "Waiting for more data",
+            })
     
-    if top_stations:
-        result["top_stations"] = [
-            {
-                "name": s["station_name"],
-                "brand": s["station_brand"],
-                "avg_price": s["avg_price"],
-            }
-            for s in top_stations
-        ]
+    result["top_stations"] = formatted_stations
     
     return result
 

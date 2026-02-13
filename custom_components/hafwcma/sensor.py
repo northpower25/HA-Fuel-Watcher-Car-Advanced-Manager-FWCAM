@@ -482,7 +482,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         """Calculate consumption forecast for different time periods.
         
         Uses ML prediction engine to forecast consumption patterns. Includes cost forecasts
-        based on historical price data and expected consumption.
+        based on historical price data and expected consumption. Uses weekday driving patterns
+        to provide more accurate forecasts for different time periods.
         
         Args:
             consumption_prediction: Current consumption prediction data
@@ -490,7 +491,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         Returns:
             Dictionary with consumption forecasts for tomorrow, next week, next 14 days, next month
         """
+        from datetime import timedelta
         from .utils.storage import get_last_refuel_price, calculate_average_price
+        from homeassistant.util import dt as dt_util
         
         if not consumption_prediction:
             periods = ["tomorrow", "next_week", "next_14_days", "next_month"]
@@ -501,6 +504,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         avg_daily_km = consumption_prediction.get("avg_daily_km", 0.0)
         confidence = consumption_prediction.get("confidence", 0.0)
         data_source = consumption_prediction.get("data_source", "unknown")
+        weekday_pattern = consumption_prediction.get("weekday_pattern", {})
         
         if not avg_consumption_rate:
             periods = ["tomorrow", "next_week", "next_14_days", "next_month"]
@@ -512,47 +516,74 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         avg_price_14d = await calculate_average_price(self.hass, self.config_entry, days=14)
         avg_price_30d = await calculate_average_price(self.hass, self.config_entry, days=30)
         
-        # Calculate cost forecasts for each period
-        # Cost = (daily_km * days * consumption_rate / 100) * price_per_liter
+        # Helper function to calculate expected km for a specific weekday
+        def get_weekday_km(weekday_idx: int) -> float:
+            """Get expected km for a specific weekday."""
+            if weekday_pattern and weekday_idx in weekday_pattern:
+                return weekday_pattern[weekday_idx]
+            return avg_daily_km  # Fallback to average
         
-        # Tomorrow (1 day)
+        # Helper function to calculate weighted km for a period
+        def calculate_period_km(days: int, start_weekday: int) -> float:
+            """Calculate weighted average km for a period based on weekday patterns."""
+            if not weekday_pattern:
+                # No pattern available, use simple average
+                return avg_daily_km * days
+            
+            # Use modulo arithmetic to calculate weekdays efficiently
+            total_km = 0.0
+            for day_offset in range(days):
+                weekday = (start_weekday + day_offset) % 7
+                total_km += get_weekday_km(weekday)
+            
+            return total_km
+        
+        # Tomorrow (1 day) - use tomorrow's specific weekday pattern
+        now = dt_util.now()
+        tomorrow = now + timedelta(days=1)
+        tomorrow_weekday = tomorrow.weekday()
+        tomorrow_km = get_weekday_km(tomorrow_weekday)
+        
         tomorrow_forecast = {
             "avg_consumption_l_per_100km": avg_consumption_rate,
             "confidence": confidence,
             "data_source": data_source,
         }
-        if last_price and avg_daily_km > 0:
-            liters_needed = (avg_daily_km * avg_consumption_rate) / 100
+        if last_price and tomorrow_km > 0:
+            liters_needed = (tomorrow_km * avg_consumption_rate) / 100
             tomorrow_forecast["forecast_cost"] = round(liters_needed * last_price, 2)
         
-        # Next week (7 days)
+        # Next week (7 days) - use weighted average based on actual weekdays
+        next_week_km = calculate_period_km(7, now.weekday())
         next_week_forecast = {
             "avg_consumption_l_per_100km": avg_consumption_rate,
             "confidence": confidence,
             "data_source": data_source,
         }
-        if avg_price_7d and avg_daily_km > 0:
-            liters_needed = (avg_daily_km * 7 * avg_consumption_rate) / 100
+        if avg_price_7d and next_week_km > 0:
+            liters_needed = (next_week_km * avg_consumption_rate) / 100
             next_week_forecast["forecast_cost"] = round(liters_needed * avg_price_7d, 2)
         
-        # Next 14 days
+        # Next 14 days - use weighted average based on actual weekdays
+        next_14_days_km = calculate_period_km(14, now.weekday())
         next_14_days_forecast = {
             "avg_consumption_l_per_100km": avg_consumption_rate,
             "confidence": confidence,
             "data_source": data_source,
         }
-        if avg_price_14d and avg_daily_km > 0:
-            liters_needed = (avg_daily_km * 14 * avg_consumption_rate) / 100
+        if avg_price_14d and next_14_days_km > 0:
+            liters_needed = (next_14_days_km * avg_consumption_rate) / 100
             next_14_days_forecast["forecast_cost"] = round(liters_needed * avg_price_14d, 2)
         
-        # Next month (30 days)
+        # Next month (30 days) - use weighted average based on actual weekdays
+        next_month_km = calculate_period_km(30, now.weekday())
         next_month_forecast = {
             "avg_consumption_l_per_100km": avg_consumption_rate,
             "confidence": confidence,
             "data_source": data_source,
         }
-        if avg_price_30d and avg_daily_km > 0:
-            liters_needed = (avg_daily_km * 30 * avg_consumption_rate) / 100
+        if avg_price_30d and next_month_km > 0:
+            liters_needed = (next_month_km * avg_consumption_rate) / 100
             next_month_forecast["forecast_cost"] = round(liters_needed * avg_price_30d, 2)
         
         return {
@@ -561,6 +592,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "next_14_days": next_14_days_forecast,
             "next_month": next_month_forecast,
         }
+
 
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -772,6 +804,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 "name": cheapest.name,
                                 "brand": cheapest.brand,
                                 "address": cheapest.address,
+                                "city": cheapest.city,
+                                "street": cheapest.street,
                                 "distance": round(cheapest.distance, 2),
                                 "price": fuel_price,
                                 "latitude": cheapest.latitude,
@@ -1003,6 +1037,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     station_id=nearest_station.get("id"),
                     station_name=nearest_station.get("name"),
                     station_brand=nearest_station.get("brand"),
+                    station_city=nearest_station.get("city"),
+                    station_street=nearest_station.get("street"),
                 )
             else:
                 # No current data - use last successful values
@@ -1404,23 +1440,41 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
             last_week = price_statistics.get("last_week")
             if last_week:
                 attributes["last_week_price"] = last_week.get("avg_price")
-                attributes["last_week_trend"] = last_week.get("trend")
-                if last_week.get("top_stations"):
-                    attributes["last_week_top_stations"] = last_week["top_stations"]
+                attributes["last_week_trend"] = last_week.get("trend", "Waiting for more data")
+                attributes["last_week_top_stations"] = last_week.get("top_stations", [])
+            else:
+                attributes["last_week_trend"] = "Waiting for more data"
+                attributes["last_week_top_stations"] = [
+                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                ]
             
             last_14_days = price_statistics.get("last_14_days")
             if last_14_days:
                 attributes["last_14_days_price"] = last_14_days.get("avg_price")
-                attributes["last_14_days_trend"] = last_14_days.get("trend")
-                if last_14_days.get("top_stations"):
-                    attributes["last_14_days_top_stations"] = last_14_days["top_stations"]
+                attributes["last_14_days_trend"] = last_14_days.get("trend", "Waiting for more data")
+                attributes["last_14_days_top_stations"] = last_14_days.get("top_stations", [])
+            else:
+                attributes["last_14_days_trend"] = "Waiting for more data"
+                attributes["last_14_days_top_stations"] = [
+                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                ]
             
             last_month = price_statistics.get("last_month")
             if last_month:
                 attributes["last_month_price"] = last_month.get("avg_price")
-                attributes["last_month_trend"] = last_month.get("trend")
-                if last_month.get("top_stations"):
-                    attributes["last_month_top_stations"] = last_month["top_stations"]
+                attributes["last_month_trend"] = last_month.get("trend", "Waiting for more data")
+                attributes["last_month_top_stations"] = last_month.get("top_stations", [])
+            else:
+                attributes["last_month_trend"] = "Waiting for more data"
+                attributes["last_month_top_stations"] = [
+                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                ]
         
         return attributes
 
