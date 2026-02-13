@@ -1151,6 +1151,20 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 if trip_result.get("trip_ended") and trip_result.get("trip_data"):
                     trip_data = trip_result["trip_data"]
                     
+                    # Check if trip should be anonymized based on time
+                    from .utils.trip_anonymization import should_anonymize_trip, anonymize_trip_data
+                    trip_start_str = trip_data.get("timestamp_start")
+                    should_anonymize = False
+                    
+                    if trip_start_str:
+                        try:
+                            trip_start_dt = dt_util.parse_datetime(trip_start_str)
+                            if trip_start_dt:
+                                anonymization_schedules = trip_config.get("anonymization_schedules", [])
+                                should_anonymize = should_anonymize_trip(trip_start_dt, anonymization_schedules)
+                        except (ValueError, TypeError):
+                            pass
+                    
                     # Calculate costs
                     fuel_consumed = trip_data.get("fuel_consumed")
                     distance_km = trip_data.get("distance_km", 0)
@@ -1226,15 +1240,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 trip_data["category"] = best_pattern.get("category", "private")
                                 trip_data["purpose"] = best_pattern.get("purpose")
                                 
-                                # Apply anonymization if pattern requires it
-                                if best_pattern.get("is_anonymized", False):
-                                    trip_data["is_anonymized"] = True
-                                    trip_data["start_latitude"] = None
-                                    trip_data["start_longitude"] = None
-                                    trip_data["end_latitude"] = None
-                                    trip_data["end_longitude"] = None
-                                    trip_data["start_address"] = None
-                                    trip_data["end_address"] = None
+                                # Apply anonymization if pattern requires it OR time-based rule applies
+                                if best_pattern.get("is_anonymized", False) or should_anonymize:
+                                    should_anonymize = True
                                 
                                 # Update pattern statistics
                                 for pattern in patterns:
@@ -1253,6 +1261,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 )
                     except Exception as pattern_err:
                         _LOGGER.warning("Error matching trip patterns: %s", pattern_err)
+                    
+                    # Apply anonymization if needed
+                    if should_anonymize:
+                        trip_data = anonymize_trip_data(trip_data)
+                        _LOGGER.info("Trip anonymized based on privacy settings")
                     
                     # Save trip to storage
                     trip_id = await storage.add_trip(self.hass, self.config_entry, trip_data)
