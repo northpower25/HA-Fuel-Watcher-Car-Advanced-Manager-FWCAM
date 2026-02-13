@@ -108,11 +108,15 @@ class ProximityAlertSensor(CoordinatorEntity, BinarySensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         if not self.coordinator.data:
-            return {}
+            return {
+                ATTR_STATION_NAME: "Keine günstige Tankstelle in der unmittelbaren Umgebung",
+            }
         
         proximity_data = self.coordinator.data.get("proximity_alert")
         if not proximity_data or not proximity_data.get("is_near"):
-            return {}
+            return {
+                ATTR_STATION_NAME: "Keine günstige Tankstelle in der unmittelbaren Umgebung",
+            }
         
         station = proximity_data.get("station", {})
         

@@ -199,6 +199,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._cached_consumption_prediction = None  # Cache last known prediction
         self._entities_available = False  # Track if vehicle entities are available
         self._first_successful_fetch = False  # Track if we've had a successful vehicle data fetch
+        self._post_startup_refresh_done = False  # Track if we've triggered refresh after startup delay
         
         _LOGGER.info(
             "Coordinator initialized with randomized update interval: %.1f minutes (base: %d, jitter: ±%.1f)",
@@ -605,7 +606,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             
             # Check if we're within startup delay period
             from homeassistant.util import dt as dt_util
-            from .const import STARTUP_DELAY_VEHICLE_DATA_SECONDS
+            from .const import STARTUP_DELAY_VEHICLE_DATA_SECONDS, STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS
             within_startup_delay = self._is_within_startup_delay(STARTUP_DELAY_VEHICLE_DATA_SECONDS)
             
             # Use silent mode during startup delay to suppress "not found" warnings
@@ -1220,6 +1221,20 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
         )
         self.update_interval = self._get_randomized_interval(current_base_interval)
+
+        # Trigger immediate refresh after startup delay if we haven't already and conditions are met
+        # This ensures prediction runs as soon as possible after startup instead of waiting for next update cycle
+        if not self._post_startup_refresh_done:
+            # Check if we've passed the startup delay and have successful vehicle data fetch
+            if (self._first_successful_fetch and 
+                not self._is_within_startup_delay(STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS)):
+                _LOGGER.info(
+                    "Startup delay passed and vehicle data fetched - scheduling immediate refresh for prediction"
+                )
+                self._post_startup_refresh_done = True
+                # Schedule immediate refresh in the background (after this method returns)
+                # Use call_soon to avoid blocking the current update
+                self.hass.loop.call_soon(lambda: self.hass.async_create_task(self.async_refresh()))
 
         return data
     
