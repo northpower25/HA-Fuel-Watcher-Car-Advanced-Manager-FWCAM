@@ -635,6 +635,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 )
                 
                 # Mark first successful fetch if we got any data
+                # vehicle_data is always a dict, check if any value is not None
                 if vehicle_data and any(v is not None for v in vehicle_data.values()):
                     if not self._first_successful_fetch:
                         _LOGGER.info("First successful vehicle data fetch completed")
