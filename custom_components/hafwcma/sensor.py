@@ -1185,15 +1185,44 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         "is_manual": False,
                     })
                     
+                    # Geocode addresses if enabled and coordinates available
+                    if trip_config.get("auto_geocode", True):
+                        from .utils.geocoding import geocode_trip_location
+                        
+                        start_lat = trip_data.get("start_latitude")
+                        start_lon = trip_data.get("start_longitude")
+                        end_lat = trip_data.get("end_latitude")
+                        end_lon = trip_data.get("end_longitude")
+                        
+                        try:
+                            if start_lat and start_lon:
+                                start_address = await geocode_trip_location(start_lat, start_lon)
+                                if start_address:
+                                    trip_data["start_address"] = start_address
+                                    _LOGGER.debug("Geocoded start: %s", start_address)
+                        except Exception as geo_err:
+                            _LOGGER.warning("Error geocoding start location: %s", geo_err)
+                        
+                        try:
+                            if end_lat and end_lon:
+                                end_address = await geocode_trip_location(end_lat, end_lon)
+                                if end_address:
+                                    trip_data["end_address"] = end_address
+                                    _LOGGER.debug("Geocoded end: %s", end_address)
+                        except Exception as geo_err:
+                            _LOGGER.warning("Error geocoding end location: %s", geo_err)
+                    
                     # Save trip to storage
                     trip_id = await storage.add_trip(self.hass, self.config_entry, trip_data)
                     _LOGGER.info(
-                        "Trip #%d saved: %.2f km, duration: %s, fuel: %.2fL, cost: €%.2f",
+                        "Trip #%d saved: %.2f km, duration: %s, fuel: %.2fL, cost: €%.2f, from: %s to: %s",
                         trip_id,
                         distance_km,
                         trip_data.get("duration", "unknown"),
                         fuel_consumed or 0,
                         fuel_cost,
+                        trip_data.get("start_address", "Unknown"),
+                        trip_data.get("end_address", "Unknown"),
                     )
                     
                 # Store trip tracking state in coordinator data
