@@ -85,6 +85,7 @@ from .utils import storage
 from .utils.consumption_prediction import predict_days_until_refuel, store_prediction_result
 from .utils.prediction_engine import evaluate_refuel_strategy, get_prediction_summary
 from .utils.price_engine import compute_price_trend, get_price_statistics
+from .utils.price_statistics_engine import calculate_price_statistics
 from .utils.statistics_engine import estimate_days_left
 from .utils.geolocation import (
     ProximityTracker,
@@ -993,12 +994,15 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     nearest_station,
                     timestamp_now,
                 )
-                # Also store price history
+                # Also store price history with station information
                 await storage.add_price_observation(
                     self.hass,
                     self.config_entry,
                     fuel_price,
                     timestamp_now,
+                    station_id=nearest_station.get("id"),
+                    station_name=nearest_station.get("name"),
+                    station_brand=nearest_station.get("brand"),
                 )
             else:
                 # No current data - use last successful values
@@ -1170,6 +1174,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.warning("Error calculating consumption forecast: %s", err)
         
+        # Calculate price statistics
+        price_statistics = None
+        try:
+            price_statistics = await calculate_price_statistics(self.hass, self.config_entry)
+        except Exception as err:
+            _LOGGER.warning("Error calculating price statistics: %s", err)
+        
         # Get refueling log and retrieval metadata from storage (single load operation)
         refueling_log = None
         last_vehicle_data_refresh = None
@@ -1208,6 +1219,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "consumption_prediction": consumption_prediction,  # Add consumption prediction
             "consumption_history": consumption_history,  # Add consumption history
             "consumption_forecast": consumption_forecast,  # Add consumption forecast
+            "price_statistics": price_statistics,  # Add price statistics
             "refueling_log": refueling_log,  # Add refueling log
             "nearby_cheap_stations": nearby_cheap_stations_data,  # Add geolocation data
             "proximity_alert": proximity_alert_data,  # Add proximity alert data
@@ -1379,6 +1391,36 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
             attributes[ATTR_RECOMMENDATION] = recommendation.get("recommendation", "")
             attributes[ATTR_PRICE_DELTA] = recommendation.get("price_delta")
             attributes[ATTR_PRICE_DELTA_PERCENT] = recommendation.get("price_delta_percent")
+        
+        # Add price statistics if available (history price pattern)
+        price_statistics = self.coordinator.data.get("price_statistics")
+        if price_statistics:
+            # Add weekday patterns
+            weekday_patterns = price_statistics.get("weekday_patterns")
+            if weekday_patterns:
+                attributes["history_price_pattern"] = weekday_patterns
+            
+            # Add period statistics
+            last_week = price_statistics.get("last_week")
+            if last_week:
+                attributes["last_week_price"] = last_week.get("avg_price")
+                attributes["last_week_trend"] = last_week.get("trend")
+                if last_week.get("top_stations"):
+                    attributes["last_week_top_stations"] = last_week["top_stations"]
+            
+            last_14_days = price_statistics.get("last_14_days")
+            if last_14_days:
+                attributes["last_14_days_price"] = last_14_days.get("avg_price")
+                attributes["last_14_days_trend"] = last_14_days.get("trend")
+                if last_14_days.get("top_stations"):
+                    attributes["last_14_days_top_stations"] = last_14_days["top_stations"]
+            
+            last_month = price_statistics.get("last_month")
+            if last_month:
+                attributes["last_month_price"] = last_month.get("avg_price")
+                attributes["last_month_trend"] = last_month.get("trend")
+                if last_month.get("top_stations"):
+                    attributes["last_month_top_stations"] = last_month["top_stations"]
         
         return attributes
 

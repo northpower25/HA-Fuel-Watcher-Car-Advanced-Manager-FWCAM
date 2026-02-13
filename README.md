@@ -70,7 +70,9 @@ entity: sensor.my_car_refueling_log
 - Fuel price trend prediction (rising/falling/stable)
 - Price drop detection with configurable thresholds
 - Days until refuel estimation based on learned daily kilometers
-- Historical price analysis and statistics
+- **Historical fuel price statistics** with weekday patterns and period analysis
+- **Weekday-based price patterns** showing best refueling times and top 3 cheapest stations per day
+- **Period price statistics** (last week, 14 days, month) with trend analysis and top stations
 - Weekday consumption pattern learning
 - Best time to refuel suggestions
 - Price vs. distance optimization
@@ -208,6 +210,20 @@ Each sensor provides additional attributes:
 - `recommendation`: User-friendly recommendation text
 - `price_delta`: Absolute price change from last known price (EUR)
 - `price_delta_percent`: Percentage price change
+- `history_price_pattern`: Weekday-based price statistics with the following structure for each weekday (Monday-Sunday):
+  - `avg_price`: Average price for all observations on that weekday in the last week (EUR/L)
+  - `best_timeframe`: Best time to refuel on that weekday (`morning` 7:00-12:00, `afternoon` 12:01-17:00, `evening` 17:01-21:00, `night` 21:01-6:59)
+  - `observations`: Number of price observations for that weekday
+  - `top_stations`: List of the 3 cheapest stations for that weekday with their name, brand, and average price
+- `last_week_price`: Average price for all observations in the last 7 days (EUR/L)
+- `last_week_trend`: Price trend compared to the previous week (`up`, `down`, or `stable`)
+- `last_week_top_stations`: List of the 3 cheapest stations in the last 7 days
+- `last_14_days_price`: Average price for all observations in the last 14 days (EUR/L)
+- `last_14_days_trend`: Price trend compared to the previous 14-day period
+- `last_14_days_top_stations`: List of the 3 cheapest stations in the last 14 days
+- `last_month_price`: Average price for all observations in the last 30 days (EUR/L)
+- `last_month_trend`: Price trend compared to the previous 30-day period
+- `last_month_top_stations`: List of the 3 cheapest stations in the last 30 days
 
 #### Range Sensor
 - `days_left`: Estimated days until refuel needed (based on learned patterns)
@@ -340,6 +356,30 @@ automation:
       - service: notify.telegram
         data:
           message: "Good time to refuel! Prices are falling and tank is at {{ state_attr('sensor.my_car_tank_level', 'percentage') }}%"
+```
+
+Example automation using historical price patterns:
+
+```yaml
+automation:
+  - alias: "Best Refuel Time Alert"
+    trigger:
+      - platform: time
+        at: "07:00:00"
+    condition:
+      # Check if today's best timeframe is morning
+      - condition: template
+        value_template: >
+          {% set day_name = now().strftime('%A') %}
+          {% set history = state_attr('sensor.my_car_fuel_price', 'history_price_pattern') %}
+          {{ history and history.get(day_name, {}).get('best_timeframe') == 'morning' }}
+    action:
+      - service: notify.telegram
+        data:
+          message: >
+            Good morning! Today ({{ now().strftime('%A') }}) is a good day to refuel.
+            Best time: {{ state_attr('sensor.my_car_fuel_price', 'history_price_pattern')[now().strftime('%A')]['best_timeframe'] }}
+            Average price: €{{ state_attr('sensor.my_car_fuel_price', 'history_price_pattern')[now().strftime('%A')]['avg_price'] }}/L
 ```
 
 Example automation using prediction engine recommendations:
