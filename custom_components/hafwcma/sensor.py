@@ -641,7 +641,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         _LOGGER.info("First successful vehicle data fetch completed")
                         self._first_successful_fetch = True
                 
-                # Cache the data for potential startup delay usage
+                # Cache the data (defensive check, vehicle_data is always a dict but may be empty)
                 if vehicle_data:
                     self._cached_vehicle_data = vehicle_data.copy()
             

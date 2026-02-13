@@ -282,8 +282,8 @@ async def async_wait_for_entities(
     if retry_delay is None:
         retry_delay = ENTITY_WAIT_RETRY_DELAY_SECONDS
     
-    # Filter out None, empty strings, and non-string values to get valid entity IDs
-    entities_to_check = [e for e in entity_ids if e and isinstance(e, str)]
+    # Filter out invalid entity IDs: None, empty strings, and non-string values
+    entities_to_check = [e for e in entity_ids if isinstance(e, str) and e]
     
     if not entities_to_check:
         _LOGGER.debug("No vehicle entities configured to wait for")
