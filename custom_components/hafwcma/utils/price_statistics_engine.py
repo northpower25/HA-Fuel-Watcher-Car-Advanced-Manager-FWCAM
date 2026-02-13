@@ -140,7 +140,13 @@ def _calculate_weekday_statistics(
     weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     
     # Group data by weekday
-    weekday_data = defaultdict(lambda: defaultdict(list))
+    weekday_data = {}
+    for i in range(7):
+        weekday_data[i] = {
+            "prices": [],
+            "timeframes": defaultdict(list),
+            "stations": []
+        }
     
     for obs in price_history:
         ts_str = obs.get("ts")
