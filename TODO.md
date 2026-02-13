@@ -1,5 +1,87 @@
 # TODO List for haFWCMA
 
+## 🎯 New: Trip Tracking (Fahrtenbuch) Feature
+
+### Implementation Status ✅
+**Status**: ✅ Implemented (Phases 1-6, 8)  
+**Priority**: High  
+**Implementation Date**: 2026-02-13  
+**Documentation**: See `docs/TRIP_TRACKING_README.md`, `docs/TRIP_TRACKING_CONCEPT.md`
+
+#### Completed Features ✅
+- [x] **Phase 1: Basic Trip Detection & Recording**
+  - [x] Trip, TripPattern, and POI data models
+  - [x] Extended storage schema with trip data structures
+  - [x] Trip detection logic in vehicle_tracker.py
+  - [x] TripTracker class with automatic trip detection
+  - [x] Trip tracking switch entity
+  - [x] Trip log sensor and current trip sensor
+  - [x] On-trip binary sensor
+
+- [x] **Phase 2: Cost Calculation**
+  - [x] Fuel consumption calculation for trips
+  - [x] German tax mileage rate configuration
+  - [x] Cost comparison logic (real costs vs. tax rates)
+  - [x] Fuel cost calculation based on current price
+  - [x] Support for additional costs (tolls, parking)
+
+- [x] **Phase 3: Geocoding Integration**
+  - [x] OpenStreetMap Nominatim API client
+  - [x] Reverse geocoding for start/end addresses
+  - [x] Geocoding cache to reduce API calls
+  - [x] Rate limiting (1 request/second)
+  - [x] Configurable auto-geocoding
+
+- [x] **Phase 4: Pattern Recognition**
+  - [x] Pattern matching algorithm
+  - [x] Automatic pattern detection from trip history
+  - [x] Match quality scoring
+  - [x] Pattern statistics tracking
+  - [x] Integration into trip workflow
+
+- [x] **Phase 5: POI Management**
+  - [x] POI detection logic
+  - [x] Home/Work auto-detection
+  - [x] Gas station POI integration
+  - [x] POI visit counting
+  - [x] POI suggestion functions
+
+- [x] **Phase 6: Anonymization Features**
+  - [x] Time-based anonymization rules
+  - [x] Anonymization application logic
+  - [x] Pattern-based anonymization
+  - [x] Data retention policy
+  - [x] Privacy configuration options
+  - [x] Privacy notice and summary generation
+
+- [x] **Phase 8: Services & Automations**
+  - [x] `hafwcma.add_trip` service
+  - [x] `hafwcma.edit_trip` service
+  - [x] `hafwcma.delete_trip` service
+  - [x] `hafwcma.create_pattern` service
+  - [x] `hafwcma.export_trips` service (CSV/JSON)
+  - [x] Complete service documentation in services.yaml
+
+#### Future Enhancements (Phase 7 - Optional)
+- [ ] **Lovelace Card Extension**
+  - [ ] Trip Log tab in FWCAM card
+  - [ ] Trip table with sorting/filtering
+  - [ ] Trip edit dialog
+  - [ ] Pattern management dialog
+  - [ ] POI management dialog
+  - [ ] CSV export in UI
+
+#### Key Features
+- **Automatic Trip Detection**: Based on odometer and GPS data
+- **Privacy First**: Opt-in, local storage, time-based anonymization
+- **Cost Analysis**: Real costs vs. German tax mileage rates
+- **Pattern Recognition**: Automatic detection of recurring routes
+- **POI Management**: Home, Work, and favorite gas stations
+- **GDPR Compliant**: All required privacy rights supported
+- **Service Integration**: Full API for automations and scripts
+
+---
+
 ## 🎯 New: Geolocation Feature (In Planning)
 
 ### Konzept erstellt / Concept Created ✅
