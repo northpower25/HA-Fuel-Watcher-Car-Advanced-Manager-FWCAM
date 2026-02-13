@@ -491,6 +491,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         Returns:
             Dictionary with consumption forecasts for tomorrow, next week, next 14 days, next month
         """
+        from datetime import timedelta
         from .utils.storage import get_last_refuel_price, calculate_average_price
         from homeassistant.util import dt as dt_util
         
@@ -523,25 +524,23 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             return avg_daily_km  # Fallback to average
         
         # Helper function to calculate weighted km for a period
-        def calculate_period_km(days: int) -> float:
+        def calculate_period_km(days: int, start_weekday: int) -> float:
             """Calculate weighted average km for a period based on weekday patterns."""
             if not weekday_pattern:
                 # No pattern available, use simple average
                 return avg_daily_km * days
             
-            # Calculate which weekdays are in the period
-            now = dt_util.now()
+            # Use modulo arithmetic to calculate weekdays efficiently
             total_km = 0.0
             for day_offset in range(days):
-                future_date = now + dt_util.dt.timedelta(days=day_offset)
-                weekday = future_date.weekday()
+                weekday = (start_weekday + day_offset) % 7
                 total_km += get_weekday_km(weekday)
             
             return total_km
         
         # Tomorrow (1 day) - use tomorrow's specific weekday pattern
         now = dt_util.now()
-        tomorrow = now + dt_util.dt.timedelta(days=1)
+        tomorrow = now + timedelta(days=1)
         tomorrow_weekday = tomorrow.weekday()
         tomorrow_km = get_weekday_km(tomorrow_weekday)
         
@@ -555,7 +554,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             tomorrow_forecast["forecast_cost"] = round(liters_needed * last_price, 2)
         
         # Next week (7 days) - use weighted average based on actual weekdays
-        next_week_km = calculate_period_km(7)
+        next_week_km = calculate_period_km(7, now.weekday())
         next_week_forecast = {
             "avg_consumption_l_per_100km": avg_consumption_rate,
             "confidence": confidence,
@@ -566,7 +565,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             next_week_forecast["forecast_cost"] = round(liters_needed * avg_price_7d, 2)
         
         # Next 14 days - use weighted average based on actual weekdays
-        next_14_days_km = calculate_period_km(14)
+        next_14_days_km = calculate_period_km(14, now.weekday())
         next_14_days_forecast = {
             "avg_consumption_l_per_100km": avg_consumption_rate,
             "confidence": confidence,
@@ -577,7 +576,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             next_14_days_forecast["forecast_cost"] = round(liters_needed * avg_price_14d, 2)
         
         # Next month (30 days) - use weighted average based on actual weekdays
-        next_month_km = calculate_period_km(30)
+        next_month_km = calculate_period_km(30, now.weekday())
         next_month_forecast = {
             "avg_consumption_l_per_100km": avg_consumption_rate,
             "confidence": confidence,
@@ -1476,8 +1475,6 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
                     {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                     {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                 ]
-                if last_month.get("top_stations"):
-                    attributes["last_month_top_stations"] = last_month["top_stations"]
         
         return attributes
 
