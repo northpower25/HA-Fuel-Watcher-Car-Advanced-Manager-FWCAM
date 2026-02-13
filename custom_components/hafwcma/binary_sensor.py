@@ -52,6 +52,7 @@ async def async_setup_entry(
     # Create binary sensors
     entities = [
         ProximityAlertSensor(coordinator, config_entry, vehicle_name),
+        OnTripSensor(coordinator, config_entry, vehicle_name),
     ]
     
     async_add_entities(entities, update_before_add=True)
@@ -135,6 +136,79 @@ class ProximityAlertSensor(CoordinatorEntity, BinarySensorEntity):
         
         # Filter out None values
         return {k: v for k, v in attributes.items() if v is not None}
+    
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class OnTripSensor(CoordinatorEntity, BinarySensorEntity):
+    """Binary sensor indicating if vehicle is currently on a trip."""
+    
+    _attr_device_class = None
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:car-connected"
+    
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the on-trip sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._attr_name = "On Trip"
+        self._attr_unique_id = f"{config_entry.entry_id}_on_trip"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+    
+    @property
+    def is_on(self) -> bool:
+        """Return true if vehicle is on a trip."""
+        if not self.coordinator.data:
+            return False
+        
+        trip_state = self.coordinator.data.get("trip_tracking_state", {})
+        return trip_state.get("on_trip", False)
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return trip state attributes."""
+        if not self.coordinator.data:
+            return {
+                "trip_tracking_enabled": False,
+            }
+        
+        trip_state = self.coordinator.data.get("trip_tracking_state", {})
+        trip_config = self.coordinator.data.get("trip_tracking_config", {})
+        current_trip = trip_state.get("current_trip", {})
+        
+        if not trip_state.get("on_trip", False):
+            return {
+                "trip_tracking_enabled": trip_config.get("enabled", False),
+            }
+        
+        return {
+            "trip_tracking_enabled": trip_config.get("enabled", False),
+            "timestamp_start": current_trip.get("timestamp_start"),
+            "distance_km": round(current_trip.get("distance_km", 0), 2),
+            "duration": current_trip.get("duration"),
+            "duration_minutes": round(current_trip.get("duration_minutes", 0), 1),
+        }
     
     @property
     def available(self) -> bool:

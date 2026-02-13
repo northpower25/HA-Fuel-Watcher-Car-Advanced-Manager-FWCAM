@@ -141,6 +141,8 @@ async def async_setup_entry(
         ConsumptionForecastSensor(coordinator, config_entry, vehicle_name),
         RefuelingLogSensor(coordinator, config_entry, vehicle_name),
         NearbyCheapStationsSensor(coordinator, config_entry, vehicle_name),
+        TripLogSensor(coordinator, config_entry, vehicle_name),
+        CurrentTripSensor(coordinator, config_entry, vehicle_name),
     ]
 
     async_add_entities(sensors)
@@ -183,6 +185,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY
         )
         self.vehicle_tracker = VehicleDataTracker(tank_capacity=tank_capacity)
+        self.trip_tracker = None  # Will be initialized when trip tracking is enabled
         
         self._provider = None
         self._session = None
@@ -1110,6 +1113,102 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 _LOGGER.info(log_msg)
         except Exception as err:
             _LOGGER.warning("Error handling refueling detection: %s", err)
+        
+        # Handle trip tracking
+        try:
+            # Load trip tracking configuration
+            data = await storage.load_data(self.hass, self.config_entry)
+            trip_config = data.get("trip_tracking_config", {})
+            
+            if trip_config.get("enabled", False):
+                # Initialize trip tracker if not already done
+                if self.trip_tracker is None:
+                    from .utils.vehicle_tracker import TripTracker
+                    min_distance = trip_config.get("min_trip_distance_km", 0.5)
+                    merge_window = trip_config.get("merge_time_window_seconds", 300)
+                    self.trip_tracker = TripTracker(
+                        min_trip_distance_km=min_distance,
+                        merge_time_window_seconds=merge_window,
+                    )
+                    _LOGGER.info("Trip tracker initialized")
+                
+                # Create snapshot for trip tracking
+                from .utils.vehicle_tracker import VehicleSnapshot
+                from homeassistant.util import dt as dt_util
+                snapshot = VehicleSnapshot(
+                    timestamp=dt_util.now(),
+                    odometer_km=vehicle_data.get("odometer_km"),
+                    tank_level=vehicle_data.get("tank_level"),
+                    range_km=vehicle_data.get("range_km"),
+                    latitude=vehicle_data.get("latitude"),
+                    longitude=vehicle_data.get("longitude"),
+                )
+                
+                # Update trip tracker
+                trip_result = self.trip_tracker.update(snapshot)
+                
+                # Handle trip end - save to storage
+                if trip_result.get("trip_ended") and trip_result.get("trip_data"):
+                    trip_data = trip_result["trip_data"]
+                    
+                    # Calculate costs
+                    fuel_consumed = trip_data.get("fuel_consumed")
+                    distance_km = trip_data.get("distance_km", 0)
+                    
+                    # Calculate fuel cost
+                    fuel_cost = 0.0
+                    if fuel_consumed and fuel_consumed > 0 and fuel_price:
+                        fuel_cost = fuel_consumed * fuel_price
+                    
+                    # Calculate tax mileage amount
+                    tax_rate_default = trip_config.get("tax_mileage_rate_default", 0.30)
+                    tax_rate_above_20 = trip_config.get("tax_mileage_rate_above_20km", 0.38)
+                    
+                    if distance_km <= 20:
+                        tax_mileage_amount = distance_km * tax_rate_default
+                        tax_rate_used = tax_rate_default
+                    else:
+                        # First 20 km at default rate, rest at higher rate
+                        tax_mileage_amount = (20 * tax_rate_default) + ((distance_km - 20) * tax_rate_above_20)
+                        tax_rate_used = tax_rate_default  # Store base rate
+                    
+                    # Update trip data with costs
+                    trip_data.update({
+                        "fuel_price_avg": fuel_price,
+                        "fuel_cost": fuel_cost,
+                        "additional_costs": 0.0,
+                        "total_cost": fuel_cost,
+                        "tax_mileage_rate": tax_rate_used,
+                        "tax_mileage_amount": tax_mileage_amount,
+                        "cost_difference": fuel_cost - tax_mileage_amount,
+                        "category": "private",  # Default category
+                        "is_manual": False,
+                    })
+                    
+                    # Save trip to storage
+                    trip_id = await storage.add_trip(self.hass, self.config_entry, trip_data)
+                    _LOGGER.info(
+                        "Trip #%d saved: %.2f km, duration: %s, fuel: %.2fL, cost: €%.2f",
+                        trip_id,
+                        distance_km,
+                        trip_data.get("duration", "unknown"),
+                        fuel_consumed or 0,
+                        fuel_cost,
+                    )
+                    
+                # Store trip tracking state in coordinator data
+                data["trip_tracking_state"] = {
+                    "on_trip": trip_result.get("on_trip", False),
+                    "current_trip": self.trip_tracker.get_current_trip_data() if self.trip_tracker else None,
+                }
+                await storage.save_data(self.hass, self.config_entry, data)
+            else:
+                # Trip tracking disabled - reset tracker
+                if self.trip_tracker is not None:
+                    self.trip_tracker = None
+                    _LOGGER.debug("Trip tracker disabled")
+        except Exception as err:
+            _LOGGER.warning("Error handling trip tracking: %s", err)
         
         # Build data structure
         # Calculate tank percentage and liters from vehicle data
@@ -2309,6 +2408,149 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
             attributes["location_source"] = location_source
         
         return attributes
+    
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class TripLogSensor(CoordinatorEntity, SensorEntity):
+    """Sensor displaying trip log with history and statistics."""
+    
+    _attr_icon = "mdi:book-open-variant"
+    _attr_has_entity_name = True
+    _attr_state_class = None
+    
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Trip Log"
+        self._attr_unique_id = f"{config_entry.entry_id}_trip_log"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+    
+    @property
+    def native_value(self) -> int:
+        """Return the total number of trips."""
+        if not self.coordinator.data:
+            return 0
+        
+        stats = self.coordinator.data.get("trip_statistics", {})
+        return stats.get("total_trips", 0)
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return trip statistics and recent trips."""
+        if not self.coordinator.data:
+            return {}
+        
+        stats = self.coordinator.data.get("trip_statistics", {})
+        trips = self.coordinator.data.get("trips", [])
+        
+        # Get last 10 trips
+        recent_trips = sorted(trips, key=lambda x: x.get("timestamp_end", ""), reverse=True)[:10]
+        
+        return {
+            "total_trips": stats.get("total_trips", 0),
+            "total_distance_km": round(stats.get("total_distance_km", 0.0), 2),
+            "total_fuel_consumed": round(stats.get("total_fuel_consumed", 0.0), 2),
+            "total_fuel_cost": round(stats.get("total_fuel_cost", 0.0), 2),
+            "total_additional_costs": round(stats.get("total_additional_costs", 0.0), 2),
+            "business_trips": stats.get("business_trips", 0),
+            "private_trips": stats.get("private_trips", 0),
+            "commute_trips": stats.get("commute_trips", 0),
+            "recent_trips": recent_trips,
+            "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
+        }
+    
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class CurrentTripSensor(CoordinatorEntity, SensorEntity):
+    """Sensor displaying current trip in progress."""
+    
+    _attr_icon = "mdi:map-marker-path"
+    _attr_has_entity_name = True
+    _attr_state_class = None
+    
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Current Trip"
+        self._attr_unique_id = f"{config_entry.entry_id}_current_trip"
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+    
+    @property
+    def native_value(self) -> str:
+        """Return the state of the current trip."""
+        if not self.coordinator.data:
+            return "No trip"
+        
+        trip_state = self.coordinator.data.get("trip_tracking_state", {})
+        
+        if trip_state.get("on_trip", False):
+            current_trip = trip_state.get("current_trip")
+            if current_trip:
+                distance = current_trip.get("distance_km", 0)
+                return f"{distance:.1f} km"
+        
+        return "No trip"
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return current trip details."""
+        if not self.coordinator.data:
+            return {"on_trip": False}
+        
+        trip_state = self.coordinator.data.get("trip_tracking_state", {})
+        on_trip = trip_state.get("on_trip", False)
+        
+        if not on_trip:
+            return {
+                "on_trip": False,
+                "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
+            }
+        
+        current_trip = trip_state.get("current_trip", {})
+        
+        return {
+            "on_trip": True,
+            "timestamp_start": current_trip.get("timestamp_start"),
+            "distance_km": round(current_trip.get("distance_km", 0), 2),
+            "odometer_start": current_trip.get("odometer_start"),
+            "start_latitude": current_trip.get("start_latitude"),
+            "start_longitude": current_trip.get("start_longitude"),
+            "duration": current_trip.get("duration"),
+            "duration_minutes": round(current_trip.get("duration_minutes", 0), 1),
+            "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
+        }
     
     @property
     def available(self) -> bool:
