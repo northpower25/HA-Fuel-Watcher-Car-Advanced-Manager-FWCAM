@@ -1548,49 +1548,152 @@ class FWCAMCard extends HTMLElement {
           </div>
           <div class="dialog-body">
             <form id="trip-form">
-              <div class="form-group">
-                <label for="trip-start-time">Start Time:</label>
-                <input type="datetime-local" id="trip-start-time" name="timestamp_start" required>
+              <input type="hidden" id="trip-id" name="trip_id" value="">
+              
+              <div class="form-section">
+                <h4>Trip Timing</h4>
+                <div class="form-row">
+                  <label for="trip-start-time">
+                    Start Time *
+                    <input type="datetime-local" id="trip-start-time" name="timestamp_start" required>
+                  </label>
+                  <label for="trip-end-time">
+                    End Time *
+                    <input type="datetime-local" id="trip-end-time" name="timestamp_end" required>
+                  </label>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label for="trip-end-time">End Time:</label>
-                <input type="datetime-local" id="trip-end-time" name="timestamp_end" required>
+              <div class="form-section">
+                <h4>Distance & Odometer</h4>
+                <div class="form-row">
+                  <label for="trip-odometer-start">
+                    Odometer Start (km)
+                    <input type="number" id="trip-odometer-start" name="odometer_start" 
+                           step="0.1" min="0" max="1000000" placeholder="Optional">
+                  </label>
+                  <label for="trip-odometer-end">
+                    Odometer End (km)
+                    <input type="number" id="trip-odometer-end" name="odometer_end" 
+                           step="0.1" min="0" max="1000000" placeholder="Optional">
+                  </label>
+                </div>
+                <div class="form-row full-width">
+                  <label for="trip-distance">
+                    Distance (km) * <small id="distance-calc-info"></small>
+                    <input type="number" id="trip-distance" name="distance_km" 
+                           step="0.1" min="0" required>
+                  </label>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label for="trip-distance">Distance (km):</label>
-                <input type="number" id="trip-distance" name="distance_km" step="0.1" min="0" required>
+              <div class="form-section">
+                <h4>Start Location</h4>
+                <div class="form-row">
+                  <label for="trip-start-name">
+                    Location Name
+                    <input type="text" id="trip-start-name" name="start_name" 
+                           placeholder="e.g., Home, Office" list="start-location-suggestions">
+                  </label>
+                  <label for="trip-start-address">
+                    Address
+                    <input type="text" id="trip-start-address" name="start_address" 
+                           placeholder="Optional">
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label for="trip-start-latitude">
+                    Latitude
+                    <input type="number" id="trip-start-latitude" name="start_latitude" 
+                           step="0.000001" min="-90" max="90" placeholder="Optional">
+                  </label>
+                  <label for="trip-start-longitude">
+                    Longitude
+                    <input type="number" id="trip-start-longitude" name="start_longitude" 
+                           step="0.000001" min="-180" max="180" placeholder="Optional">
+                  </label>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label for="trip-category">Category:</label>
-                <select id="trip-category" name="category">
-                  <option value="private">Private</option>
-                  <option value="business">Business</option>
-                  <option value="commute">Commute</option>
-                </select>
+              <div class="form-section">
+                <h4>End Location</h4>
+                <div class="form-row">
+                  <label for="trip-end-name">
+                    Location Name
+                    <input type="text" id="trip-end-name" name="end_name" 
+                           placeholder="e.g., Client Office" list="end-location-suggestions">
+                  </label>
+                  <label for="trip-end-address">
+                    Address
+                    <input type="text" id="trip-end-address" name="end_address" 
+                           placeholder="Optional">
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label for="trip-end-latitude">
+                    Latitude
+                    <input type="number" id="trip-end-latitude" name="end_latitude" 
+                           step="0.000001" min="-90" max="90" placeholder="Optional">
+                  </label>
+                  <label for="trip-end-longitude">
+                    Longitude
+                    <input type="number" id="trip-end-longitude" name="end_longitude" 
+                           step="0.000001" min="-180" max="180" placeholder="Optional">
+                  </label>
+                </div>
+                <div id="trip-map-links" style="display: none; margin-top: 8px;">
+                  <a id="start-map-link" href="#" target="_blank" style="margin-right: 12px;">
+                    <ha-icon icon="mdi:map-marker"></ha-icon> View Start on Map
+                  </a>
+                  <a id="end-map-link" href="#" target="_blank">
+                    <ha-icon icon="mdi:map-marker"></ha-icon> View End on Map
+                  </a>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label for="trip-purpose">Purpose:</label>
-                <input type="text" id="trip-purpose" name="purpose" placeholder="Optional">
+              <div class="form-section">
+                <h4>Trip Details</h4>
+                <div class="form-row">
+                  <label for="trip-category">
+                    Category *
+                    <select id="trip-category" name="category">
+                      <option value="private">Private</option>
+                      <option value="business">Business</option>
+                      <option value="commute">Commute</option>
+                    </select>
+                  </label>
+                  <label for="trip-purpose">
+                    Purpose
+                    <input type="text" id="trip-purpose" name="purpose" 
+                           placeholder="Optional" list="purpose-suggestions">
+                  </label>
+                </div>
+                
+                <div class="form-row">
+                  <label for="trip-fuel-consumed">
+                    Fuel Consumed (L)
+                    <input type="number" id="trip-fuel-consumed" name="fuel_consumed" 
+                           step="0.01" min="0" placeholder="Optional">
+                  </label>
+                  <label for="trip-additional-costs">
+                    Additional Costs (€)
+                    <input type="number" id="trip-additional-costs" name="additional_costs" 
+                           step="0.01" min="0" placeholder="Tolls, parking, etc." value="0">
+                  </label>
+                </div>
+                
+                <div class="form-row full-width">
+                  <label for="trip-notes">
+                    Notes
+                    <textarea id="trip-notes" name="notes" rows="3" 
+                              placeholder="Optional notes about this trip"></textarea>
+                  </label>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label for="trip-fuel-consumed">Fuel Consumed (L):</label>
-                <input type="number" id="trip-fuel-consumed" name="fuel_consumed" step="0.01" min="0" placeholder="Optional">
-              </div>
-              
-              <div class="form-group">
-                <label for="trip-additional-costs">Additional Costs (€):</label>
-                <input type="number" id="trip-additional-costs" name="additional_costs" step="0.01" min="0" placeholder="Optional" value="0">
-              </div>
-              
-              <div class="form-group">
-                <label for="trip-notes">Notes:</label>
-                <textarea id="trip-notes" name="notes" rows="3" placeholder="Optional"></textarea>
-              </div>
+              <datalist id="purpose-suggestions"></datalist>
+              <datalist id="start-location-suggestions"></datalist>
+              <datalist id="end-location-suggestions"></datalist>
             </form>
           </div>
           <div class="dialog-footer">
@@ -1970,6 +2073,15 @@ class FWCAMCard extends HTMLElement {
     // Set default category
     this.shadowRoot.getElementById('trip-category').value = 'private';
     
+    // Populate autocomplete suggestions
+    this.populateTripAutocomplete();
+    
+    // Set up odometer change listeners
+    this.setupOdometerCalculation();
+    
+    // Set up coordinate map link handlers
+    this.setupMapLinks();
+    
     // Show dialog
     dialog.style.display = 'flex';
   }
@@ -2031,12 +2143,41 @@ class FWCAMCard extends HTMLElement {
       }
     }
     
+    // Basic trip fields
     this.shadowRoot.getElementById('trip-distance').value = trip.distance_km || '';
     this.shadowRoot.getElementById('trip-category').value = trip.category || 'private';
     this.shadowRoot.getElementById('trip-purpose').value = trip.purpose || '';
     this.shadowRoot.getElementById('trip-fuel-consumed').value = trip.fuel_consumed || '';
     this.shadowRoot.getElementById('trip-additional-costs').value = trip.additional_costs || 0;
     this.shadowRoot.getElementById('trip-notes').value = trip.notes || '';
+    
+    // Odometer fields
+    this.shadowRoot.getElementById('trip-odometer-start').value = trip.odometer_start || '';
+    this.shadowRoot.getElementById('trip-odometer-end').value = trip.odometer_end || '';
+    
+    // Start location fields
+    this.shadowRoot.getElementById('trip-start-name').value = trip.start_name || '';
+    this.shadowRoot.getElementById('trip-start-address').value = trip.start_address || '';
+    this.shadowRoot.getElementById('trip-start-latitude').value = trip.start_latitude || '';
+    this.shadowRoot.getElementById('trip-start-longitude').value = trip.start_longitude || '';
+    
+    // End location fields
+    this.shadowRoot.getElementById('trip-end-name').value = trip.end_name || '';
+    this.shadowRoot.getElementById('trip-end-address').value = trip.end_address || '';
+    this.shadowRoot.getElementById('trip-end-latitude').value = trip.end_latitude || '';
+    this.shadowRoot.getElementById('trip-end-longitude').value = trip.end_longitude || '';
+    
+    // Populate autocomplete suggestions
+    this.populateTripAutocomplete();
+    
+    // Set up odometer change listeners
+    this.setupOdometerCalculation();
+    
+    // Set up coordinate map link handlers
+    this.setupMapLinks();
+    
+    // Update map links if coordinates exist
+    this.updateMapLinks();
     
     // Show dialog
     dialog.style.display = 'flex';
@@ -2083,6 +2224,42 @@ class FWCAMCard extends HTMLElement {
     }
     if (formData.get('notes')) {
       serviceData.notes = formData.get('notes');
+    }
+    
+    // Add odometer fields
+    if (formData.get('odometer_start')) {
+      serviceData.odometer_start = parseFloat(formData.get('odometer_start'));
+    }
+    if (formData.get('odometer_end')) {
+      serviceData.odometer_end = parseFloat(formData.get('odometer_end'));
+    }
+    
+    // Add start location fields
+    if (formData.get('start_latitude')) {
+      serviceData.start_latitude = parseFloat(formData.get('start_latitude'));
+    }
+    if (formData.get('start_longitude')) {
+      serviceData.start_longitude = parseFloat(formData.get('start_longitude'));
+    }
+    if (formData.get('start_name')) {
+      serviceData.start_name = formData.get('start_name');
+    }
+    if (formData.get('start_address')) {
+      serviceData.start_address = formData.get('start_address');
+    }
+    
+    // Add end location fields
+    if (formData.get('end_latitude')) {
+      serviceData.end_latitude = parseFloat(formData.get('end_latitude'));
+    }
+    if (formData.get('end_longitude')) {
+      serviceData.end_longitude = parseFloat(formData.get('end_longitude'));
+    }
+    if (formData.get('end_name')) {
+      serviceData.end_name = formData.get('end_name');
+    }
+    if (formData.get('end_address')) {
+      serviceData.end_address = formData.get('end_address');
     }
     
     try {
@@ -2195,6 +2372,141 @@ class FWCAMCard extends HTMLElement {
     
     // Fallback: show error with troubleshooting tips
     throw new Error('Config entry ID not found. Please ensure:\n1. The integration is properly configured\n2. The sensor entity exists and is available\n3. Home Assistant has been restarted after installation\n4. The entity is: ' + this._config.entity);
+  }
+
+  /**
+   * Setup odometer calculation for trip dialog
+   */
+  setupOdometerCalculation() {
+    const odometerStart = this.shadowRoot.getElementById('trip-odometer-start');
+    const odometerEnd = this.shadowRoot.getElementById('trip-odometer-end');
+    const distanceField = this.shadowRoot.getElementById('trip-distance');
+    const distanceCalcInfo = this.shadowRoot.getElementById('distance-calc-info');
+    
+    if (!odometerStart || !odometerEnd || !distanceField) return;
+    
+    const calculateDistance = () => {
+      const start = parseFloat(odometerStart.value);
+      const end = parseFloat(odometerEnd.value);
+      
+      if (start && end && end > start) {
+        const distance = (end - start).toFixed(1);
+        distanceField.value = distance;
+        distanceField.readOnly = true;
+        if (distanceCalcInfo) {
+          distanceCalcInfo.textContent = '(auto-calculated from odometer)';
+        }
+      } else {
+        distanceField.readOnly = false;
+        if (distanceCalcInfo) {
+          distanceCalcInfo.textContent = '';
+        }
+      }
+    };
+    
+    odometerStart.removeEventListener('input', calculateDistance);
+    odometerEnd.removeEventListener('input', calculateDistance);
+    odometerStart.addEventListener('input', calculateDistance);
+    odometerEnd.addEventListener('input', calculateDistance);
+    
+    // Run once on setup
+    calculateDistance();
+  }
+
+  /**
+   * Setup map links for trip coordinates
+   */
+  setupMapLinks() {
+    const startLat = this.shadowRoot.getElementById('trip-start-latitude');
+    const startLon = this.shadowRoot.getElementById('trip-start-longitude');
+    const endLat = this.shadowRoot.getElementById('trip-end-latitude');
+    const endLon = this.shadowRoot.getElementById('trip-end-longitude');
+    
+    if (!startLat || !startLon || !endLat || !endLon) return;
+    
+    const updateLinks = () => {
+      this.updateMapLinks();
+    };
+    
+    [startLat, startLon, endLat, endLon].forEach(field => {
+      field.removeEventListener('input', updateLinks);
+      field.addEventListener('input', updateLinks);
+    });
+  }
+
+  /**
+   * Update map links based on coordinates
+   */
+  updateMapLinks() {
+    const startLat = parseFloat(this.shadowRoot.getElementById('trip-start-latitude').value);
+    const startLon = parseFloat(this.shadowRoot.getElementById('trip-start-longitude').value);
+    const endLat = parseFloat(this.shadowRoot.getElementById('trip-end-latitude').value);
+    const endLon = parseFloat(this.shadowRoot.getElementById('trip-end-longitude').value);
+    
+    const mapLinks = this.shadowRoot.getElementById('trip-map-links');
+    const startMapLink = this.shadowRoot.getElementById('start-map-link');
+    const endMapLink = this.shadowRoot.getElementById('end-map-link');
+    
+    if (!mapLinks || !startMapLink || !endMapLink) return;
+    
+    const hasStart = !isNaN(startLat) && !isNaN(startLon);
+    const hasEnd = !isNaN(endLat) && !isNaN(endLon);
+    
+    if (hasStart || hasEnd) {
+      mapLinks.style.display = 'block';
+      
+      if (hasStart) {
+        startMapLink.href = `https://www.google.com/maps?q=${startLat},${startLon}`;
+        startMapLink.style.display = 'inline-flex';
+      } else {
+        startMapLink.style.display = 'none';
+      }
+      
+      if (hasEnd) {
+        endMapLink.href = `https://www.google.com/maps?q=${endLat},${endLon}`;
+        endMapLink.style.display = 'inline-flex';
+      } else {
+        endMapLink.style.display = 'none';
+      }
+    } else {
+      mapLinks.style.display = 'none';
+    }
+  }
+
+  /**
+   * Populate trip autocomplete suggestions
+   */
+  populateTripAutocomplete() {
+    if (!this._allTrips || this._allTrips.length === 0) return;
+    
+    // Get unique purposes
+    const purposes = new Set();
+    const startNames = new Set();
+    const endNames = new Set();
+    
+    this._allTrips.forEach(trip => {
+      if (trip.purpose) purposes.add(trip.purpose);
+      if (trip.start_name) startNames.add(trip.start_name);
+      if (trip.end_name) endNames.add(trip.end_name);
+    });
+    
+    // Populate purpose datalist
+    const purposeList = this.shadowRoot.getElementById('purpose-suggestions');
+    if (purposeList) {
+      purposeList.innerHTML = Array.from(purposes).map(p => `<option value="${p}"></option>`).join('');
+    }
+    
+    // Populate start location datalist
+    const startList = this.shadowRoot.getElementById('start-location-suggestions');
+    if (startList) {
+      startList.innerHTML = Array.from(startNames).map(n => `<option value="${n}"></option>`).join('');
+    }
+    
+    // Populate end location datalist
+    const endList = this.shadowRoot.getElementById('end-location-suggestions');
+    if (endList) {
+      endList.innerHTML = Array.from(endNames).map(n => `<option value="${n}"></option>`).join('');
+    }
   }
 
   /**
@@ -2738,19 +3050,72 @@ class FWCAMCard extends HTMLElement {
         }
 
         .form-row input,
-        .form-row select {
+        .form-row select,
+        .form-row textarea {
           padding: 10px;
           border: 1px solid var(--divider-color);
           border-radius: 4px;
           background: var(--card-background-color);
           color: var(--primary-text-color);
           font-size: 14px;
+          font-family: inherit;
+        }
+
+        .form-row textarea {
+          resize: vertical;
+          min-height: 80px;
         }
 
         .form-row input:focus,
-        .form-row select:focus {
+        .form-row select:focus,
+        .form-row textarea:focus {
           outline: none;
           border-color: var(--primary-color);
+        }
+        
+        .form-row input:read-only {
+          background: var(--disabled-color, #eee);
+          color: var(--disabled-text-color);
+        }
+        
+        .form-row label small {
+          font-size: 12px;
+          font-weight: normal;
+          color: var(--secondary-text-color);
+        }
+        
+        .form-section {
+          margin-bottom: 24px;
+          padding-bottom: 16px;
+          border-bottom: 1px solid var(--divider-color);
+        }
+        
+        .form-section:last-of-type {
+          border-bottom: none;
+        }
+        
+        .form-section h4 {
+          margin: 0 0 12px 0;
+          font-size: 15px;
+          font-weight: 600;
+          color: var(--primary-text-color);
+        }
+        
+        #trip-map-links a {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          color: var(--primary-color);
+          text-decoration: none;
+          font-size: 13px;
+        }
+        
+        #trip-map-links a:hover {
+          text-decoration: underline;
+        }
+        
+        #trip-map-links ha-icon {
+          --mdc-icon-size: 16px;
         }
 
         .dialog-footer {
