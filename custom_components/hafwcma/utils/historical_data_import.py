@@ -53,7 +53,7 @@ PRICE_LOOKUP_WINDOW_DAYS = 7  # Maximum age of price data to use for historical 
 SECONDS_PER_HOUR = 3600  # Number of seconds in an hour
 DUPLICATE_DETECTION_WINDOW_HOURS = 24  # Window for detecting duplicate refuelings
 PERCENTAGE_MULTIPLIER = 100  # Multiplier for converting decimals to percentages
-INVALID_SENSOR_STATES = ["unknown", "unavailable", "none", None, ""]  # States to ignore when processing sensor data
+INVALID_SENSOR_STATES = ["unknown", "unavailable", "none", "null", None, ""]  # States to ignore when processing sensor data
 SHORT_TERM_HISTORY_DAYS = 10  # Home Assistant default history retention (short-term)
 LONG_TERM_STATISTICS_OVERLAP_DAYS = 1  # Overlap between short-term and long-term queries to ensure no gaps
 
@@ -1144,7 +1144,7 @@ async def import_historical_trip_data(
     
     try:
         # Load storage data first to check trip tracking config
-        data = await load_data(hass, entry.entry_id)
+        data = await load_data(hass, entry)
         
         # Check if trip tracking is enabled from storage
         trip_config = data.get("trip_tracking_config", {})
@@ -1214,7 +1214,7 @@ async def import_historical_trip_data(
             "date_range": result["date_range"],
         }
         
-        await save_data(hass, entry.entry_id, data)
+        await save_data(hass, entry, data)
         
         result["imported"] = True
         result["reason"] = "Historical trip import completed successfully"
@@ -1233,7 +1233,7 @@ async def import_historical_trip_data(
         # Store error metadata - load data if not already loaded
         try:
             if data is None:
-                data = await load_data(hass, entry.entry_id)
+                data = await load_data(hass, entry)
             
             data["last_historical_import"] = {
                 "imported": False,
@@ -1242,7 +1242,7 @@ async def import_historical_trip_data(
                 "error": str(err),
                 "errors": result["errors"],
             }
-            await save_data(hass, entry.entry_id, data)
+            await save_data(hass, entry, data)
         except Exception as save_err:
             _LOGGER.error("Error saving historical import error metadata: %s", save_err)
     
@@ -1311,7 +1311,7 @@ async def _import_trip_history(
             )
         
         # Load storage data
-        data = await load_data(hass, entry.entry_id)
+        data = await load_data(hass, entry)
         existing_trips = data.get("trips", [])
         
         # Get existing trip timestamps to avoid duplicates
@@ -1570,6 +1570,33 @@ def _find_closest_tank_level(
     return None
 
 
+def _is_valid_coordinate(value: Any) -> bool:
+    """Check if a coordinate value is valid (not invalid state string).
+    
+    Args:
+        value: The coordinate value to check
+        
+    Returns:
+        True if value is a valid number, False otherwise
+    """
+    if value is None:
+        return False
+    
+    # Check if value is an invalid state string
+    if isinstance(value, str):
+        if value.lower() in ["unknown", "unavailable", "none", "null", ""]:
+            return False
+    
+    # Try to convert to float
+    try:
+        float_val = float(value)
+        # Check if it's a reasonable coordinate value
+        # Use -180 to 180 range to cover both latitude (-90 to 90) and longitude (-180 to 180)
+        return -180 <= float_val <= 180
+    except (ValueError, TypeError):
+        return False
+
+
 def _find_closest_location(
     location_states: list[Any],
     target_time: datetime,
@@ -1606,7 +1633,10 @@ def _find_closest_location(
     if closest_state and hasattr(closest_state, "attributes"):
         lat = closest_state.attributes.get("latitude")
         lon = closest_state.attributes.get("longitude")
-        return lat, lon
+        
+        # Validate that lat/lon are not invalid values
+        if _is_valid_coordinate(lat) and _is_valid_coordinate(lon):
+            return lat, lon
     
     return None, None
 
