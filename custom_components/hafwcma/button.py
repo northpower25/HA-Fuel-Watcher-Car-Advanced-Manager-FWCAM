@@ -55,6 +55,7 @@ async def async_setup_entry(
         TestProviderConnectionButton(coordinator, config_entry, vehicle_name, hass),
         ImportHistoricalDataButton(coordinator, config_entry, vehicle_name, hass),
         ImportHistoricalTripDataButton(coordinator, config_entry, vehicle_name, hass),
+        RecalculateTripStatisticsButton(coordinator, config_entry, vehicle_name, hass),
         RefreshVehicleDataButton(coordinator, config_entry, vehicle_name, hass),
         FuelPriceRefreshButton(coordinator, config_entry, vehicle_name),
         ConsumptionPredictionButton(coordinator, config_entry, vehicle_name),
@@ -438,6 +439,86 @@ class ImportHistoricalTripDataButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with import results."""
+        return self._last_result
+
+
+class RecalculateTripStatisticsButton(ButtonEntity):
+    """Button to recalculate trip statistics from existing trips."""
+
+    _attr_icon = "mdi:calculator"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the button.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+            hass: Home Assistant instance
+        """
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = "Recalculate Trip Statistics"
+        self._attr_unique_id = f"{config_entry.entry_id}_recalculate_trip_statistics"
+        self._last_result: dict[str, Any] = {}
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    async def async_press(self) -> None:
+        """Handle button press - recalculate trip statistics."""
+        _LOGGER.info("Manual trip statistics recalculation triggered")
+        
+        try:
+            from .utils.storage import recalculate_trip_statistics
+            
+            # Recalculate statistics
+            stats = await recalculate_trip_statistics(self._hass, self._config_entry)
+            
+            self._last_result = {
+                "success": True,
+                "total_trips": stats.get("total_trips", 0),
+                "total_distance_km": round(stats.get("total_distance_km", 0.0), 2),
+                "total_fuel_consumed": round(stats.get("total_fuel_consumed", 0.0), 2),
+                "business_trips": stats.get("business_trips", 0),
+                "private_trips": stats.get("private_trips", 0),
+                "commute_trips": stats.get("commute_trips", 0),
+            }
+            
+            _LOGGER.info(
+                "Trip statistics recalculated: %d trips, %.1f km",
+                stats["total_trips"],
+                stats["total_distance_km"],
+            )
+                
+        except Exception as err:
+            self._last_result = {
+                "success": False,
+                "error": str(err),
+                "error_type": type(err).__name__,
+            }
+            _LOGGER.error("Error recalculating trip statistics: %s", err, exc_info=True)
+        
+        # Trigger coordinator update to refresh sensors
+        if self._coordinator:
+            await self._coordinator.async_request_refresh()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with recalculation results."""
         return self._last_result
 
 

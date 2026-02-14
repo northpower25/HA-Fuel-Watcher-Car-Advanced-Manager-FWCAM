@@ -1339,3 +1339,65 @@ async def get_trip_tracking_config(
     """
     data = await load_data(hass, entry)
     return data.get("trip_tracking_config", {})
+
+
+async def recalculate_trip_statistics(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    """Recalculate trip statistics from existing trips.
+    
+    This function recalculates all statistics from scratch based on the trips
+    stored in the database. Useful for fixing inconsistencies or initializing
+    statistics after trips have been imported.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Updated trip statistics dictionary
+    """
+    _LOGGER.info("Recalculating trip statistics from existing trips")
+    
+    data = await load_data(hass, entry)
+    trips = data.get("trips", [])
+    
+    # Initialize statistics
+    stats = {
+        "total_trips": 0,
+        "total_distance_km": 0.0,
+        "total_fuel_consumed": 0.0,
+        "total_fuel_cost": 0.0,
+        "total_additional_costs": 0.0,
+        "business_trips": 0,
+        "private_trips": 0,
+        "commute_trips": 0,
+    }
+    
+    # Calculate from all trips
+    for trip in trips:
+        stats["total_trips"] += 1
+        stats["total_distance_km"] += trip.get("distance_km", 0.0)
+        stats["total_fuel_consumed"] += trip.get("fuel_consumed", 0.0)
+        stats["total_fuel_cost"] += trip.get("fuel_cost", 0.0)
+        stats["total_additional_costs"] += trip.get("additional_costs", 0.0)
+        
+        # Update category counters
+        category = trip.get("category", "private")
+        category_key = f"{category}_trips"
+        if category_key in stats:
+            stats[category_key] += 1
+    
+    # Update storage
+    data["trip_statistics"] = stats
+    await save_data(hass, entry, data)
+    
+    _LOGGER.info(
+        "Trip statistics recalculated: %d trips, %.1f km, %.1f L fuel",
+        stats["total_trips"],
+        stats["total_distance_km"],
+        stats["total_fuel_consumed"],
+    )
+    
+    return stats
