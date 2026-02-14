@@ -429,16 +429,24 @@ async def _import_odometer_history(
         # Load data once, append all observations, save once
         if processed_states:
             data = await load_data(hass, entry)
+            
+            # Ensure odometer_history exists
+            if "odometer_history" not in data:
+                data["odometer_history"] = []
+            
+            # Truncate existing history first to make room for new entries
+            if len(data["odometer_history"]) > 900:
+                # Keep only the most recent 900 entries to ensure we stay under 1000
+                # after adding new data (up to 162 new entries in typical import)
+                data["odometer_history"] = data["odometer_history"][-900:]
+            
+            # Append all new observations
             for state_data in processed_states:
                 data["odometer_history"].append({
                     "ts": state_data["timestamp"],
                     "value": state_data["value"]
                 })
                 count += 1
-            
-            # Keep only last 1000 entries
-            if len(data["odometer_history"]) > 1000:
-                data["odometer_history"] = data["odometer_history"][-1000:]
             
             await save_data(hass, entry, data)
         
