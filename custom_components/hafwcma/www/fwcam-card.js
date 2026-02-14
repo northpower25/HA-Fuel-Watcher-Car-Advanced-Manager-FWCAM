@@ -35,11 +35,20 @@ class FWCAMCard extends HTMLElement {
     this._hass = null;
     this._entities = {};
     this._lastRender = 0;
-    // State for table sorting and filtering
+    // State for refueling table sorting and filtering
     this._sortColumn = 'timestamp';
     this._sortDirection = 'desc';
     this._filterYear = '';
     this._filterMonth = '';
+    // State for trip table sorting, filtering, and pagination
+    this._tripSortColumn = 'timestamp_end';
+    this._tripSortDirection = 'desc';
+    this._tripCategoryFilter = '';
+    this._tripFilterYear = '';
+    this._tripFilterMonth = '';
+    this._tripFilterDateFrom = '';
+    this._tripFilterDateTo = '';
+    this._tripCurrentPage = 1;
   }
 
   /**
@@ -478,6 +487,8 @@ class FWCAMCard extends HTMLElement {
     // Get trip log data from configured entity or auto-detected entity
     const tripLogEntityId = this._config.trip_log_entity || this._entities.trip_log_sensor;
     const tripLogEntity = tripLogEntityId ? this.getEntityState(tripLogEntityId) : null;
+    // Use all_trips if available, fallback to recent_trips for backward compatibility
+    const allTrips = tripLogEntity?.attributes?.all_trips || tripLogEntity?.attributes?.recent_trips || [];
     const recentTrips = tripLogEntity?.attributes?.recent_trips || [];
     
     // Debug logging for trip data
@@ -487,17 +498,18 @@ class FWCAMCard extends HTMLElement {
       console.log('  - Entity Found:', tripLogEntity ? 'Yes' : 'No');
       if (tripLogEntity) {
         console.log('  - Entity State:', tripLogEntity.state);
+        console.log('  - Has all_trips:', tripLogEntity.attributes?.all_trips ? 'Yes' : 'No');
+        console.log('  - All Trips Count:', allTrips.length);
         console.log('  - Has recent_trips:', tripLogEntity.attributes?.recent_trips ? 'Yes' : 'No');
         console.log('  - Recent Trips Count:', recentTrips.length);
-        console.log('  - Recent Trips Data:', recentTrips);
       } else {
         console.warn('[FWCAM Card] Trip log entity not found! Available entities:', Object.keys(this._hass.states).filter(e => e.includes('trip')));
       }
     }
     
-    // Store events for dialog access
+    // Store events and trips for dialog access
     this._recentEvents = recentEvents;
-    this._recentTrips = recentTrips;
+    this._allTrips = allTrips;
 
     this.shadowRoot.innerHTML = `
       ${this.getStyles()}
@@ -511,7 +523,7 @@ class FWCAMCard extends HTMLElement {
           ${this._config.show_controls ? this.renderControls() : ''}
           ${this._config.show_settings ? this.renderSettings() : ''}
           ${this._config.show_refueling_log ? this.renderRefuelingLog(recentEvents, lastRefueling) : ''}
-          ${this._config.show_trip_log ? this.renderTripLog(recentTrips) : ''}
+          ${this._config.show_trip_log ? this.renderTripLog(allTrips) : ''}
         </div>
       </ha-card>
       ${this.renderDialog()}
@@ -969,6 +981,140 @@ class FWCAMCard extends HTMLElement {
    */
   clearTripFilters() {
     this._tripCategoryFilter = '';
+    this._tripFilterYear = '';
+    this._tripFilterMonth = '';
+    this._tripFilterDateFrom = '';
+    this._tripFilterDateTo = '';
+    this._tripCurrentPage = 1;
+    this.render();
+  }
+  
+  /**
+   * Filter trips by date, category, and date range
+   */
+  filterTrips(trips) {
+    if (!trips || trips.length === 0) return [];
+    
+    return trips.filter(trip => {
+      if (!trip.timestamp_end) return false;
+      
+      const tripDate = new Date(trip.timestamp_end);
+      const tripYear = tripDate.getFullYear().toString();
+      const tripMonth = (tripDate.getMonth() + 1).toString().padStart(2, '0');
+      const tripDateStr = tripDate.toISOString().split('T')[0]; // YYYY-MM-DD
+      
+      // Apply year filter
+      if (this._tripFilterYear && tripYear !== this._tripFilterYear) {
+        return false;
+      }
+      
+      // Apply month filter
+      if (this._tripFilterMonth && tripMonth !== this._tripFilterMonth) {
+        return false;
+      }
+      
+      // Apply category filter
+      if (this._tripCategoryFilter && trip.category !== this._tripCategoryFilter) {
+        return false;
+      }
+      
+      // Apply date from filter
+      if (this._tripFilterDateFrom && tripDateStr < this._tripFilterDateFrom) {
+        return false;
+      }
+      
+      // Apply date to filter
+      if (this._tripFilterDateTo && tripDateStr > this._tripFilterDateTo) {
+        return false;
+      }
+      
+      return true;
+    });
+  }
+  
+  /**
+   * Sort trips by column and direction
+   */
+  sortTrips(trips) {
+    if (!trips || trips.length === 0) return [];
+    
+    const sortColumn = this._tripSortColumn || 'timestamp_end';
+    const sortDirection = this._tripSortDirection || 'desc';
+    
+    const sorted = [...trips].sort((a, b) => {
+      let aVal = a[sortColumn];
+      let bVal = b[sortColumn];
+      
+      // Handle null/undefined values
+      if (aVal === null || aVal === undefined) aVal = '';
+      if (bVal === null || bVal === undefined) bVal = '';
+      
+      // Convert to comparable types
+      if (sortColumn === 'timestamp_end' || sortColumn === 'timestamp_start') {
+        aVal = new Date(aVal).getTime();
+        bVal = new Date(bVal).getTime();
+      } else if (['distance_km', 'fuel_consumed', 'fuel_cost', 'additional_costs'].includes(sortColumn)) {
+        aVal = parseFloat(aVal) || 0;
+        bVal = parseFloat(bVal) || 0;
+      } else {
+        // String comparison for category, purpose
+        aVal = String(aVal).toLowerCase();
+        bVal = String(bVal).toLowerCase();
+      }
+      
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    return sorted;
+  }
+  
+  /**
+   * Get unique years from trips for filter dropdown
+   */
+  getUniqueTripYears(trips) {
+    if (!trips || trips.length === 0) return [];
+    
+    const years = new Set();
+    trips.forEach(trip => {
+      if (trip.timestamp_end) {
+        const year = new Date(trip.timestamp_end).getFullYear();
+        years.add(year.toString());
+      }
+    });
+    
+    return Array.from(years).sort((a, b) => b - a); // Sort descending (newest first)
+  }
+  
+  /**
+   * Handle trip filter change (all types)
+   */
+  handleTripFilterChange(filterType, value) {
+    if (filterType === 'trip-year') {
+      this._tripFilterYear = value;
+    } else if (filterType === 'trip-month') {
+      this._tripFilterMonth = value;
+    } else if (filterType === 'trip-category') {
+      this._tripCategoryFilter = value;
+    } else if (filterType === 'trip-date-from') {
+      this._tripFilterDateFrom = value;
+    } else if (filterType === 'trip-date-to') {
+      this._tripFilterDateTo = value;
+    }
+    this._tripCurrentPage = 1; // Reset to first page when filter changes
+    this.render();
+  }
+  
+  /**
+   * Handle trip pagination
+   */
+  handleTripPagination(direction) {
+    if (direction === 'next') {
+      this._tripCurrentPage++;
+    } else if (direction === 'prev') {
+      this._tripCurrentPage = Math.max(1, this._tripCurrentPage - 1);
+    }
     this.render();
   }
 
@@ -1046,13 +1192,13 @@ class FWCAMCard extends HTMLElement {
       });
     });
 
-    // Filter dropdowns (refueling and trips)
-    this.shadowRoot.querySelectorAll('.filter-select').forEach(select => {
-      select.addEventListener('change', (e) => {
+    // Filter dropdowns and date inputs (refueling and trips)
+    this.shadowRoot.querySelectorAll('.filter-select, .filter-date').forEach(input => {
+      input.addEventListener('change', (e) => {
         const filterType = e.target.dataset.filter;
         const value = e.target.value;
-        if (filterType === 'trip-category') {
-          this.handleTripFilterChange(value);
+        if (filterType && filterType.startsWith('trip-')) {
+          this.handleTripFilterChange(filterType, value);
         } else {
           this.handleFilterChange(filterType, value);
         }
@@ -1071,6 +1217,21 @@ class FWCAMCard extends HTMLElement {
     if (clearTripFiltersButton) {
       clearTripFiltersButton.addEventListener('click', () => {
         this.clearTripFilters();
+      });
+    }
+
+    // Trip pagination buttons
+    const tripPrevButton = this.shadowRoot.querySelector('[data-action="trip-prev-page"]');
+    if (tripPrevButton) {
+      tripPrevButton.addEventListener('click', () => {
+        this.handleTripPagination('prev');
+      });
+    }
+
+    const tripNextButton = this.shadowRoot.querySelector('[data-action="trip-next-page"]');
+    if (tripNextButton) {
+      tripNextButton.addEventListener('click', () => {
+        this.handleTripPagination('next');
       });
     }
 
@@ -1130,7 +1291,7 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
-   * Render trip log section with filtering, sorting, and editing
+   * Render trip log section with filtering, sorting, pagination, and editing
    */
   renderTripLog(trips) {
     if (!trips || trips.length === 0) {
@@ -1147,41 +1308,75 @@ class FWCAMCard extends HTMLElement {
       `;
     }
 
-    // Apply filtering by category if needed
-    const filteredTrips = this._tripCategoryFilter 
-      ? trips.filter(t => t.category === this._tripCategoryFilter)
-      : trips;
-
+    // Apply date filtering
+    const filteredTrips = this.filterTrips(trips);
+    
     // Apply sorting
-    const sortColumn = this._tripSortColumn || 'timestamp_end';
-    const sortDirection = this._tripSortDirection || 'desc';
-    const sortedTrips = [...filteredTrips].sort((a, b) => {
-      let aVal = a[sortColumn];
-      let bVal = b[sortColumn];
-      
-      // Handle null/undefined values
-      if (aVal == null) aVal = '';
-      if (bVal == null) bVal = '';
-      
-      if (sortDirection === 'asc') {
-        return aVal > bVal ? 1 : -1;
-      } else {
-        return aVal < bVal ? 1 : -1;
-      }
-    });
-
+    const sortedTrips = this.sortTrips(filteredTrips);
+    
+    // Calculate pagination
+    const rowsPerPage = this._config.rows_per_page || 10;
+    const totalPages = Math.ceil(sortedTrips.length / rowsPerPage);
+    const currentPage = Math.min(this._tripCurrentPage, Math.max(1, totalPages));
+    this._tripCurrentPage = currentPage; // Ensure page is within bounds
+    
+    const startIndex = (currentPage - 1) * rowsPerPage;
+    const endIndex = startIndex + rowsPerPage;
+    const paginatedTrips = sortedTrips.slice(startIndex, endIndex);
+    
+    // Get unique years from trips for filter dropdown
+    const years = this.getUniqueTripYears(trips);
+    const months = [
+      { value: '', label: 'All Months' },
+      { value: '01', label: 'January' },
+      { value: '02', label: 'February' },
+      { value: '03', label: 'March' },
+      { value: '04', label: 'April' },
+      { value: '05', label: 'May' },
+      { value: '06', label: 'June' },
+      { value: '07', label: 'July' },
+      { value: '08', label: 'August' },
+      { value: '09', label: 'September' },
+      { value: '10', label: 'October' },
+      { value: '11', label: 'November' },
+      { value: '12', label: 'December' }
+    ];
+    
     const categories = [
       { value: '', label: 'All Categories' },
       { value: 'business', label: 'Business' },
       { value: 'private', label: 'Private' },
       { value: 'commute', label: 'Commute' }
     ];
+    
+    const sortColumn = this._tripSortColumn || 'timestamp_end';
+    const sortDirection = this._tripSortDirection || 'desc';
+    
+    const hasActiveFilters = this._tripCategoryFilter || this._tripFilterYear || 
+                             this._tripFilterMonth || this._tripFilterDateFrom || this._tripFilterDateTo;
 
     return `
       <div class="section">
         <h3>Trip Log</h3>
         
         <div class="filter-controls">
+          <label>
+            Year:
+            <select class="filter-select" data-filter="trip-year">
+              <option value="">All Years</option>
+              ${years.map(year => `
+                <option value="${year}" ${this._tripFilterYear === year ? 'selected' : ''}>${year}</option>
+              `).join('')}
+            </select>
+          </label>
+          <label>
+            Month:
+            <select class="filter-select" data-filter="trip-month">
+              ${months.map(month => `
+                <option value="${month.value}" ${this._tripFilterMonth === month.value ? 'selected' : ''}>${month.label}</option>
+              `).join('')}
+            </select>
+          </label>
           <label>
             Category:
             <select class="filter-select" data-filter="trip-category">
@@ -1192,14 +1387,30 @@ class FWCAMCard extends HTMLElement {
               `).join('')}
             </select>
           </label>
-          ${this._tripCategoryFilter ? `
+        </div>
+        
+        <div class="filter-controls" style="margin-top: 8px;">
+          <label>
+            From:
+            <input type="date" class="filter-date" data-filter="trip-date-from" 
+                   value="${this._tripFilterDateFrom || ''}" 
+                   placeholder="Start date">
+          </label>
+          <label>
+            To:
+            <input type="date" class="filter-date" data-filter="trip-date-to" 
+                   value="${this._tripFilterDateTo || ''}" 
+                   placeholder="End date">
+          </label>
+          ${hasActiveFilters ? `
             <button class="clear-filters-button" data-action="clear-trip-filters">
               <ha-icon icon="mdi:filter-remove"></ha-icon>
-              <span>Clear Filter</span>
+              <span>Clear Filters</span>
             </button>
           ` : ''}
           <div class="filter-info">
-            Showing ${sortedTrips.length} of ${trips.length} trips
+            Showing ${Math.min(endIndex, sortedTrips.length)} of ${sortedTrips.length} trips
+            ${sortedTrips.length !== trips.length ? ` (filtered from ${trips.length} total)` : ''}
           </div>
         </div>
 
@@ -1238,11 +1449,11 @@ class FWCAMCard extends HTMLElement {
               </tr>
             </thead>
             <tbody>
-              ${sortedTrips.length === 0 ? `
+              ${paginatedTrips.length === 0 ? `
                 <tr>
-                  <td colspan="8" class="no-data">No trips match the current filter</td>
+                  <td colspan="8" class="no-data">No trips match the current filters</td>
                 </tr>
-              ` : sortedTrips.slice(0, this._config.rows_per_page || 10).map(trip => `
+              ` : paginatedTrips.map(trip => `
                 <tr data-trip-id="${trip.trip_id}">
                   <td>${this.formatDateTime(trip.timestamp_end)}</td>
                   <td>${this.formatNumber(trip.distance_km, 1)}</td>
@@ -1274,8 +1485,34 @@ class FWCAMCard extends HTMLElement {
             </tbody>
           </table>
         </div>
+        
+        ${totalPages > 1 ? `
+          <div class="pagination-controls">
+            <button class="pagination-button" 
+                    data-action="trip-prev-page" 
+                    ${currentPage === 1 ? 'disabled' : ''}>
+              <ha-icon icon="mdi:chevron-left"></ha-icon>
+              Previous
+            </button>
+            <span class="pagination-info">
+              Page ${currentPage} of ${totalPages} (${startIndex + 1}-${Math.min(endIndex, sortedTrips.length)} of ${sortedTrips.length})
+            </span>
+            <button class="pagination-button" 
+                    data-action="trip-next-page" 
+                    ${currentPage === totalPages ? 'disabled' : ''}>
+              Next
+              <ha-icon icon="mdi:chevron-right"></ha-icon>
+            </button>
+          </div>
+        ` : ''}
 
         <button class="add-event-button" data-action="add-trip">
+          <ha-icon icon="mdi:plus"></ha-icon>
+          <span>Add Trip</span>
+        </button>
+      </div>
+    `;
+  }
           <ha-icon icon="mdi:plus"></ha-icon>
           <span>Add Trip</span>
         </button>
@@ -1311,49 +1548,152 @@ class FWCAMCard extends HTMLElement {
           </div>
           <div class="dialog-body">
             <form id="trip-form">
-              <div class="form-group">
-                <label for="trip-start-time">Start Time:</label>
-                <input type="datetime-local" id="trip-start-time" name="timestamp_start" required>
+              <input type="hidden" id="trip-id" name="trip_id" value="">
+              
+              <div class="form-section">
+                <h4>Trip Timing</h4>
+                <div class="form-row">
+                  <label for="trip-start-time">
+                    Start Time *
+                    <input type="datetime-local" id="trip-start-time" name="timestamp_start" required>
+                  </label>
+                  <label for="trip-end-time">
+                    End Time *
+                    <input type="datetime-local" id="trip-end-time" name="timestamp_end" required>
+                  </label>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label for="trip-end-time">End Time:</label>
-                <input type="datetime-local" id="trip-end-time" name="timestamp_end" required>
+              <div class="form-section">
+                <h4>Distance & Odometer</h4>
+                <div class="form-row">
+                  <label for="trip-odometer-start">
+                    Odometer Start (km)
+                    <input type="number" id="trip-odometer-start" name="odometer_start" 
+                           step="0.1" min="0" max="1000000" placeholder="Optional">
+                  </label>
+                  <label for="trip-odometer-end">
+                    Odometer End (km)
+                    <input type="number" id="trip-odometer-end" name="odometer_end" 
+                           step="0.1" min="0" max="1000000" placeholder="Optional">
+                  </label>
+                </div>
+                <div class="form-row full-width">
+                  <label for="trip-distance">
+                    Distance (km) * <small id="distance-calc-info"></small>
+                    <input type="number" id="trip-distance" name="distance_km" 
+                           step="0.1" min="0" required>
+                  </label>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label for="trip-distance">Distance (km):</label>
-                <input type="number" id="trip-distance" name="distance_km" step="0.1" min="0" required>
+              <div class="form-section">
+                <h4>Start Location</h4>
+                <div class="form-row">
+                  <label for="trip-start-name">
+                    Location Name
+                    <input type="text" id="trip-start-name" name="start_name" 
+                           placeholder="e.g., Home, Office" list="start-location-suggestions">
+                  </label>
+                  <label for="trip-start-address">
+                    Address
+                    <input type="text" id="trip-start-address" name="start_address" 
+                           placeholder="Optional">
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label for="trip-start-latitude">
+                    Latitude
+                    <input type="number" id="trip-start-latitude" name="start_latitude" 
+                           step="0.000001" min="-90" max="90" placeholder="Optional">
+                  </label>
+                  <label for="trip-start-longitude">
+                    Longitude
+                    <input type="number" id="trip-start-longitude" name="start_longitude" 
+                           step="0.000001" min="-180" max="180" placeholder="Optional">
+                  </label>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label for="trip-category">Category:</label>
-                <select id="trip-category" name="category">
-                  <option value="private">Private</option>
-                  <option value="business">Business</option>
-                  <option value="commute">Commute</option>
-                </select>
+              <div class="form-section">
+                <h4>End Location</h4>
+                <div class="form-row">
+                  <label for="trip-end-name">
+                    Location Name
+                    <input type="text" id="trip-end-name" name="end_name" 
+                           placeholder="e.g., Client Office" list="end-location-suggestions">
+                  </label>
+                  <label for="trip-end-address">
+                    Address
+                    <input type="text" id="trip-end-address" name="end_address" 
+                           placeholder="Optional">
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label for="trip-end-latitude">
+                    Latitude
+                    <input type="number" id="trip-end-latitude" name="end_latitude" 
+                           step="0.000001" min="-90" max="90" placeholder="Optional">
+                  </label>
+                  <label for="trip-end-longitude">
+                    Longitude
+                    <input type="number" id="trip-end-longitude" name="end_longitude" 
+                           step="0.000001" min="-180" max="180" placeholder="Optional">
+                  </label>
+                </div>
+                <div id="trip-map-links" style="display: none; margin-top: 8px;">
+                  <a id="start-map-link" href="#" target="_blank" style="margin-right: 12px;">
+                    <ha-icon icon="mdi:map-marker"></ha-icon> View Start on Map
+                  </a>
+                  <a id="end-map-link" href="#" target="_blank">
+                    <ha-icon icon="mdi:map-marker"></ha-icon> View End on Map
+                  </a>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label for="trip-purpose">Purpose:</label>
-                <input type="text" id="trip-purpose" name="purpose" placeholder="Optional">
+              <div class="form-section">
+                <h4>Trip Details</h4>
+                <div class="form-row">
+                  <label for="trip-category">
+                    Category *
+                    <select id="trip-category" name="category">
+                      <option value="private">Private</option>
+                      <option value="business">Business</option>
+                      <option value="commute">Commute</option>
+                    </select>
+                  </label>
+                  <label for="trip-purpose">
+                    Purpose
+                    <input type="text" id="trip-purpose" name="purpose" 
+                           placeholder="Optional" list="purpose-suggestions">
+                  </label>
+                </div>
+                
+                <div class="form-row">
+                  <label for="trip-fuel-consumed">
+                    Fuel Consumed (L)
+                    <input type="number" id="trip-fuel-consumed" name="fuel_consumed" 
+                           step="0.01" min="0" placeholder="Optional">
+                  </label>
+                  <label for="trip-additional-costs">
+                    Additional Costs (€)
+                    <input type="number" id="trip-additional-costs" name="additional_costs" 
+                           step="0.01" min="0" placeholder="Tolls, parking, etc." value="0">
+                  </label>
+                </div>
+                
+                <div class="form-row full-width">
+                  <label for="trip-notes">
+                    Notes
+                    <textarea id="trip-notes" name="notes" rows="3" 
+                              placeholder="Optional notes about this trip"></textarea>
+                  </label>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label for="trip-fuel-consumed">Fuel Consumed (L):</label>
-                <input type="number" id="trip-fuel-consumed" name="fuel_consumed" step="0.01" min="0" placeholder="Optional">
-              </div>
-              
-              <div class="form-group">
-                <label for="trip-additional-costs">Additional Costs (€):</label>
-                <input type="number" id="trip-additional-costs" name="additional_costs" step="0.01" min="0" placeholder="Optional" value="0">
-              </div>
-              
-              <div class="form-group">
-                <label for="trip-notes">Notes:</label>
-                <textarea id="trip-notes" name="notes" rows="3" placeholder="Optional"></textarea>
-              </div>
+              <datalist id="purpose-suggestions"></datalist>
+              <datalist id="start-location-suggestions"></datalist>
+              <datalist id="end-location-suggestions"></datalist>
             </form>
           </div>
           <div class="dialog-footer">
@@ -1733,6 +2073,15 @@ class FWCAMCard extends HTMLElement {
     // Set default category
     this.shadowRoot.getElementById('trip-category').value = 'private';
     
+    // Populate autocomplete suggestions
+    this.populateTripAutocomplete();
+    
+    // Set up odometer change listeners
+    this.setupOdometerCalculation();
+    
+    // Set up coordinate map link handlers
+    this.setupMapLinks();
+    
     // Show dialog
     dialog.style.display = 'flex';
   }
@@ -1750,8 +2099,8 @@ class FWCAMCard extends HTMLElement {
       return;
     }
     
-    // Find trip in stored trips
-    const trip = this._recentTrips ? this._recentTrips.find(t => t.trip_id === parseInt(tripId)) : null;
+    // Find trip in stored trips (use all_trips instead of recent_trips)
+    const trip = this._allTrips ? this._allTrips.find(t => t.trip_id === parseInt(tripId)) : null;
     
     if (!trip) {
       const lang = this.getUserLanguage();
@@ -1794,12 +2143,41 @@ class FWCAMCard extends HTMLElement {
       }
     }
     
+    // Basic trip fields
     this.shadowRoot.getElementById('trip-distance').value = trip.distance_km || '';
     this.shadowRoot.getElementById('trip-category').value = trip.category || 'private';
     this.shadowRoot.getElementById('trip-purpose').value = trip.purpose || '';
     this.shadowRoot.getElementById('trip-fuel-consumed').value = trip.fuel_consumed || '';
     this.shadowRoot.getElementById('trip-additional-costs').value = trip.additional_costs || 0;
     this.shadowRoot.getElementById('trip-notes').value = trip.notes || '';
+    
+    // Odometer fields
+    this.shadowRoot.getElementById('trip-odometer-start').value = trip.odometer_start || '';
+    this.shadowRoot.getElementById('trip-odometer-end').value = trip.odometer_end || '';
+    
+    // Start location fields
+    this.shadowRoot.getElementById('trip-start-name').value = trip.start_name || '';
+    this.shadowRoot.getElementById('trip-start-address').value = trip.start_address || '';
+    this.shadowRoot.getElementById('trip-start-latitude').value = trip.start_latitude || '';
+    this.shadowRoot.getElementById('trip-start-longitude').value = trip.start_longitude || '';
+    
+    // End location fields
+    this.shadowRoot.getElementById('trip-end-name').value = trip.end_name || '';
+    this.shadowRoot.getElementById('trip-end-address').value = trip.end_address || '';
+    this.shadowRoot.getElementById('trip-end-latitude').value = trip.end_latitude || '';
+    this.shadowRoot.getElementById('trip-end-longitude').value = trip.end_longitude || '';
+    
+    // Populate autocomplete suggestions
+    this.populateTripAutocomplete();
+    
+    // Set up odometer change listeners
+    this.setupOdometerCalculation();
+    
+    // Set up coordinate map link handlers
+    this.setupMapLinks();
+    
+    // Update map links if coordinates exist
+    this.updateMapLinks();
     
     // Show dialog
     dialog.style.display = 'flex';
@@ -1846,6 +2224,42 @@ class FWCAMCard extends HTMLElement {
     }
     if (formData.get('notes')) {
       serviceData.notes = formData.get('notes');
+    }
+    
+    // Add odometer fields
+    if (formData.get('odometer_start')) {
+      serviceData.odometer_start = parseFloat(formData.get('odometer_start'));
+    }
+    if (formData.get('odometer_end')) {
+      serviceData.odometer_end = parseFloat(formData.get('odometer_end'));
+    }
+    
+    // Add start location fields
+    if (formData.get('start_latitude')) {
+      serviceData.start_latitude = parseFloat(formData.get('start_latitude'));
+    }
+    if (formData.get('start_longitude')) {
+      serviceData.start_longitude = parseFloat(formData.get('start_longitude'));
+    }
+    if (formData.get('start_name')) {
+      serviceData.start_name = formData.get('start_name');
+    }
+    if (formData.get('start_address')) {
+      serviceData.start_address = formData.get('start_address');
+    }
+    
+    // Add end location fields
+    if (formData.get('end_latitude')) {
+      serviceData.end_latitude = parseFloat(formData.get('end_latitude'));
+    }
+    if (formData.get('end_longitude')) {
+      serviceData.end_longitude = parseFloat(formData.get('end_longitude'));
+    }
+    if (formData.get('end_name')) {
+      serviceData.end_name = formData.get('end_name');
+    }
+    if (formData.get('end_address')) {
+      serviceData.end_address = formData.get('end_address');
     }
     
     try {
@@ -1958,6 +2372,141 @@ class FWCAMCard extends HTMLElement {
     
     // Fallback: show error with troubleshooting tips
     throw new Error('Config entry ID not found. Please ensure:\n1. The integration is properly configured\n2. The sensor entity exists and is available\n3. Home Assistant has been restarted after installation\n4. The entity is: ' + this._config.entity);
+  }
+
+  /**
+   * Setup odometer calculation for trip dialog
+   */
+  setupOdometerCalculation() {
+    const odometerStart = this.shadowRoot.getElementById('trip-odometer-start');
+    const odometerEnd = this.shadowRoot.getElementById('trip-odometer-end');
+    const distanceField = this.shadowRoot.getElementById('trip-distance');
+    const distanceCalcInfo = this.shadowRoot.getElementById('distance-calc-info');
+    
+    if (!odometerStart || !odometerEnd || !distanceField) return;
+    
+    const calculateDistance = () => {
+      const start = parseFloat(odometerStart.value);
+      const end = parseFloat(odometerEnd.value);
+      
+      if (start && end && end > start) {
+        const distance = (end - start).toFixed(1);
+        distanceField.value = distance;
+        distanceField.readOnly = true;
+        if (distanceCalcInfo) {
+          distanceCalcInfo.textContent = '(auto-calculated from odometer)';
+        }
+      } else {
+        distanceField.readOnly = false;
+        if (distanceCalcInfo) {
+          distanceCalcInfo.textContent = '';
+        }
+      }
+    };
+    
+    odometerStart.removeEventListener('input', calculateDistance);
+    odometerEnd.removeEventListener('input', calculateDistance);
+    odometerStart.addEventListener('input', calculateDistance);
+    odometerEnd.addEventListener('input', calculateDistance);
+    
+    // Run once on setup
+    calculateDistance();
+  }
+
+  /**
+   * Setup map links for trip coordinates
+   */
+  setupMapLinks() {
+    const startLat = this.shadowRoot.getElementById('trip-start-latitude');
+    const startLon = this.shadowRoot.getElementById('trip-start-longitude');
+    const endLat = this.shadowRoot.getElementById('trip-end-latitude');
+    const endLon = this.shadowRoot.getElementById('trip-end-longitude');
+    
+    if (!startLat || !startLon || !endLat || !endLon) return;
+    
+    const updateLinks = () => {
+      this.updateMapLinks();
+    };
+    
+    [startLat, startLon, endLat, endLon].forEach(field => {
+      field.removeEventListener('input', updateLinks);
+      field.addEventListener('input', updateLinks);
+    });
+  }
+
+  /**
+   * Update map links based on coordinates
+   */
+  updateMapLinks() {
+    const startLat = parseFloat(this.shadowRoot.getElementById('trip-start-latitude').value);
+    const startLon = parseFloat(this.shadowRoot.getElementById('trip-start-longitude').value);
+    const endLat = parseFloat(this.shadowRoot.getElementById('trip-end-latitude').value);
+    const endLon = parseFloat(this.shadowRoot.getElementById('trip-end-longitude').value);
+    
+    const mapLinks = this.shadowRoot.getElementById('trip-map-links');
+    const startMapLink = this.shadowRoot.getElementById('start-map-link');
+    const endMapLink = this.shadowRoot.getElementById('end-map-link');
+    
+    if (!mapLinks || !startMapLink || !endMapLink) return;
+    
+    const hasStart = !isNaN(startLat) && !isNaN(startLon);
+    const hasEnd = !isNaN(endLat) && !isNaN(endLon);
+    
+    if (hasStart || hasEnd) {
+      mapLinks.style.display = 'block';
+      
+      if (hasStart) {
+        startMapLink.href = `https://www.google.com/maps?q=${startLat},${startLon}`;
+        startMapLink.style.display = 'inline-flex';
+      } else {
+        startMapLink.style.display = 'none';
+      }
+      
+      if (hasEnd) {
+        endMapLink.href = `https://www.google.com/maps?q=${endLat},${endLon}`;
+        endMapLink.style.display = 'inline-flex';
+      } else {
+        endMapLink.style.display = 'none';
+      }
+    } else {
+      mapLinks.style.display = 'none';
+    }
+  }
+
+  /**
+   * Populate trip autocomplete suggestions
+   */
+  populateTripAutocomplete() {
+    if (!this._allTrips || this._allTrips.length === 0) return;
+    
+    // Get unique purposes
+    const purposes = new Set();
+    const startNames = new Set();
+    const endNames = new Set();
+    
+    this._allTrips.forEach(trip => {
+      if (trip.purpose) purposes.add(trip.purpose);
+      if (trip.start_name) startNames.add(trip.start_name);
+      if (trip.end_name) endNames.add(trip.end_name);
+    });
+    
+    // Populate purpose datalist
+    const purposeList = this.shadowRoot.getElementById('purpose-suggestions');
+    if (purposeList) {
+      purposeList.innerHTML = Array.from(purposes).map(p => `<option value="${p}"></option>`).join('');
+    }
+    
+    // Populate start location datalist
+    const startList = this.shadowRoot.getElementById('start-location-suggestions');
+    if (startList) {
+      startList.innerHTML = Array.from(startNames).map(n => `<option value="${n}"></option>`).join('');
+    }
+    
+    // Populate end location datalist
+    const endList = this.shadowRoot.getElementById('end-location-suggestions');
+    if (endList) {
+      endList.innerHTML = Array.from(endNames).map(n => `<option value="${n}"></option>`).join('');
+    }
   }
 
   /**
@@ -2354,6 +2903,72 @@ class FWCAMCard extends HTMLElement {
           color: var(--secondary-text-color);
         }
 
+        /* Pagination Styles */
+        .pagination-controls {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 16px;
+          margin-top: 16px;
+          padding: 12px;
+          background: var(--primary-background-color);
+          border-radius: 8px;
+        }
+
+        .pagination-button {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 8px 16px;
+          background: var(--primary-color);
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 14px;
+          transition: all 0.2s;
+        }
+
+        .pagination-button:hover:not(:disabled) {
+          background: var(--primary-color-dark, var(--primary-color));
+          opacity: 0.9;
+          transform: translateY(-1px);
+        }
+
+        .pagination-button:disabled {
+          background: var(--disabled-text-color);
+          cursor: not-allowed;
+          opacity: 0.5;
+        }
+
+        .pagination-button ha-icon {
+          --mdc-icon-size: 18px;
+        }
+
+        .pagination-info {
+          font-size: 14px;
+          font-weight: 500;
+          color: var(--primary-text-color);
+          min-width: 200px;
+          text-align: center;
+        }
+
+        /* Date filter input styles */
+        .filter-date {
+          padding: 6px 10px;
+          border: 1px solid var(--divider-color);
+          border-radius: 4px;
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          font-size: 14px;
+          font-family: inherit;
+        }
+
+        .filter-date:focus {
+          outline: none;
+          border-color: var(--primary-color);
+        }
+
         /* Dialog Styles */
         .dialog-overlay {
           position: fixed;
@@ -2435,19 +3050,72 @@ class FWCAMCard extends HTMLElement {
         }
 
         .form-row input,
-        .form-row select {
+        .form-row select,
+        .form-row textarea {
           padding: 10px;
           border: 1px solid var(--divider-color);
           border-radius: 4px;
           background: var(--card-background-color);
           color: var(--primary-text-color);
           font-size: 14px;
+          font-family: inherit;
+        }
+
+        .form-row textarea {
+          resize: vertical;
+          min-height: 80px;
         }
 
         .form-row input:focus,
-        .form-row select:focus {
+        .form-row select:focus,
+        .form-row textarea:focus {
           outline: none;
           border-color: var(--primary-color);
+        }
+        
+        .form-row input:read-only {
+          background: var(--disabled-color, #eee);
+          color: var(--disabled-text-color);
+        }
+        
+        .form-row label small {
+          font-size: 12px;
+          font-weight: normal;
+          color: var(--secondary-text-color);
+        }
+        
+        .form-section {
+          margin-bottom: 24px;
+          padding-bottom: 16px;
+          border-bottom: 1px solid var(--divider-color);
+        }
+        
+        .form-section:last-of-type {
+          border-bottom: none;
+        }
+        
+        .form-section h4 {
+          margin: 0 0 12px 0;
+          font-size: 15px;
+          font-weight: 600;
+          color: var(--primary-text-color);
+        }
+        
+        #trip-map-links a {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          color: var(--primary-color);
+          text-decoration: none;
+          font-size: 13px;
+        }
+        
+        #trip-map-links a:hover {
+          text-decoration: underline;
+        }
+        
+        #trip-map-links ha-icon {
+          --mdc-icon-size: 16px;
         }
 
         .dialog-footer {
