@@ -8,6 +8,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_PROXIMITY_ALERTS_ENABLED,
@@ -128,10 +129,18 @@ class TripTrackingSwitch(SwitchEntity):
             "model": "Fuel Watcher Car Advanced Manager",
         }
     
+    def _has_coordinator_data(self) -> bool:
+        """Check if coordinator and its data are available."""
+        return (
+            self._coordinator is not None
+            and hasattr(self._coordinator, "data")
+            and self._coordinator.data is not None
+        )
+    
     @property
     def is_on(self) -> bool:
         """Return true if trip tracking is enabled."""
-        if self._coordinator and hasattr(self._coordinator, "data"):
+        if self._has_coordinator_data():
             config = self._coordinator.data.get("trip_tracking_config", {})
             return config.get("enabled", False)
         return False
@@ -141,12 +150,14 @@ class TripTrackingSwitch(SwitchEntity):
         """Return extra state attributes."""
         attributes = {}
         
-        if self._coordinator and hasattr(self._coordinator, "data"):
+        if self._has_coordinator_data():
             config = self._coordinator.data.get("trip_tracking_config", {})
             stats = self._coordinator.data.get("trip_statistics", {})
             
             attributes.update({
                 "privacy_notice_accepted": config.get("privacy_notice_accepted", False),
+                "last_enabled_at": config.get("last_enabled_at"),
+                "last_disabled_at": config.get("last_disabled_at"),
                 "total_trips": stats.get("total_trips", 0),
                 "total_distance_km": round(stats.get("total_distance_km", 0.0), 2),
                 "business_trips": stats.get("business_trips", 0),
@@ -159,7 +170,6 @@ class TripTrackingSwitch(SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on trip tracking."""
         from .utils import storage
-        from homeassistant.util import dt as dt_util
         
         _LOGGER.info("Enabling trip tracking")
         
@@ -169,6 +179,7 @@ class TripTrackingSwitch(SwitchEntity):
         # Update config
         config = data.get("trip_tracking_config", {})
         config["enabled"] = True
+        config["last_enabled_at"] = dt_util.now().isoformat()
         
         # Accept privacy notice on first enable
         if not config.get("privacy_notice_accepted"):
@@ -182,7 +193,7 @@ class TripTrackingSwitch(SwitchEntity):
         await storage.save_data(self._hass, self._config_entry, data)
         
         # Update coordinator data
-        if self._coordinator:
+        if self._has_coordinator_data():
             self._coordinator.data["trip_tracking_config"] = config
             self._coordinator.async_update_listeners()
     
@@ -198,13 +209,14 @@ class TripTrackingSwitch(SwitchEntity):
         # Update config
         config = data.get("trip_tracking_config", {})
         config["enabled"] = False
+        config["last_disabled_at"] = dt_util.now().isoformat()
         data["trip_tracking_config"] = config
         
         # Save to storage
         await storage.save_data(self._hass, self._config_entry, data)
         
         # Update coordinator data
-        if self._coordinator:
+        if self._has_coordinator_data():
             self._coordinator.data["trip_tracking_config"] = config
             self._coordinator.async_update_listeners()
 

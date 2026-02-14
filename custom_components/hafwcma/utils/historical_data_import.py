@@ -1140,9 +1140,15 @@ async def import_historical_trip_data(
         "import_type": import_type,
     }
     
+    data = None  # Track whether data was loaded
+    
     try:
-        # Check if trip tracking is enabled
-        trip_tracking_enabled = entry.data.get("trip_tracking_enabled", False)
+        # Load storage data first to check trip tracking config
+        data = await load_data(hass, entry.entry_id)
+        
+        # Check if trip tracking is enabled from storage
+        trip_config = data.get("trip_tracking_config", {})
+        trip_tracking_enabled = trip_config.get("enabled", False)
         if not trip_tracking_enabled:
             result["reason"] = "Trip tracking is not enabled for this vehicle"
             _LOGGER.warning(
@@ -1151,12 +1157,9 @@ async def import_historical_trip_data(
             )
             return result
         
-        # Load storage data
-        data = await load_data(hass, entry.entry_id)
-        
         # Check if we should skip import (unless forced)
         if not force_reimport:
-            last_import = data.get("last_historical_trip_import")
+            last_import = data.get("last_historical_import")
             if last_import and last_import.get("imported"):
                 result["reason"] = "Historical trip import already completed. Use force_reimport=True to re-import."
                 _LOGGER.info(
@@ -1202,7 +1205,7 @@ async def import_historical_trip_data(
         result["trips_detected"] = trips_detected
         
         # Store import metadata
-        data["last_historical_trip_import"] = {
+        data["last_historical_import"] = {
             "imported": True,
             "timestamp": dt_util.now().isoformat(),
             "type": import_type,
@@ -1226,6 +1229,22 @@ async def import_historical_trip_data(
         result["reason"] = f"Error during import: {err}"
         result["errors"].append(str(err))
         _LOGGER.error("Error importing historical trip data: %s", err, exc_info=True)
+        
+        # Store error metadata - load data if not already loaded
+        try:
+            if data is None:
+                data = await load_data(hass, entry.entry_id)
+            
+            data["last_historical_import"] = {
+                "imported": False,
+                "timestamp": dt_util.now().isoformat(),
+                "type": "error",
+                "error": str(err),
+                "errors": result["errors"],
+            }
+            await save_data(hass, entry.entry_id, data)
+        except Exception as save_err:
+            _LOGGER.error("Error saving historical import error metadata: %s", save_err)
     
     return result
 
