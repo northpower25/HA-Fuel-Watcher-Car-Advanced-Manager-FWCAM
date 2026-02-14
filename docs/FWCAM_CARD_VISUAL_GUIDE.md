@@ -2,6 +2,42 @@
 
 This guide provides visual examples and sample configurations for the FWCAM custom Lovelace card.
 
+## Important Configuration Behavior (v0.0.86+)
+
+Starting with version 0.0.86, the card has improved configuration behavior:
+
+- **Default Behavior**: When NO `show_*` options are specified, all sections are shown (backward compatibility)
+- **Explicit Behavior**: When ANY `show_*` option is explicitly set, only the sections explicitly enabled will be shown
+
+### Examples:
+
+**Show Everything (Default)**:
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+# All sections shown by default
+```
+
+**Show Only Trip Log**:
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+show_trip_log: true
+# Only trip log shown, all others hidden
+```
+
+**Show Multiple Specific Sections**:
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+show_refueling_log: true
+show_trip_log: true
+show_vehicle_info: false
+show_controls: false
+show_settings: false
+# Only refueling and trip logs shown
+```
+
 ## Example Dashboard Configuration
 
 ### Full Featured Card
@@ -85,6 +121,57 @@ rows_per_page: 20
 - Edit and delete buttons for each entry
 - Add new event button
 - Perfect for dedicated refueling history view
+
+---
+
+### Trip Log Only Card (v0.0.86+)
+
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+title: Trip History
+show_trip_log: true
+```
+
+**What it shows**:
+- Trip log table only (all other sections hidden)
+- Recent trips with distance, category, fuel consumed
+- Category filtering (business, private, commute)
+- Trip editing and viewing capabilities
+- Perfect for dedicated trip tracking view
+
+**With separate entity configuration**:
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+trip_log_entity: sensor.my_car_trip_log
+show_trip_log: true
+```
+
+This allows you to specify a different entity for trip data if needed.
+
+---
+
+## Advanced Configuration: Separate Entity Sources (v0.0.86+)
+
+Starting with version 0.0.86, you can specify separate entities for each card section:
+
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_refueling_log
+refueling_log_entity: sensor.my_car_refueling_log
+trip_log_entity: sensor.my_car_trip_log
+vehicle_info_entity: sensor.my_car_refueling_log
+title: My Car Manager
+show_refueling_log: true
+show_trip_log: true
+```
+
+**Configuration Options**:
+- `entity` - Main entity (required, typically refueling_log sensor)
+- `refueling_log_entity` - Entity for refueling data (defaults to `entity`)
+- `trip_log_entity` - Entity for trip data (auto-detected or specify explicitly)
+- `vehicle_info_entity` - Entity for vehicle info (reserved for future use)
 
 ---
 
