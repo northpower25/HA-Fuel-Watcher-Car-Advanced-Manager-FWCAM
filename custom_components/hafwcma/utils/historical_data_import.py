@@ -394,9 +394,13 @@ async def _import_odometer_history(
             len(all_states),
         )
         
-        # Process states in chronological order, but sample to avoid overwhelming storage
-        # Keep one reading per day max to reduce data volume
-        states_by_day = {}
+        # Process states in chronological order
+        # For trip detection, we need to capture all significant odometer changes,
+        # not just one per day. Keep readings where odometer changes by at least
+        # the minimum trip distance threshold.
+        processed_states = []
+        last_saved_value = None
+        
         for state in all_states:
             try:
                 # Skip if state is unknown or unavailable
@@ -407,32 +411,32 @@ async def _import_odometer_history(
                 odometer_value = float(state.state)
                 timestamp = state.last_changed
                 
-                # Group by day to avoid too many data points
-                day_key = timestamp.date().isoformat()
-                
-                # Keep the first reading of each day
-                if day_key not in states_by_day:
-                    states_by_day[day_key] = {
+                # Keep this reading if:
+                # 1. It's the first reading, OR
+                # 2. Odometer changed by at least the minimum trip distance
+                if last_saved_value is None or abs(odometer_value - last_saved_value) >= TRIP_DETECTION_MIN_DISTANCE_KM:
+                    processed_states.append({
                         "value": odometer_value,
                         "timestamp": timestamp.isoformat(),
-                    }
+                    })
+                    last_saved_value = odometer_value
                 
             except (ValueError, TypeError) as err:
                 _LOGGER.debug("Skipping invalid odometer state: %s (%s)", state.state, err)
                 continue
         
-        # Add sampled data to history
-        for day_data in states_by_day.values():
+        # Add processed data to history
+        for state_data in processed_states:
             await add_odometer_observation(
                 hass, 
                 entry, 
-                day_data["value"], 
-                day_data["timestamp"]
+                state_data["value"], 
+                state_data["timestamp"]
             )
             count += 1
         
         _LOGGER.info(
-            "Imported %d odometer readings (sampled from %d total states)",
+            "Imported %d odometer readings with significant changes (from %d total states)",
             count,
             len(all_states),
         )
