@@ -1246,6 +1246,10 @@ async def add_trip_pattern(
     
     data = await load_data(hass, entry)
     
+    # Initialize trip_patterns list if not present
+    if "trip_patterns" not in data:
+        data["trip_patterns"] = []
+    
     # Get next pattern ID
     next_id = data.get("next_pattern_id", 1)
     pattern_data["pattern_id"] = next_id
@@ -1298,6 +1302,10 @@ async def add_poi(
     from homeassistant.util import dt as dt_util
     
     data = await load_data(hass, entry)
+    
+    # Initialize pois list if not present
+    if "pois" not in data:
+        data["pois"] = []
     
     # Get next POI ID
     next_id = data.get("next_poi_id", 1)
