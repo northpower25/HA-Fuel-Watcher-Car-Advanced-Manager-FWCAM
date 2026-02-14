@@ -2624,10 +2624,16 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
         if last_historical_import:
             attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp", DEFAULT_HISTORICAL_IMPORT_TIMESTAMP)
             attrs["last_historical_import_type"] = last_historical_import.get("type", DEFAULT_HISTORICAL_IMPORT_TYPE)
+            attrs["last_historical_import_completed_timestamp"] = last_historical_import.get("completion_timestamp")
+            attrs["last_historical_import_trips_detected"] = last_historical_import.get("trips_detected", 0)
+            attrs["last_historical_import_odometer_points"] = last_historical_import.get("odometer_points_available", 0)
         else:
             # If no historical import has been done, set default values
             attrs["last_historical_import_timestamp"] = DEFAULT_HISTORICAL_IMPORT_TIMESTAMP
             attrs["last_historical_import_type"] = DEFAULT_HISTORICAL_IMPORT_TYPE
+            attrs["last_historical_import_completed_timestamp"] = None
+            attrs["last_historical_import_trips_detected"] = 0
+            attrs["last_historical_import_odometer_points"] = 0
         
         last_vehicle_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
         if last_vehicle_refresh:
