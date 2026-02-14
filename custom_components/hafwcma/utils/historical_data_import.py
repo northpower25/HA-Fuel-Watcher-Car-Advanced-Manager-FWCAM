@@ -1332,7 +1332,7 @@ async def _import_trip_history(
             return 0
         
         # Sort odometer history by timestamp
-        sorted_history = sorted(odometer_history, key=lambda x: x.get("timestamp", ""))
+        sorted_history = sorted(odometer_history, key=lambda x: x.get("ts", ""))
         
         # Detect trips by analyzing odometer changes
         _LOGGER.info("Analyzing %d odometer points for trip detection", len(sorted_history))
@@ -1357,8 +1357,8 @@ async def _import_trip_history(
                 distance_km = curr_odometer - prev_odometer
                 
                 # Parse timestamps
-                prev_time = dt_util.parse_datetime(previous_point.get("timestamp"))
-                curr_time = dt_util.parse_datetime(current_point.get("timestamp"))
+                prev_time = dt_util.parse_datetime(previous_point.get("ts"))
+                curr_time = dt_util.parse_datetime(current_point.get("ts"))
                 
                 if not prev_time or not curr_time:
                     previous_point = current_point
