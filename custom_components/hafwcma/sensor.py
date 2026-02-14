@@ -2602,8 +2602,11 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
         stats = self.coordinator.data.get("trip_statistics", {})
         trips = self.coordinator.data.get("trips", [])
         
-        # Get last 10 trips
-        recent_trips = sorted(trips, key=lambda x: x.get("timestamp_end", ""), reverse=True)[:10]
+        # Sort all trips by end time (newest first)
+        sorted_trips = sorted(trips, key=lambda x: x.get("timestamp_end", ""), reverse=True)
+        
+        # Get last 10 trips for backward compatibility
+        recent_trips = sorted_trips[:10]
         
         attrs = {
             "config_entry_id": self._config_entry.entry_id,
@@ -2616,6 +2619,7 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
             "private_trips": stats.get("private_trips", 0),
             "commute_trips": stats.get("commute_trips", 0),
             "recent_trips": recent_trips,
+            "all_trips": sorted_trips,  # Add all trips for card pagination
             "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
         }
         
