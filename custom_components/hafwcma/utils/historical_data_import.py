@@ -425,15 +425,22 @@ async def _import_odometer_history(
                 _LOGGER.debug("Skipping invalid odometer state: %s (%s)", state.state, err)
                 continue
         
-        # Add processed data to history
-        for state_data in processed_states:
-            await add_odometer_observation(
-                hass, 
-                entry, 
-                state_data["value"], 
-                state_data["timestamp"]
-            )
-            count += 1
+        # Add processed data to history in batch to avoid race conditions
+        # Load data once, append all observations, save once
+        if processed_states:
+            data = await load_data(hass, entry)
+            for state_data in processed_states:
+                data["odometer_history"].append({
+                    "ts": state_data["timestamp"],
+                    "value": state_data["value"]
+                })
+                count += 1
+            
+            # Keep only last 1000 entries
+            if len(data["odometer_history"]) > 1000:
+                data["odometer_history"] = data["odometer_history"][-1000:]
+            
+            await save_data(hass, entry, data)
         
         _LOGGER.info(
             "Imported %d odometer readings with significant changes (from %d total states)",
