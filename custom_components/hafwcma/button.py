@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import aiohttp
+import csv
 import logging
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
@@ -56,6 +58,7 @@ async def async_setup_entry(
         RefreshVehicleDataButton(coordinator, config_entry, vehicle_name, hass),
         FuelPriceRefreshButton(coordinator, config_entry, vehicle_name),
         ConsumptionPredictionButton(coordinator, config_entry, vehicle_name),
+        ExportVehicleDataButton(coordinator, config_entry, vehicle_name, hass),
     ]
     
     # Add TelegramTestButton if telegram is configured
@@ -854,3 +857,401 @@ class TelegramTestButton(ButtonEntity):
             attrs["last_received_message"] = self._last_received_message
         
         return attrs
+
+
+class ExportVehicleDataButton(ButtonEntity):
+    """TEMPORARY Button to export vehicle entity data to CSV for test data generation.
+    
+    This button exports all available historical data and long-term statistics
+    for configured vehicle entities (odometer, tank level, position, range) to 
+    CSV files in /config/www/export/ for test dataset creation.
+    
+    NOTE: This is a temporary debug feature and will be removed in a future version.
+    """
+    
+    _attr_icon = "mdi:database-export"
+    _attr_has_entity_name = True
+    
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the button.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+            hass: Home Assistant instance
+        """
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = "Export Vehicle Data (Debug)"
+        self._attr_unique_id = f"{config_entry.entry_id}_export_vehicle_data"
+        self._last_result: dict[str, Any] = {}
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+    
+    async def async_press(self) -> None:
+        """Handle button press - export vehicle entity data to CSV files."""
+        _LOGGER.info("Manual vehicle data export triggered (TEMPORARY DEBUG FEATURE)")
+        
+        try:
+            from .const import (
+                CONF_ODOMETER_ENTITY,
+                CONF_TANK_LEVEL_ENTITY,
+                CONF_RANGE_ENTITY,
+                CONF_POSITION_ENTITY,
+            )
+            from homeassistant.components.recorder import get_instance, history
+            from homeassistant.components.recorder.statistics import statistics_during_period
+            
+            # Get entity IDs from config
+            config = self._config_entry.data
+            options = self._config_entry.options
+            
+            entities = {
+                "odometer": options.get(CONF_ODOMETER_ENTITY) or config.get(CONF_ODOMETER_ENTITY),
+                "tank_level": options.get(CONF_TANK_LEVEL_ENTITY) or config.get(CONF_TANK_LEVEL_ENTITY),
+                "range": options.get(CONF_RANGE_ENTITY) or config.get(CONF_RANGE_ENTITY),
+                "position": options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY),
+            }
+            
+            # Filter out None values
+            entities = {k: v for k, v in entities.items() if v is not None}
+            
+            if not entities:
+                self._last_result = {
+                    "success": False,
+                    "error": "No vehicle entities configured",
+                    "timestamp": dt_util.now().isoformat(),
+                }
+                _LOGGER.warning("No vehicle entities configured for export")
+                return
+            
+            # Create export directory
+            export_dir = "/config/www/export"
+            await self._hass.async_add_executor_job(os.makedirs, export_dir, 0o755, True)
+            
+            # Check if recorder is available
+            try:
+                recorder_instance = await self._hass.async_add_executor_job(get_instance, self._hass)
+                if not recorder_instance:
+                    self._last_result = {
+                        "success": False,
+                        "error": "Recorder not available",
+                        "timestamp": dt_util.now().isoformat(),
+                    }
+                    _LOGGER.warning("Recorder not available for data export")
+                    return
+            except Exception as err:
+                self._last_result = {
+                    "success": False,
+                    "error": f"Error checking recorder: {err}",
+                    "timestamp": dt_util.now().isoformat(),
+                }
+                _LOGGER.error("Error checking recorder availability: %s", err)
+                return
+            
+            # Calculate time range - export all available data
+            end_time = dt_util.now()
+            # Try to get 365 days of data
+            start_time = end_time - timedelta(days=365)
+            
+            result = {
+                "success": True,
+                "exported_entities": {},
+                "export_path": export_dir,
+                "timestamp": dt_util.now().isoformat(),
+                "date_range_start": start_time.isoformat(),
+                "date_range_end": end_time.isoformat(),
+            }
+            
+            # Export each entity
+            for entity_name, entity_id in entities.items():
+                try:
+                    _LOGGER.info("Exporting data for %s (%s)", entity_name, entity_id)
+                    
+                    stats = await self._export_entity_data(
+                        entity_id,
+                        entity_name,
+                        start_time,
+                        end_time,
+                        export_dir,
+                        recorder_instance,
+                    )
+                    
+                    result["exported_entities"][entity_name] = stats
+                    _LOGGER.info(
+                        "Exported %s: %d history points, %d statistics points",
+                        entity_name,
+                        stats["history_points"],
+                        stats["statistics_points"],
+                    )
+                    
+                except Exception as err:
+                    _LOGGER.error("Error exporting %s: %s", entity_name, err, exc_info=True)
+                    result["exported_entities"][entity_name] = {
+                        "error": str(err),
+                        "history_points": 0,
+                        "statistics_points": 0,
+                    }
+            
+            self._last_result = result
+            _LOGGER.info(
+                "Vehicle data export completed: %d entities exported to %s",
+                len([e for e in result["exported_entities"].values() if "error" not in e]),
+                export_dir,
+            )
+            
+        except Exception as err:
+            self._last_result = {
+                "success": False,
+                "error": str(err),
+                "error_type": type(err).__name__,
+                "timestamp": dt_util.now().isoformat(),
+            }
+            _LOGGER.error("Error during vehicle data export: %s", err, exc_info=True)
+    
+    async def _export_entity_data(
+        self,
+        entity_id: str,
+        entity_name: str,
+        start_time: datetime,
+        end_time: datetime,
+        export_dir: str,
+        recorder_instance: Any,
+    ) -> dict[str, Any]:
+        """Export data for a single entity to CSV files.
+        
+        Args:
+            entity_id: Entity ID to export
+            entity_name: Name for the CSV file
+            start_time: Start of time range
+            end_time: End of time range
+            export_dir: Directory to export to
+            recorder_instance: Recorder instance
+            
+        Returns:
+            Statistics about exported data
+        """
+        timestamp_str = dt_util.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Export history (short-term)
+        history_file = os.path.join(export_dir, f"{entity_name}_history_{timestamp_str}.csv")
+        history_count = await self._export_history(
+            entity_id,
+            start_time,
+            end_time,
+            history_file,
+            recorder_instance,
+        )
+        
+        # Export statistics (long-term)
+        statistics_file = os.path.join(export_dir, f"{entity_name}_statistics_{timestamp_str}.csv")
+        statistics_count = await self._export_statistics(
+            entity_id,
+            start_time,
+            end_time,
+            statistics_file,
+            recorder_instance,
+        )
+        
+        return {
+            "entity_id": entity_id,
+            "history_file": history_file,
+            "history_points": history_count,
+            "statistics_file": statistics_file,
+            "statistics_points": statistics_count,
+        }
+    
+    async def _export_history(
+        self,
+        entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        output_file: str,
+        recorder_instance: Any,
+    ) -> int:
+        """Export short-term history to CSV.
+        
+        Args:
+            entity_id: Entity ID to export
+            start_time: Start of time range
+            end_time: End of time range
+            output_file: Output CSV file path
+            recorder_instance: Recorder instance
+            
+        Returns:
+            Number of data points exported
+        """
+        count = 0
+        
+        try:
+            # Query history in chunks to avoid memory issues
+            chunk_days = 7
+            current_start = start_time
+            all_states = []
+            
+            while current_start < end_time:
+                current_end = min(current_start + timedelta(days=chunk_days), end_time)
+                
+                chunk_states = await recorder_instance.async_add_executor_job(
+                    history.state_changes_during_period,
+                    self._hass,
+                    current_start,
+                    current_end,
+                    entity_id,
+                )
+                
+                if chunk_states and entity_id in chunk_states:
+                    all_states.extend(chunk_states[entity_id])
+                
+                current_start = current_end
+            
+            if not all_states:
+                _LOGGER.debug("No history found for %s", entity_id)
+                # Create empty file
+                await self._hass.async_add_executor_job(
+                    self._write_csv,
+                    output_file,
+                    ["timestamp", "state", "attributes"],
+                    [],
+                )
+                return 0
+            
+            # Prepare data for CSV
+            rows = []
+            for state in all_states:
+                # Get attributes as a string representation
+                attrs_str = str(state.attributes) if state.attributes else ""
+                
+                rows.append({
+                    "timestamp": state.last_changed.isoformat() if state.last_changed else "",
+                    "state": state.state if state.state is not None else "",
+                    "attributes": attrs_str,
+                })
+            
+            # Write to CSV
+            await self._hass.async_add_executor_job(
+                self._write_csv,
+                output_file,
+                ["timestamp", "state", "attributes"],
+                rows,
+            )
+            
+            count = len(rows)
+            _LOGGER.debug("Exported %d history points for %s to %s", count, entity_id, output_file)
+            
+        except Exception as err:
+            _LOGGER.error("Error exporting history for %s: %s", entity_id, err, exc_info=True)
+            raise
+        
+        return count
+    
+    async def _export_statistics(
+        self,
+        entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        output_file: str,
+        recorder_instance: Any,
+    ) -> int:
+        """Export long-term statistics to CSV.
+        
+        Args:
+            entity_id: Entity ID to export
+            start_time: Start of time range
+            end_time: End of time range
+            output_file: Output CSV file path
+            recorder_instance: Recorder instance
+            
+        Returns:
+            Number of data points exported
+        """
+        count = 0
+        
+        try:
+            # Fetch statistics
+            stats = await recorder_instance.async_add_executor_job(
+                statistics_during_period,
+                self._hass,
+                start_time,
+                end_time,
+                {entity_id},
+                "hour",
+                None,
+                {"mean", "min", "max", "state", "sum"},
+            )
+            
+            if not stats or entity_id not in stats:
+                _LOGGER.debug("No statistics found for %s", entity_id)
+                # Create empty file
+                await self._hass.async_add_executor_job(
+                    self._write_csv,
+                    output_file,
+                    ["timestamp", "mean", "min", "max", "state", "sum"],
+                    [],
+                )
+                return 0
+            
+            # Prepare data for CSV
+            rows = []
+            for stat in stats[entity_id]:
+                timestamp = stat.get("start")
+                if isinstance(timestamp, (int, float)):
+                    timestamp = dt_util.utc_from_timestamp(timestamp)
+                
+                rows.append({
+                    "timestamp": timestamp.isoformat() if timestamp else "",
+                    "mean": stat.get("mean", ""),
+                    "min": stat.get("min", ""),
+                    "max": stat.get("max", ""),
+                    "state": stat.get("state", ""),
+                    "sum": stat.get("sum", ""),
+                })
+            
+            # Write to CSV
+            await self._hass.async_add_executor_job(
+                self._write_csv,
+                output_file,
+                ["timestamp", "mean", "min", "max", "state", "sum"],
+                rows,
+            )
+            
+            count = len(rows)
+            _LOGGER.debug("Exported %d statistics points for %s to %s", count, entity_id, output_file)
+            
+        except Exception as err:
+            _LOGGER.error("Error exporting statistics for %s: %s", entity_id, err, exc_info=True)
+            raise
+        
+        return count
+    
+    def _write_csv(self, filename: str, headers: list[str], rows: list[dict[str, Any]]) -> None:
+        """Write data to CSV file.
+        
+        Args:
+            filename: Output filename
+            headers: CSV column headers
+            rows: List of dictionaries containing row data
+        """
+        with open(filename, "w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=headers)
+            writer.writeheader()
+            writer.writerows(rows)
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with export results."""
+        return self._last_result
