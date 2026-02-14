@@ -1233,6 +1233,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     
                     # Pattern matching
                     try:
+                        from homeassistant.util import dt as dt_util
                         from .utils.trip_patterns import find_matching_patterns
                         patterns = data.get("trip_patterns", [])
                         
