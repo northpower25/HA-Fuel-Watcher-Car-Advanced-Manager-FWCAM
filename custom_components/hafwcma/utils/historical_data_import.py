@@ -1126,7 +1126,7 @@ async def import_historical_trip_data(
     from ..const import (
         CONF_ODOMETER_ENTITY,
         CONF_TANK_LEVEL_ENTITY,
-        CONF_LOCATION_ENTITY,
+        CONF_POSITION_ENTITY,
         DOMAIN,
     )
     
@@ -1172,7 +1172,7 @@ async def import_historical_trip_data(
         # Get entity IDs from config
         odometer_entity = entry.data.get(CONF_ODOMETER_ENTITY)
         tank_level_entity = entry.data.get(CONF_TANK_LEVEL_ENTITY)
-        location_entity = entry.data.get(CONF_LOCATION_ENTITY)
+        location_entity = entry.data.get(CONF_POSITION_ENTITY)
         
         if not odometer_entity:
             result["reason"] = "No odometer entity configured"
