@@ -8,6 +8,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_PROXIMITY_ALERTS_ENABLED,
@@ -161,7 +162,6 @@ class TripTrackingSwitch(SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on trip tracking."""
         from .utils import storage
-        from homeassistant.util import dt as dt_util
         
         _LOGGER.info("Enabling trip tracking")
         
@@ -192,7 +192,6 @@ class TripTrackingSwitch(SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off trip tracking."""
         from .utils import storage
-        from homeassistant.util import dt as dt_util
         
         _LOGGER.info("Disabling trip tracking")
         
