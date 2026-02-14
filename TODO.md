@@ -146,6 +146,207 @@
 
 ---
 
+## 🎯 New: Diagnostic Data Export Feature
+
+### Konzept / Concept ✅
+**Status**: 📝 Concept Created (Awaiting Implementation)  
+**Priority**: High  
+**Created**: 2026-02-14  
+**Target**: Future PR
+
+#### Problem Statement
+Users experiencing issues need an easy way to export all relevant diagnostic data for troubleshooting and bug reporting. Currently, gathering this data requires manual extraction from multiple sources, which is error-prone and time-consuming.
+
+#### Solution: One-Click Diagnostic Export
+A button entity that generates a downloadable ZIP file containing all relevant diagnostic information.
+
+#### Implementation Plan
+
+##### Phase 1: Core Export Functionality
+- [ ] **Button Entity**: "Export Diagnostic Data"
+  - [ ] Create new button entity in `button.py`
+  - [ ] Generates timestamped ZIP file in `/config/hafwcma_diagnostics/`
+  - [ ] Shows status in button attributes (last export time, file path, file size)
+  
+- [ ] **Service**: `hafwcma.export_diagnostics`
+  - [ ] Callable from automations/scripts
+  - [ ] Optional parameters: `include_history_days`, `anonymize_gps`, `anonymize_stations`
+  - [ ] Returns file path and download URL
+  
+- [ ] **Data Collection Module**: `utils/diagnostics_export.py`
+  - [ ] Centralized export logic
+  - [ ] Privacy controls (anonymization options)
+  - [ ] Error handling and logging
+
+##### Phase 2: Data to Include in Export
+
+**Integration Configuration** (anonymized)
+- [ ] Config entry data (IDs, entity mappings)
+- [ ] Options flow settings
+- [ ] Trip tracking configuration
+- [ ] Anonymization rules
+- [ ] Feature flags and toggles
+
+**Storage Data** (limited retention)
+- [ ] Last 100 trips with full details
+- [ ] Last 50 refueling events
+- [ ] Trip patterns (anonymized GPS if enabled)
+- [ ] POI list (anonymized if enabled)
+- [ ] Last 90 days of odometer history
+- [ ] Price observations (last 100)
+- [ ] Geocoding cache entries (last 50, anonymized)
+
+**Entity States & Attributes**
+- [ ] All hafwcma sensor states and attributes
+- [ ] Connected vehicle entity states (odometer, tank, range, position)
+- [ ] Entity availability status
+- [ ] Last update timestamps
+
+**API Status & Responses** (sanitized)
+- [ ] Last API debug sensor data
+- [ ] API connection test results
+- [ ] Rate limiting status
+- [ ] Last API error messages (sanitized)
+- [ ] Sample API responses (anonymized station data)
+
+**Error Logs & Diagnostics**
+- [ ] Last 200 haFWCMA log entries (from Home Assistant logs)
+- [ ] Error tracebacks (sanitized of personal data)
+- [ ] Warning messages
+- [ ] Import history (historical data import status)
+
+**System Information**
+- [ ] Home Assistant version
+- [ ] Integration version
+- [ ] Python version
+- [ ] Recorder configuration (history retention settings)
+- [ ] Entity registry entries for configured entities
+- [ ] Timezone and locale settings
+
+**Test Datasets** (if feature enabled)
+- [ ] Export format matching `docs/test_datasets/`
+- [ ] Odometer history CSV (last 100 points)
+- [ ] Tank level history CSV (last 100 points)
+- [ ] Range history CSV (last 100 points)
+- [ ] Anonymized position history (if GPS configured)
+
+##### Phase 3: Privacy & Security
+
+**Anonymization Options**
+- [ ] **GPS Coordinates**: Round to 2-3 decimal places or replace with "ANONYMIZED"
+- [ ] **Station Names/Addresses**: Replace with generic "Station A", "Station B"
+- [ ] **Personal Names**: Detect and redact from trip notes/descriptions
+- [ ] **API Keys**: Always redact (replace with "REDACTED_API_KEY")
+- [ ] **Home/Work Addresses**: Option to exclude or anonymize POIs
+
+**User Controls**
+- [ ] Checkbox in export dialog: "Anonymize GPS coordinates"
+- [ ] Checkbox: "Anonymize station names and addresses"
+- [ ] Checkbox: "Include full error logs"
+- [ ] Number input: "Days of history to include" (default: 30, max: 90)
+
+**File Security**
+- [ ] ZIP files stored in protected directory
+- [ ] Automatic cleanup after 24 hours
+- [ ] File size limits (max 10 MB)
+- [ ] Validate ZIP contents before generation
+
+##### Phase 4: User Experience
+
+**Export Dialog** (if UI implementation)
+- [ ] Show estimated file size before export
+- [ ] Privacy options with explanations
+- [ ] Progress indicator during generation
+- [ ] Download link with auto-expiry notice
+
+**Notifications**
+- [ ] Success notification with download link
+- [ ] Error notification if export fails
+- [ ] File size warning if >5 MB
+- [ ] Cleanup notification (24h expiry)
+
+**Documentation**
+- [ ] User guide for using diagnostic export
+- [ ] Privacy explanation (what data is included)
+- [ ] Instructions for attaching to bug reports
+- [ ] How to interpret diagnostic data (for advanced users)
+
+#### File Structure Example
+```
+hafwcma_diagnostics_20260214_142500.zip
+├── README.txt (export info, privacy notice)
+├── config/
+│   ├── config_entry.json
+│   ├── options.json
+│   └── trip_tracking_config.json
+├── storage/
+│   ├── trips.json (last 100)
+│   ├── refueling_events.json (last 50)
+│   ├── patterns.json
+│   ├── pois.json (anonymized)
+│   ├── odometer_history.json
+│   └── price_history.json
+├── entities/
+│   ├── sensor_states.json
+│   ├── vehicle_entities.json
+│   └── entity_attributes.json
+├── api/
+│   ├── last_api_response.json (anonymized)
+│   ├── api_status.json
+│   └── connection_test_results.json
+├── logs/
+│   ├── error_log.txt
+│   ├── warning_log.txt
+│   └── import_history.json
+├── system/
+│   ├── system_info.json
+│   └── recorder_config.json
+└── test_datasets/ (optional)
+    ├── odometer_history.csv
+    ├── tank_level_history.csv
+    └── range_history.csv
+```
+
+#### Technical Implementation Notes
+
+**ZIP Generation**
+- Use Python's `zipfile` module
+- Stream writing for memory efficiency
+- Atomic file creation (write to temp, then move)
+
+**Data Serialization**
+- JSON for structured data (pretty-printed for readability)
+- CSV for time-series data
+- Plain text for logs
+
+**Performance Considerations**
+- Async/await for all I/O operations
+- Background executor for ZIP generation
+- Timeout protection (max 30 seconds)
+- Chunk-based data retrieval from storage
+
+**Error Handling**
+- Graceful degradation (partial export if some data unavailable)
+- Detailed error messages in export metadata
+- Fallback to minimal export on critical errors
+
+#### Future Enhancements (Phase 5)
+- [ ] Automatic upload to GitHub issue (with user consent)
+- [ ] Integration with Home Assistant Cloud for easy sharing
+- [ ] Diff comparison between two diagnostic exports
+- [ ] Scheduled periodic exports for issue tracking
+- [ ] Email/Telegram notification with download link
+- [ ] Web-based diagnostic analyzer tool
+
+#### Success Metrics
+- ✅ One-click export reduces troubleshooting time by 80%
+- ✅ Users can attach diagnostic data to bug reports
+- ✅ Developers can reproduce issues faster
+- ✅ Privacy controls ensure user data safety
+- ✅ Export generation completes in <10 seconds
+
+---
+
 ## 🔄 Deferred Features (Future Enhancements)
 
 ## High Priority
