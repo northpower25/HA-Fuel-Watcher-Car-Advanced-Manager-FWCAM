@@ -1322,7 +1322,7 @@ async def _import_trip_history(
             now = dt_util.now()
             short_term_cutoff = now - timedelta(days=SHORT_TERM_HISTORY_DAYS)
             if start_time < short_term_cutoff:
-                lookback_days = (end_time - start_time).days
+                lookback_days = int((end_time - start_time).total_seconds() / (24 * SECONDS_PER_HOUR))
                 _LOGGER.warning(
                     "GPS location history requested for %d days, but Home Assistant only retains "
                     "short-term history for %d days. Trips detected from older data will not have "
