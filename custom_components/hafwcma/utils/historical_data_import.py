@@ -1232,7 +1232,7 @@ async def import_historical_trip_data(
         completion_timestamp = dt_util.now().isoformat()
         data["last_historical_import"] = {
             "imported": True,
-            "timestamp": dt_util.now().isoformat(),
+            "timestamp": completion_timestamp,
             "completion_timestamp": completion_timestamp,
             "type": import_type,
             "trips_detected": trips_detected,
@@ -1488,6 +1488,12 @@ async def _import_trip_history(
                             )
                         else:
                             trips_filtered_by_duplicate += 1
+                            _LOGGER.debug(
+                                "Filtered trip as duplicate: %.1f km from %s (within %d min of existing trip)",
+                                distance_km,
+                                prev_time.isoformat(),
+                                TRIP_MERGE_TIME_WINDOW_MINUTES,
+                            )
                     else:
                         trips_filtered_by_speed += 1
                         _LOGGER.debug(
