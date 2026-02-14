@@ -1229,11 +1229,13 @@ async def import_historical_trip_data(
         odometer_history_count = len(data.get("odometer_history", []))
         
         # Store import metadata
+        # Note: Both timestamp and completion_timestamp are set to the same value
+        # for consistency. In the future, timestamp could track start time if needed.
         completion_timestamp = dt_util.now().isoformat()
         data["last_historical_import"] = {
             "imported": True,
-            "timestamp": completion_timestamp,
-            "completion_timestamp": completion_timestamp,
+            "timestamp": completion_timestamp,  # Import completion time (for backward compatibility)
+            "completion_timestamp": completion_timestamp,  # Import completion time (explicit field)
             "type": import_type,
             "trips_detected": trips_detected,
             "odometer_points_available": odometer_history_count,
