@@ -480,10 +480,18 @@ class FWCAMCard extends HTMLElement {
     const recentTrips = tripLogEntity?.attributes?.recent_trips || [];
     
     // Debug logging for trip data
-    if (this._config.show_trip_log && tripLogEntity) {
-      console.log('[FWCAM Card] Trip Log Entity:', tripLogEntityId);
-      console.log('[FWCAM Card] Trip Log Entity State:', tripLogEntity);
-      console.log('[FWCAM Card] Recent Trips:', recentTrips);
+    if (this._config.show_trip_log) {
+      console.log('[FWCAM Card] Trip Log Debugging:');
+      console.log('  - Expected Entity ID:', tripLogEntityId);
+      console.log('  - Entity Found:', tripLogEntity ? 'Yes' : 'No');
+      if (tripLogEntity) {
+        console.log('  - Entity State:', tripLogEntity.state);
+        console.log('  - Has recent_trips:', tripLogEntity.attributes?.recent_trips ? 'Yes' : 'No');
+        console.log('  - Recent Trips Count:', recentTrips.length);
+        console.log('  - Recent Trips Data:', recentTrips);
+      } else {
+        console.warn('[FWCAM Card] Trip log entity not found! Available entities:', Object.keys(this._hass.states).filter(e => e.includes('trip')));
+      }
     }
     
     // Store events for dialog access
