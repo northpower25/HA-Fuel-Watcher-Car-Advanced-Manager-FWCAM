@@ -1034,6 +1034,8 @@ async def add_trip(
     Returns:
         Trip ID of the newly created trip
     """
+    from homeassistant.util import dt as dt_util
+    
     data = await load_data(hass, entry)
     
     # Get next trip ID
@@ -1117,6 +1119,8 @@ async def update_trip(
     Returns:
         True if trip was found and updated, False otherwise
     """
+    from homeassistant.util import dt as dt_util
+    
     data = await load_data(hass, entry)
     trips = data.get("trips", [])
     
@@ -1208,6 +1212,8 @@ async def add_trip_pattern(
     Returns:
         Pattern ID of the newly created pattern
     """
+    from homeassistant.util import dt as dt_util
+    
     data = await load_data(hass, entry)
     
     # Get next pattern ID
@@ -1259,6 +1265,8 @@ async def add_poi(
     Returns:
         POI ID of the newly created POI
     """
+    from homeassistant.util import dt as dt_util
+    
     data = await load_data(hass, entry)
     
     # Get next POI ID
