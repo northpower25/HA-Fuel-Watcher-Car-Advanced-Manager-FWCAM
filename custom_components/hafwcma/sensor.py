@@ -1900,12 +1900,48 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return all API debug information as attributes."""
+        """Return API debug information as attributes (summarized to avoid size issues)."""
         api_debug = self.coordinator.data.get("api_debug", {})
         if not api_debug:
             return {"status": "No API request made yet"}
         
-        return api_debug
+        # Create a copy without the potentially large response data
+        filtered_debug = {}
+        
+        for key, value in api_debug.items():
+            # Skip or summarize large fields
+            if key == "last_api_response":
+                # Only include summary info about the response
+                if isinstance(value, dict):
+                    filtered_debug["api_response_summary"] = {
+                        "keys": list(value.keys())[:10],  # First 10 keys only
+                        "size_bytes": len(str(value)),
+                    }
+                elif isinstance(value, list):
+                    filtered_debug["api_response_summary"] = {
+                        "items_count": len(value),
+                        "size_bytes": len(str(value)),
+                    }
+                else:
+                    filtered_debug["api_response_summary"] = {
+                        "type": type(value).__name__,
+                        "size_bytes": len(str(value)),
+                    }
+            elif key == "last_api_request":
+                # Summarize request info
+                if isinstance(value, dict):
+                    # Keep only essential request info
+                    filtered_debug["api_request_summary"] = {
+                        k: v for k, v in value.items() 
+                        if k in ["url", "method", "timestamp"]
+                    }
+                else:
+                    filtered_debug["api_request_summary"] = str(value)[:200]  # First 200 chars
+            else:
+                # Include other fields as-is (they should be small)
+                filtered_debug[key] = value
+        
+        return filtered_debug
 
 
 class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
