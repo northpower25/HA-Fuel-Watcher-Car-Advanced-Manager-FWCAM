@@ -97,8 +97,10 @@
   - [x] Range entity (history + statistics)
   - [x] Position entity (history + statistics)
 - [x] Creates CSV files in `/config/www/export/`
-- [x] Exports both short-term history (up to 10 days) and long-term statistics (up to 365 days)
+- [x] Exports short-term history (limited by Home Assistant's recorder retention, typically 10 days)
+- [x] Exports long-term statistics (up to 365 days of hourly aggregated data)
 - [x] Each entity gets two CSV files: `{entity}_history_{timestamp}.csv` and `{entity}_statistics_{timestamp}.csv`
+- [x] Processing done in 7-day chunks to avoid memory issues (exports full requested range)
 - [x] Status and results available in button attributes
 
 #### CSV File Format
