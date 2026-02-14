@@ -427,7 +427,7 @@ create_pattern:
         number:
           min: -90
           max: 90
-          step: 0.0001
+          step: any
     start_longitude:
       name: Start Longitude
       description: Longitude of start location
@@ -437,7 +437,7 @@ create_pattern:
         number:
           min: -180
           max: 180
-          step: 0.0001
+          step: any
     end_latitude:
       name: End Latitude
       description: Latitude of end location
@@ -447,7 +447,7 @@ create_pattern:
         number:
           min: -90
           max: 90
-          step: 0.0001
+          step: any
     end_longitude:
       name: End Longitude
       description: Longitude of end location
@@ -457,7 +457,7 @@ create_pattern:
         number:
           min: -180
           max: 180
-          step: 0.0001
+          step: any
     category:
       name: Category
       description: Trip category
