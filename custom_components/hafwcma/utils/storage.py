@@ -1070,16 +1070,16 @@ async def add_trip(
     
     # Update statistics
     stats = data["trip_statistics"]
-    stats["total_trips"] = stats.get("total_trips", 0) + 1
-    stats["total_distance_km"] = stats.get("total_distance_km", 0.0) + trip_data.get("distance_km", 0.0)
-    stats["total_fuel_consumed"] = stats.get("total_fuel_consumed", 0.0) + trip_data.get("fuel_consumed", 0.0)
-    stats["total_fuel_cost"] = stats.get("total_fuel_cost", 0.0) + trip_data.get("fuel_cost", 0.0)
-    stats["total_additional_costs"] = stats.get("total_additional_costs", 0.0) + trip_data.get("additional_costs", 0.0)
+    stats["total_trips"] = (stats.get("total_trips") or 0) + 1
+    stats["total_distance_km"] = (stats.get("total_distance_km") or 0.0) + (trip_data.get("distance_km") or 0.0)
+    stats["total_fuel_consumed"] = (stats.get("total_fuel_consumed") or 0.0) + (trip_data.get("fuel_consumed") or 0.0)
+    stats["total_fuel_cost"] = (stats.get("total_fuel_cost") or 0.0) + (trip_data.get("fuel_cost") or 0.0)
+    stats["total_additional_costs"] = (stats.get("total_additional_costs") or 0.0) + (trip_data.get("additional_costs") or 0.0)
     
     # Update category counters
     category = trip_data.get("category", "private")
     category_key = f"{category}_trips"
-    stats[category_key] = stats.get(category_key, 0) + 1
+    stats[category_key] = (stats.get(category_key) or 0) + 1
     
     await save_data(hass, entry, data)
     return next_id
@@ -1193,16 +1193,16 @@ async def delete_trip(
             
             # Update statistics
             stats = data["trip_statistics"]
-            stats["total_trips"] = max(0, stats.get("total_trips", 0) - 1)
-            stats["total_distance_km"] = max(0.0, stats.get("total_distance_km", 0.0) - removed_trip.get("distance_km", 0.0))
-            stats["total_fuel_consumed"] = max(0.0, stats.get("total_fuel_consumed", 0.0) - removed_trip.get("fuel_consumed", 0.0))
-            stats["total_fuel_cost"] = max(0.0, stats.get("total_fuel_cost", 0.0) - removed_trip.get("fuel_cost", 0.0))
-            stats["total_additional_costs"] = max(0.0, stats.get("total_additional_costs", 0.0) - removed_trip.get("additional_costs", 0.0))
+            stats["total_trips"] = max(0, (stats.get("total_trips") or 0) - 1)
+            stats["total_distance_km"] = max(0.0, (stats.get("total_distance_km") or 0.0) - (removed_trip.get("distance_km") or 0.0))
+            stats["total_fuel_consumed"] = max(0.0, (stats.get("total_fuel_consumed") or 0.0) - (removed_trip.get("fuel_consumed") or 0.0))
+            stats["total_fuel_cost"] = max(0.0, (stats.get("total_fuel_cost") or 0.0) - (removed_trip.get("fuel_cost") or 0.0))
+            stats["total_additional_costs"] = max(0.0, (stats.get("total_additional_costs") or 0.0) - (removed_trip.get("additional_costs") or 0.0))
             
             # Update category counters
             category = removed_trip.get("category", "private")
             category_key = f"{category}_trips"
-            stats[category_key] = max(0, stats.get(category_key, 0) - 1)
+            stats[category_key] = max(0, (stats.get(category_key) or 0) - 1)
             
             await save_data(hass, entry, data)
             return True
