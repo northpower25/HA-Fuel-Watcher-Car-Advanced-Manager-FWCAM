@@ -82,6 +82,42 @@
 
 ---
 
+## 🔧 Temporary Debug Features
+
+### Export Vehicle Data Button ✅
+**Status**: ✅ Implemented (Temporary)  
+**Implementation Date**: 2026-02-14  
+**Purpose**: Export raw vehicle entity data for test dataset generation
+
+#### Features
+- [x] Button entity: "Export Vehicle Data (Debug)"
+- [x] Exports data for all configured vehicle entities:
+  - [x] Odometer entity (history + statistics)
+  - [x] Tank level entity (history + statistics)
+  - [x] Range entity (history + statistics)
+  - [x] Position entity (history + statistics)
+- [x] Creates CSV files in `/config/www/export/`
+- [x] Exports short-term history (limited by Home Assistant's recorder retention, typically 10 days)
+- [x] Exports long-term statistics (up to 365 days of hourly aggregated data)
+- [x] Each entity gets two CSV files: `{entity}_history_{timestamp}.csv` and `{entity}_statistics_{timestamp}.csv`
+- [x] Processing done in 7-day chunks to avoid memory issues (exports full requested range)
+- [x] Status and results available in button attributes
+
+#### CSV File Format
+**History CSV**: `timestamp, state, attributes`
+**Statistics CSV**: `timestamp, mean, min, max, state, sum`
+
+#### Usage
+1. Click the "Export Vehicle Data (Debug)" button in Home Assistant
+2. Wait for export to complete (check button attributes for status)
+3. Find CSV files in `/config/www/export/`
+4. Access via browser at `http://your-ha-ip:8123/local/export/`
+
+#### Removal Plan
+⚠️ **NOTE**: This is a temporary debugging feature and will be removed once trip detection issues are resolved. Target removal: Next major version update.
+
+---
+
 ## 🎯 New: Geolocation Feature (In Planning)
 
 ### Konzept erstellt / Concept Created ✅
