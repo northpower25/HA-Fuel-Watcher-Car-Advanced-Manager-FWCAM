@@ -1716,7 +1716,13 @@ class FWCAMCard extends HTMLElement {
     const trip = this._recentTrips ? this._recentTrips.find(t => t.trip_id === parseInt(tripId)) : null;
     
     if (!trip) {
-      alert(`Trip with ID ${tripId} not found`);
+      const lang = this.getUserLanguage();
+      const errorMessages = {
+        de: `Fahrt mit ID ${tripId} wurde nicht gefunden. Bitte aktualisieren Sie die Seite.`,
+        en: `Trip with ID ${tripId} not found. Please refresh the page.`
+      };
+      const message = errorMessages[lang] || errorMessages['en'];
+      alert(message);
       return;
     }
     
@@ -1727,18 +1733,27 @@ class FWCAMCard extends HTMLElement {
     form.dataset.tripId = tripId;
     
     // Populate form with trip data
-    const tzOffset = new Date().getTimezoneOffset() * 60000;
-    
+    // Convert timestamps to local datetime-local format
     if (trip.timestamp_start) {
-      const startDate = new Date(trip.timestamp_start);
-      const localStart = new Date(startDate - tzOffset).toISOString().slice(0, 16);
-      this.shadowRoot.getElementById('trip-start-time').value = localStart;
+      try {
+        const startDate = new Date(trip.timestamp_start);
+        const tzOffset = startDate.getTimezoneOffset() * 60000;
+        const localStart = new Date(startDate.getTime() - tzOffset).toISOString().slice(0, 16);
+        this.shadowRoot.getElementById('trip-start-time').value = localStart;
+      } catch (err) {
+        console.error('Error parsing trip start time:', err);
+      }
     }
     
     if (trip.timestamp_end) {
-      const endDate = new Date(trip.timestamp_end);
-      const localEnd = new Date(endDate - tzOffset).toISOString().slice(0, 16);
-      this.shadowRoot.getElementById('trip-end-time').value = localEnd;
+      try {
+        const endDate = new Date(trip.timestamp_end);
+        const tzOffset = endDate.getTimezoneOffset() * 60000;
+        const localEnd = new Date(endDate.getTime() - tzOffset).toISOString().slice(0, 16);
+        this.shadowRoot.getElementById('trip-end-time').value = localEnd;
+      } catch (err) {
+        console.error('Error parsing trip end time:', err);
+      }
     }
     
     this.shadowRoot.getElementById('trip-distance').value = trip.distance_km || '';
@@ -1814,7 +1829,13 @@ class FWCAMCard extends HTMLElement {
       }, SERVICE_CALL_REFRESH_DELAY_MS);
     } catch (error) {
       console.error('Error submitting trip:', error);
-      alert('Failed to save trip. Please try again.');
+      const lang = this.getUserLanguage();
+      const errorMessages = {
+        de: `Fehler beim Speichern der Fahrt: ${error.message || error}`,
+        en: `Failed to save trip: ${error.message || error}`
+      };
+      const message = errorMessages[lang] || errorMessages['en'];
+      alert(message);
     }
   }
 
