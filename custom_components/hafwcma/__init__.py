@@ -88,6 +88,16 @@ SCHEMA_ADD_TRIP = vol.Schema({
     vol.Optional("purpose"): cv.string,
     vol.Optional("fuel_consumed"): vol.Coerce(float),
     vol.Optional("additional_costs"): vol.Coerce(float),
+    vol.Optional("odometer_start"): vol.Coerce(float),
+    vol.Optional("odometer_end"): vol.Coerce(float),
+    vol.Optional("start_latitude"): vol.Coerce(float),
+    vol.Optional("start_longitude"): vol.Coerce(float),
+    vol.Optional("end_latitude"): vol.Coerce(float),
+    vol.Optional("end_longitude"): vol.Coerce(float),
+    vol.Optional("start_name"): cv.string,
+    vol.Optional("start_address"): cv.string,
+    vol.Optional("end_name"): cv.string,
+    vol.Optional("end_address"): cv.string,
 })
 
 SCHEMA_EDIT_TRIP = vol.Schema({
@@ -97,6 +107,16 @@ SCHEMA_EDIT_TRIP = vol.Schema({
     vol.Optional("purpose"): cv.string,
     vol.Optional("additional_costs"): vol.Coerce(float),
     vol.Optional("notes"): cv.string,
+    vol.Optional("odometer_start"): vol.Coerce(float),
+    vol.Optional("odometer_end"): vol.Coerce(float),
+    vol.Optional("start_latitude"): vol.Coerce(float),
+    vol.Optional("start_longitude"): vol.Coerce(float),
+    vol.Optional("end_latitude"): vol.Coerce(float),
+    vol.Optional("end_longitude"): vol.Coerce(float),
+    vol.Optional("start_name"): cv.string,
+    vol.Optional("start_address"): cv.string,
+    vol.Optional("end_name"): cv.string,
+    vol.Optional("end_address"): cv.string,
 })
 
 SCHEMA_DELETE_TRIP = vol.Schema({

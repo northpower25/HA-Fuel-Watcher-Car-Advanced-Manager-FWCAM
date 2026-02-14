@@ -319,6 +319,96 @@ add_trip:
           max: 500
           step: 0.01
           unit_of_measurement: "€"
+    odometer_start:
+      name: Odometer Start
+      description: Odometer reading at trip start in kilometers
+      required: false
+      example: 12345
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 0.1
+          unit_of_measurement: "km"
+    odometer_end:
+      name: Odometer End
+      description: Odometer reading at trip end in kilometers
+      required: false
+      example: 12370
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 0.1
+          unit_of_measurement: "km"
+    start_latitude:
+      name: Start Latitude
+      description: Latitude coordinate of trip start location
+      required: false
+      example: 51.5074
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: 0.000001
+    start_longitude:
+      name: Start Longitude
+      description: Longitude coordinate of trip start location
+      required: false
+      example: -0.1278
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: 0.000001
+    end_latitude:
+      name: End Latitude
+      description: Latitude coordinate of trip end location
+      required: false
+      example: 51.5074
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: 0.000001
+    end_longitude:
+      name: End Longitude
+      description: Longitude coordinate of trip end location
+      required: false
+      example: -0.1278
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: 0.000001
+    start_name:
+      name: Start Location Name
+      description: Name or description of the start location
+      required: false
+      example: "Home"
+      selector:
+        text:
+    start_address:
+      name: Start Address
+      description: Address of the start location
+      required: false
+      example: "123 Main Street, City"
+      selector:
+        text:
+    end_name:
+      name: End Location Name
+      description: Name or description of the end location
+      required: false
+      example: "Office"
+      selector:
+        text:
+    end_address:
+      name: End Address
+      description: Address of the end location
+      required: false
+      example: "456 Business Ave, City"
+      selector:
+        text:
 
 edit_trip:
   name: Edit Trip
@@ -375,6 +465,90 @@ edit_trip:
       description: Additional notes about the trip
       required: false
       example: "Highway construction detour"
+      selector:
+        text:
+    odometer_start:
+      name: Odometer Start
+      description: Odometer reading at trip start in kilometers
+      required: false
+      example: 12345
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 0.1
+          unit_of_measurement: "km"
+    odometer_end:
+      name: Odometer End
+      description: Odometer reading at trip end in kilometers
+      required: false
+      example: 12370
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 0.1
+          unit_of_measurement: "km"
+    start_latitude:
+      name: Start Latitude
+      description: Latitude coordinate of trip start location
+      required: false
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: 0.000001
+    start_longitude:
+      name: Start Longitude
+      description: Longitude coordinate of trip start location
+      required: false
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: 0.000001
+    end_latitude:
+      name: End Latitude
+      description: Latitude coordinate of trip end location
+      required: false
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: 0.000001
+    end_longitude:
+      name: End Longitude
+      description: Longitude coordinate of trip end location
+      required: false
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: 0.000001
+    start_name:
+      name: Start Location Name
+      description: Name or description of the start location
+      required: false
+      example: "Home"
+      selector:
+        text:
+    start_address:
+      name: Start Address
+      description: Address of the start location
+      required: false
+      selector:
+        text:
+    end_name:
+      name: End Location Name
+      description: Name or description of the end location
+      required: false
+      example: "Office"
+      selector:
+        text:
+    end_address:
+      name: End Address
+      description: Address of the end location
+      required: false
       selector:
         text:
 
