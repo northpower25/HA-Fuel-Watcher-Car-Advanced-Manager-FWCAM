@@ -1225,12 +1225,20 @@ async def import_historical_trip_data(
         
         result["trips_detected"] = trips_detected
         
+        # Get odometer history count for debugging
+        odometer_history_count = len(data.get("odometer_history", []))
+        
         # Store import metadata
+        # Note: Both timestamp and completion_timestamp are set to the same value
+        # for consistency. In the future, timestamp could track start time if needed.
+        completion_timestamp = dt_util.now().isoformat()
         data["last_historical_import"] = {
             "imported": True,
-            "timestamp": dt_util.now().isoformat(),
+            "timestamp": completion_timestamp,  # Import completion time (for backward compatibility)
+            "completion_timestamp": completion_timestamp,  # Import completion time (explicit field)
             "type": import_type,
             "trips_detected": trips_detected,
+            "odometer_points_available": odometer_history_count,
             "lookback_days": lookback_days,
             "date_range": result["date_range"],
         }
@@ -1376,9 +1384,19 @@ async def _import_trip_history(
         
         # Detect trips by analyzing odometer changes
         _LOGGER.info("Analyzing %d odometer points for trip detection", len(sorted_history))
+        _LOGGER.debug(
+            "Trip detection thresholds: min_distance=%.1f km, min_duration=%.1f min, max_speed=%.1f km/h",
+            TRIP_DETECTION_MIN_DISTANCE_KM,
+            TRIP_MIN_DURATION_MINUTES,
+            TRIP_MAX_SPEED_KMH,
+        )
         
         pending_trips = []
         previous_point = None
+        trips_filtered_by_distance = 0
+        trips_filtered_by_duration = 0
+        trips_filtered_by_speed = 0
+        trips_filtered_by_duplicate = 0
         
         for current_point in sorted_history:
             if previous_point is None:
@@ -1470,6 +1488,28 @@ async def _import_trip_history(
                                 duration_minutes,
                                 avg_speed,
                             )
+                        else:
+                            trips_filtered_by_duplicate += 1
+                            _LOGGER.debug(
+                                "Filtered trip as duplicate: %.1f km from %s (within %d min of existing trip)",
+                                distance_km,
+                                prev_time.isoformat(),
+                                TRIP_MERGE_TIME_WINDOW_MINUTES,
+                            )
+                    else:
+                        trips_filtered_by_speed += 1
+                        _LOGGER.debug(
+                            "Filtered trip due to unrealistic speed: %.1f km/h (%.1f km in %.1f min)",
+                            avg_speed,
+                            distance_km,
+                            duration_minutes,
+                        )
+                else:
+                    # Log why trip was filtered
+                    if distance_km < TRIP_DETECTION_MIN_DISTANCE_KM:
+                        trips_filtered_by_distance += 1
+                    elif duration_minutes < TRIP_MIN_DURATION_MINUTES:
+                        trips_filtered_by_duration += 1
             
             except Exception as err:
                 _LOGGER.warning("Error processing odometer point: %s", err)
@@ -1478,7 +1518,15 @@ async def _import_trip_history(
         
         # Save detected trips in batch to avoid race conditions
         # Load data once, add all trips with proper ID assignment and statistics, save once
-        _LOGGER.info("Detected %d historical trips", len(pending_trips))
+        _LOGGER.info(
+            "Trip detection summary: %d trips detected, %d filtered (distance: %d, duration: %d, speed: %d, duplicate: %d)",
+            len(pending_trips),
+            trips_filtered_by_distance + trips_filtered_by_duration + trips_filtered_by_speed + trips_filtered_by_duplicate,
+            trips_filtered_by_distance,
+            trips_filtered_by_duration,
+            trips_filtered_by_speed,
+            trips_filtered_by_duplicate,
+        )
         
         if pending_trips:
             data = await load_data(hass, entry)
