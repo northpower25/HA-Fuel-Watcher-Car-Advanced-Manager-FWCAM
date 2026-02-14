@@ -1228,9 +1228,12 @@ async def import_historical_trip_data(
         result["errors"].append(str(err))
         _LOGGER.error("Error importing historical trip data: %s", err, exc_info=True)
         
-        # Store error metadata
+        # Store error metadata - try to reuse existing data if available
         try:
-            data = await load_data(hass, entry.entry_id)
+            # Try to use existing data variable if it was already loaded
+            if 'data' not in locals():
+                data = await load_data(hass, entry.entry_id)
+            
             data["last_historical_import"] = {
                 "imported": False,
                 "timestamp": dt_util.now().isoformat(),

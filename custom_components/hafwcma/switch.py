@@ -129,10 +129,18 @@ class TripTrackingSwitch(SwitchEntity):
             "model": "Fuel Watcher Car Advanced Manager",
         }
     
+    def _has_coordinator_data(self) -> bool:
+        """Check if coordinator and its data are available."""
+        return (
+            self._coordinator is not None
+            and hasattr(self._coordinator, "data")
+            and self._coordinator.data is not None
+        )
+    
     @property
     def is_on(self) -> bool:
         """Return true if trip tracking is enabled."""
-        if self._coordinator and hasattr(self._coordinator, "data") and self._coordinator.data is not None:
+        if self._has_coordinator_data():
             config = self._coordinator.data.get("trip_tracking_config", {})
             return config.get("enabled", False)
         return False
@@ -142,7 +150,7 @@ class TripTrackingSwitch(SwitchEntity):
         """Return extra state attributes."""
         attributes = {}
         
-        if self._coordinator and hasattr(self._coordinator, "data") and self._coordinator.data is not None:
+        if self._has_coordinator_data():
             config = self._coordinator.data.get("trip_tracking_config", {})
             stats = self._coordinator.data.get("trip_statistics", {})
             
@@ -185,7 +193,7 @@ class TripTrackingSwitch(SwitchEntity):
         await storage.save_data(self._hass, self._config_entry, data)
         
         # Update coordinator data
-        if self._coordinator and self._coordinator.data is not None:
+        if self._has_coordinator_data():
             self._coordinator.data["trip_tracking_config"] = config
             self._coordinator.async_update_listeners()
     
@@ -208,7 +216,7 @@ class TripTrackingSwitch(SwitchEntity):
         await storage.save_data(self._hass, self._config_entry, data)
         
         # Update coordinator data
-        if self._coordinator and self._coordinator.data is not None:
+        if self._has_coordinator_data():
             self._coordinator.data["trip_tracking_config"] = config
             self._coordinator.async_update_listeners()
 
