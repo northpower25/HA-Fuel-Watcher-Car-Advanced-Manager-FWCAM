@@ -1233,7 +1233,7 @@ async def import_historical_trip_data(
         # Store error metadata - load data if not already loaded
         try:
             if data is None:
-                data = await load_data(hass, entry.entry_id)
+                data = await load_data(hass, entry)
             
             data["last_historical_import"] = {
                 "imported": False,
