@@ -2514,6 +2514,7 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
+        self._config_entry = config_entry
         self._attr_name = "Trip Log"
         self._attr_unique_id = f"{config_entry.entry_id}_trip_log"
         
@@ -2546,7 +2547,8 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
         # Get last 10 trips
         recent_trips = sorted(trips, key=lambda x: x.get("timestamp_end", ""), reverse=True)[:10]
         
-        return {
+        attrs = {
+            "config_entry_id": self._config_entry.entry_id,
             "total_trips": stats.get("total_trips", 0),
             "total_distance_km": round(stats.get("total_distance_km", 0.0), 2),
             "total_fuel_consumed": round(stats.get("total_fuel_consumed", 0.0), 2),
@@ -2558,6 +2560,19 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
             "recent_trips": recent_trips,
             "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
         }
+        
+        # Add retrieval metadata from coordinator data
+        last_historical_import = self.coordinator.data.get("last_historical_trip_import")
+        if last_historical_import:
+            attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp")
+            attrs["last_historical_import_type"] = last_historical_import.get("type")
+        
+        last_vehicle_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
+        if last_vehicle_refresh:
+            attrs["last_vehicle_data_refresh_timestamp"] = last_vehicle_refresh.get("timestamp")
+            attrs["last_vehicle_data_refresh_type"] = last_vehicle_refresh.get("type")
+        
+        return attrs
     
     @property
     def available(self) -> bool:
