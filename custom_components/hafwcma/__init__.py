@@ -559,13 +559,15 @@ async def _import_historical_data_background(
     This runs after integration setup to avoid blocking startup.
     Imports historical vehicle data from Home Assistant's recorder
     to populate consumption history and enable predictions.
+    Also imports trip history if trip tracking is enabled.
     
     Args:
         hass: Home Assistant instance
         entry: Config entry
     """
     try:
-        from .utils.historical_data_import import import_historical_vehicle_data
+        from .utils.historical_data_import import import_historical_vehicle_data, import_historical_trip_data
+        from .utils import storage
         
         _LOGGER.info("Starting background historical data import")
         
@@ -573,7 +575,7 @@ async def _import_historical_data_background(
         import asyncio
         await asyncio.sleep(HISTORICAL_IMPORT_STARTUP_DELAY_SECONDS)
         
-        # Import historical data (90 days lookback by default)
+        # Import historical vehicle data (90 days lookback by default)
         result = await import_historical_vehicle_data(
             hass,
             entry,
@@ -589,6 +591,31 @@ async def _import_historical_data_background(
             )
         else:
             _LOGGER.info("Historical data import skipped: %s", result["reason"])
+        
+        # Import trip history if trip tracking is enabled
+        data = await storage.load_data(hass, entry)
+        trip_config = data.get("trip_tracking_config", {})
+        trip_tracking_enabled = trip_config.get("enabled", False)
+        
+        if trip_tracking_enabled:
+            _LOGGER.info("Trip tracking is enabled, importing historical trip data")
+            trip_result = await import_historical_trip_data(
+                hass,
+                entry,
+                lookback_days=90,
+                force_reimport=False,
+                import_type="automatic",
+            )
+            
+            if trip_result["imported"]:
+                _LOGGER.info(
+                    "Historical trip import completed: %d trips detected",
+                    trip_result["trips_detected"],
+                )
+            else:
+                _LOGGER.info("Historical trip import skipped: %s", trip_result["reason"])
+        else:
+            _LOGGER.debug("Trip tracking not enabled, skipping trip history import")
             
     except Exception as err:
         _LOGGER.error("Error during background historical data import: %s", err, exc_info=True)
