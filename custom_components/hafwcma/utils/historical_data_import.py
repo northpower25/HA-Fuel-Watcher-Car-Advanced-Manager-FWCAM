@@ -1295,6 +1295,8 @@ async def _import_trip_history(
     Returns:
         Number of trips detected
     """
+    from homeassistant.util import dt as dt_util
+    
     trip_count = 0
     
     try:
@@ -1479,8 +1481,6 @@ async def _import_trip_history(
         _LOGGER.info("Detected %d historical trips", len(pending_trips))
         
         if pending_trips:
-            from homeassistant.util import dt as dt_util
-            
             data = await load_data(hass, entry)
             
             # Initialize trips list if not present
