@@ -1472,23 +1472,78 @@ async def _import_trip_history(
             
             previous_point = current_point
         
-        # Save detected trips
+        # Save detected trips in batch to avoid race conditions
+        # Load data once, add all trips with proper ID assignment and statistics, save once
         _LOGGER.info("Detected %d historical trips", len(pending_trips))
         
-        from .storage import add_trip
-        
-        for trip_data in pending_trips:
-            try:
-                await add_trip(hass, entry, trip_data)
-                trip_count += 1
-                _LOGGER.debug(
-                    "Saved historical trip: %s to %s (%.1f km)",
-                    trip_data["timestamp_start"],
-                    trip_data["timestamp_end"],
-                    trip_data["distance_km"],
-                )
-            except Exception as err:
-                _LOGGER.error("Error saving trip: %s", err)
+        if pending_trips:
+            from homeassistant.util import dt as dt_util
+            
+            data = await load_data(hass, entry)
+            
+            # Initialize trips list if not present
+            if "trips" not in data:
+                data["trips"] = []
+            
+            # Initialize trip_statistics if not present
+            if "trip_statistics" not in data:
+                data["trip_statistics"] = {
+                    "total_trips": 0,
+                    "total_distance_km": 0.0,
+                    "total_fuel_consumed": 0.0,
+                    "total_fuel_cost": 0.0,
+                    "total_additional_costs": 0.0,
+                    "business_trips": 0,
+                    "private_trips": 0,
+                    "commute_trips": 0,
+                }
+            
+            # Get starting trip ID
+            next_id = data.get("next_trip_id", 1)
+            now = dt_util.now().isoformat()
+            
+            # Process all trips in batch
+            for trip_data in pending_trips:
+                try:
+                    # Assign trip ID
+                    trip_data["trip_id"] = next_id
+                    next_id += 1
+                    
+                    # Add timestamps
+                    trip_data.setdefault("created_at", now)
+                    trip_data.setdefault("updated_at", now)
+                    
+                    # Add trip to storage
+                    data["trips"].append(trip_data)
+                    
+                    # Update statistics
+                    stats = data["trip_statistics"]
+                    stats["total_trips"] = (stats.get("total_trips") or 0) + 1
+                    stats["total_distance_km"] = (stats.get("total_distance_km") or 0.0) + (trip_data.get("distance_km") or 0.0)
+                    stats["total_fuel_consumed"] = (stats.get("total_fuel_consumed") or 0.0) + (trip_data.get("fuel_consumed") or 0.0)
+                    stats["total_fuel_cost"] = (stats.get("total_fuel_cost") or 0.0) + (trip_data.get("fuel_cost") or 0.0)
+                    stats["total_additional_costs"] = (stats.get("total_additional_costs") or 0.0) + (trip_data.get("additional_costs") or 0.0)
+                    
+                    # Update category counters
+                    category = trip_data.get("category", "private")
+                    category_key = f"{category}_trips"
+                    stats[category_key] = (stats.get(category_key) or 0) + 1
+                    
+                    trip_count += 1
+                    _LOGGER.debug(
+                        "Prepared trip for save: %s to %s (%.1f km)",
+                        trip_data["timestamp_start"],
+                        trip_data["timestamp_end"],
+                        trip_data["distance_km"],
+                    )
+                except Exception as err:
+                    _LOGGER.error("Error preparing trip for save: %s", err)
+            
+            # Update next_trip_id
+            data["next_trip_id"] = next_id
+            
+            # Save all trips at once
+            await save_data(hass, entry, data)
         
         if trip_count > 0:
             _LOGGER.info(
