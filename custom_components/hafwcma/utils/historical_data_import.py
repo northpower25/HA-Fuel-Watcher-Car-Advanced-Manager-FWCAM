@@ -394,9 +394,13 @@ async def _import_odometer_history(
             len(all_states),
         )
         
-        # Process states in chronological order, but sample to avoid overwhelming storage
-        # Keep one reading per day max to reduce data volume
-        states_by_day = {}
+        # Process states in chronological order
+        # For trip detection, we need to capture all significant odometer changes,
+        # not just one per day. Keep readings where odometer changes by at least
+        # the minimum trip distance threshold.
+        processed_states = []
+        last_saved_value = None
+        
         for state in all_states:
             try:
                 # Skip if state is unknown or unavailable
@@ -407,32 +411,32 @@ async def _import_odometer_history(
                 odometer_value = float(state.state)
                 timestamp = state.last_changed
                 
-                # Group by day to avoid too many data points
-                day_key = timestamp.date().isoformat()
-                
-                # Keep the first reading of each day
-                if day_key not in states_by_day:
-                    states_by_day[day_key] = {
+                # Keep this reading if:
+                # 1. It's the first reading, OR
+                # 2. Odometer changed by at least the minimum trip distance
+                if last_saved_value is None or abs(odometer_value - last_saved_value) >= TRIP_DETECTION_MIN_DISTANCE_KM:
+                    processed_states.append({
                         "value": odometer_value,
                         "timestamp": timestamp.isoformat(),
-                    }
+                    })
+                    last_saved_value = odometer_value
                 
             except (ValueError, TypeError) as err:
                 _LOGGER.debug("Skipping invalid odometer state: %s (%s)", state.state, err)
                 continue
         
-        # Add sampled data to history
-        for day_data in states_by_day.values():
+        # Add processed data to history
+        for state_data in processed_states:
             await add_odometer_observation(
                 hass, 
                 entry, 
-                day_data["value"], 
-                day_data["timestamp"]
+                state_data["value"], 
+                state_data["timestamp"]
             )
             count += 1
         
         _LOGGER.info(
-            "Imported %d odometer readings (sampled from %d total states)",
+            "Imported %d odometer readings with significant changes (from %d total states)",
             count,
             len(all_states),
         )
@@ -1301,6 +1305,9 @@ async def _import_trip_history(
             )
         
         # Get location history for GPS coordinates
+        # Note: Position entities store GPS coords in attributes, not state values.
+        # Long-term statistics only store numeric state values, not attributes.
+        # Therefore, we must disable statistics and use only short-term history.
         location_states = []
         if location_entity:
             location_states = await _fetch_entity_history(
@@ -1308,7 +1315,21 @@ async def _import_trip_history(
                 location_entity,
                 start_time,
                 end_time,
+                use_statistics=False,  # Position data is in attributes, not available in statistics
             )
+            
+            # Warn if lookback exceeds short-term history retention
+            now = dt_util.now()
+            short_term_cutoff = now - timedelta(days=SHORT_TERM_HISTORY_DAYS)
+            if start_time < short_term_cutoff:
+                lookback_days = int((end_time - start_time).total_seconds() / (24 * SECONDS_PER_HOUR))
+                _LOGGER.warning(
+                    "GPS location history requested for %d days, but Home Assistant only retains "
+                    "short-term history for %d days. Trips detected from older data will not have "
+                    "GPS coordinates. Consider reducing lookback period or enabling longer history retention.",
+                    lookback_days,
+                    SHORT_TERM_HISTORY_DAYS,
+                )
         
         # Load storage data
         data = await load_data(hass, entry)
@@ -1472,6 +1493,7 @@ async def _fetch_entity_history(
     entity_id: str,
     start_time: datetime,
     end_time: datetime,
+    use_statistics: bool = True,
 ) -> list[Any]:
     """Fetch entity history from recorder.
     
@@ -1480,6 +1502,9 @@ async def _fetch_entity_history(
         entity_id: Entity ID to fetch history for
         start_time: Start of time range
         end_time: End of time range
+        use_statistics: Whether to use long-term statistics for older data.
+                       Set to False for entities that store data in attributes
+                       (e.g., position entities with lat/lon in attributes).
         
     Returns:
         List of state objects
@@ -1491,8 +1516,8 @@ async def _fetch_entity_history(
         
         all_states = []
         
-        # Fetch long-term statistics for older data
-        if start_time < short_term_cutoff:
+        # Fetch long-term statistics for older data (if enabled and entity supports it)
+        if use_statistics and start_time < short_term_cutoff:
             long_term_end = min(short_term_cutoff, end_time)
             long_term_data = await _fetch_long_term_statistics(
                 hass,
@@ -1504,9 +1529,10 @@ async def _fetch_entity_history(
             for data_point in long_term_data:
                 all_states.append(_StateLike(data_point["value"], data_point["timestamp"]))
         
-        # Fetch short-term history for recent data
-        if end_time > short_term_cutoff:
-            short_term_start = max(start_time, short_term_cutoff)
+        # Fetch short-term history for recent data (or all data if statistics disabled)
+        if end_time > short_term_cutoff or not use_statistics:
+            # For entities that don't use statistics, fetch full history range
+            short_term_start = start_time if not use_statistics else max(start_time, short_term_cutoff)
             
             recorder_instance = get_instance(hass)
             states = await recorder_instance.async_add_executor_job(
@@ -1520,7 +1546,7 @@ async def _fetch_entity_history(
             if entity_id in states:
                 all_states.extend(states[entity_id])
         
-        _LOGGER.debug("Retrieved %d states for %s", len(all_states), entity_id)
+        _LOGGER.debug("Retrieved %d states for %s (use_statistics: %s)", len(all_states), entity_id, use_statistics)
         return all_states
         
     except Exception as err:
