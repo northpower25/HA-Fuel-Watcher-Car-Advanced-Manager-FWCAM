@@ -56,6 +56,8 @@ PERCENTAGE_MULTIPLIER = 100  # Multiplier for converting decimals to percentages
 INVALID_SENSOR_STATES = ["unknown", "unavailable", "none", "null", None, ""]  # States to ignore when processing sensor data
 SHORT_TERM_HISTORY_DAYS = 10  # Home Assistant default history retention (short-term)
 LONG_TERM_STATISTICS_OVERLAP_DAYS = 1  # Overlap between short-term and long-term queries to ensure no gaps
+MAX_ODOMETER_HISTORY_ENTRIES = 1000  # Maximum number of odometer history entries to keep
+ODOMETER_HISTORY_TRUNCATE_TO = 900  # Truncate to this size before adding new entries to ensure we stay under max
 
 
 async def import_historical_vehicle_data(
@@ -425,15 +427,30 @@ async def _import_odometer_history(
                 _LOGGER.debug("Skipping invalid odometer state: %s (%s)", state.state, err)
                 continue
         
-        # Add processed data to history
-        for state_data in processed_states:
-            await add_odometer_observation(
-                hass, 
-                entry, 
-                state_data["value"], 
-                state_data["timestamp"]
-            )
-            count += 1
+        # Add processed data to history in batch to avoid race conditions
+        # Load data once, append all observations, save once
+        if processed_states:
+            data = await load_data(hass, entry)
+            
+            # Ensure odometer_history exists
+            if "odometer_history" not in data:
+                data["odometer_history"] = []
+            
+            # Truncate existing history first to make room for new entries
+            if len(data["odometer_history"]) > ODOMETER_HISTORY_TRUNCATE_TO:
+                # Keep only the most recent entries to ensure we stay under the maximum
+                # after adding new data (up to ~200 new entries in a typical 90-day import)
+                data["odometer_history"] = data["odometer_history"][-ODOMETER_HISTORY_TRUNCATE_TO:]
+            
+            # Append all new observations
+            for state_data in processed_states:
+                data["odometer_history"].append({
+                    "ts": state_data["timestamp"],
+                    "value": state_data["value"]
+                })
+                count += 1
+            
+            await save_data(hass, entry, data)
         
         _LOGGER.info(
             "Imported %d odometer readings with significant changes (from %d total states)",
@@ -1457,23 +1474,78 @@ async def _import_trip_history(
             
             previous_point = current_point
         
-        # Save detected trips
+        # Save detected trips in batch to avoid race conditions
+        # Load data once, add all trips with proper ID assignment and statistics, save once
         _LOGGER.info("Detected %d historical trips", len(pending_trips))
         
-        from .storage import add_trip
-        
-        for trip_data in pending_trips:
-            try:
-                await add_trip(hass, entry, trip_data)
-                trip_count += 1
-                _LOGGER.debug(
-                    "Saved historical trip: %s to %s (%.1f km)",
-                    trip_data["timestamp_start"],
-                    trip_data["timestamp_end"],
-                    trip_data["distance_km"],
-                )
-            except Exception as err:
-                _LOGGER.error("Error saving trip: %s", err)
+        if pending_trips:
+            from homeassistant.util import dt as dt_util
+            
+            data = await load_data(hass, entry)
+            
+            # Initialize trips list if not present
+            if "trips" not in data:
+                data["trips"] = []
+            
+            # Initialize trip_statistics if not present
+            if "trip_statistics" not in data:
+                data["trip_statistics"] = {
+                    "total_trips": 0,
+                    "total_distance_km": 0.0,
+                    "total_fuel_consumed": 0.0,
+                    "total_fuel_cost": 0.0,
+                    "total_additional_costs": 0.0,
+                    "business_trips": 0,
+                    "private_trips": 0,
+                    "commute_trips": 0,
+                }
+            
+            # Get starting trip ID
+            next_id = data.get("next_trip_id", 1)
+            now = dt_util.now().isoformat()
+            
+            # Process all trips in batch
+            for trip_data in pending_trips:
+                try:
+                    # Assign trip ID
+                    trip_data["trip_id"] = next_id
+                    next_id += 1
+                    
+                    # Add timestamps
+                    trip_data.setdefault("created_at", now)
+                    trip_data.setdefault("updated_at", now)
+                    
+                    # Add trip to storage
+                    data["trips"].append(trip_data)
+                    
+                    # Update statistics
+                    stats = data["trip_statistics"]
+                    stats["total_trips"] = (stats.get("total_trips") or 0) + 1
+                    stats["total_distance_km"] = (stats.get("total_distance_km") or 0.0) + (trip_data.get("distance_km") or 0.0)
+                    stats["total_fuel_consumed"] = (stats.get("total_fuel_consumed") or 0.0) + (trip_data.get("fuel_consumed") or 0.0)
+                    stats["total_fuel_cost"] = (stats.get("total_fuel_cost") or 0.0) + (trip_data.get("fuel_cost") or 0.0)
+                    stats["total_additional_costs"] = (stats.get("total_additional_costs") or 0.0) + (trip_data.get("additional_costs") or 0.0)
+                    
+                    # Update category counters
+                    category = trip_data.get("category", "private")
+                    category_key = f"{category}_trips"
+                    stats[category_key] = (stats.get(category_key) or 0) + 1
+                    
+                    trip_count += 1
+                    _LOGGER.debug(
+                        "Prepared trip for save: %s to %s (%.1f km)",
+                        trip_data["timestamp_start"],
+                        trip_data["timestamp_end"],
+                        trip_data["distance_km"],
+                    )
+                except Exception as err:
+                    _LOGGER.error("Error preparing trip for save: %s", err)
+            
+            # Update next_trip_id
+            data["next_trip_id"] = next_id
+            
+            # Save all trips at once
+            await save_data(hass, entry, data)
         
         if trip_count > 0:
             _LOGGER.info(
