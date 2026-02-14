@@ -1038,6 +1038,23 @@ async def add_trip(
     
     data = await load_data(hass, entry)
     
+    # Initialize trips list if not present
+    if "trips" not in data:
+        data["trips"] = []
+    
+    # Initialize trip_statistics if not present
+    if "trip_statistics" not in data:
+        data["trip_statistics"] = {
+            "total_trips": 0,
+            "total_distance_km": 0.0,
+            "total_fuel_consumed": 0.0,
+            "total_fuel_cost": 0.0,
+            "total_additional_costs": 0.0,
+            "business_trips": 0,
+            "private_trips": 0,
+            "commute_trips": 0,
+        }
+    
     # Get next trip ID
     next_id = data.get("next_trip_id", 1)
     trip_data["trip_id"] = next_id
@@ -1155,6 +1172,19 @@ async def delete_trip(
     """
     data = await load_data(hass, entry)
     trips = data.get("trips", [])
+    
+    # Initialize trip_statistics if not present
+    if "trip_statistics" not in data:
+        data["trip_statistics"] = {
+            "total_trips": 0,
+            "total_distance_km": 0.0,
+            "total_fuel_consumed": 0.0,
+            "total_fuel_cost": 0.0,
+            "total_additional_costs": 0.0,
+            "business_trips": 0,
+            "private_trips": 0,
+            "commute_trips": 0,
+        }
     
     # Find and remove the trip
     for i, trip in enumerate(trips):
