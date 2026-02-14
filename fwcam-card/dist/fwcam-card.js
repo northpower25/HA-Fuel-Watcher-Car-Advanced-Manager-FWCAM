@@ -49,14 +49,32 @@ class FWCAMCard extends HTMLElement {
     if (!config.entity) {
       throw new Error('You need to define an entity (refueling_log sensor)');
     }
+    
+    // Check if any show_* options are explicitly set
+    // Use Object.prototype.hasOwnProperty for safety
+    const hasExplicitShowOptions = 
+      Object.prototype.hasOwnProperty.call(config, 'show_refueling_log') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_trip_log') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_controls') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_settings');
+    
+    // If any show_* option is explicitly set, only show those explicitly enabled
+    // If no show_* options are set, default all to true (backward compatibility)
+    const defaultShowValue = !hasExplicitShowOptions;
+    
     this._config = {
       entity: config.entity,
+      // Support for separate entity configuration per section
+      refueling_log_entity: config.refueling_log_entity || config.entity,
+      trip_log_entity: config.trip_log_entity || null,
+      vehicle_info_entity: config.vehicle_info_entity || null,
       title: config.title || 'Fuel Watcher Car Advanced Manager',
-      show_refueling_log: config.show_refueling_log !== false,
-      show_trip_log: config.show_trip_log !== false,
-      show_vehicle_info: config.show_vehicle_info !== false,
-      show_controls: config.show_controls !== false,
-      show_settings: config.show_settings !== false,
+      show_refueling_log: Object.prototype.hasOwnProperty.call(config, 'show_refueling_log') ? config.show_refueling_log : defaultShowValue,
+      show_trip_log: Object.prototype.hasOwnProperty.call(config, 'show_trip_log') ? config.show_trip_log : defaultShowValue,
+      show_vehicle_info: Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ? config.show_vehicle_info : defaultShowValue,
+      show_controls: Object.prototype.hasOwnProperty.call(config, 'show_controls') ? config.show_controls : defaultShowValue,
+      show_settings: Object.prototype.hasOwnProperty.call(config, 'show_settings') ? config.show_settings : defaultShowValue,
       rows_per_page: config.rows_per_page || 10,
       refresh_interval: config.refresh_interval || 300,
       table_max_height: this.sanitizeCSSValue(config.table_max_height, '400px'),
@@ -450,12 +468,32 @@ class FWCAMCard extends HTMLElement {
       return;
     }
 
-    const recentEvents = entity.attributes.recent_events || [];
-    const lastRefueling = entity.attributes.last_refueling || null;
+    // Get refueling log data from configured entity or default
+    const refuelingEntity = this._config.refueling_log_entity 
+      ? this.getEntityState(this._config.refueling_log_entity)
+      : entity;
+    const recentEvents = refuelingEntity?.attributes?.recent_events || [];
+    const lastRefueling = refuelingEntity?.attributes?.last_refueling || null;
     
-    // Get trip log data if trip log sensor exists
-    const tripLogEntity = this.getEntityState(this._entities.trip_log_sensor);
+    // Get trip log data from configured entity or auto-detected entity
+    const tripLogEntityId = this._config.trip_log_entity || this._entities.trip_log_sensor;
+    const tripLogEntity = tripLogEntityId ? this.getEntityState(tripLogEntityId) : null;
     const recentTrips = tripLogEntity?.attributes?.recent_trips || [];
+    
+    // Debug logging for trip data
+    if (this._config.show_trip_log) {
+      console.log('[FWCAM Card] Trip Log Debugging:');
+      console.log('  - Expected Entity ID:', tripLogEntityId);
+      console.log('  - Entity Found:', tripLogEntity ? 'Yes' : 'No');
+      if (tripLogEntity) {
+        console.log('  - Entity State:', tripLogEntity.state);
+        console.log('  - Has recent_trips:', tripLogEntity.attributes?.recent_trips ? 'Yes' : 'No');
+        console.log('  - Recent Trips Count:', recentTrips.length);
+        console.log('  - Recent Trips Data:', recentTrips);
+      } else {
+        console.warn('[FWCAM Card] Trip log entity not found! Available entities:', Object.keys(this._hass.states).filter(e => e.includes('trip')));
+      }
+    }
     
     // Store events for dialog access
     this._recentEvents = recentEvents;
@@ -904,6 +942,37 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Handle trip table sorting
+   */
+  handleTripSort(column) {
+    if (this._tripSortColumn === column) {
+      // Toggle direction if clicking same column
+      this._tripSortDirection = this._tripSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      // Set new column with default direction
+      this._tripSortColumn = column;
+      this._tripSortDirection = column === 'timestamp_end' ? 'desc' : 'asc';
+    }
+    this.render();
+  }
+
+  /**
+   * Handle trip filter change
+   */
+  handleTripFilterChange(category) {
+    this._tripCategoryFilter = category;
+    this.render();
+  }
+
+  /**
+   * Clear trip filters
+   */
+  clearTripFilters() {
+    this._tripCategoryFilter = '';
+    this.render();
+  }
+
+  /**
    * Attach event listeners to interactive elements
    */
   attachEventListeners() {
@@ -930,50 +999,78 @@ class FWCAMCard extends HTMLElement {
       });
     });
 
-    // Refueling log action buttons
+    // Refueling log and trip log action buttons
     this.shadowRoot.querySelectorAll('.action-button').forEach(button => {
       button.addEventListener('click', (e) => {
         const action = e.currentTarget.dataset.action;
         const eventId = e.currentTarget.dataset.eventId;
+        const tripId = e.currentTarget.dataset.tripId;
         
         if (action === 'edit') {
           this.showEditDialog(eventId);
         } else if (action === 'delete') {
           this.deleteRefuelingEvent(eventId);
+        } else if (action === 'edit-trip') {
+          this.showEditTripDialog(tripId);
+        } else if (action === 'delete-trip') {
+          this.deleteTrip(tripId);
         }
       });
     });
 
-    // Add event button
-    const addButton = this.shadowRoot.querySelector('.add-event-button');
+    // Add event button (refueling and trips)
+    const addButton = this.shadowRoot.querySelector('[data-action="add-event"]');
     if (addButton) {
       addButton.addEventListener('click', () => {
         this.showAddDialog();
       });
     }
 
-    // Sort column headers
+    const addTripButton = this.shadowRoot.querySelector('[data-action="add-trip"]');
+    if (addTripButton) {
+      addTripButton.addEventListener('click', () => {
+        this.showAddTripDialog();
+      });
+    }
+
+    // Sort column headers (refueling and trips)
     this.shadowRoot.querySelectorAll('.sortable').forEach(header => {
       header.addEventListener('click', (e) => {
         const column = e.currentTarget.dataset.sortColumn;
-        this.handleSort(column);
+        const sortType = e.currentTarget.dataset.sortType; // 'trip' or undefined for refueling
+        if (sortType === 'trip') {
+          this.handleTripSort(column);
+        } else {
+          this.handleSort(column);
+        }
       });
     });
 
-    // Filter dropdowns
+    // Filter dropdowns (refueling and trips)
     this.shadowRoot.querySelectorAll('.filter-select').forEach(select => {
       select.addEventListener('change', (e) => {
         const filterType = e.target.dataset.filter;
         const value = e.target.value;
-        this.handleFilterChange(filterType, value);
+        if (filterType === 'trip-category') {
+          this.handleTripFilterChange(value);
+        } else {
+          this.handleFilterChange(filterType, value);
+        }
       });
     });
 
-    // Clear filters button
-    const clearFiltersButton = this.shadowRoot.querySelector('.clear-filters-button');
+    // Clear filters button (refueling and trips)
+    const clearFiltersButton = this.shadowRoot.querySelector('[data-action="clear-filters"]');
     if (clearFiltersButton) {
       clearFiltersButton.addEventListener('click', () => {
         this.clearFilters();
+      });
+    }
+
+    const clearTripFiltersButton = this.shadowRoot.querySelector('[data-action="clear-trip-filters"]');
+    if (clearTripFiltersButton) {
+      clearTripFiltersButton.addEventListener('click', () => {
+        this.clearTripFilters();
       });
     }
 
@@ -1001,6 +1098,271 @@ class FWCAMCard extends HTMLElement {
         }
       });
     }
+
+    // Trip dialog close buttons
+    this.shadowRoot.querySelectorAll('[data-action="close-trip-dialog"]').forEach(button => {
+      button.addEventListener('click', () => {
+        this.closeTripDialog();
+      });
+    });
+
+    // Trip dialog form submission
+    const tripForm = this.shadowRoot.getElementById('trip-form');
+    if (tripForm) {
+      const submitButton = this.shadowRoot.querySelector('[data-action="submit-trip"]');
+      if (submitButton) {
+        submitButton.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.handleTripFormSubmit();
+        });
+      }
+    }
+
+    // Close trip dialog on background click
+    const tripDialogOverlay = this.shadowRoot.getElementById('trip-dialog');
+    if (tripDialogOverlay) {
+      tripDialogOverlay.addEventListener('click', (e) => {
+        if (e.target === tripDialogOverlay) {
+          this.closeTripDialog();
+        }
+      });
+    }
+  }
+
+  /**
+   * Render trip log section with filtering, sorting, and editing
+   */
+  renderTripLog(trips) {
+    if (!trips || trips.length === 0) {
+      return `
+        <div class="section">
+          <h3>Trip Log</h3>
+          <div class="no-data">
+            <p>No trips recorded yet.</p>
+            <p style="font-size: 14px; color: var(--secondary-text-color);">
+              Trips will appear here once trip tracking is enabled and trips are detected.
+            </p>
+          </div>
+        </div>
+      `;
+    }
+
+    // Apply filtering by category if needed
+    const filteredTrips = this._tripCategoryFilter 
+      ? trips.filter(t => t.category === this._tripCategoryFilter)
+      : trips;
+
+    // Apply sorting
+    const sortColumn = this._tripSortColumn || 'timestamp_end';
+    const sortDirection = this._tripSortDirection || 'desc';
+    const sortedTrips = [...filteredTrips].sort((a, b) => {
+      let aVal = a[sortColumn];
+      let bVal = b[sortColumn];
+      
+      // Handle null/undefined values
+      if (aVal == null) aVal = '';
+      if (bVal == null) bVal = '';
+      
+      if (sortDirection === 'asc') {
+        return aVal > bVal ? 1 : -1;
+      } else {
+        return aVal < bVal ? 1 : -1;
+      }
+    });
+
+    const categories = [
+      { value: '', label: 'All Categories' },
+      { value: 'business', label: 'Business' },
+      { value: 'private', label: 'Private' },
+      { value: 'commute', label: 'Commute' }
+    ];
+
+    return `
+      <div class="section">
+        <h3>Trip Log</h3>
+        
+        <div class="filter-controls">
+          <label>
+            Category:
+            <select class="filter-select" data-filter="trip-category">
+              ${categories.map(cat => `
+                <option value="${cat.value}" ${this._tripCategoryFilter === cat.value ? 'selected' : ''}>
+                  ${cat.label}
+                </option>
+              `).join('')}
+            </select>
+          </label>
+          ${this._tripCategoryFilter ? `
+            <button class="clear-filters-button" data-action="clear-trip-filters">
+              <ha-icon icon="mdi:filter-remove"></ha-icon>
+              <span>Clear Filter</span>
+            </button>
+          ` : ''}
+          <div class="filter-info">
+            Showing ${sortedTrips.length} of ${trips.length} trips
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table class="refueling-table">
+            <thead>
+              <tr>
+                <th class="sortable ${sortColumn === 'timestamp_end' ? 'sorted-' + sortDirection : ''}" 
+                    data-sort-column="timestamp_end" data-sort-type="trip">
+                  End Date/Time
+                  ${this.renderTripSortIcon('timestamp_end')}
+                </th>
+                <th class="sortable ${sortColumn === 'distance_km' ? 'sorted-' + sortDirection : ''}" 
+                    data-sort-column="distance_km" data-sort-type="trip">
+                  Distance (km)
+                  ${this.renderTripSortIcon('distance_km')}
+                </th>
+                <th class="sortable ${sortColumn === 'category' ? 'sorted-' + sortDirection : ''}" 
+                    data-sort-column="category" data-sort-type="trip">
+                  Category
+                  ${this.renderTripSortIcon('category')}
+                </th>
+                <th>Purpose</th>
+                <th class="sortable ${sortColumn === 'fuel_consumed' ? 'sorted-' + sortDirection : ''}" 
+                    data-sort-column="fuel_consumed" data-sort-type="trip">
+                  Fuel (L)
+                  ${this.renderTripSortIcon('fuel_consumed')}
+                </th>
+                <th class="sortable ${sortColumn === 'fuel_cost' ? 'sorted-' + sortDirection : ''}" 
+                    data-sort-column="fuel_cost" data-sort-type="trip">
+                  Fuel Cost (€)
+                  ${this.renderTripSortIcon('fuel_cost')}
+                </th>
+                <th>Additional Costs (€)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sortedTrips.length === 0 ? `
+                <tr>
+                  <td colspan="8" class="no-data">No trips match the current filter</td>
+                </tr>
+              ` : sortedTrips.slice(0, this._config.rows_per_page || 10).map(trip => `
+                <tr data-trip-id="${trip.trip_id}">
+                  <td>${this.formatDateTime(trip.timestamp_end)}</td>
+                  <td>${this.formatNumber(trip.distance_km, 1)}</td>
+                  <td>
+                    <span class="category-badge category-${trip.category || 'private'}">
+                      ${(trip.category || 'private').charAt(0).toUpperCase() + (trip.category || 'private').slice(1)}
+                    </span>
+                  </td>
+                  <td>${trip.purpose || '-'}</td>
+                  <td>${trip.fuel_consumed ? this.formatNumber(trip.fuel_consumed, 2) : '-'}</td>
+                  <td>${trip.fuel_cost ? this.formatNumber(trip.fuel_cost, 2) : '-'}</td>
+                  <td>${trip.additional_costs ? this.formatNumber(trip.additional_costs, 2) : '0.00'}</td>
+                  <td class="actions">
+                    <button class="action-button edit-button" 
+                            data-action="edit-trip" 
+                            data-trip-id="${trip.trip_id}"
+                            title="Edit">
+                      <ha-icon icon="mdi:pencil"></ha-icon>
+                    </button>
+                    <button class="action-button delete-button" 
+                            data-action="delete-trip" 
+                            data-trip-id="${trip.trip_id}"
+                            title="Delete">
+                      <ha-icon icon="mdi:delete"></ha-icon>
+                    </button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <button class="add-event-button" data-action="add-trip">
+          <ha-icon icon="mdi:plus"></ha-icon>
+          <span>Add Trip</span>
+        </button>
+      </div>
+    `;
+  }
+
+  /**
+   * Render sort icon for trip table headers
+   */
+  renderTripSortIcon(column) {
+    const sortColumn = this._tripSortColumn || 'timestamp_end';
+    if (sortColumn !== column) {
+      return '<ha-icon icon="mdi:unfold-more-horizontal" class="sort-icon inactive"></ha-icon>';
+    }
+    const sortDirection = this._tripSortDirection || 'desc';
+    const icon = sortDirection === 'asc' ? 'mdi:arrow-up' : 'mdi:arrow-down';
+    return `<ha-icon icon="${icon}" class="sort-icon active"></ha-icon>`;
+  }
+
+  /**
+   * Render dialog for adding/editing trips
+   */
+  renderTripDialog() {
+    return `
+      <div id="trip-dialog" class="dialog-overlay" style="display: none;">
+        <div class="dialog-content">
+          <div class="dialog-header">
+            <h2 id="trip-dialog-title">Add Trip</h2>
+            <button class="dialog-close" data-action="close-trip-dialog">
+              <ha-icon icon="mdi:close"></ha-icon>
+            </button>
+          </div>
+          <div class="dialog-body">
+            <form id="trip-form">
+              <div class="form-group">
+                <label for="trip-start-time">Start Time:</label>
+                <input type="datetime-local" id="trip-start-time" name="timestamp_start" required>
+              </div>
+              
+              <div class="form-group">
+                <label for="trip-end-time">End Time:</label>
+                <input type="datetime-local" id="trip-end-time" name="timestamp_end" required>
+              </div>
+              
+              <div class="form-group">
+                <label for="trip-distance">Distance (km):</label>
+                <input type="number" id="trip-distance" name="distance_km" step="0.1" min="0" required>
+              </div>
+              
+              <div class="form-group">
+                <label for="trip-category">Category:</label>
+                <select id="trip-category" name="category">
+                  <option value="private">Private</option>
+                  <option value="business">Business</option>
+                  <option value="commute">Commute</option>
+                </select>
+              </div>
+              
+              <div class="form-group">
+                <label for="trip-purpose">Purpose:</label>
+                <input type="text" id="trip-purpose" name="purpose" placeholder="Optional">
+              </div>
+              
+              <div class="form-group">
+                <label for="trip-fuel-consumed">Fuel Consumed (L):</label>
+                <input type="number" id="trip-fuel-consumed" name="fuel_consumed" step="0.01" min="0" placeholder="Optional">
+              </div>
+              
+              <div class="form-group">
+                <label for="trip-additional-costs">Additional Costs (€):</label>
+                <input type="number" id="trip-additional-costs" name="additional_costs" step="0.01" min="0" placeholder="Optional" value="0">
+              </div>
+              
+              <div class="form-group">
+                <label for="trip-notes">Notes:</label>
+                <textarea id="trip-notes" name="notes" rows="3" placeholder="Optional"></textarea>
+              </div>
+            </form>
+          </div>
+          <div class="dialog-footer">
+            <button class="cancel-button" data-action="close-trip-dialog">Cancel</button>
+            <button class="submit-button" data-action="submit-trip">Save</button>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   /**
@@ -1338,6 +1700,184 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Show dialog to add a new trip
+   */
+  showAddTripDialog() {
+    const dialog = this.shadowRoot.getElementById('trip-dialog');
+    const dialogTitle = this.shadowRoot.getElementById('trip-dialog-title');
+    const form = this.shadowRoot.getElementById('trip-form');
+    
+    if (!dialog || !dialogTitle || !form) {
+      console.error('Trip dialog elements not found');
+      return;
+    }
+    
+    // Set title
+    dialogTitle.textContent = 'Add Trip';
+    
+    // Clear form
+    form.reset();
+    form.dataset.tripId = '';
+    
+    // Set default timestamps
+    const now = new Date();
+    const tzOffset = now.getTimezoneOffset() * 60000;
+    const localISOTime = new Date(now - tzOffset).toISOString().slice(0, 16);
+    this.shadowRoot.getElementById('trip-end-time').value = localISOTime;
+    
+    // Set start time to 1 hour ago
+    const oneHourAgo = new Date(now - 3600000);
+    const localISOTimeStart = new Date(oneHourAgo - tzOffset).toISOString().slice(0, 16);
+    this.shadowRoot.getElementById('trip-start-time').value = localISOTimeStart;
+    
+    // Set default category
+    this.shadowRoot.getElementById('trip-category').value = 'private';
+    
+    // Show dialog
+    dialog.style.display = 'flex';
+  }
+
+  /**
+   * Show dialog to edit an existing trip
+   */
+  showEditTripDialog(tripId) {
+    const dialog = this.shadowRoot.getElementById('trip-dialog');
+    const dialogTitle = this.shadowRoot.getElementById('trip-dialog-title');
+    const form = this.shadowRoot.getElementById('trip-form');
+    
+    if (!dialog || !dialogTitle || !form) {
+      console.error('Trip dialog elements not found');
+      return;
+    }
+    
+    // Find trip in stored trips
+    const trip = this._recentTrips ? this._recentTrips.find(t => t.trip_id === parseInt(tripId)) : null;
+    
+    if (!trip) {
+      const lang = this.getUserLanguage();
+      const errorMessages = {
+        de: `Fahrt mit ID ${tripId} wurde nicht gefunden. Bitte aktualisieren Sie die Seite.`,
+        en: `Trip with ID ${tripId} not found. Please refresh the page.`
+      };
+      const message = errorMessages[lang] || errorMessages['en'];
+      alert(message);
+      return;
+    }
+    
+    // Set title
+    dialogTitle.textContent = `Edit Trip #${tripId}`;
+    
+    // Store trip ID for submission
+    form.dataset.tripId = tripId;
+    
+    // Populate form with trip data
+    // Convert timestamps to local datetime-local format
+    if (trip.timestamp_start) {
+      try {
+        const startDate = new Date(trip.timestamp_start);
+        const tzOffset = startDate.getTimezoneOffset() * 60000;
+        const localStart = new Date(startDate.getTime() - tzOffset).toISOString().slice(0, 16);
+        this.shadowRoot.getElementById('trip-start-time').value = localStart;
+      } catch (err) {
+        console.error('Error parsing trip start time:', err);
+      }
+    }
+    
+    if (trip.timestamp_end) {
+      try {
+        const endDate = new Date(trip.timestamp_end);
+        const tzOffset = endDate.getTimezoneOffset() * 60000;
+        const localEnd = new Date(endDate.getTime() - tzOffset).toISOString().slice(0, 16);
+        this.shadowRoot.getElementById('trip-end-time').value = localEnd;
+      } catch (err) {
+        console.error('Error parsing trip end time:', err);
+      }
+    }
+    
+    this.shadowRoot.getElementById('trip-distance').value = trip.distance_km || '';
+    this.shadowRoot.getElementById('trip-category').value = trip.category || 'private';
+    this.shadowRoot.getElementById('trip-purpose').value = trip.purpose || '';
+    this.shadowRoot.getElementById('trip-fuel-consumed').value = trip.fuel_consumed || '';
+    this.shadowRoot.getElementById('trip-additional-costs').value = trip.additional_costs || 0;
+    this.shadowRoot.getElementById('trip-notes').value = trip.notes || '';
+    
+    // Show dialog
+    dialog.style.display = 'flex';
+  }
+
+  /**
+   * Close trip dialog
+   */
+  closeTripDialog() {
+    const dialog = this.shadowRoot.getElementById('trip-dialog');
+    if (dialog) {
+      dialog.style.display = 'none';
+    }
+  }
+
+  /**
+   * Handle trip form submission
+   */
+  async handleTripFormSubmit() {
+    const form = this.shadowRoot.getElementById('trip-form');
+    if (!form) return;
+    
+    const tripId = form.dataset.tripId;
+    const formData = new FormData(form);
+    
+    // Build service data
+    const serviceData = {
+      config_entry_id: this.getConfigEntryId(),
+      timestamp_start: formData.get('timestamp_start'),
+      timestamp_end: formData.get('timestamp_end'),
+      distance_km: parseFloat(formData.get('distance_km')),
+      category: formData.get('category') || 'private'
+    };
+    
+    // Add optional fields if provided
+    if (formData.get('purpose')) {
+      serviceData.purpose = formData.get('purpose');
+    }
+    if (formData.get('fuel_consumed')) {
+      serviceData.fuel_consumed = parseFloat(formData.get('fuel_consumed'));
+    }
+    if (formData.get('additional_costs')) {
+      serviceData.additional_costs = parseFloat(formData.get('additional_costs'));
+    }
+    if (formData.get('notes')) {
+      serviceData.notes = formData.get('notes');
+    }
+    
+    try {
+      if (tripId) {
+        // Update existing trip
+        serviceData.trip_id = parseInt(tripId);
+        await this.editTrip(serviceData);
+      } else {
+        // Add new trip
+        await this.callService('hafwcma', 'add_trip', serviceData);
+      }
+      
+      // Close dialog
+      this.closeTripDialog();
+      
+      // Refresh the card after a short delay
+      setTimeout(() => {
+        this.render();
+      }, SERVICE_CALL_REFRESH_DELAY_MS);
+    } catch (error) {
+      console.error('Error submitting trip:', error);
+      const lang = this.getUserLanguage();
+      const errorMessages = {
+        de: `Fehler beim Speichern der Fahrt: ${error.message || error}`,
+        en: `Failed to save trip: ${error.message || error}`
+      };
+      const message = errorMessages[lang] || errorMessages['en'];
+      alert(message);
+    }
+  }
+
+  /**
    * Handle form submission
    */
   async handleFormSubmit(e) {
@@ -1634,6 +2174,29 @@ class FWCAMCard extends HTMLElement {
 
         .confidence-low {
           background: #f44336;
+          color: white;
+        }
+
+        .category-badge {
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 11px;
+          font-weight: 600;
+          text-transform: capitalize;
+        }
+
+        .category-business {
+          background: #2196f3;
+          color: white;
+        }
+
+        .category-private {
+          background: #4caf50;
+          color: white;
+        }
+
+        .category-commute {
+          background: #ff9800;
           color: white;
         }
 

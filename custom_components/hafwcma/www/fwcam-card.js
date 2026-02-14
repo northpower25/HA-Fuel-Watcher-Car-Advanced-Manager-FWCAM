@@ -49,14 +49,32 @@ class FWCAMCard extends HTMLElement {
     if (!config.entity) {
       throw new Error('You need to define an entity (refueling_log sensor)');
     }
+    
+    // Check if any show_* options are explicitly set
+    // Use Object.prototype.hasOwnProperty for safety
+    const hasExplicitShowOptions = 
+      Object.prototype.hasOwnProperty.call(config, 'show_refueling_log') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_trip_log') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_controls') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_settings');
+    
+    // If any show_* option is explicitly set, only show those explicitly enabled
+    // If no show_* options are set, default all to true (backward compatibility)
+    const defaultShowValue = !hasExplicitShowOptions;
+    
     this._config = {
       entity: config.entity,
+      // Support for separate entity configuration per section
+      refueling_log_entity: config.refueling_log_entity || config.entity,
+      trip_log_entity: config.trip_log_entity || null,
+      vehicle_info_entity: config.vehicle_info_entity || null,
       title: config.title || 'Fuel Watcher Car Advanced Manager',
-      show_refueling_log: config.show_refueling_log !== false,
-      show_trip_log: config.show_trip_log !== false,
-      show_vehicle_info: config.show_vehicle_info !== false,
-      show_controls: config.show_controls !== false,
-      show_settings: config.show_settings !== false,
+      show_refueling_log: Object.prototype.hasOwnProperty.call(config, 'show_refueling_log') ? config.show_refueling_log : defaultShowValue,
+      show_trip_log: Object.prototype.hasOwnProperty.call(config, 'show_trip_log') ? config.show_trip_log : defaultShowValue,
+      show_vehicle_info: Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ? config.show_vehicle_info : defaultShowValue,
+      show_controls: Object.prototype.hasOwnProperty.call(config, 'show_controls') ? config.show_controls : defaultShowValue,
+      show_settings: Object.prototype.hasOwnProperty.call(config, 'show_settings') ? config.show_settings : defaultShowValue,
       rows_per_page: config.rows_per_page || 10,
       refresh_interval: config.refresh_interval || 300,
       table_max_height: this.sanitizeCSSValue(config.table_max_height, '400px'),
@@ -450,12 +468,32 @@ class FWCAMCard extends HTMLElement {
       return;
     }
 
-    const recentEvents = entity.attributes.recent_events || [];
-    const lastRefueling = entity.attributes.last_refueling || null;
+    // Get refueling log data from configured entity or default
+    const refuelingEntity = this._config.refueling_log_entity 
+      ? this.getEntityState(this._config.refueling_log_entity)
+      : entity;
+    const recentEvents = refuelingEntity?.attributes?.recent_events || [];
+    const lastRefueling = refuelingEntity?.attributes?.last_refueling || null;
     
-    // Get trip log data if trip log sensor exists
-    const tripLogEntity = this.getEntityState(this._entities.trip_log_sensor);
+    // Get trip log data from configured entity or auto-detected entity
+    const tripLogEntityId = this._config.trip_log_entity || this._entities.trip_log_sensor;
+    const tripLogEntity = tripLogEntityId ? this.getEntityState(tripLogEntityId) : null;
     const recentTrips = tripLogEntity?.attributes?.recent_trips || [];
+    
+    // Debug logging for trip data
+    if (this._config.show_trip_log) {
+      console.log('[FWCAM Card] Trip Log Debugging:');
+      console.log('  - Expected Entity ID:', tripLogEntityId);
+      console.log('  - Entity Found:', tripLogEntity ? 'Yes' : 'No');
+      if (tripLogEntity) {
+        console.log('  - Entity State:', tripLogEntity.state);
+        console.log('  - Has recent_trips:', tripLogEntity.attributes?.recent_trips ? 'Yes' : 'No');
+        console.log('  - Recent Trips Count:', recentTrips.length);
+        console.log('  - Recent Trips Data:', recentTrips);
+      } else {
+        console.warn('[FWCAM Card] Trip log entity not found! Available entities:', Object.keys(this._hass.states).filter(e => e.includes('trip')));
+      }
+    }
     
     // Store events for dialog access
     this._recentEvents = recentEvents;
