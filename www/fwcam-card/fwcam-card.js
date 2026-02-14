@@ -51,12 +51,13 @@ class FWCAMCard extends HTMLElement {
     }
     
     // Check if any show_* options are explicitly set
+    // Use Object.prototype.hasOwnProperty for safety
     const hasExplicitShowOptions = 
-      config.hasOwnProperty('show_refueling_log') ||
-      config.hasOwnProperty('show_trip_log') ||
-      config.hasOwnProperty('show_vehicle_info') ||
-      config.hasOwnProperty('show_controls') ||
-      config.hasOwnProperty('show_settings');
+      Object.prototype.hasOwnProperty.call(config, 'show_refueling_log') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_trip_log') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_controls') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_settings');
     
     // If any show_* option is explicitly set, only show those explicitly enabled
     // If no show_* options are set, default all to true (backward compatibility)
@@ -69,11 +70,11 @@ class FWCAMCard extends HTMLElement {
       trip_log_entity: config.trip_log_entity || null,
       vehicle_info_entity: config.vehicle_info_entity || null,
       title: config.title || 'Fuel Watcher Car Advanced Manager',
-      show_refueling_log: config.hasOwnProperty('show_refueling_log') ? config.show_refueling_log : defaultShowValue,
-      show_trip_log: config.hasOwnProperty('show_trip_log') ? config.show_trip_log : defaultShowValue,
-      show_vehicle_info: config.hasOwnProperty('show_vehicle_info') ? config.show_vehicle_info : defaultShowValue,
-      show_controls: config.hasOwnProperty('show_controls') ? config.show_controls : defaultShowValue,
-      show_settings: config.hasOwnProperty('show_settings') ? config.show_settings : defaultShowValue,
+      show_refueling_log: Object.prototype.hasOwnProperty.call(config, 'show_refueling_log') ? config.show_refueling_log : defaultShowValue,
+      show_trip_log: Object.prototype.hasOwnProperty.call(config, 'show_trip_log') ? config.show_trip_log : defaultShowValue,
+      show_vehicle_info: Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ? config.show_vehicle_info : defaultShowValue,
+      show_controls: Object.prototype.hasOwnProperty.call(config, 'show_controls') ? config.show_controls : defaultShowValue,
+      show_settings: Object.prototype.hasOwnProperty.call(config, 'show_settings') ? config.show_settings : defaultShowValue,
       rows_per_page: config.rows_per_page || 10,
       refresh_interval: config.refresh_interval || 300,
       table_max_height: this.sanitizeCSSValue(config.table_max_height, '400px'),
