@@ -1095,6 +1095,8 @@ class ExportVehicleDataButton(ButtonEntity):
         Returns:
             Number of data points exported
         """
+        from homeassistant.components.recorder import history
+        
         count = 0
         
         try:
@@ -1179,6 +1181,8 @@ class ExportVehicleDataButton(ButtonEntity):
         Returns:
             Number of data points exported
         """
+        from homeassistant.components.recorder.statistics import statistics_during_period
+        
         count = 0
         
         try:
