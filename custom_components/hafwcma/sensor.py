@@ -1863,6 +1863,10 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
 
     _attr_icon = "mdi:api"
     _attr_has_entity_name = True
+    
+    # Constants for API debug attribute filtering
+    MAX_SUMMARY_KEYS = 10  # Maximum number of keys to include in response summary
+    MAX_STRING_LENGTH = 200  # Maximum length for truncated strings
 
     def __init__(
         self,
@@ -1915,7 +1919,7 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
                 # Only include summary info about the response
                 if isinstance(value, dict):
                     filtered_debug["api_response_summary"] = {
-                        "keys": list(value.keys())[:10],  # First 10 keys only
+                        "keys": list(value.keys())[:self.MAX_SUMMARY_KEYS],  # First N keys only
                         "size_bytes": sys.getsizeof(value),
                     }
                 elif isinstance(value, list):
@@ -1937,7 +1941,7 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
                         if k in ["url", "method", "timestamp"]
                     }
                 else:
-                    filtered_debug["api_request_summary"] = str(value)[:200]  # First 200 chars
+                    filtered_debug["api_request_summary"] = str(value)[:self.MAX_STRING_LENGTH]  # Truncate long strings
             else:
                 # Include other fields as-is (they should be small)
                 filtered_debug[key] = value
