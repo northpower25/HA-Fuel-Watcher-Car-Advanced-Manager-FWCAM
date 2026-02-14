@@ -1301,6 +1301,9 @@ async def _import_trip_history(
             )
         
         # Get location history for GPS coordinates
+        # Note: Position entities store GPS coords in attributes, not state values.
+        # Long-term statistics only store numeric state values, not attributes.
+        # Therefore, we must disable statistics and use only short-term history.
         location_states = []
         if location_entity:
             location_states = await _fetch_entity_history(
@@ -1308,7 +1311,21 @@ async def _import_trip_history(
                 location_entity,
                 start_time,
                 end_time,
+                use_statistics=False,  # Position data is in attributes, not available in statistics
             )
+            
+            # Warn if lookback exceeds short-term history retention
+            now = dt_util.now()
+            short_term_cutoff = now - timedelta(days=SHORT_TERM_HISTORY_DAYS)
+            if start_time < short_term_cutoff:
+                lookback_days = (end_time - start_time).days
+                _LOGGER.warning(
+                    "GPS location history requested for %d days, but Home Assistant only retains "
+                    "short-term history for %d days. Trips detected from older data will not have "
+                    "GPS coordinates. Consider reducing lookback period or enabling longer history retention.",
+                    lookback_days,
+                    SHORT_TERM_HISTORY_DAYS,
+                )
         
         # Load storage data
         data = await load_data(hass, entry)
@@ -1472,6 +1489,7 @@ async def _fetch_entity_history(
     entity_id: str,
     start_time: datetime,
     end_time: datetime,
+    use_statistics: bool = True,
 ) -> list[Any]:
     """Fetch entity history from recorder.
     
@@ -1480,6 +1498,9 @@ async def _fetch_entity_history(
         entity_id: Entity ID to fetch history for
         start_time: Start of time range
         end_time: End of time range
+        use_statistics: Whether to use long-term statistics for older data.
+                       Set to False for entities that store data in attributes
+                       (e.g., position entities with lat/lon in attributes).
         
     Returns:
         List of state objects
@@ -1491,8 +1512,8 @@ async def _fetch_entity_history(
         
         all_states = []
         
-        # Fetch long-term statistics for older data
-        if start_time < short_term_cutoff:
+        # Fetch long-term statistics for older data (if enabled and entity supports it)
+        if use_statistics and start_time < short_term_cutoff:
             long_term_end = min(short_term_cutoff, end_time)
             long_term_data = await _fetch_long_term_statistics(
                 hass,
@@ -1504,9 +1525,10 @@ async def _fetch_entity_history(
             for data_point in long_term_data:
                 all_states.append(_StateLike(data_point["value"], data_point["timestamp"]))
         
-        # Fetch short-term history for recent data
-        if end_time > short_term_cutoff:
-            short_term_start = max(start_time, short_term_cutoff)
+        # Fetch short-term history for recent data (or all data if statistics disabled)
+        if end_time > short_term_cutoff or not use_statistics:
+            # For entities that don't use statistics, fetch full history range
+            short_term_start = start_time if not use_statistics else max(start_time, short_term_cutoff)
             
             recorder_instance = get_instance(hass)
             states = await recorder_instance.async_add_executor_job(
@@ -1520,7 +1542,7 @@ async def _fetch_entity_history(
             if entity_id in states:
                 all_states.extend(states[entity_id])
         
-        _LOGGER.debug("Retrieved %d states for %s", len(all_states), entity_id)
+        _LOGGER.debug("Retrieved %d states for %s (use_statistics: %s)", len(all_states), entity_id, use_statistics)
         return all_states
         
     except Exception as err:
