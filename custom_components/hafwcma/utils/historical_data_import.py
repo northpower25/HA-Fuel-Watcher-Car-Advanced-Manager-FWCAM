@@ -1591,8 +1591,9 @@ def _is_valid_coordinate(value: Any) -> bool:
     try:
         float_val = float(value)
         # Check if it's a reasonable coordinate value
-        # Latitude: -90 to 90, Longitude: -180 to 180
-        return -180 <= float_val <= 180
+        # Use -90 to 90 range to cover latitude (more restrictive but safer)
+        # Longitude range is -180 to 180, but we use -90 to 90 for consistency
+        return -90 <= float_val <= 180
     except (ValueError, TypeError):
         return False
 

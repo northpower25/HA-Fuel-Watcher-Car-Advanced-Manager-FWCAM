@@ -4,6 +4,7 @@ from __future__ import annotations
 import aiohttp
 import logging
 import random
+import sys
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -1915,17 +1916,17 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
                 if isinstance(value, dict):
                     filtered_debug["api_response_summary"] = {
                         "keys": list(value.keys())[:10],  # First 10 keys only
-                        "size_bytes": len(str(value)),
+                        "size_bytes": sys.getsizeof(value),
                     }
                 elif isinstance(value, list):
                     filtered_debug["api_response_summary"] = {
                         "items_count": len(value),
-                        "size_bytes": len(str(value)),
+                        "size_bytes": sys.getsizeof(value),
                     }
                 else:
                     filtered_debug["api_response_summary"] = {
                         "type": type(value).__name__,
-                        "size_bytes": len(str(value)),
+                        "size_bytes": sys.getsizeof(value),
                     }
             elif key == "last_api_request":
                 # Summarize request info
