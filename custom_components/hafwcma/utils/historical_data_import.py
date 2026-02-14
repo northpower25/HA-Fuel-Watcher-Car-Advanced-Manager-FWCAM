@@ -56,6 +56,8 @@ PERCENTAGE_MULTIPLIER = 100  # Multiplier for converting decimals to percentages
 INVALID_SENSOR_STATES = ["unknown", "unavailable", "none", "null", None, ""]  # States to ignore when processing sensor data
 SHORT_TERM_HISTORY_DAYS = 10  # Home Assistant default history retention (short-term)
 LONG_TERM_STATISTICS_OVERLAP_DAYS = 1  # Overlap between short-term and long-term queries to ensure no gaps
+MAX_ODOMETER_HISTORY_ENTRIES = 1000  # Maximum number of odometer history entries to keep
+ODOMETER_HISTORY_TRUNCATE_TO = 900  # Truncate to this size before adding new entries to ensure we stay under max
 
 
 async def import_historical_vehicle_data(
@@ -435,10 +437,10 @@ async def _import_odometer_history(
                 data["odometer_history"] = []
             
             # Truncate existing history first to make room for new entries
-            if len(data["odometer_history"]) > 900:
-                # Keep only the most recent 900 entries to ensure we stay under 1000
-                # after adding new data (up to 162 new entries in typical import)
-                data["odometer_history"] = data["odometer_history"][-900:]
+            if len(data["odometer_history"]) > ODOMETER_HISTORY_TRUNCATE_TO:
+                # Keep only the most recent entries to ensure we stay under the maximum
+                # after adding new data (up to ~200 new entries in a typical 90-day import)
+                data["odometer_history"] = data["odometer_history"][-ODOMETER_HISTORY_TRUNCATE_TO:]
             
             # Append all new observations
             for state_data in processed_states:
