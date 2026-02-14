@@ -1225,6 +1225,10 @@ async def import_historical_trip_data(
         
         result["trips_detected"] = trips_detected
         
+        # IMPORTANT: Reload data after _import_trip_history since it saved trips
+        # Using the old 'data' variable would overwrite the trips that were just saved
+        data = await load_data(hass, entry)
+        
         # Get odometer history count for debugging
         odometer_history_count = len(data.get("odometer_history", []))
         
