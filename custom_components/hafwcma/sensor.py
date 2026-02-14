@@ -2580,7 +2580,7 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
         # Add historical import metadata from coordinator data
         last_historical_import = self.coordinator.data.get("last_historical_import")
         if last_historical_import:
-            attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp")
+            attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp", DEFAULT_HISTORICAL_IMPORT_TIMESTAMP)
             attrs["last_historical_import_type"] = last_historical_import.get("type", DEFAULT_HISTORICAL_IMPORT_TYPE)
         else:
             # If no historical import has been done, set default values

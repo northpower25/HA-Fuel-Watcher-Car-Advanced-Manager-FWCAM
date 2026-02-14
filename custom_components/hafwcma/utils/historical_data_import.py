@@ -1140,6 +1140,8 @@ async def import_historical_trip_data(
         "import_type": import_type,
     }
     
+    data = None  # Track whether data was loaded
+    
     try:
         # Load storage data first to check trip tracking config
         data = await load_data(hass, entry.entry_id)
@@ -1228,10 +1230,9 @@ async def import_historical_trip_data(
         result["errors"].append(str(err))
         _LOGGER.error("Error importing historical trip data: %s", err, exc_info=True)
         
-        # Store error metadata - try to reuse existing data if available
+        # Store error metadata - load data if not already loaded
         try:
-            # Try to use existing data variable if it was already loaded
-            if 'data' not in locals():
+            if data is None:
                 data = await load_data(hass, entry.entry_id)
             
             data["last_historical_import"] = {
