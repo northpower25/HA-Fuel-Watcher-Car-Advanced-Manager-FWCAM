@@ -1404,11 +1404,17 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         refueling_log = None
         last_vehicle_data_refresh = None
         last_historical_import = None
+        trip_tracking_config = {}
+        trips = []
+        trip_statistics = {}
         try:
             stored_data = await storage.load_data(self.hass, self.config_entry)
             refueling_log = stored_data.get("refueling_log", [])
             last_vehicle_data_refresh = stored_data.get("last_vehicle_data_refresh")
             last_historical_import = stored_data.get("last_historical_import")
+            trip_tracking_config = stored_data.get("trip_tracking_config", {})
+            trips = stored_data.get("trips", [])
+            trip_statistics = stored_data.get("trip_statistics", {})
         except Exception as err:
             _LOGGER.warning("Error getting refueling log and metadata: %s", err)
         
@@ -1444,6 +1450,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "proximity_alert": proximity_alert_data,  # Add proximity alert data
             "last_vehicle_data_refresh": last_vehicle_data_refresh,  # Add retrieval metadata
             "last_historical_import": last_historical_import,  # Add import metadata
+            "trip_tracking_config": trip_tracking_config,  # Add trip tracking config
+            "trips": trips,  # Add trips list
+            "trip_statistics": trip_statistics,  # Add trip statistics
         }
         
         # Apply randomization for next update interval
@@ -2539,7 +2548,10 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return trip statistics and recent trips."""
         if not self.coordinator.data:
-            return {}
+            return {
+                "last_historical_import_timestamp": None,
+                "last_historical_import_type": "none",
+            }
         
         stats = self.coordinator.data.get("trip_statistics", {})
         trips = self.coordinator.data.get("trips", [])
@@ -2561,11 +2573,15 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
             "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
         }
         
-        # Add retrieval metadata from coordinator data
-        last_historical_import = self.coordinator.data.get("last_historical_trip_import")
+        # Add historical import metadata from coordinator data
+        last_historical_import = self.coordinator.data.get("last_historical_import")
         if last_historical_import:
             attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp")
-            attrs["last_historical_import_type"] = last_historical_import.get("type")
+            attrs["last_historical_import_type"] = last_historical_import.get("type", "none")
+        else:
+            # If no historical import has been done, set default values
+            attrs["last_historical_import_timestamp"] = None
+            attrs["last_historical_import_type"] = "none"
         
         last_vehicle_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
         if last_vehicle_refresh:

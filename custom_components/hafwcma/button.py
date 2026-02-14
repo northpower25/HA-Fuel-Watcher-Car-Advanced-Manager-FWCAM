@@ -384,9 +384,13 @@ class ImportHistoricalTripDataButton(ButtonEntity):
         
         try:
             from .utils.historical_data_import import import_historical_trip_data
+            from .utils import storage
             
-            # Check if trip tracking is enabled
-            trip_tracking_enabled = self._config_entry.data.get("trip_tracking_enabled", False)
+            # Check if trip tracking is enabled from storage
+            data = await storage.load_data(self._hass, self._config_entry)
+            trip_config = data.get("trip_tracking_config", {})
+            trip_tracking_enabled = trip_config.get("enabled", False)
+            
             if not trip_tracking_enabled:
                 self._last_result = {
                     "imported": False,
