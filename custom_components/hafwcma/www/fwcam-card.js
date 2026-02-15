@@ -1749,13 +1749,16 @@ class FWCAMCard extends HTMLElement {
                   </label>
                 </div>
                 <div class="form-row" style="margin-top: 8px;">
-                  <button type="button" class="secondary-button" data-action="reverse-geocode-start" style="display: flex; align-items: center; gap: 4px;">
+                  <button type="button" class="secondary-button" data-action="reverse-geocode-start" 
+                          aria-label="Automatically fill location name and address from coordinates using reverse geocoding"
+                          style="display: flex; align-items: center; gap: 4px;">
                     <ha-icon icon="mdi:map-marker-check"></ha-icon>
                     <span>Auto-fill Name & Address</span>
                   </button>
                 </div>
                 <div id="start-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="start-map-img" style="width: 250px; height: 250px; border-radius: 4px; cursor: pointer; object-fit: cover;" alt="Start location map">
+                  <img id="start-map-img" style="width: 250px; height: 250px; border-radius: 4px; cursor: pointer; object-fit: cover;" 
+                       alt="Map preview of trip start location" title="Click to open in Google Maps">
                 </div>
               </div>
               
@@ -1786,13 +1789,16 @@ class FWCAMCard extends HTMLElement {
                   </label>
                 </div>
                 <div class="form-row" style="margin-top: 8px;">
-                  <button type="button" class="secondary-button" data-action="reverse-geocode-end" style="display: flex; align-items: center; gap: 4px;">
+                  <button type="button" class="secondary-button" data-action="reverse-geocode-end" 
+                          aria-label="Automatically fill location name and address from coordinates using reverse geocoding"
+                          style="display: flex; align-items: center; gap: 4px;">
                     <ha-icon icon="mdi:map-marker-check"></ha-icon>
                     <span>Auto-fill Name & Address</span>
                   </button>
                 </div>
                 <div id="end-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="end-map-img" style="width: 250px; height: 250px; border-radius: 4px; cursor: pointer; object-fit: cover;" alt="End location map">
+                  <img id="end-map-img" style="width: 250px; height: 250px; border-radius: 4px; cursor: pointer; object-fit: cover;" 
+                       alt="Map preview of trip end location" title="Click to open in Google Maps">
                 </div>
                 <div id="trip-map-links" style="display: none; margin-top: 8px;">
                   <a id="start-map-link" href="#" target="_blank" style="margin-right: 12px;">
@@ -2829,11 +2835,11 @@ class FWCAMCard extends HTMLElement {
     const now = Date.now();
     const timeSinceLastRequest = now - this._lastNominatimRequest;
     if (timeSinceLastRequest < 1000) {
-      const waitTime = 1000 - timeSinceLastRequest;
+      const waitTime = Math.ceil((1000 - timeSinceLastRequest) / 100) / 10; // Convert to seconds with 1 decimal place
       const lang = this.getUserLanguage();
       const messages = {
-        de: `Bitte warten Sie ${Math.ceil(waitTime / 1000)} Sekunde(n) vor der nächsten Anfrage.`,
-        en: `Please wait ${Math.ceil(waitTime / 1000)} second(s) before the next request.`
+        de: `Bitte warten Sie ${waitTime} Sekunde(n) vor der nächsten Anfrage.`,
+        en: `Please wait ${waitTime} second(s) before the next request.`
       };
       alert(messages[lang] || messages['en']);
       return;
@@ -2848,7 +2854,8 @@ class FWCAMCard extends HTMLElement {
         {
           headers: {
             'Accept': 'application/json',
-            'User-Agent': 'HomeAssistant-FWCAM/1.0'
+            // Nominatim usage policy requires descriptive User-Agent
+            'User-Agent': 'HomeAssistant-FWCAM/1.0 (Home Assistant Integration)'
           }
         }
       );
