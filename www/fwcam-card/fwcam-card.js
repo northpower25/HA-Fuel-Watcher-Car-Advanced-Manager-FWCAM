@@ -2685,28 +2685,34 @@ class FWCAMCard extends HTMLElement {
     }
     
     const zoom = 15;
+    const TILE_SIZE_PX = 256; // OSM tiles are 256x256 pixels
+    
+    // Helper function: Convert latitude to Web Mercator Y coordinate
+    const latToMercatorY = (latitude) => 
+      (1 - Math.log(Math.tan(latitude * Math.PI / 180) + 1 / Math.cos(latitude * Math.PI / 180)) / Math.PI) / 2;
     
     // Calculate tile coordinates
     const n = Math.pow(2, zoom);
     const xtile = Math.floor((lon + 180) / 360 * n);
-    const ytile = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
+    const ytile = Math.floor(latToMercatorY(lat) * n);
     
-    // We'll use a simple approach: embed a single OSM tile with overlay marker
     // Calculate pixel position of marker within tile
     const tileX = (lon + 180) / 360 * n;
-    const tileY = (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n;
-    const pixelX = (tileX - xtile) * 256;
-    const pixelY = (tileY - ytile) * 256;
+    const tileY = latToMercatorY(lat) * n;
+    const pixelX = (tileX - xtile) * TILE_SIZE_PX;
+    const pixelY = (tileY - ytile) * TILE_SIZE_PX;
     
-    // Create an SVG with the tile image and marker
+    // SVG path for map marker pin (teardrop shape with rounded top)
+    const markerPath = "M 0,-30 Q -10,-30 -10,-20 Q -10,-10 0,0 Q 10,-10 10,-20 Q 10,-30 0,-30 Z";
+    
+    // Create an SVG with the tile image and marker overlay
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
-           width="${width}" height="${height}" viewBox="0 0 256 256">
+           width="${width}" height="${height}" viewBox="0 0 ${TILE_SIZE_PX} ${TILE_SIZE_PX}">
         <image href="https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png" 
-               width="256" height="256" x="0" y="0"/>
+               width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}" x="0" y="0"/>
         <g transform="translate(${pixelX}, ${pixelY})">
-          <path d="M 0,-30 Q -10,-30 -10,-20 Q -10,-10 0,0 Q 10,-10 10,-20 Q 10,-30 0,-30 Z" 
-                fill="#E74C3C" stroke="#FFFFFF" stroke-width="2"/>
+          <path d="${markerPath}" fill="#E74C3C" stroke="#FFFFFF" stroke-width="2"/>
           <circle cx="0" cy="-20" r="6" fill="#FFFFFF"/>
         </g>
       </svg>
