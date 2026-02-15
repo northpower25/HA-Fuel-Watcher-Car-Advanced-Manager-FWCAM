@@ -7,7 +7,7 @@ REPO_NAME="HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM"
 DRY_RUN=false
 
 # Check for dry-run flag
-if [ "$1" == "--dry-run" ]; then
+if [ "$1" = "--dry-run" ]; then
     DRY_RUN=true
     echo "Running in DRY-RUN mode - no releases will be deleted"
     echo ""
@@ -104,7 +104,7 @@ for i in "${!PRERELEASE_IDS[@]}"; do
         echo "Would delete: $RELEASE_TAG (ID: $RELEASE_ID)"
     else
         echo "Deleting: $RELEASE_TAG (ID: $RELEASE_ID)"
-        if gh release delete "$RELEASE_TAG" --repo "$REPO_OWNER/$REPO_NAME" --yes 2>&1; then
+        if gh release delete "$RELEASE_TAG" --repo "$REPO_OWNER/$REPO_NAME" --yes; then
             echo "  ✓ Successfully deleted $RELEASE_TAG"
         else
             echo "  ✗ Failed to delete $RELEASE_TAG"
