@@ -263,7 +263,9 @@ class FWCAMCard extends HTMLElement {
         'hafwcma',
         'get_all_trips',
         { config_entry_id: configEntryId },
-        { return_response: true }
+        {},
+        true,
+        true
       );
       return response?.trips || [];
     } catch (error) {
@@ -291,7 +293,9 @@ class FWCAMCard extends HTMLElement {
         'hafwcma',
         'get_all_refuelings',
         { config_entry_id: configEntryId },
-        { return_response: true }
+        {},
+        true,
+        true
       );
       return response?.refuelings || [];
     } catch (error) {
@@ -2664,10 +2668,17 @@ class FWCAMCard extends HTMLElement {
   
   /**
    * Generate OpenStreetMap static map image URL
+   * Uses a single OSM tile centered on the location as a simple preview
    */
   getStaticMapUrl(lat, lon, width = 300, height = 150) {
     const zoom = 15;
-    return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${zoom}&size=${width}x${height}&markers=${lat},${lon},red-pushpin`;
+    // Calculate tile coordinates from lat/lon
+    const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
+    const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+    
+    // Use OpenStreetMap tile server (allowed for low-volume usage with attribution)
+    // For production, consider using your own tile server or a commercial service
+    return `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
   }
   
   /**
