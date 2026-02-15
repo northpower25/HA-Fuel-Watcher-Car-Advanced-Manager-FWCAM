@@ -1609,6 +1609,9 @@ class FWCAMCard extends HTMLElement {
                            step="0.000001" min="-180" max="180" placeholder="Optional">
                   </label>
                 </div>
+                <div id="start-location-map-preview" style="display: none; margin-top: 8px;">
+                  <img id="start-map-img" style="width: 100%; max-width: 300px; height: 150px; border-radius: 4px; cursor: pointer;" alt="Start location map">
+                </div>
               </div>
               
               <div class="form-section">
@@ -1636,6 +1639,9 @@ class FWCAMCard extends HTMLElement {
                     <input type="number" id="trip-end-longitude" name="end_longitude" 
                            step="0.000001" min="-180" max="180" placeholder="Optional">
                   </label>
+                </div>
+                <div id="end-location-map-preview" style="display: none; margin-top: 8px;">
+                  <img id="end-map-img" style="width: 100%; max-width: 300px; height: 150px; border-radius: 4px; cursor: pointer;" alt="End location map">
                 </div>
                 <div id="trip-map-links" style="display: none; margin-top: 8px;">
                   <a id="start-map-link" href="#" target="_blank" style="margin-right: 12px;">
@@ -2465,6 +2471,74 @@ class FWCAMCard extends HTMLElement {
       field.removeEventListener('input', updateLinks);
       field.addEventListener('input', updateLinks);
     });
+    
+    // Set up location name change handlers for address auto-fill
+    this.setupLocationNameHandlers();
+  }
+  
+  /**
+   * Set up handlers to auto-fill addresses when location names are selected
+   */
+  setupLocationNameHandlers() {
+    const startName = this.shadowRoot.getElementById('trip-start-name');
+    const endName = this.shadowRoot.getElementById('trip-end-name');
+    
+    if (startName) {
+      startName.removeEventListener('change', this._startNameChangeHandler);
+      this._startNameChangeHandler = () => this.handleLocationNameChange('start');
+      startName.addEventListener('change', this._startNameChangeHandler);
+    }
+    
+    if (endName) {
+      endName.removeEventListener('change', this._endNameChangeHandler);
+      this._endNameChangeHandler = () => this.handleLocationNameChange('end');
+      endName.addEventListener('change', this._endNameChangeHandler);
+    }
+  }
+  
+  /**
+   * Handle location name change to auto-fill address from previous trips
+   */
+  handleLocationNameChange(locationType) {
+    const nameField = this.shadowRoot.getElementById(`trip-${locationType}-name`);
+    const addressField = this.shadowRoot.getElementById(`trip-${locationType}-address`);
+    const latField = this.shadowRoot.getElementById(`trip-${locationType}-latitude`);
+    const lonField = this.shadowRoot.getElementById(`trip-${locationType}-longitude`);
+    
+    if (!nameField || !addressField) return;
+    
+    const locationName = nameField.value.trim();
+    if (!locationName) return;
+    
+    // Don't overwrite if address is already filled
+    if (addressField.value && addressField.value.trim()) return;
+    
+    // Find a matching trip with this location name
+    if (!this._allTrips || this._allTrips.length === 0) return;
+    
+    for (const trip of this._allTrips) {
+      const tripName = locationType === 'start' ? trip.start_name : trip.end_name;
+      const tripAddress = locationType === 'start' ? trip.start_address : trip.end_address;
+      const tripLat = locationType === 'start' ? trip.start_latitude : trip.end_latitude;
+      const tripLon = locationType === 'start' ? trip.start_longitude : trip.end_longitude;
+      
+      // Match by name (case-insensitive)
+      if (tripName && tripName.toLowerCase() === locationName.toLowerCase()) {
+        // Auto-fill address if available
+        if (tripAddress && !addressField.value) {
+          addressField.value = tripAddress;
+        }
+        
+        // Auto-fill coordinates if available and not already set
+        if (tripLat && tripLon && !latField.value && !lonField.value) {
+          latField.value = tripLat;
+          lonField.value = tripLon;
+          this.updateMapLinks();
+        }
+        
+        break; // Use first match
+      }
+    }
   }
 
   /**
@@ -2480,6 +2554,12 @@ class FWCAMCard extends HTMLElement {
     const startMapLink = this.shadowRoot.getElementById('start-map-link');
     const endMapLink = this.shadowRoot.getElementById('end-map-link');
     
+    // Map preview elements
+    const startMapPreview = this.shadowRoot.getElementById('start-location-map-preview');
+    const endMapPreview = this.shadowRoot.getElementById('end-location-map-preview');
+    const startMapImg = this.shadowRoot.getElementById('start-map-img');
+    const endMapImg = this.shadowRoot.getElementById('end-map-img');
+    
     if (!mapLinks || !startMapLink || !endMapLink) return;
     
     const hasStart = !isNaN(startLat) && !isNaN(startLon);
@@ -2489,20 +2569,43 @@ class FWCAMCard extends HTMLElement {
       mapLinks.style.display = 'block';
       
       if (hasStart) {
-        startMapLink.href = `https://www.google.com/maps?q=${startLat},${startLon}`;
+        const startUrl = `https://www.google.com/maps?q=${startLat},${startLon}`;
+        startMapLink.href = startUrl;
         startMapLink.style.display = 'inline-flex';
+        
+        // Show inline map preview using OpenStreetMap static tiles
+        if (startMapPreview && startMapImg) {
+          const zoom = 15;
+          // Using OpenStreetMap static map tile service
+          startMapImg.src = `https://staticmap.openstreetmap.de/staticmap.php?center=${startLat},${startLon}&zoom=${zoom}&size=300x150&markers=${startLat},${startLon},red-pushpin`;
+          startMapImg.onclick = () => window.open(startUrl, '_blank');
+          startMapPreview.style.display = 'block';
+        }
       } else {
         startMapLink.style.display = 'none';
+        if (startMapPreview) startMapPreview.style.display = 'none';
       }
       
       if (hasEnd) {
-        endMapLink.href = `https://www.google.com/maps?q=${endLat},${endLon}`;
+        const endUrl = `https://www.google.com/maps?q=${endLat},${endLon}`;
+        endMapLink.href = endUrl;
         endMapLink.style.display = 'inline-flex';
+        
+        // Show inline map preview
+        if (endMapPreview && endMapImg) {
+          const zoom = 15;
+          endMapImg.src = `https://staticmap.openstreetmap.de/staticmap.php?center=${endLat},${endLon}&zoom=${zoom}&size=300x150&markers=${endLat},${endLon},red-pushpin`;
+          endMapImg.onclick = () => window.open(endUrl, '_blank');
+          endMapPreview.style.display = 'block';
+        }
       } else {
         endMapLink.style.display = 'none';
+        if (endMapPreview) endMapPreview.style.display = 'none';
       }
     } else {
       mapLinks.style.display = 'none';
+      if (startMapPreview) startMapPreview.style.display = 'none';
+      if (endMapPreview) endMapPreview.style.display = 'none';
     }
   }
 
