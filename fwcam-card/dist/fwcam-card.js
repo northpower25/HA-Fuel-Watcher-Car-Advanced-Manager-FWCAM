@@ -2414,12 +2414,12 @@ class FWCAMCard extends HTMLElement {
       serviceData.timestamp_start = formData.get('timestamp_start');
       serviceData.timestamp_end = formData.get('timestamp_end');
       // Normalize decimal separator for proper parsing
-      serviceData.distance_km = parseFloat(formData.get('distance_km').replace(',', '.'));
+      serviceData.distance_km = parseFloat((formData.get('distance_km') || '').replace(',', '.'));
       
       // fuel_consumed is only allowed in add_trip, not edit_trip
       if (formData.get('fuel_consumed')) {
         // Normalize decimal separator for proper parsing
-        serviceData.fuel_consumed = parseFloat(formData.get('fuel_consumed').replace(',', '.'));
+        serviceData.fuel_consumed = parseFloat((formData.get('fuel_consumed') || '').replace(',', '.'));
       }
     }
     
@@ -2429,7 +2429,7 @@ class FWCAMCard extends HTMLElement {
     }
     if (formData.get('additional_costs')) {
       // Normalize decimal separator for proper parsing
-      serviceData.additional_costs = parseFloat(formData.get('additional_costs').replace(',', '.'));
+      serviceData.additional_costs = parseFloat((formData.get('additional_costs') || '').replace(',', '.'));
     }
     if (formData.get('notes')) {
       serviceData.notes = formData.get('notes');
@@ -2438,21 +2438,21 @@ class FWCAMCard extends HTMLElement {
     // Add odometer fields
     if (formData.get('odometer_start')) {
       // Normalize decimal separator for proper parsing
-      serviceData.odometer_start = parseFloat(formData.get('odometer_start').replace(',', '.'));
+      serviceData.odometer_start = parseFloat((formData.get('odometer_start') || '').replace(',', '.'));
     }
     if (formData.get('odometer_end')) {
       // Normalize decimal separator for proper parsing
-      serviceData.odometer_end = parseFloat(formData.get('odometer_end').replace(',', '.'));
+      serviceData.odometer_end = parseFloat((formData.get('odometer_end') || '').replace(',', '.'));
     }
     
     // Add start location fields
     if (formData.get('start_latitude')) {
       // Normalize decimal separator: replace comma with dot for proper parsing
-      serviceData.start_latitude = parseFloat(formData.get('start_latitude').replace(',', '.'));
+      serviceData.start_latitude = parseFloat((formData.get('start_latitude') || '').replace(',', '.'));
     }
     if (formData.get('start_longitude')) {
       // Normalize decimal separator: replace comma with dot for proper parsing
-      serviceData.start_longitude = parseFloat(formData.get('start_longitude').replace(',', '.'));
+      serviceData.start_longitude = parseFloat((formData.get('start_longitude') || '').replace(',', '.'));
     }
     if (formData.get('start_name')) {
       serviceData.start_name = formData.get('start_name');
@@ -2464,11 +2464,11 @@ class FWCAMCard extends HTMLElement {
     // Add end location fields
     if (formData.get('end_latitude')) {
       // Normalize decimal separator: replace comma with dot for proper parsing
-      serviceData.end_latitude = parseFloat(formData.get('end_latitude').replace(',', '.'));
+      serviceData.end_latitude = parseFloat((formData.get('end_latitude') || '').replace(',', '.'));
     }
     if (formData.get('end_longitude')) {
       // Normalize decimal separator: replace comma with dot for proper parsing
-      serviceData.end_longitude = parseFloat(formData.get('end_longitude').replace(',', '.'));
+      serviceData.end_longitude = parseFloat((formData.get('end_longitude') || '').replace(',', '.'));
     }
     if (formData.get('end_name')) {
       serviceData.end_name = formData.get('end_name');
@@ -2483,7 +2483,7 @@ class FWCAMCard extends HTMLElement {
     }
     if (formData.get('confidence')) {
       // Normalize decimal separator for proper parsing
-      serviceData.confidence = parseFloat(formData.get('confidence').replace(',', '.'));
+      serviceData.confidence = parseFloat((formData.get('confidence') || '').replace(',', '.'));
     }
     
     try {
@@ -2530,7 +2530,7 @@ class FWCAMCard extends HTMLElement {
       config_entry_id: this.getConfigEntryId(),
       timestamp: formData.get('timestamp'),
       // Normalize decimal separator for proper parsing
-      liters_refueled: parseFloat(formData.get('liters_refueled').replace(',', '.'))
+      liters_refueled: parseFloat((formData.get('liters_refueled') || '').replace(',', '.'))
     };
     
     // Add optional fields if provided
@@ -2539,11 +2539,11 @@ class FWCAMCard extends HTMLElement {
     }
     if (formData.get('price_per_liter')) {
       // Normalize decimal separator for proper parsing
-      serviceData.price_per_liter = parseFloat(formData.get('price_per_liter').replace(',', '.'));
+      serviceData.price_per_liter = parseFloat((formData.get('price_per_liter') || '').replace(',', '.'));
     }
     if (formData.get('total_cost')) {
       // Normalize decimal separator for proper parsing
-      serviceData.total_cost = parseFloat(formData.get('total_cost').replace(',', '.'));
+      serviceData.total_cost = parseFloat((formData.get('total_cost') || '').replace(',', '.'));
     }
     if (formData.get('station_name')) {
       serviceData.station_name = formData.get('station_name');
@@ -2559,7 +2559,7 @@ class FWCAMCard extends HTMLElement {
     }
     if (formData.get('confidence')) {
       // Normalize decimal separator for proper parsing
-      serviceData.confidence = parseFloat(formData.get('confidence').replace(',', '.'));
+      serviceData.confidence = parseFloat((formData.get('confidence') || '').replace(',', '.'));
     }
     
     try {
