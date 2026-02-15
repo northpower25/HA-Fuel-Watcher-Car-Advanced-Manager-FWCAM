@@ -49,6 +49,11 @@ class FWCAMCard extends HTMLElement {
     this._tripFilterDateFrom = '';
     this._tripFilterDateTo = '';
     this._tripCurrentPage = 1;
+    // State for async data fetching
+    this._allTripsFetched = false;
+    this._allRefuelingsFetched = false;
+    this._allTrips = [];
+    this._allRefuelings = [];
   }
 
   /**
@@ -311,17 +316,21 @@ class FWCAMCard extends HTMLElement {
    * Fetch all trips asynchronously and update the card when done
    */
   async _fetchAllTripsAsync() {
-    if (this._allTripsFetched) return; // Already fetched
+    if (this._allTripsFetched) {
+      console.log('[FWCAM Card] Skipping async trip fetch - already fetched');
+      return; // Already fetched
+    }
     
+    console.log('[FWCAM Card] Starting async fetch of all trips...');
     try {
       const trips = await this.fetchAllTrips();
       this._allTrips = trips;
       this._allTripsFetched = true;
-      console.log(`[FWCAM Card] Fetched ${trips.length} trips asynchronously`);
+      console.log(`[FWCAM Card] ✓ Fetched ${trips.length} trips asynchronously`);
       // Re-render to show all trips
       this.forceRender();
     } catch (error) {
-      console.error('[FWCAM Card] Error in async trip fetch:', error);
+      console.error('[FWCAM Card] ✗ Error in async trip fetch:', error);
     }
   }
 
@@ -1538,6 +1547,7 @@ class FWCAMCard extends HTMLElement {
           <div class="filter-info">
             Showing ${Math.min(endIndex, sortedTrips.length)} of ${sortedTrips.length} trips
             ${sortedTrips.length !== trips.length ? ` (filtered from ${trips.length} total)` : ''}
+            ${!this._allTripsFetched ? ` <span style="color: var(--secondary-text-color); font-size: 12px;">(loading all trips...)</span>` : ''}
           </div>
         </div>
 
