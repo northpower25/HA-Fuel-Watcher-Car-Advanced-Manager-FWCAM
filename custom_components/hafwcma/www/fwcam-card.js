@@ -1747,13 +1747,15 @@ class FWCAMCard extends HTMLElement {
                 <div class="form-row">
                   <label for="trip-start-latitude">
                     Latitude
-                    <input type="number" id="trip-start-latitude" name="start_latitude" 
-                           step="0.000001" min="-90" max="90" placeholder="Optional">
+                    <input type="text" id="trip-start-latitude" name="start_latitude" 
+                           inputmode="decimal" placeholder="Optional" 
+                           title="Enter latitude (e.g., 53.759702 or 53,759702)">
                   </label>
                   <label for="trip-start-longitude">
                     Longitude
-                    <input type="number" id="trip-start-longitude" name="start_longitude" 
-                           step="0.000001" min="-180" max="180" placeholder="Optional">
+                    <input type="text" id="trip-start-longitude" name="start_longitude" 
+                           inputmode="decimal" placeholder="Optional" 
+                           title="Enter longitude (e.g., 9.671353 or 9,671353)">
                   </label>
                 </div>
                 <div class="form-row" style="margin-top: 8px;">
@@ -1791,13 +1793,15 @@ class FWCAMCard extends HTMLElement {
                 <div class="form-row">
                   <label for="trip-end-latitude">
                     Latitude
-                    <input type="number" id="trip-end-latitude" name="end_latitude" 
-                           step="0.000001" min="-90" max="90" placeholder="Optional">
+                    <input type="text" id="trip-end-latitude" name="end_latitude" 
+                           inputmode="decimal" placeholder="Optional" 
+                           title="Enter latitude (e.g., 53.759702 or 53,759702)">
                   </label>
                   <label for="trip-end-longitude">
                     Longitude
-                    <input type="number" id="trip-end-longitude" name="end_longitude" 
-                           step="0.000001" min="-180" max="180" placeholder="Optional">
+                    <input type="text" id="trip-end-longitude" name="end_longitude" 
+                           inputmode="decimal" placeholder="Optional" 
+                           title="Enter longitude (e.g., 9.671353 or 9,671353)">
                   </label>
                 </div>
                 <div class="form-row" style="margin-top: 8px;">
@@ -2938,10 +2942,18 @@ class FWCAMCard extends HTMLElement {
     const nameField = this.shadowRoot.getElementById(isStart ? 'trip-start-name' : 'trip-end-name');
     const addressField = this.shadowRoot.getElementById(isStart ? 'trip-start-address' : 'trip-end-address');
     
-    // Normalize decimal separator: replace comma with dot for proper parsing
+    // Get raw values and normalize decimal separator
     // This handles locale-specific input (e.g., German: 53,759702 -> 53.759702)
-    const lat = parseFloat((latField?.value || '').replace(',', '.'));
-    const lon = parseFloat((lonField?.value || '').replace(',', '.'));
+    const latRaw = latField?.value || '';
+    const lonRaw = lonField?.value || '';
+    const lat = parseFloat(latRaw.replace(',', '.'));
+    const lon = parseFloat(lonRaw.replace(',', '.'));
+    
+    console.log('[FWCAM Card] Reverse geocoding:', { 
+      raw: `${latRaw}, ${lonRaw}`, 
+      parsed: `${lat}, ${lon}`,
+      isStart 
+    });
     
     // Validate coordinates
     if (isNaN(lat) || isNaN(lon)) {
