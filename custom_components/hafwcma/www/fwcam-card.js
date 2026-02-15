@@ -2988,7 +2988,9 @@ class FWCAMCard extends HTMLElement {
           longitude: lon,
           use_cache: true
         },
-        {return_response: true}
+        {},     // target
+        true,   // notifyOnError
+        true    // returnResponse
       );
       
       if (result && result.response) {
