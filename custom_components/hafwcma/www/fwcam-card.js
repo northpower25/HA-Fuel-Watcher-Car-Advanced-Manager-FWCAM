@@ -2200,11 +2200,16 @@ class FWCAMCard extends HTMLElement {
     // Build service data
     const serviceData = {
       config_entry_id: this.getConfigEntryId(),
-      timestamp_start: formData.get('timestamp_start'),
-      timestamp_end: formData.get('timestamp_end'),
-      distance_km: parseFloat(formData.get('distance_km')),
       category: formData.get('category') || 'private'
     };
+    
+    // Only include timestamp and distance fields for new trips (add_trip service)
+    // These fields are not allowed in edit_trip service
+    if (!tripId) {
+      serviceData.timestamp_start = formData.get('timestamp_start');
+      serviceData.timestamp_end = formData.get('timestamp_end');
+      serviceData.distance_km = parseFloat(formData.get('distance_km'));
+    }
     
     // Add optional fields if provided
     if (formData.get('purpose')) {
