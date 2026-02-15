@@ -54,6 +54,7 @@ SERVICE_EXPORT_TRIPS = "export_trips"
 SERVICE_GET_ALL_TRIPS = "get_all_trips"
 SERVICE_GET_ALL_REFUELINGS = "get_all_refuelings"
 SERVICE_REVERSE_GEOCODE = "reverse_geocode"
+SERVICE_GET_GEOCODING_CACHE_STATS = "get_geocoding_cache_stats"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -171,6 +172,8 @@ SCHEMA_REVERSE_GEOCODE = vol.Schema({
     vol.Required("longitude"): vol.Coerce(float),
     vol.Optional("use_cache", default=True): cv.boolean,
 })
+
+SCHEMA_GET_GEOCODING_CACHE_STATS = vol.Schema({})
 
 
 async def _async_register_frontend_card(hass: HomeAssistant) -> None:
@@ -633,12 +636,15 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         
         Reverse geocodes coordinates to location name and address.
         Uses cache by default to avoid unnecessary API calls.
+        Returns success=True even when no data is found (fields remain empty).
+        Only returns success=False on actual errors (exceptions).
         
         Returns:
             ServiceResponse dict with keys:
                 - location_name (str): Extracted location name (e.g., "Brandenburg Gate")
                 - address (str): Full formatted address (e.g., "Unter den Linden, 10117 Berlin")
-                - success (bool): True if geocoding succeeded, False otherwise
+                - success (bool): True if no error occurred, False on exceptions
+                - from_cache (bool): True if data came from cache
                 - error (str): Error message if success is False (optional)
         """
         from .utils.geocoding import geocode_trip_location
@@ -654,31 +660,57 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             result = await geocode_trip_location(latitude, longitude, use_cache=use_cache)
             
             if result:
-                _LOGGER.debug("Reverse geocode result: name=%s, address=%s", 
-                            result.get("location_name"), result.get("address"))
+                _LOGGER.debug("Reverse geocode result: name=%s, address=%s, from_cache=%s", 
+                            result.get("location_name"), result.get("address"), result.get("from_cache"))
                 return {
                     "location_name": result.get("location_name", ""),
                     "address": result.get("address", ""),
                     "success": True,
+                    "from_cache": result.get("from_cache", False),
                 }
             else:
-                _LOGGER.warning("Reverse geocoding failed for (%.4f, %.4f)", latitude, longitude)
-                # Return empty response with generic error
-                # Note: Error structure duplicated in except block for clarity
+                _LOGGER.debug("No geocoding data found for (%.4f, %.4f)", latitude, longitude)
                 return {
                     "location_name": "",
                     "address": "",
-                    "success": False,
-                    "error": "Geocoding failed",
+                    "success": True,
+                    "from_cache": False,
                 }
         except Exception as err:
             _LOGGER.error("Error during reverse geocoding: %s", err)
-            # Return empty response with specific error
-            # Note: Error structure duplicated from else block for clarity in exception handling
+            # Only actual exceptions are considered errors
             return {
                 "location_name": "",
                 "address": "",
                 "success": False,
+                "error": str(err),
+            }
+    
+    async def handle_get_geocoding_cache_stats(call: ServiceCall) -> ServiceResponse:
+        """Handle the get_geocoding_cache_stats service call.
+        
+        Returns statistics about the geocoding cache for debugging purposes.
+        Shows the total number of cache entries and details about each entry.
+        
+        Returns:
+            ServiceResponse dict with keys:
+                - total_entries (int): Total number of cache entries
+                - entries (list): List of cache entries with coordinates, names, addresses
+        """
+        from .utils.geocoding import get_geocoder
+        
+        try:
+            geocoder = get_geocoder()
+            stats = geocoder.get_cache_stats()
+            
+            _LOGGER.debug("Geocoding cache stats: %d entries", stats["total_entries"])
+            return stats
+            
+        except Exception as err:
+            _LOGGER.error("Error getting geocoding cache stats: %s", err)
+            return {
+                "total_entries": 0,
+                "entries": [],
                 "error": str(err),
             }
 
@@ -715,6 +747,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_REVERSE_GEOCODE, handle_reverse_geocode, schema=SCHEMA_REVERSE_GEOCODE, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_GET_GEOCODING_CACHE_STATS, handle_get_geocoding_cache_stats, schema=SCHEMA_GET_GEOCODING_CACHE_STATS, supports_response=True
     )
     
     return True
@@ -778,6 +813,7 @@ async def _import_historical_data_background(
     Imports historical vehicle data from Home Assistant's recorder
     to populate consumption history and enable predictions.
     Also imports trip history if trip tracking is enabled.
+    Also rebuilds the geocoding cache from existing trip data.
     
     Args:
         hass: Home Assistant instance
@@ -786,6 +822,7 @@ async def _import_historical_data_background(
     try:
         from .utils.historical_data_import import import_historical_vehicle_data, import_historical_trip_data
         from .utils import storage
+        from .utils.geocoding import rebuild_cache_from_trips
         
         _LOGGER.info("Starting background historical data import")
         
@@ -834,6 +871,11 @@ async def _import_historical_data_background(
                 _LOGGER.info("Historical trip import skipped: %s", trip_result["reason"])
         else:
             _LOGGER.debug("Trip tracking not enabled, skipping trip history import")
+        
+        # Rebuild geocoding cache from existing trip data
+        _LOGGER.info("Rebuilding geocoding cache from existing trip data")
+        cache_count = await rebuild_cache_from_trips(hass, entry)
+        _LOGGER.info("Geocoding cache rebuilt with %d entries", cache_count)
             
     except Exception as err:
         _LOGGER.error("Error during background historical data import: %s", err, exc_info=True)

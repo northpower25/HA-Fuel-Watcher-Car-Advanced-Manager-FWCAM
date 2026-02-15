@@ -762,3 +762,7 @@ reverse_geocode:
       example: true
       selector:
         boolean:
+
+get_geocoding_cache_stats:
+  name: Get Geocoding Cache Statistics
+  description: Get statistics about the geocoding cache for debugging purposes. Shows total cache entries and their details (coordinates, names, addresses).

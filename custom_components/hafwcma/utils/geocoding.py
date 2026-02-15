@@ -158,6 +158,36 @@ class GeocodingCache:
         """
         self._cache = cache_data.copy()
         _LOGGER.debug("Loaded %d geocoding cache entries from storage", len(self._cache))
+    
+    def get_cache_stats(self) -> dict[str, Any]:
+        """Get statistics about the cache for debugging.
+        
+        Returns:
+            Dictionary with cache statistics including count and sample entries
+        """
+        cache_entries = []
+        for key, entry in self._cache.items():
+            try:
+                coords = key.split(",")
+                if len(coords) != 2:
+                    _LOGGER.warning("Malformed cache key: %s", key)
+                    continue
+                    
+                cache_entries.append({
+                    "latitude": float(coords[0]),
+                    "longitude": float(coords[1]),
+                    "location_name": entry.get("location_name", ""),
+                    "address": entry.get("address", ""),
+                    "timestamp": entry.get("timestamp", ""),
+                })
+            except (ValueError, IndexError) as err:
+                _LOGGER.warning("Error parsing cache key '%s': %s", key, err)
+                continue
+        
+        return {
+            "total_entries": len(self._cache),
+            "entries": cache_entries,
+        }
 
 
 class NominatimGeocoder:
@@ -211,7 +241,7 @@ class NominatimGeocoder:
         latitude: float,
         longitude: float,
         use_cache: bool = True,
-    ) -> dict[str, str] | None:
+    ) -> dict[str, str | bool] | None:
         """Reverse geocode coordinates to location name and address.
         
         Args:
@@ -220,7 +250,7 @@ class NominatimGeocoder:
             use_cache: Whether to use cached results
             
         Returns:
-            Dict with 'location_name' and 'address' keys, or None if geocoding failed
+            Dict with 'location_name', 'address', and 'from_cache' keys, or None if geocoding failed
         """
         # Check cache first
         if use_cache:
@@ -233,7 +263,10 @@ class NominatimGeocoder:
                     cached_data.get("location_name", ""),
                     cached_data.get("address", ""),
                 )
-                return cached_data
+                # Add from_cache indicator
+                result = cached_data.copy()
+                result["from_cache"] = True
+                return result
         
         # Make API request
         try:
@@ -269,6 +302,7 @@ class NominatimGeocoder:
                     result = {
                         "location_name": location_name or "",
                         "address": address or "",
+                        "from_cache": False,
                     }
                     
                     # Cache the result
@@ -415,6 +449,14 @@ class NominatimGeocoder:
             cache_data: Dictionary of cache entries to load
         """
         self._cache.set_all_cached_data(cache_data)
+    
+    def get_cache_stats(self) -> dict[str, Any]:
+        """Get cache statistics for debugging.
+        
+        Returns:
+            Dictionary with cache statistics
+        """
+        return self._cache.get_cache_stats()
     
     def set_cache_entry(
         self,
@@ -564,3 +606,79 @@ async def save_geocoding_cache_to_entry(hass: HomeAssistant, entry: ConfigEntry)
                      entry.entry_id, len(cache_data))
     except Exception as err:
         _LOGGER.warning("Failed to save geocoding cache to storage: %s", err)
+
+
+async def rebuild_cache_from_trips(hass: HomeAssistant, entry: ConfigEntry) -> int:
+    """Rebuild geocoding cache from existing trip data.
+    
+    This function scans all existing trips and caches their location data
+    (start/end coordinates with names and addresses) to enable auto-fill
+    for future trips with the same coordinates.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Number of cache entries created
+    """
+    from .storage import get_trips
+    
+    def _cache_location_if_valid(
+        geocoder: NominatimGeocoder,
+        latitude: float | None,
+        longitude: float | None,
+        name: str,
+        address: str,
+    ) -> bool:
+        """Helper to cache location if coordinates are valid and data exists.
+        
+        Returns:
+            True if location was cached, False otherwise
+        """
+        if latitude is not None and longitude is not None and (name or address):
+            geocoder.set_cache_entry(
+                latitude=latitude,
+                longitude=longitude,
+                location_name=name or "",
+                address=address or "",
+            )
+            return True
+        return False
+    
+    try:
+        trips = await get_trips(hass, entry)
+        geocoder = get_geocoder()
+        cache_count = 0
+        
+        for trip in trips:
+            # Cache start location
+            if _cache_location_if_valid(
+                geocoder,
+                trip.get("start_latitude"),
+                trip.get("start_longitude"),
+                trip.get("start_name", ""),
+                trip.get("start_address", ""),
+            ):
+                cache_count += 1
+            
+            # Cache end location
+            if _cache_location_if_valid(
+                geocoder,
+                trip.get("end_latitude"),
+                trip.get("end_longitude"),
+                trip.get("end_name", ""),
+                trip.get("end_address", ""),
+            ):
+                cache_count += 1
+        
+        _LOGGER.info(
+            "Rebuilt geocoding cache from %d trips, created %d cache entries",
+            len(trips),
+            cache_count
+        )
+        return cache_count
+        
+    except Exception as err:
+        _LOGGER.error("Failed to rebuild geocoding cache from trips: %s", err, exc_info=True)
+        return 0
