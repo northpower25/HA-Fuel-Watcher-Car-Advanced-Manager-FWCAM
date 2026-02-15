@@ -1378,6 +1378,15 @@ class FWCAMCard extends HTMLElement {
       });
     }
 
+    // Reverse geocoding buttons
+    this.shadowRoot.querySelectorAll('[data-action="reverse-geocode-start"], [data-action="reverse-geocode-end"]').forEach(button => {
+      button.addEventListener('click', async (e) => {
+        const action = e.currentTarget.dataset.action;
+        const isStart = action === 'reverse-geocode-start';
+        await this.handleReverseGeocode(isStart);
+      });
+    });
+
     // Trip dialog close buttons
     this.shadowRoot.querySelectorAll('[data-action="close-trip-dialog"]').forEach(button => {
       button.addEventListener('click', () => {
@@ -1727,8 +1736,14 @@ class FWCAMCard extends HTMLElement {
                            step="0.000001" min="-180" max="180" placeholder="Optional">
                   </label>
                 </div>
+                <div class="form-row" style="margin-top: 8px;">
+                  <button type="button" class="secondary-button" data-action="reverse-geocode-start" style="display: flex; align-items: center; gap: 4px;">
+                    <ha-icon icon="mdi:map-marker-check"></ha-icon>
+                    <span>Auto-fill Name & Address</span>
+                  </button>
+                </div>
                 <div id="start-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="start-map-img" style="width: 100%; max-width: 300px; height: 150px; border-radius: 4px; cursor: pointer;" alt="Start location map">
+                  <img id="start-map-img" style="width: 250px; height: 250px; border-radius: 4px; cursor: pointer; object-fit: cover;" alt="Start location map">
                 </div>
               </div>
               
@@ -1758,8 +1773,14 @@ class FWCAMCard extends HTMLElement {
                            step="0.000001" min="-180" max="180" placeholder="Optional">
                   </label>
                 </div>
+                <div class="form-row" style="margin-top: 8px;">
+                  <button type="button" class="secondary-button" data-action="reverse-geocode-end" style="display: flex; align-items: center; gap: 4px;">
+                    <ha-icon icon="mdi:map-marker-check"></ha-icon>
+                    <span>Auto-fill Name & Address</span>
+                  </button>
+                </div>
                 <div id="end-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="end-map-img" style="width: 100%; max-width: 300px; height: 150px; border-radius: 4px; cursor: pointer;" alt="End location map">
+                  <img id="end-map-img" style="width: 250px; height: 250px; border-radius: 4px; cursor: pointer; object-fit: cover;" alt="End location map">
                 </div>
                 <div id="trip-map-links" style="display: none; margin-top: 8px;">
                   <a id="start-map-link" href="#" target="_blank" style="margin-right: 12px;">
@@ -2359,14 +2380,16 @@ class FWCAMCard extends HTMLElement {
       serviceData.timestamp_start = formData.get('timestamp_start');
       serviceData.timestamp_end = formData.get('timestamp_end');
       serviceData.distance_km = parseFloat(formData.get('distance_km'));
+      
+      // fuel_consumed is only allowed in add_trip, not edit_trip
+      if (formData.get('fuel_consumed')) {
+        serviceData.fuel_consumed = parseFloat(formData.get('fuel_consumed'));
+      }
     }
     
     // Add optional fields if provided
     if (formData.get('purpose')) {
       serviceData.purpose = formData.get('purpose');
-    }
-    if (formData.get('fuel_consumed')) {
-      serviceData.fuel_consumed = parseFloat(formData.get('fuel_consumed'));
     }
     if (formData.get('additional_costs')) {
       serviceData.additional_costs = parseFloat(formData.get('additional_costs'));
@@ -2667,24 +2690,16 @@ class FWCAMCard extends HTMLElement {
   }
   
   /**
-   * Generate OpenStreetMap static map image URL
-   * Uses a single OSM tile centered on the location as a simple preview
+   * Generate static map image URL with marker
+   * Uses OSM Static Maps API which is free and doesn't require API key
    */
-  getStaticMapUrl(lat, lon, width = 300, height = 150) {
+  getStaticMapUrl(lat, lon, width = 250, height = 250) {
     const zoom = 15;
     
-    // Convert lat/lon to tile coordinates using Web Mercator projection
-    // X coordinate: longitude to tile X index
-    const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
-    
-    // Y coordinate: latitude to tile Y index using Mercator projection formula
-    // This accounts for the distortion in the Mercator projection near the poles
-    const latRad = lat * Math.PI / 180;
-    const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, zoom));
-    
-    // Use OpenStreetMap tile server (allowed for low-volume usage with attribution)
-    // For production, consider using your own tile server or a commercial service
-    return `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+    // Use staticmap.openstreetmap.de which supports markers
+    // Format: ?center=lat,lon&zoom=15&size=widthxheight&markers=lat,lon,lightblue
+    // Example: https://staticmap.openstreetmap.de/staticmap.php?center=53.736131,9.676176&zoom=15&size=250x250&markers=53.736131,9.676176,red-pushpin
+    return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${zoom}&size=${width}x${height}&markers=${lat},${lon},red-pushpin`;
   }
   
   /**
@@ -2749,6 +2764,112 @@ class FWCAMCard extends HTMLElement {
       mapLinks.style.display = 'none';
       if (startMapPreview) startMapPreview.style.display = 'none';
       if (endMapPreview) endMapPreview.style.display = 'none';
+    }
+  }
+
+  /**
+   * Handle reverse geocoding to auto-fill location name and address
+   */
+  async handleReverseGeocode(isStart) {
+    const latField = this.shadowRoot.getElementById(isStart ? 'trip-start-latitude' : 'trip-end-latitude');
+    const lonField = this.shadowRoot.getElementById(isStart ? 'trip-start-longitude' : 'trip-end-longitude');
+    const nameField = this.shadowRoot.getElementById(isStart ? 'trip-start-name' : 'trip-end-name');
+    const addressField = this.shadowRoot.getElementById(isStart ? 'trip-start-address' : 'trip-end-address');
+    
+    const lat = parseFloat(latField.value);
+    const lon = parseFloat(lonField.value);
+    
+    if (isNaN(lat) || isNaN(lon)) {
+      const lang = this.getUserLanguage();
+      const messages = {
+        de: 'Bitte geben Sie Latitude und Longitude ein.',
+        en: 'Please enter latitude and longitude first.'
+      };
+      alert(messages[lang] || messages['en']);
+      return;
+    }
+    
+    try {
+      // Use Nominatim API for reverse geocoding (free, no API key required)
+      // NOTE: Please respect Nominatim usage policy: max 1 request per second
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'HomeAssistant-FWCAM/1.0'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data && data.address) {
+        // Extract location name from address components
+        // Priority: shop, amenity, building, house_number + road
+        let locationName = '';
+        if (data.address.shop) {
+          locationName = data.address.shop;
+        } else if (data.address.amenity) {
+          locationName = data.address.amenity;
+        } else if (data.address.building) {
+          locationName = data.address.building;
+        } else if (data.address.house_number && data.address.road) {
+          locationName = `${data.address.road} ${data.address.house_number}`;
+        } else if (data.address.road) {
+          locationName = data.address.road;
+        }
+        
+        // If we found a specific place name, use it
+        if (data.name && data.name !== data.address.road) {
+          locationName = data.name;
+        }
+        
+        // Construct full address
+        let fullAddress = '';
+        const parts = [];
+        if (data.address.house_number && data.address.road) {
+          parts.push(`${data.address.road} ${data.address.house_number}`);
+        } else if (data.address.road) {
+          parts.push(data.address.road);
+        }
+        if (data.address.postcode && data.address.city) {
+          parts.push(`${data.address.postcode} ${data.address.city}`);
+        } else if (data.address.city) {
+          parts.push(data.address.city);
+        } else if (data.address.town) {
+          parts.push(data.address.town);
+        } else if (data.address.village) {
+          parts.push(data.address.village);
+        }
+        fullAddress = parts.join(', ');
+        
+        // Fill in the fields
+        if (locationName && nameField) {
+          nameField.value = locationName;
+        }
+        if (fullAddress && addressField) {
+          addressField.value = fullAddress;
+        }
+        
+        console.log('[FWCAM Card] Reverse geocoding result:', {
+          name: locationName,
+          address: fullAddress,
+          raw: data
+        });
+      }
+    } catch (error) {
+      console.error('[FWCAM Card] Error during reverse geocoding:', error);
+      const lang = this.getUserLanguage();
+      const messages = {
+        de: 'Fehler beim Abrufen der Standortinformationen. Bitte versuchen Sie es später erneut.',
+        en: 'Error fetching location information. Please try again later.'
+      };
+      alert(messages[lang] || messages['en']);
     }
   }
 
