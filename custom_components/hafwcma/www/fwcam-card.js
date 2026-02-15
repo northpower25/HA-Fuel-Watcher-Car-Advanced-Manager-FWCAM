@@ -49,6 +49,13 @@ class FWCAMCard extends HTMLElement {
     this._tripFilterDateFrom = '';
     this._tripFilterDateTo = '';
     this._tripCurrentPage = 1;
+    // State for async data fetching
+    this._allTripsFetched = false;
+    this._allRefuelingsFetched = false;
+    this._allTrips = [];
+    this._allRefuelings = [];
+    // Rate limiting for Nominatim API (1 request per second)
+    this._lastNominatimRequest = 0;
   }
 
   /**
@@ -311,17 +318,21 @@ class FWCAMCard extends HTMLElement {
    * Fetch all trips asynchronously and update the card when done
    */
   async _fetchAllTripsAsync() {
-    if (this._allTripsFetched) return; // Already fetched
+    if (this._allTripsFetched) {
+      console.log('[FWCAM Card] Skipping async trip fetch - already fetched');
+      return; // Already fetched
+    }
     
+    console.log('[FWCAM Card] Starting async fetch of all trips...');
     try {
       const trips = await this.fetchAllTrips();
       this._allTrips = trips;
       this._allTripsFetched = true;
-      console.log(`[FWCAM Card] Fetched ${trips.length} trips asynchronously`);
+      console.log(`[FWCAM Card] ✓ Fetched ${trips.length} trips asynchronously`);
       // Re-render to show all trips
       this.forceRender();
     } catch (error) {
-      console.error('[FWCAM Card] Error in async trip fetch:', error);
+      console.error('[FWCAM Card] ✗ Error in async trip fetch:', error);
     }
   }
 
@@ -1378,6 +1389,15 @@ class FWCAMCard extends HTMLElement {
       });
     }
 
+    // Reverse geocoding buttons
+    this.shadowRoot.querySelectorAll('[data-action="reverse-geocode-start"], [data-action="reverse-geocode-end"]').forEach(button => {
+      button.addEventListener('click', async (e) => {
+        const action = e.currentTarget.dataset.action;
+        const isStart = action === 'reverse-geocode-start';
+        await this.handleReverseGeocode(isStart);
+      });
+    });
+
     // Trip dialog close buttons
     this.shadowRoot.querySelectorAll('[data-action="close-trip-dialog"]').forEach(button => {
       button.addEventListener('click', () => {
@@ -1529,6 +1549,7 @@ class FWCAMCard extends HTMLElement {
           <div class="filter-info">
             Showing ${Math.min(endIndex, sortedTrips.length)} of ${sortedTrips.length} trips
             ${sortedTrips.length !== trips.length ? ` (filtered from ${trips.length} total)` : ''}
+            ${!this._allTripsFetched ? ` <span style="color: var(--secondary-text-color); font-size: 12px;">(loading all trips...)</span>` : ''}
           </div>
         </div>
 
@@ -1727,8 +1748,17 @@ class FWCAMCard extends HTMLElement {
                            step="0.000001" min="-180" max="180" placeholder="Optional">
                   </label>
                 </div>
+                <div class="form-row" style="margin-top: 8px;">
+                  <button type="button" class="secondary-button" data-action="reverse-geocode-start" 
+                          aria-label="Automatically fill location name and address from coordinates using reverse geocoding"
+                          style="display: flex; align-items: center; gap: 4px;">
+                    <ha-icon icon="mdi:map-marker-check"></ha-icon>
+                    <span>Auto-fill Name & Address</span>
+                  </button>
+                </div>
                 <div id="start-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="start-map-img" style="width: 100%; max-width: 300px; height: 150px; border-radius: 4px; cursor: pointer;" alt="Start location map">
+                  <img id="start-map-img" style="width: 250px; height: 250px; border-radius: 4px; cursor: pointer; object-fit: cover;" 
+                       alt="Map preview of trip start location" title="Click to open in Google Maps">
                 </div>
               </div>
               
@@ -1758,8 +1788,17 @@ class FWCAMCard extends HTMLElement {
                            step="0.000001" min="-180" max="180" placeholder="Optional">
                   </label>
                 </div>
+                <div class="form-row" style="margin-top: 8px;">
+                  <button type="button" class="secondary-button" data-action="reverse-geocode-end" 
+                          aria-label="Automatically fill location name and address from coordinates using reverse geocoding"
+                          style="display: flex; align-items: center; gap: 4px;">
+                    <ha-icon icon="mdi:map-marker-check"></ha-icon>
+                    <span>Auto-fill Name & Address</span>
+                  </button>
+                </div>
                 <div id="end-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="end-map-img" style="width: 100%; max-width: 300px; height: 150px; border-radius: 4px; cursor: pointer;" alt="End location map">
+                  <img id="end-map-img" style="width: 250px; height: 250px; border-radius: 4px; cursor: pointer; object-fit: cover;" 
+                       alt="Map preview of trip end location" title="Click to open in Google Maps">
                 </div>
                 <div id="trip-map-links" style="display: none; margin-top: 8px;">
                   <a id="start-map-link" href="#" target="_blank" style="margin-right: 12px;">
@@ -2359,14 +2398,16 @@ class FWCAMCard extends HTMLElement {
       serviceData.timestamp_start = formData.get('timestamp_start');
       serviceData.timestamp_end = formData.get('timestamp_end');
       serviceData.distance_km = parseFloat(formData.get('distance_km'));
+      
+      // fuel_consumed is only allowed in add_trip, not edit_trip
+      if (formData.get('fuel_consumed')) {
+        serviceData.fuel_consumed = parseFloat(formData.get('fuel_consumed'));
+      }
     }
     
     // Add optional fields if provided
     if (formData.get('purpose')) {
       serviceData.purpose = formData.get('purpose');
-    }
-    if (formData.get('fuel_consumed')) {
-      serviceData.fuel_consumed = parseFloat(formData.get('fuel_consumed'));
     }
     if (formData.get('additional_costs')) {
       serviceData.additional_costs = parseFloat(formData.get('additional_costs'));
@@ -2663,28 +2704,32 @@ class FWCAMCard extends HTMLElement {
    * Generate Google Maps URL for coordinates
    */
   getMapUrl(lat, lon) {
-    return `https://www.google.com/maps?q=${lat},${lon}`;
+    // Validate coordinate bounds
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      console.warn('[FWCAM Card] Invalid coordinates for map URL:', { lat, lon });
+      return '#';
+    }
+    return `https://www.google.com/maps?q=${encodeURIComponent(lat)},${encodeURIComponent(lon)}`;
   }
   
   /**
-   * Generate OpenStreetMap static map image URL
-   * Uses a single OSM tile centered on the location as a simple preview
+   * Generate static map image URL with marker
+   * Uses OSM Static Maps API which is free and doesn't require API key
    */
-  getStaticMapUrl(lat, lon, width = 300, height = 150) {
+  getStaticMapUrl(lat, lon, width = 250, height = 250) {
+    // Validate coordinate bounds
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      console.warn('[FWCAM Card] Invalid coordinates for static map:', { lat, lon });
+      // Return a placeholder image or empty string
+      return '';
+    }
+    
     const zoom = 15;
     
-    // Convert lat/lon to tile coordinates using Web Mercator projection
-    // X coordinate: longitude to tile X index
-    const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
-    
-    // Y coordinate: latitude to tile Y index using Mercator projection formula
-    // This accounts for the distortion in the Mercator projection near the poles
-    const latRad = lat * Math.PI / 180;
-    const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, zoom));
-    
-    // Use OpenStreetMap tile server (allowed for low-volume usage with attribution)
-    // For production, consider using your own tile server or a commercial service
-    return `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+    // Use staticmap.openstreetmap.de which supports markers
+    // Format: ?center=lat,lon&zoom=15&size=widthxheight&markers=lat,lon,lightblue
+    // Example: https://staticmap.openstreetmap.de/staticmap.php?center=53.736131,9.676176&zoom=15&size=250x250&markers=53.736131,9.676176,red-pushpin
+    return `https://staticmap.openstreetmap.de/staticmap.php?center=${encodeURIComponent(lat)},${encodeURIComponent(lon)}&zoom=${zoom}&size=${width}x${height}&markers=${encodeURIComponent(lat)},${encodeURIComponent(lon)},red-pushpin`;
   }
   
   /**
@@ -2749,6 +2794,140 @@ class FWCAMCard extends HTMLElement {
       mapLinks.style.display = 'none';
       if (startMapPreview) startMapPreview.style.display = 'none';
       if (endMapPreview) endMapPreview.style.display = 'none';
+    }
+  }
+
+  /**
+   * Handle reverse geocoding to auto-fill location name and address
+   */
+  async handleReverseGeocode(isStart) {
+    const latField = this.shadowRoot.getElementById(isStart ? 'trip-start-latitude' : 'trip-end-latitude');
+    const lonField = this.shadowRoot.getElementById(isStart ? 'trip-start-longitude' : 'trip-end-longitude');
+    const nameField = this.shadowRoot.getElementById(isStart ? 'trip-start-name' : 'trip-end-name');
+    const addressField = this.shadowRoot.getElementById(isStart ? 'trip-start-address' : 'trip-end-address');
+    
+    const lat = parseFloat(latField.value);
+    const lon = parseFloat(lonField.value);
+    
+    // Validate coordinates
+    if (isNaN(lat) || isNaN(lon)) {
+      const lang = this.getUserLanguage();
+      const messages = {
+        de: 'Bitte geben Sie Latitude und Longitude ein.',
+        en: 'Please enter latitude and longitude first.'
+      };
+      alert(messages[lang] || messages['en']);
+      return;
+    }
+    
+    // Validate coordinate bounds
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      const lang = this.getUserLanguage();
+      const messages = {
+        de: 'Ungültige Koordinaten. Latitude muss zwischen -90 und 90 liegen, Longitude zwischen -180 und 180.',
+        en: 'Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.'
+      };
+      alert(messages[lang] || messages['en']);
+      return;
+    }
+    
+    // Rate limiting: Enforce 1 request per second for Nominatim usage policy
+    const now = Date.now();
+    const timeSinceLastRequest = now - this._lastNominatimRequest;
+    if (timeSinceLastRequest < 1000) {
+      const waitTime = Math.ceil((1000 - timeSinceLastRequest) / 100) / 10; // Convert to seconds with 1 decimal place
+      const lang = this.getUserLanguage();
+      const messages = {
+        de: `Bitte warten Sie ${waitTime} Sekunde(n) vor der nächsten Anfrage.`,
+        en: `Please wait ${waitTime} second(s) before the next request.`
+      };
+      alert(messages[lang] || messages['en']);
+      return;
+    }
+    this._lastNominatimRequest = now;
+    
+    try {
+      // Use Nominatim API for reverse geocoding (free, no API key required)
+      // NOTE: Respecting Nominatim usage policy: max 1 request per second
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            'Accept': 'application/json',
+            // Nominatim usage policy requires descriptive User-Agent
+            'User-Agent': 'HomeAssistant-FWCAM/1.0 (Home Assistant Integration)'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data && data.address) {
+        // Extract location name from address components
+        // Priority: shop, amenity, building, house_number + road
+        let locationName = '';
+        if (data.address.shop) {
+          locationName = data.address.shop;
+        } else if (data.address.amenity) {
+          locationName = data.address.amenity;
+        } else if (data.address.building) {
+          locationName = data.address.building;
+        } else if (data.address.house_number && data.address.road) {
+          locationName = `${data.address.road} ${data.address.house_number}`;
+        } else if (data.address.road) {
+          locationName = data.address.road;
+        }
+        
+        // If we found a specific place name, use it
+        if (data.name && data.name !== data.address.road) {
+          locationName = data.name;
+        }
+        
+        // Construct full address
+        let fullAddress = '';
+        const parts = [];
+        if (data.address.house_number && data.address.road) {
+          parts.push(`${data.address.road} ${data.address.house_number}`);
+        } else if (data.address.road) {
+          parts.push(data.address.road);
+        }
+        if (data.address.postcode && data.address.city) {
+          parts.push(`${data.address.postcode} ${data.address.city}`);
+        } else if (data.address.city) {
+          parts.push(data.address.city);
+        } else if (data.address.town) {
+          parts.push(data.address.town);
+        } else if (data.address.village) {
+          parts.push(data.address.village);
+        }
+        fullAddress = parts.join(', ');
+        
+        // Fill in the fields
+        if (locationName && nameField) {
+          nameField.value = locationName;
+        }
+        if (fullAddress && addressField) {
+          addressField.value = fullAddress;
+        }
+        
+        console.log('[FWCAM Card] Reverse geocoding result:', {
+          name: locationName,
+          address: fullAddress,
+          raw: data
+        });
+      }
+    } catch (error) {
+      console.error('[FWCAM Card] Error during reverse geocoding:', error);
+      const lang = this.getUserLanguage();
+      const messages = {
+        de: 'Fehler beim Abrufen der Standortinformationen. Bitte versuchen Sie es später erneut.',
+        en: 'Error fetching location information. Please try again later.'
+      };
+      alert(messages[lang] || messages['en']);
     }
   }
 
