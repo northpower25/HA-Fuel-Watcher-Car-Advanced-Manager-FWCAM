@@ -176,7 +176,9 @@ class NominatimGeocoder:
             aiohttp ClientSession
         """
         if self._session is None:
-            self._session = aiohttp.ClientSession()
+            # Create session with proper timeout configuration
+            timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
+            self._session = aiohttp.ClientSession(timeout=timeout)
             self._own_session = True
         return self._session
     
@@ -245,7 +247,9 @@ class NominatimGeocoder:
             
             _LOGGER.debug("Geocoding request: %s with params %s", url, params)
             
-            async with session.get(url, params=params, headers=headers, timeout=NOMINATIM_REQUEST_TIMEOUT_SECONDS) as response:
+            # Use ClientTimeout object for proper timeout handling
+            timeout = aiohttp.ClientTimeout(total=NOMINATIM_REQUEST_TIMEOUT_SECONDS)
+            async with session.get(url, params=params, headers=headers, timeout=timeout) as response:
                 self._last_request_time = dt_util.now()
                 
                 if response.status == 200:
