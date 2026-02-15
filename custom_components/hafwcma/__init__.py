@@ -413,18 +413,22 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             
             # Cache manually entered location data for future auto-fill
             # Start location
-            if "start_latitude" in updates and "start_longitude" in updates:
+            start_lat = updates.get("start_latitude")
+            start_lon = updates.get("start_longitude")
+            if start_lat is not None and start_lon is not None:
                 cache_manual_location(
-                    latitude=updates.get("start_latitude"),
-                    longitude=updates.get("start_longitude"),
+                    latitude=start_lat,
+                    longitude=start_lon,
                     location_name=updates.get("start_name"),
                     address=updates.get("start_address"),
                 )
             # End location
-            if "end_latitude" in updates and "end_longitude" in updates:
+            end_lat = updates.get("end_latitude")
+            end_lon = updates.get("end_longitude")
+            if end_lat is not None and end_lon is not None:
                 cache_manual_location(
-                    latitude=updates.get("end_latitude"),
-                    longitude=updates.get("end_longitude"),
+                    latitude=end_lat,
+                    longitude=end_lon,
                     location_name=updates.get("end_name"),
                     address=updates.get("end_address"),
                 )

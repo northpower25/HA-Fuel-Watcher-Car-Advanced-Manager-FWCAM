@@ -415,6 +415,26 @@ class NominatimGeocoder:
             cache_data: Dictionary of cache entries to load
         """
         self._cache.set_all_cached_data(cache_data)
+    
+    def set_cache_entry(
+        self,
+        latitude: float,
+        longitude: float,
+        location_name: str = "",
+        address: str = "",
+    ) -> None:
+        """Manually set a cache entry for coordinates.
+        
+        This is used when location data is manually entered by the user,
+        allowing it to be reused for future trips with the same coordinates.
+        
+        Args:
+            latitude: Latitude coordinate
+            longitude: Longitude coordinate
+            location_name: Location name to cache
+            address: Address to cache
+        """
+        self._cache.set(latitude, longitude, address, location_name)
 
 
 # Global geocoder instance
@@ -480,11 +500,11 @@ def cache_manual_location(
         return
     
     geocoder = get_geocoder()
-    geocoder._cache.set(
+    geocoder.set_cache_entry(
         latitude=latitude,
         longitude=longitude,
-        address=address or "",
         location_name=location_name or "",
+        address=address or "",
     )
     
     _LOGGER.debug(
