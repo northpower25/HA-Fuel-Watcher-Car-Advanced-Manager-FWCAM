@@ -158,6 +158,28 @@ class GeocodingCache:
         """
         self._cache = cache_data.copy()
         _LOGGER.debug("Loaded %d geocoding cache entries from storage", len(self._cache))
+    
+    def get_cache_stats(self) -> dict[str, Any]:
+        """Get statistics about the cache for debugging.
+        
+        Returns:
+            Dictionary with cache statistics including count and sample entries
+        """
+        cache_entries = []
+        for key, entry in self._cache.items():
+            coords = key.split(",")
+            cache_entries.append({
+                "latitude": float(coords[0]) if len(coords) > 0 else None,
+                "longitude": float(coords[1]) if len(coords) > 1 else None,
+                "location_name": entry.get("location_name", ""),
+                "address": entry.get("address", ""),
+                "timestamp": entry.get("timestamp", ""),
+            })
+        
+        return {
+            "total_entries": len(self._cache),
+            "entries": cache_entries,
+        }
 
 
 class NominatimGeocoder:
@@ -416,6 +438,14 @@ class NominatimGeocoder:
         """
         self._cache.set_all_cached_data(cache_data)
     
+    def get_cache_stats(self) -> dict[str, Any]:
+        """Get cache statistics for debugging.
+        
+        Returns:
+            Dictionary with cache statistics
+        """
+        return self._cache.get_cache_stats()
+    
     def set_cache_entry(
         self,
         latitude: float,
@@ -564,3 +594,67 @@ async def save_geocoding_cache_to_entry(hass: HomeAssistant, entry: ConfigEntry)
                      entry.entry_id, len(cache_data))
     except Exception as err:
         _LOGGER.warning("Failed to save geocoding cache to storage: %s", err)
+
+
+async def rebuild_cache_from_trips(hass: HomeAssistant, entry: ConfigEntry) -> int:
+    """Rebuild geocoding cache from existing trip data.
+    
+    This function scans all existing trips and caches their location data
+    (start/end coordinates with names and addresses) to enable auto-fill
+    for future trips with the same coordinates.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Number of cache entries created
+    """
+    from .storage import get_trips
+    
+    try:
+        trips = await get_trips(hass, entry)
+        geocoder = get_geocoder()
+        cache_count = 0
+        
+        for trip in trips:
+            # Cache start location if coordinates and at least one field (name or address) exist
+            start_lat = trip.get("start_latitude")
+            start_lon = trip.get("start_longitude")
+            start_name = trip.get("start_name", "")
+            start_addr = trip.get("start_address", "")
+            
+            if start_lat is not None and start_lon is not None and (start_name or start_addr):
+                geocoder.set_cache_entry(
+                    latitude=start_lat,
+                    longitude=start_lon,
+                    location_name=start_name or "",
+                    address=start_addr or "",
+                )
+                cache_count += 1
+            
+            # Cache end location if coordinates and at least one field (name or address) exist
+            end_lat = trip.get("end_latitude")
+            end_lon = trip.get("end_longitude")
+            end_name = trip.get("end_name", "")
+            end_addr = trip.get("end_address", "")
+            
+            if end_lat is not None and end_lon is not None and (end_name or end_addr):
+                geocoder.set_cache_entry(
+                    latitude=end_lat,
+                    longitude=end_lon,
+                    location_name=end_name or "",
+                    address=end_addr or "",
+                )
+                cache_count += 1
+        
+        _LOGGER.info(
+            "Rebuilt geocoding cache from %d trips, created %d cache entries",
+            len(trips),
+            cache_count
+        )
+        return cache_count
+        
+    except Exception as err:
+        _LOGGER.error("Failed to rebuild geocoding cache from trips: %s", err, exc_info=True)
+        return 0

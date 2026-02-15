@@ -2962,27 +2962,36 @@ class FWCAMCard extends HTMLElement {
         {return_response: true}
       );
       
-      if (result && result.response && result.response.success) {
-        const locationName = result.response.location_name || '';
-        const address = result.response.address || '';
-        
-        // Fill in the fields
-        if (locationName && nameField) {
-          nameField.value = locationName;
+      if (result && result.response) {
+        if (result.response.success) {
+          const locationName = result.response.location_name || '';
+          const address = result.response.address || '';
+          
+          // Fill in the fields if data is available
+          if (locationName && nameField) {
+            nameField.value = locationName;
+          }
+          if (address && addressField) {
+            addressField.value = address;
+          }
+          
+          // Log the result
+          if (locationName || address) {
+            console.log('[FWCAM Card] Reverse geocoding result:', {
+              name: locationName,
+              address: address,
+              fromCache: result.response.from_cache
+            });
+          } else {
+            console.log('[FWCAM Card] No location data found for coordinates, fields remain empty');
+          }
+        } else {
+          // Only show error on actual exceptions (success=false)
+          throw new Error(result.response.error || 'Geocoding error occurred');
         }
-        if (address && addressField) {
-          addressField.value = address;
-        }
-        
-        console.log('[FWCAM Card] Reverse geocoding result:', {
-          name: locationName,
-          address: address,
-          fromCache: result.response.from_cache
-        });
-      } else {
-        throw new Error(result?.response?.error || 'Geocoding failed');
       }
     } catch (error) {
+      // Only show error message on actual exceptions, not when data is simply not found
       console.error('[FWCAM Card] Error during reverse geocoding:', error);
       const lang = this.getUserLanguage();
       const messages = {
