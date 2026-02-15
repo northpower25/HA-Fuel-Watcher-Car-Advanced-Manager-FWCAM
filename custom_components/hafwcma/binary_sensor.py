@@ -55,7 +55,16 @@ async def async_setup_entry(
         OnTripSensor(coordinator, config_entry, vehicle_name),
     ]
     
+    # Add Telegram Bot status sensor if configured
+    from .const import CONF_TELEGRAM_CHAT_ID, CONF_TELEGRAM_TOKEN
+    telegram_chat_id = config_entry.data.get(CONF_TELEGRAM_CHAT_ID)
+    telegram_token = config_entry.data.get(CONF_TELEGRAM_TOKEN)
+    
+    if telegram_chat_id and telegram_token:
+        entities.append(TelegramBotStatusSensor(hass, config_entry, vehicle_name))
+    
     async_add_entities(entities, update_before_add=True)
+
 
 
 class ProximityAlertSensor(CoordinatorEntity, BinarySensorEntity):
@@ -214,3 +223,91 @@ class OnTripSensor(CoordinatorEntity, BinarySensorEntity):
     def available(self) -> bool:
         """Return if entity is available."""
         return self.coordinator.last_update_success
+
+
+class TelegramBotStatusSensor(BinarySensorEntity):
+    """Binary sensor indicating Telegram Bot connectivity status."""
+    
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_has_entity_name = True
+    
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the Telegram bot status sensor.
+        
+        Args:
+            hass: Home Assistant instance
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        self._hass = hass
+        self._config_entry = config_entry
+        self._vehicle_name = vehicle_name
+        self._attr_unique_id = f"{config_entry.entry_id}_telegram_bot_status"
+        self._attr_name = "Telegram Bot"
+        
+        # Device info for grouping with other entities
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+    
+    @property
+    def is_on(self) -> bool:
+        """Return true if the Telegram bot is available."""
+        # Check if telegram_bot integration is loaded
+        if "telegram_bot" not in self._hass.config.components:
+            return False
+        
+        # Check if our handlers are initialized
+        telegram_handler = self._hass.data.get(DOMAIN, {}).get(
+            self._config_entry.entry_id, {}
+        ).get("telegram_handler")
+        
+        telegram_refueling_handler = self._hass.data.get(DOMAIN, {}).get(
+            self._config_entry.entry_id, {}
+        ).get("telegram_refueling_handler")
+        
+        return telegram_handler is not None and telegram_refueling_handler is not None
+    
+    @property
+    def icon(self) -> str:
+        """Return icon based on status."""
+        return "mdi:telegram" if self.is_on else "mdi:telegram-off"
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        from .const import CONF_TELEGRAM_CHAT_ID, CONF_TELEGRAM_METHOD
+        
+        attrs = {}
+        
+        # Show configuration status
+        attrs["telegram_bot_integration"] = "telegram_bot" in self._hass.config.components
+        attrs["chat_id_configured"] = bool(self._config_entry.data.get(CONF_TELEGRAM_CHAT_ID))
+        
+        method = self._config_entry.data.get(CONF_TELEGRAM_METHOD, "integration")
+        attrs["telegram_method"] = method
+        
+        # Show handler status
+        handlers_data = self._hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id, {})
+        attrs["telegram_handler_active"] = handlers_data.get("telegram_handler") is not None
+        attrs["refueling_handler_active"] = handlers_data.get("telegram_refueling_handler") is not None
+        
+        # Show pending refuelings if handler exists
+        refueling_handler = handlers_data.get("telegram_refueling_handler")
+        if refueling_handler:
+            attrs["pending_refuelings"] = len(refueling_handler._pending_refuelings)
+        
+        return attrs
+    
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return True  # Always available to show status
