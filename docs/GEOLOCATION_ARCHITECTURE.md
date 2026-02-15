@@ -44,8 +44,8 @@
 │  │ Attributes:              │  │ Attributes:                         │ │
 │  │ • stations: [...]        │  │ • station_name: "Shell ABC"        │ │
 │  │ • search_radius: 15 km   │  │ • distance_km: 1.2                 │ │
-│  │ • vehicle_lat: 52.52     │  │ • price: 1.589                     │ │
-│  │ • vehicle_lon: 13.40     │  │ • alert_message: "🚗 Cheap..."     │ │
+│  │ • vehicle_lat: 50.00     │  │ • price: 1.589                     │ │
+│  │ • vehicle_lon: 10.00     │  │ • alert_message: "🚗 Cheap..."     │ │
 │  └──────────────────────────┘  └─────────────────────────────────────┘ │
 │                                              │                           │
 │                                              ▼                           │
@@ -77,7 +77,7 @@
 ```
 Time    Vehicle Position    API Update           Proximity Check       Alert
 ────────────────────────────────────────────────────────────────────────────
-00:00   Lat: 52.50, Lon: 13.40
+00:00   Lat: 50.00, Lon: 10.00
         Speed: 0 km/h       Fetch stations       No close stations     -
                             (Radius: 15 km)
                             Found: 5 cheap
@@ -93,17 +93,17 @@ Time    Vehicle Position    API Update           Proximity Check       Alert
                             │    7.1 km   │
                             └─────────────┘
 
-00:30   Lat: 52.51, Lon: 13.41
+00:30   Lat: 50.01, Lon: 10.01
         Speed: 45 km/h      (cached data)        Distance to Aral:     -
                                                   2.5 km
                                                   > threshold (1.5 km)
 
-01:00   Lat: 52.515, Lon: 13.42
+01:00   Lat: 50.015, Lon: 10.02
         Speed: 50 km/h      (cached data)        Distance to Aral:     -
                                                   1.8 km
                                                   > threshold
 
-01:30   Lat: 52.518, Lon: 13.43
+01:30   Lat: 50.018, Lon: 10.03
         Speed: 45 km/h      (cached data)        Distance to Aral:     🔔 ALERT!
                                                   1.3 km                Triggered
                                                   < threshold (1.5 km)  
@@ -111,7 +111,7 @@ Time    Vehicle Position    API Update           Proximity Check       Alert
                                                   Cooldown: 30 min
                                                   started for Aral
 
-02:00   Lat: 52.520, Lon: 13.44
+02:00   Lat: 50.020, Lon: 10.04
         Speed: 50 km/h      (cached data)        Distance to Aral:     -
                                                   2.1 km                (cooldown)
                                                   > threshold * 1.3
@@ -191,8 +191,8 @@ Time    Vehicle Position    API Update           Proximity Check       Alert
 │    ],                                                           │
 │    "last_update": "2026-02-10T21:47:12Z",                      │
 │    "search_radius_km": 15,                                      │
-│    "vehicle_latitude": 52.51,                                   │
-│    "vehicle_longitude": 13.40,                                  │
+│    "vehicle_latitude": 50.01,                                   │
+│    "vehicle_longitude": 10.00,                                  │
 │    "max_stations": 5                                            │
 │  }                                                              │
 └─────────────────────────────────────────────────────────────────┘

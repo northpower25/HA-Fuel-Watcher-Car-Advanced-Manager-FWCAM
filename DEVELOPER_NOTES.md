@@ -244,8 +244,8 @@ To maintain backward compatibility in future versions:
 device_tracker.my_car_location
   state: "home"
   attributes:
-    latitude: 53.76
-    longitude: 9.67
+    latitude: 50.00
+    longitude: 10.00
     gps_accuracy: 0
 ```
 
@@ -275,8 +275,8 @@ The integration handles this pattern in `custom_components/hafwcma/utils/vehicle
 When troubleshooting geolocation issues, check the logs for:
 
 ```
-Device tracker device_tracker.my_car: state=home, lat=53.76, lon=9.67, attributes=dict_keys([...])
-Geolocation data - lat: 53.76, lon: 9.67, position_entity: device_tracker.my_car
+Device tracker device_tracker.my_car: state=home, lat=50.00, lon=10.00, attributes=dict_keys([...])
+Geolocation data - lat: 50.00, lon: 10.00, position_entity: device_tracker.my_car
 ```
 
 If coordinates show as `None`, verify:

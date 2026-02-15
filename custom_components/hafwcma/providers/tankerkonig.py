@@ -445,8 +445,8 @@ class TankerkoenigProvider(FuelPriceProvider):
             True if key is valid, False otherwise
         """
         params = {
-            "lat": 52.521,  # Berlin coordinates for test
-            "lng": 13.438,
+            "lat": 50.000,  # Generic test coordinates
+            "lng": 10.000,
             "rad": 1,
             "type": "e5",
             "apikey": api_key,

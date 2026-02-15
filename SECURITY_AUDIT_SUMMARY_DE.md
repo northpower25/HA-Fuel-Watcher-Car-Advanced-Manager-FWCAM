@@ -16,11 +16,11 @@ Eine vollständige Überprüfung des Repositorys wurde durchgeführt, um persone
 **Problem:** Echte Koordinaten von Berlin und Hamburg waren in Beispielcode und Dokumentation sichtbar.
 
 **Gefundene Koordinaten:**
-- Berlin: `52.520008, 13.404954`
-- Hamburg: `53.759702, 9.671353`
-- London: `51.5074, -0.1278`
-- New York: `40.7128, -74.0060`
-- Tokyo: `35.6762, 139.6503`
+- Stadt A: `[GESCHWÄRZT]`
+- Stadt B: `[GESCHWÄRZT]`
+- Stadt C: `[GESCHWÄRZT]`
+- Stadt D: `[GESCHWÄRZT]`
+- Stadt E: `[GESCHWÄRZT]`
 
 **Lösung:** Alle spezifischen Koordinaten wurden durch generische Beispielwerte ersetzt:
 - `50.000000, 10.000000`
@@ -39,7 +39,7 @@ Eine vollständige Überprüfung des Repositorys wurde durchgeführt, um persone
 
 #### 2. Fahrzeugdaten in Testdatensätzen
 
-**Problem:** Der spezifische Fahrzeugname "skoda_superb" war in den Test-CSV-Dateien sichtbar.
+**Problem:** Eine spezifische Fahrzeugkennung war in den Test-CSV-Dateien sichtbar.
 
 **Lösung:** Alle Vorkommen wurden durch den generischen Namen "test_vehicle" ersetzt.
 
@@ -82,10 +82,10 @@ CONF_TELEGRAM_CHAT_ID = "telegram_chat_id"
 
 **Vorher:**
 ```yaml
-example: 51.5074  # London
-example: -0.1278
-example: 52.5200  # Berlin
-example: 13.4050
+example: XX.XXXX  # Echte Koordinaten (geschwärzt)
+example: XX.XXXX
+example: XX.XXXX  # Echte Koordinaten (geschwärzt)
+example: XX.XXXX
 ```
 
 **Nachher:**
@@ -100,8 +100,8 @@ example: 11.0000
 
 **Vorher:**
 ```javascript
-title="Enter latitude (e.g., 53.759702 or 53,759702)"  // Hamburg
-title="Enter longitude (e.g., 9.671353 or 9,671353)"
+title="Enter latitude (e.g., XX.XXXXXX or XX,XXXXXX)"  // Echte Koordinaten (geschwärzt)
+title="Enter longitude (e.g., X.XXXXXX or X,XXXXXX)"
 ```
 
 **Nachher:**
@@ -114,9 +114,9 @@ title="Enter longitude (e.g., 10.000000 or 10,000000)"
 
 **Vorher:**
 ```markdown
-✅ Tested with London (51.5074, -0.1278)
-✅ Tested with New York (40.7128, -74.0060)
-✅ Tested with Tokyo (35.6762, 139.6503)
+✅ Tested with Stadt A ([GESCHWÄRZT])
+✅ Tested with Stadt B ([GESCHWÄRZT])
+✅ Tested with Stadt C ([GESCHWÄRZT])
 ```
 
 **Nachher:**
@@ -130,9 +130,9 @@ title="Enter longitude (e.g., 10.000000 or 10,000000)"
 
 **Vorher:**
 ```csv
-sensor.skoda_superb_kilometerstand,38,2026-01-19T18:00:00.000Z
-sensor.skoda_superb_reichweite,1030,2026-01-19T18:00:00.000Z
-sensor.skoda_superb_fullstand_tank,100,2026-01-19T18:00:00.000Z
+sensor.[FAHRZEUG_ID]_kilometerstand,38,2026-01-19T18:00:00.000Z
+sensor.[FAHRZEUG_ID]_reichweite,1030,2026-01-19T18:00:00.000Z
+sensor.[FAHRZEUG_ID]_fullstand_tank,100,2026-01-19T18:00:00.000Z
 ```
 
 **Nachher:**
@@ -184,6 +184,62 @@ Alle gefundenen Probleme wurden behoben:
 - Saubere Trennung von Beispiel-Code und echten Credentials
 
 Das Repository kann sicher öffentlich geteilt werden.
+
+## Umgang mit historischen PII-Daten
+
+### Problem: Audit-Dateien enthielten PII
+
+**Problem:** Die ursprünglichen Sicherheits-Audit-Zusammenfassungsdateien (SECURITY_AUDIT_SUMMARY.md und SECURITY_AUDIT_SUMMARY_DE.md) dokumentierten unbeabsichtigt die tatsächlichen PII-Koordinaten und Identifikatoren, die sie als bereinigt melden sollten.
+
+**Lösung:** Diese Audit-Dateien wurden aktualisiert, um die spezifischen PII-Daten zu schwärzen, während die Dokumentation darüber, welche Arten von Daten gefunden und bereinigt wurden, beibehalten wird.
+
+### Empfehlungen für alte Releases
+
+#### GitHub-Releases
+Falls Releases erstellt wurden, die Folgendes enthalten:
+- Quellcode-Archive (zip/tar.gz) mit den ursprünglichen PII-Koordinaten
+- PR-Beschreibungen oder Release-Notizen, die spezifische Koordinaten referenzieren
+- Automatisch generierte Release-Notizen, die die vollständige PR-Beschreibung enthalten
+
+**Empfohlene Maßnahmen:**
+
+1. **Betroffene Releases löschen** (Empfohlen)
+   - Navigieren Sie zu: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/releases
+   - Löschen Sie alle Releases, die vor oder während PR #112 erstellt wurden und möglicherweise PII enthalten
+   - Erstellen Sie neue saubere Releases aus der aktuellen bereinigten Codebasis
+
+2. **Release-Notizen bearbeiten** (Alternative)
+   - Falls das Löschen von Releases nicht möglich ist, bearbeiten Sie die Release-Notizen, um PII-Referenzen zu entfernen
+   - Fügen Sie einen Hinweis hinzu, dass historische Quellcode-Archive veraltete Testdaten enthalten können
+   - Hinweis: Dies behebt NICHT die PII in Quellcode-Archiv-Downloads
+
+3. **Archiv-Bereinigung** (Für heruntergeladene Archive)
+   - Benutzer, die betroffene Releases heruntergeladen haben, sollten diese löschen
+   - Laden Sie von neueren Releases mit bereinigten Daten erneut herunter
+
+#### PR-Diskussionen und Kommentare
+- Überprüfen Sie PR #112-Kommentare auf PII-Referenzen
+- Bearbeiten oder löschen Sie Kommentare mit spezifischen Koordinaten oder Fahrzeugkennungen
+- Erwägen Sie, die PR-Konversation zu sperren, falls nicht mehr benötigt
+
+#### Git-Historie
+**Hinweis:** PII verbleibt in der Git-Commit-Historie. Für vollständige Entfernung:
+- Wäre ein Git-Historie-Rewrite erforderlich (git filter-branch oder BFG Repo-Cleaner)
+- Dies ist eine disruptive Operation, die alle Mitwirkenden betrifft
+- **Nicht empfohlen**, es sei denn, gesetzlich erforderlich
+- Der aktuelle Ansatz (Bereinigung der aktuellen Codebasis + Audit-Dateien) ist für die meisten Datenschutzbedenken ausreichend
+
+### Datenschutz-Folgenabschätzung
+
+**Geringes Risiko:**
+- Generische Stadtkoordinaten (Berlin, Hamburg, London usw.) sind öffentlich bekannt
+- Keine persönlichen Adressen oder genauen Standorte wurden offengelegt
+- Generische Fahrzeugkennung ("skoda_superb") ist ein gängiger Modellname ohne persönliche Identifikation
+
+**Minderung:**
+- Aktueller Repository-Zustand ist vollständig bereinigt
+- Audit-Dateien verwenden jetzt geschwärzte Platzhalter
+- Zukünftige Mitwirkende haben klare Richtlinien für Testdaten
 
 ## Commit-Informationen
 
