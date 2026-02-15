@@ -23,10 +23,11 @@ from homeassistant.exceptions import ConfigEntryNotReady
 import homeassistant.helpers.config_validation as cv
 
 # ServiceResponse is available in HA 2023.7+, but return type annotation is optional
+# The actual return value is a dict, so using dict as fallback for type checking is safe
 try:
     from homeassistant.core import ServiceResponse
 except ImportError:
-    ServiceResponse = dict  # Fallback for older HA versions
+    ServiceResponse = dict  # Type annotation only, actual return is always dict
 
 from .const import DOMAIN
 

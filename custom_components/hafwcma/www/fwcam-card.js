@@ -202,9 +202,21 @@ class FWCAMCard extends HTMLElement {
     if (!this._hass) return Promise.reject(new Error('Home Assistant not available'));
     
     return this._hass.callService(domain, service, serviceData).then(() => {
+      // Reset fetch flags for data-modifying services to ensure fresh data on next render
+      if (service.includes('trip') || service.includes('refuel')) {
+        this._invalidateDataCache();
+      }
       // Force render after service calls to show immediate feedback
       setTimeout(() => this.forceRender(), SERVICE_CALL_REFRESH_DELAY_MS);
     });
+  }
+
+  /**
+   * Invalidate cached data flags to force re-fetching on next render
+   */
+  _invalidateDataCache() {
+    this._allTripsFetched = false;
+    this._allRefuelingsFetched = false;
   }
 
   /**
