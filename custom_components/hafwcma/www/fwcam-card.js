@@ -2948,94 +2948,39 @@ class FWCAMCard extends HTMLElement {
       return;
     }
     
-    // Rate limiting: Enforce 1 request per second for Nominatim usage policy
-    const now = Date.now();
-    const timeSinceLastRequest = now - this._lastNominatimRequest;
-    if (timeSinceLastRequest < 1000) {
-      const waitTime = Math.ceil((1000 - timeSinceLastRequest) / 100) / 10; // Convert to seconds with 1 decimal place
-      const lang = this.getUserLanguage();
-      const messages = {
-        de: `Bitte warten Sie ${waitTime} Sekunde(n) vor der nächsten Anfrage.`,
-        en: `Please wait ${waitTime} second(s) before the next request.`
-      };
-      alert(messages[lang] || messages['en']);
-      return;
-    }
-    this._lastNominatimRequest = now;
-    
     try {
-      // Use Nominatim API for reverse geocoding (free, no API key required)
-      // NOTE: Respecting Nominatim usage policy: max 1 request per second
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=18&addressdetails=1`,
+      // Call the backend service which checks cache first, then calls Nominatim if needed
+      // The backend handles rate limiting and caching automatically
+      const result = await this.hass.callService(
+        'hafwcma',
+        'reverse_geocode',
         {
-          headers: {
-            'Accept': 'application/json',
-            // Nominatim usage policy requires descriptive User-Agent
-            'User-Agent': 'HomeAssistant-FWCAM/1.0 (Home Assistant Integration)'
-          }
-        }
+          latitude: lat,
+          longitude: lon,
+          use_cache: true
+        },
+        {return_response: true}
       );
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data && data.address) {
-        // Extract location name from address components
-        // Priority: shop, amenity, building, house_number + road
-        let locationName = '';
-        if (data.address.shop) {
-          locationName = data.address.shop;
-        } else if (data.address.amenity) {
-          locationName = data.address.amenity;
-        } else if (data.address.building) {
-          locationName = data.address.building;
-        } else if (data.address.house_number && data.address.road) {
-          locationName = `${data.address.road} ${data.address.house_number}`;
-        } else if (data.address.road) {
-          locationName = data.address.road;
-        }
-        
-        // If we found a specific place name, use it
-        if (data.name && data.name !== data.address.road) {
-          locationName = data.name;
-        }
-        
-        // Construct full address
-        let fullAddress = '';
-        const parts = [];
-        if (data.address.house_number && data.address.road) {
-          parts.push(`${data.address.road} ${data.address.house_number}`);
-        } else if (data.address.road) {
-          parts.push(data.address.road);
-        }
-        if (data.address.postcode && data.address.city) {
-          parts.push(`${data.address.postcode} ${data.address.city}`);
-        } else if (data.address.city) {
-          parts.push(data.address.city);
-        } else if (data.address.town) {
-          parts.push(data.address.town);
-        } else if (data.address.village) {
-          parts.push(data.address.village);
-        }
-        fullAddress = parts.join(', ');
+      if (result && result.response && result.response.success) {
+        const locationName = result.response.location_name || '';
+        const address = result.response.address || '';
         
         // Fill in the fields
         if (locationName && nameField) {
           nameField.value = locationName;
         }
-        if (fullAddress && addressField) {
-          addressField.value = fullAddress;
+        if (address && addressField) {
+          addressField.value = address;
         }
         
         console.log('[FWCAM Card] Reverse geocoding result:', {
           name: locationName,
-          address: fullAddress,
-          raw: data
+          address: address,
+          fromCache: result.response.from_cache
         });
+      } else {
+        throw new Error(result?.response?.error || 'Geocoding failed');
       }
     } catch (error) {
       console.error('[FWCAM Card] Error during reverse geocoding:', error);

@@ -729,3 +729,36 @@ get_all_refuelings:
       example: "abc123def456"
       selector:
         text:
+
+reverse_geocode:
+  name: Reverse Geocode
+  description: Convert latitude/longitude coordinates to location name and address. Uses cache by default to avoid repeated API calls.
+  fields:
+    latitude:
+      name: Latitude
+      description: Latitude coordinate
+      required: true
+      example: 52.5200
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: any
+    longitude:
+      name: Longitude
+      description: Longitude coordinate
+      required: true
+      example: 13.4050
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: any
+    use_cache:
+      name: Use Cache
+      description: Whether to use cached results (default true)
+      required: false
+      default: true
+      example: true
+      selector:
+        boolean:

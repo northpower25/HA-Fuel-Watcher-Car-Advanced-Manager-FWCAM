@@ -44,15 +44,15 @@ class GeocodingCache:
         lon_rounded = round(longitude, 4)
         return f"{lat_rounded},{lon_rounded}"
     
-    def get(self, latitude: float, longitude: float) -> str | None:
-        """Get cached address for coordinates.
+    def get(self, latitude: float, longitude: float) -> dict[str, str] | None:
+        """Get cached geocoding data for coordinates.
         
         Args:
             latitude: Latitude coordinate
             longitude: Longitude coordinate
             
         Returns:
-            Cached address string or None if not found or expired
+            Dict with 'location_name' and 'address' keys, or None if not found or expired
         """
         key = self._make_key(latitude, longitude)
         entry = self._cache.get(key)
@@ -74,19 +74,30 @@ class GeocodingCache:
             except (ValueError, TypeError):
                 pass
         
-        return entry.get("address")
+        return {
+            "location_name": entry.get("location_name", ""),
+            "address": entry.get("address", ""),
+        }
     
-    def set(self, latitude: float, longitude: float, address: str) -> None:
-        """Cache an address for coordinates.
+    def set(
+        self,
+        latitude: float,
+        longitude: float,
+        address: str,
+        location_name: str = "",
+    ) -> None:
+        """Cache geocoding data for coordinates.
         
         Args:
             latitude: Latitude coordinate
             longitude: Longitude coordinate
             address: Address string to cache
+            location_name: Location name to cache
         """
         key = self._make_key(latitude, longitude)
         self._cache[key] = {
             "address": address,
+            "location_name": location_name,
             "timestamp": dt_util.now().isoformat(),
         }
     
@@ -165,8 +176,8 @@ class NominatimGeocoder:
         latitude: float,
         longitude: float,
         use_cache: bool = True,
-    ) -> str | None:
-        """Reverse geocode coordinates to an address.
+    ) -> dict[str, str] | None:
+        """Reverse geocode coordinates to location name and address.
         
         Args:
             latitude: Latitude coordinate
@@ -174,19 +185,20 @@ class NominatimGeocoder:
             use_cache: Whether to use cached results
             
         Returns:
-            Address string or None if geocoding failed
+            Dict with 'location_name' and 'address' keys, or None if geocoding failed
         """
         # Check cache first
         if use_cache:
-            cached_address = self._cache.get(latitude, longitude)
-            if cached_address:
+            cached_data = self._cache.get(latitude, longitude)
+            if cached_data:
                 _LOGGER.debug(
-                    "Using cached address for (%.4f, %.4f): %s",
+                    "Using cached data for (%.4f, %.4f): name=%s, address=%s",
                     latitude,
                     longitude,
-                    cached_address,
+                    cached_data.get("location_name", ""),
+                    cached_data.get("address", ""),
                 )
-                return cached_address
+                return cached_data
         
         # Make API request
         try:
@@ -215,18 +227,25 @@ class NominatimGeocoder:
                 if response.status == 200:
                     data = await response.json()
                     address = self._format_address(data)
+                    location_name = self._extract_location_name(data)
+                    
+                    result = {
+                        "location_name": location_name or "",
+                        "address": address or "",
+                    }
                     
                     # Cache the result
-                    if address and use_cache:
-                        self._cache.set(latitude, longitude, address)
+                    if (address or location_name) and use_cache:
+                        self._cache.set(latitude, longitude, address or "", location_name or "")
                     
                     _LOGGER.debug(
-                        "Geocoded (%.4f, %.4f) to: %s",
+                        "Geocoded (%.4f, %.4f) to: name=%s, address=%s",
                         latitude,
                         longitude,
+                        location_name,
                         address,
                     )
-                    return address
+                    return result
                 else:
                     _LOGGER.warning(
                         "Geocoding failed with status %d: %s",
@@ -240,6 +259,42 @@ class NominatimGeocoder:
         except Exception as err:
             _LOGGER.warning("Error during geocoding: %s", err)
             return None
+    
+    def _extract_location_name(self, data: dict[str, Any]) -> str | None:
+        """Extract location name from Nominatim response.
+        
+        Args:
+            data: Nominatim API response data
+            
+        Returns:
+            Location name string or None
+        """
+        if not data:
+            return None
+        
+        # Get address components
+        address = data.get("address", {})
+        
+        # Priority: shop, amenity, building, name field
+        # These represent specific places rather than just addresses
+        location_name = ""
+        
+        if address.get("shop"):
+            location_name = address["shop"]
+        elif address.get("amenity"):
+            location_name = address["amenity"]
+        elif address.get("building"):
+            location_name = address["building"]
+        elif address.get("house_number") and address.get("road"):
+            location_name = f"{address['road']} {address['house_number']}"
+        elif address.get("road"):
+            location_name = address["road"]
+        
+        # If we found a specific place name, use it (overrides the above)
+        if data.get("name") and data["name"] != address.get("road"):
+            location_name = data["name"]
+        
+        return location_name if location_name else None
     
     def _format_address(self, data: dict[str, Any]) -> str | None:
         """Format address from Nominatim response.
@@ -329,8 +384,8 @@ async def geocode_trip_location(
     latitude: float | None,
     longitude: float | None,
     use_cache: bool = True,
-) -> str | None:
-    """Geocode a trip location to an address.
+) -> dict[str, str] | None:
+    """Geocode a trip location to location name and address.
     
     Args:
         latitude: Latitude coordinate
@@ -338,7 +393,7 @@ async def geocode_trip_location(
         use_cache: Whether to use cached results
         
     Returns:
-        Address string or None if geocoding failed or coordinates not provided
+        Dict with 'location_name' and 'address' keys, or None if geocoding failed or coordinates not provided
     """
     if latitude is None or longitude is None:
         return None

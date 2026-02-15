@@ -53,6 +53,7 @@ SERVICE_CREATE_PATTERN = "create_pattern"
 SERVICE_EXPORT_TRIPS = "export_trips"
 SERVICE_GET_ALL_TRIPS = "get_all_trips"
 SERVICE_GET_ALL_REFUELINGS = "get_all_refuelings"
+SERVICE_REVERSE_GEOCODE = "reverse_geocode"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -163,6 +164,12 @@ SCHEMA_GET_ALL_TRIPS = vol.Schema({
 
 SCHEMA_GET_ALL_REFUELINGS = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
+})
+
+SCHEMA_REVERSE_GEOCODE = vol.Schema({
+    vol.Required("latitude"): vol.Coerce(float),
+    vol.Required("longitude"): vol.Coerce(float),
+    vol.Optional("use_cache", default=True): cv.boolean,
 })
 
 
@@ -583,6 +590,50 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         
         return {"refuelings": sorted_refuelings}
     
+    async def handle_reverse_geocode(call: ServiceCall) -> ServiceResponse:
+        """Handle the reverse_geocode service call.
+        
+        Reverse geocodes coordinates to location name and address.
+        Uses cache by default to avoid unnecessary API calls.
+        """
+        from .utils.geocoding import geocode_trip_location
+        
+        latitude = call.data["latitude"]
+        longitude = call.data["longitude"]
+        use_cache = call.data.get("use_cache", True)
+        
+        _LOGGER.debug("Reverse geocoding request for (%.4f, %.4f), use_cache=%s", 
+                     latitude, longitude, use_cache)
+        
+        try:
+            result = await geocode_trip_location(latitude, longitude, use_cache=use_cache)
+            
+            if result:
+                _LOGGER.debug("Reverse geocode result: name=%s, address=%s", 
+                            result.get("location_name"), result.get("address"))
+                return {
+                    "location_name": result.get("location_name", ""),
+                    "address": result.get("address", ""),
+                    "success": True,
+                }
+            else:
+                _LOGGER.warning("Reverse geocoding failed for (%.4f, %.4f)", latitude, longitude)
+                return {
+                    "location_name": "",
+                    "address": "",
+                    "success": False,
+                    "error": "Geocoding failed",
+                }
+        except Exception as err:
+            _LOGGER.error("Error during reverse geocoding: %s", err)
+            return {
+                "location_name": "",
+                "address": "",
+                "success": False,
+                "error": str(err),
+            }
+
+    
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_REFUEL_EVENT, handle_add_refuel_event, schema=SCHEMA_ADD_REFUEL_EVENT
     )
@@ -612,6 +663,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_GET_ALL_REFUELINGS, handle_get_all_refuelings, schema=SCHEMA_GET_ALL_REFUELINGS, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_REVERSE_GEOCODE, handle_reverse_geocode, schema=SCHEMA_REVERSE_GEOCODE, supports_response=True
     )
     
     return True
