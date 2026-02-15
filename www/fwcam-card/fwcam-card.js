@@ -2770,11 +2770,10 @@ class FWCAMCard extends HTMLElement {
   
   /**
    * Calculate marker position for overlay (PR #102 implementation)
-   * Returns the pixel position within the tile where the marker should be placed
+   * Returns the percentage position within the tile where the marker should be placed
    */
   getMapMarkerPosition(lat, lon) {
     const zoom = 15;
-    const TILE_SIZE_PX = 256; // OSM tiles are 256x256 pixels
     const MAX_MERCATOR_LAT = 85.05112878;
     
     // Clamp latitude to Web Mercator valid range
