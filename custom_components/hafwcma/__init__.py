@@ -18,7 +18,7 @@ import voluptuous as vol
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse
 from homeassistant.exceptions import ConfigEntryNotReady
 import homeassistant.helpers.config_validation as cv
 
@@ -44,6 +44,8 @@ SERVICE_EDIT_TRIP = "edit_trip"
 SERVICE_DELETE_TRIP = "delete_trip"
 SERVICE_CREATE_PATTERN = "create_pattern"
 SERVICE_EXPORT_TRIPS = "export_trips"
+SERVICE_GET_ALL_TRIPS = "get_all_trips"
+SERVICE_GET_ALL_REFUELINGS = "get_all_refuelings"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -146,6 +148,14 @@ SCHEMA_EXPORT_TRIPS = vol.Schema({
     vol.Optional("date_from"): cv.string,
     vol.Optional("date_to"): cv.string,
     vol.Optional("category"): vol.In(["all", "business", "private", "commute"]),
+})
+
+SCHEMA_GET_ALL_TRIPS = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+})
+
+SCHEMA_GET_ALL_REFUELINGS = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
 })
 
 
@@ -510,6 +520,62 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         except (IOError, OSError) as err:
             _LOGGER.error("Failed to export trips to %s: %s", filepath, err)
     
+    async def handle_get_all_trips(call: ServiceCall) -> ServiceResponse:
+        """Handle the get_all_trips service call.
+        
+        Returns all trips for a given config entry, sorted by end time (newest first).
+        This service allows the frontend card to retrieve all trip data without
+        exceeding the 16KB attribute limit.
+        """
+        from .utils.storage import get_trips
+        
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return {"trips": [], "error": "Config entry not found"}
+        
+        # Get all trips
+        trips = await get_trips(hass, entry)
+        
+        # Sort by end time (newest first)
+        sorted_trips = sorted(trips, key=lambda x: x.get("timestamp_end", ""), reverse=True)
+        
+        _LOGGER.debug("Retrieved %d trips for config entry %s", len(sorted_trips), entry_id)
+        
+        return {"trips": sorted_trips}
+    
+    async def handle_get_all_refuelings(call: ServiceCall) -> ServiceResponse:
+        """Handle the get_all_refuelings service call.
+        
+        Returns all refueling events for a given config entry, sorted by timestamp (newest first).
+        This service allows the frontend card to retrieve all refueling data without
+        exceeding the 16KB attribute limit.
+        """
+        from .utils.storage import get_refueling_log
+        
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return {"refuelings": [], "error": "Config entry not found"}
+        
+        # Get all refueling events
+        refueling_log = await get_refueling_log(hass, entry)
+        
+        # Sort by timestamp (newest first)
+        sorted_refuelings = sorted(
+            refueling_log,
+            key=lambda x: x.get("timestamp", ""),
+            reverse=True
+        )
+        
+        _LOGGER.debug("Retrieved %d refueling events for config entry %s", len(sorted_refuelings), entry_id)
+        
+        return {"refuelings": sorted_refuelings}
+    
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_REFUEL_EVENT, handle_add_refuel_event, schema=SCHEMA_ADD_REFUEL_EVENT
     )
@@ -533,6 +599,12 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_EXPORT_TRIPS, handle_export_trips, schema=SCHEMA_EXPORT_TRIPS
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_GET_ALL_TRIPS, handle_get_all_trips, schema=SCHEMA_GET_ALL_TRIPS, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_GET_ALL_REFUELINGS, handle_get_all_refuelings, schema=SCHEMA_GET_ALL_REFUELINGS, supports_response=True
     )
     
     return True

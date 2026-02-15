@@ -236,6 +236,96 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Fetch all trips for the current config entry
+   * @returns {Promise<Array>} Array of all trips
+   */
+  async fetchAllTrips() {
+    if (!this._hass || !this._config_entry_id) {
+      console.warn('[FWCAM Card] Cannot fetch all trips: hass or config_entry_id not available');
+      return [];
+    }
+    
+    try {
+      const response = await this._hass.callService(
+        'hafwcma',
+        'get_all_trips',
+        { config_entry_id: this._config_entry_id },
+        { return_response: true }
+      );
+      return response?.trips || [];
+    } catch (error) {
+      console.error('[FWCAM Card] Error fetching all trips:', error);
+      // Fallback to recent_trips from sensor attributes
+      const tripLogEntityId = this._config.trip_log_entity || this._entities.trip_log_sensor;
+      const tripLogEntity = tripLogEntityId ? this.getEntityState(tripLogEntityId) : null;
+      return tripLogEntity?.attributes?.recent_trips || [];
+    }
+  }
+
+  /**
+   * Fetch all refueling events for the current config entry
+   * @returns {Promise<Array>} Array of all refueling events
+   */
+  async fetchAllRefuelings() {
+    if (!this._hass || !this._config_entry_id) {
+      console.warn('[FWCAM Card] Cannot fetch all refuelings: hass or config_entry_id not available');
+      return [];
+    }
+    
+    try {
+      const response = await this._hass.callService(
+        'hafwcma',
+        'get_all_refuelings',
+        { config_entry_id: this._config_entry_id },
+        { return_response: true }
+      );
+      return response?.refuelings || [];
+    } catch (error) {
+      console.error('[FWCAM Card] Error fetching all refuelings:', error);
+      // Fallback to recent_events from sensor attributes
+      const refuelingLogEntityId = this._config.refueling_log_entity || this._entities.refueling_log_sensor;
+      const refuelingLogEntity = refuelingLogEntityId ? this.getEntityState(refuelingLogEntityId) : null;
+      return refuelingLogEntity?.attributes?.recent_events || [];
+    }
+  }
+
+  /**
+   * Fetch all trips asynchronously and update the card when done
+   */
+  async _fetchAllTripsAsync() {
+    if (this._allTripsFetched) return; // Already fetched
+    
+    try {
+      const trips = await this.fetchAllTrips();
+      this._allTrips = trips;
+      this._allTripsFetched = true;
+      console.log(`[FWCAM Card] Fetched ${trips.length} trips asynchronously`);
+      // Re-render to show all trips
+      this.forceRender();
+    } catch (error) {
+      console.error('[FWCAM Card] Error in async trip fetch:', error);
+    }
+  }
+
+  /**
+   * Fetch all refuelings asynchronously and update the card when done
+   */
+  async _fetchAllRefuelingsAsync() {
+    if (this._allRefuelingsFetched) return; // Already fetched
+    
+    try {
+      const refuelings = await this.fetchAllRefuelings();
+      this._allRefuelings = refuelings;
+      this._allRefuelingsFetched = true;
+      console.log(`[FWCAM Card] Fetched ${refuelings.length} refuelings asynchronously`);
+      // Re-render to show all refuelings
+      this.forceRender();
+    } catch (error) {
+      console.error('[FWCAM Card] Error in async refueling fetch:', error);
+    }
+  }
+
+  /**
    * Add a new refueling event
    */
   addRefuelingEvent(eventData) {
@@ -484,11 +574,19 @@ class FWCAMCard extends HTMLElement {
     const recentEvents = refuelingEntity?.attributes?.recent_events || [];
     const lastRefueling = refuelingEntity?.attributes?.last_refueling || null;
     
+    // Store events for dialog access (use recent for now, fetch all when needed)
+    this._recentEvents = recentEvents;
+    this._allRefuelings = recentEvents;
+    
+    // Trigger async fetch of all refuelings if we haven't fetched them yet
+    if (!this._allRefuelingsFetched && this._config.show_refueling_log) {
+      this._fetchAllRefuelingsAsync();
+    }
+    
     // Get trip log data from configured entity or auto-detected entity
     const tripLogEntityId = this._config.trip_log_entity || this._entities.trip_log_sensor;
     const tripLogEntity = tripLogEntityId ? this.getEntityState(tripLogEntityId) : null;
-    // Use all_trips if available, fallback to recent_trips for backward compatibility
-    const allTrips = tripLogEntity?.attributes?.all_trips || tripLogEntity?.attributes?.recent_trips || [];
+    // Use recent_trips from attributes (limited to last 10 to avoid 16KB limit)
     const recentTrips = tripLogEntity?.attributes?.recent_trips || [];
     
     // Debug logging for trip data
@@ -498,8 +596,6 @@ class FWCAMCard extends HTMLElement {
       console.log('  - Entity Found:', tripLogEntity ? 'Yes' : 'No');
       if (tripLogEntity) {
         console.log('  - Entity State:', tripLogEntity.state);
-        console.log('  - Has all_trips:', tripLogEntity.attributes?.all_trips ? 'Yes' : 'No');
-        console.log('  - All Trips Count:', allTrips.length);
         console.log('  - Has recent_trips:', tripLogEntity.attributes?.recent_trips ? 'Yes' : 'No');
         console.log('  - Recent Trips Count:', recentTrips.length);
       } else {
@@ -508,8 +604,12 @@ class FWCAMCard extends HTMLElement {
     }
     
     // Store events and trips for dialog access
-    this._recentEvents = recentEvents;
-    this._allTrips = allTrips;
+    // For initial display, use recent items. All items will be fetched async when needed
+    this._allTrips = recentTrips;
+    // Trigger async fetch of all trips if we haven't fetched them yet
+    if (!this._allTripsFetched && (this._config.show_trip_log || this._config.show_vehicle_info)) {
+      this._fetchAllTripsAsync();
+    }
 
     this.shadowRoot.innerHTML = `
       ${this.getStyles()}
@@ -522,8 +622,8 @@ class FWCAMCard extends HTMLElement {
           ${this._config.show_vehicle_info ? this.renderVehicleInfo() : ''}
           ${this._config.show_controls ? this.renderControls() : ''}
           ${this._config.show_settings ? this.renderSettings() : ''}
-          ${this._config.show_refueling_log ? this.renderRefuelingLog(recentEvents, lastRefueling) : ''}
-          ${this._config.show_trip_log ? this.renderTripLog(allTrips) : ''}
+          ${this._config.show_refueling_log ? this.renderRefuelingLog(this._allRefuelings || [], lastRefueling) : ''}
+          ${this._config.show_trip_log ? this.renderTripLog(this._allTrips || []) : ''}
         </div>
       </ha-card>
       ${this.renderDialog()}
