@@ -766,3 +766,23 @@ reverse_geocode:
 get_geocoding_cache_stats:
   name: Get Geocoding Cache Statistics
   description: Get statistics about the geocoding cache for debugging purposes. Shows total cache entries and their details (coordinates, names, addresses).
+
+simulate_refueling_event:
+  name: Simulate Refueling Event (Test)
+  description: Create a simulated refueling event for testing Telegram notification functionality. This creates a fake refueling with missing data to trigger the bidirectional data collection flow.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    include_missing_data:
+      name: Include Missing Data
+      description: If true, creates a refueling with missing fields to test the data collection workflow
+      required: false
+      default: true
+      example: true
+      selector:
+        boolean:

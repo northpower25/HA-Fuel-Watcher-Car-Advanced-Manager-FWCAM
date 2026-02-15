@@ -55,6 +55,7 @@ SERVICE_GET_ALL_TRIPS = "get_all_trips"
 SERVICE_GET_ALL_REFUELINGS = "get_all_refuelings"
 SERVICE_REVERSE_GEOCODE = "reverse_geocode"
 SERVICE_GET_GEOCODING_CACHE_STATS = "get_geocoding_cache_stats"
+SERVICE_SIMULATE_REFUELING_EVENT = "simulate_refueling_event"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -175,6 +176,11 @@ SCHEMA_REVERSE_GEOCODE = vol.Schema({
 
 SCHEMA_GET_GEOCODING_CACHE_STATS = vol.Schema({})
 
+SCHEMA_SIMULATE_REFUELING_EVENT = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Optional("include_missing_data", default=True): cv.boolean,
+})
+
 
 async def _async_register_frontend_card(hass: HomeAssistant) -> None:
     """Register the FWCAM frontend card.
@@ -273,6 +279,16 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         
         event_id = await add_refuel_event(hass, entry, event_data)
         _LOGGER.info("Added refuel event with ID %s", event_id)
+        
+        # Fire event for Telegram notification
+        hass.bus.async_fire(
+            f"{DOMAIN}_refueling_added",
+            {
+                "config_entry_id": entry_id,
+                "refuel_id": event_id,
+                "refuel_data": event_data,
+            }
+        )
         
         # Trigger coordinator refresh to update sensors immediately
         coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
@@ -714,6 +730,73 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 "error": str(err),
             }
 
+    async def handle_simulate_refueling_event(call: ServiceCall) -> None:
+        """Handle the simulate_refueling_event service call.
+        
+        Creates a simulated refueling event for testing Telegram notification
+        functionality. This is useful for testing the bidirectional data
+        collection workflow without actually refueling.
+        """
+        from .utils.storage import add_refuel_event
+        from datetime import datetime
+        import random
+        
+        entry_id = call.data["config_entry_id"]
+        include_missing_data = call.data.get("include_missing_data", True)
+        entry = hass.config_entries.async_get_entry(entry_id)
+        
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+        
+        # Create a simulated refueling with some data missing
+        timestamp = datetime.now().isoformat()
+        
+        if include_missing_data:
+            # Create with intentionally missing data to test the collection workflow
+            event_data = {
+                "timestamp": timestamp,
+                "liters_refueled": round(random.uniform(30.0, 55.0), 2),
+                "fuel_type": "e10",
+                "data_quality": "simulated",
+                "confidence": 0.8,
+                # Intentionally omit: odometer_km, price_per_liter, total_cost, station_name, station_address
+            }
+        else:
+            # Create with complete data
+            liters = round(random.uniform(30.0, 55.0), 2)
+            price = round(random.uniform(1.50, 1.90), 3)
+            event_data = {
+                "timestamp": timestamp,
+                "liters_refueled": liters,
+                "odometer_km": round(random.uniform(50000, 150000), 1),
+                "price_per_liter": price,
+                "total_cost": round(liters * price, 2),
+                "station_name": random.choice(["Shell", "Aral", "Esso", "Total"]),
+                "station_address": "Teststraße 123, 12345 Teststadt",
+                "fuel_type": "e10",
+                "data_quality": "simulated",
+                "confidence": 1.0,
+            }
+        
+        event_id = await add_refuel_event(hass, entry, event_data)
+        _LOGGER.info("Simulated refuel event with ID %s (missing_data=%s)", event_id, include_missing_data)
+        
+        # Fire event for Telegram notification
+        hass.bus.async_fire(
+            f"{DOMAIN}_refueling_added",
+            {
+                "config_entry_id": entry_id,
+                "refuel_id": event_id,
+                "refuel_data": event_data,
+            }
+        )
+        
+        # Trigger coordinator refresh to update sensors immediately
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+
     
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_REFUEL_EVENT, handle_add_refuel_event, schema=SCHEMA_ADD_REFUEL_EVENT
@@ -750,6 +833,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_GET_GEOCODING_CACHE_STATS, handle_get_geocoding_cache_stats, schema=SCHEMA_GET_GEOCODING_CACHE_STATS, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SIMULATE_REFUELING_EVENT, handle_simulate_refueling_event, schema=SCHEMA_SIMULATE_REFUELING_EVENT
     )
     
     return True
@@ -788,6 +874,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await telegram_handler.async_setup()
         hass.data[DOMAIN][entry.entry_id]["telegram_handler"] = telegram_handler
         _LOGGER.info("Telegram event handler initialized for bidirectional communication")
+        
+        # Initialize Telegram refueling handler for bidirectional refueling tracking
+        from .telegram_refueling_handler import TelegramRefuelingHandler
+        
+        telegram_refueling_handler = TelegramRefuelingHandler(
+            hass,
+            entry,
+            telegram_chat_id,
+            telegram_handler
+        )
+        await telegram_refueling_handler.async_setup()
+        hass.data[DOMAIN][entry.entry_id]["telegram_refueling_handler"] = telegram_refueling_handler
+        _LOGGER.info("Telegram refueling handler initialized for bidirectional refueling tracking")
     else:
         _LOGGER.debug("Telegram not configured, skipping event handler setup")
     
@@ -897,6 +996,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     telegram_handler = hass.data[DOMAIN][entry.entry_id].get("telegram_handler")
     if telegram_handler:
         await telegram_handler.async_unload()
+    
+    # Cleanup Telegram refueling handler
+    telegram_refueling_handler = hass.data[DOMAIN][entry.entry_id].get("telegram_refueling_handler")
+    if telegram_refueling_handler:
+        await telegram_refueling_handler.async_unload()
     
     # Cleanup coordinator
     coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")

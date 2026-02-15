@@ -358,6 +358,17 @@ async def add_refuel_event(
         # Data quality indicators for filtering and manual correction
         "data_quality": event_data.get("data_quality", "manual"),  # manual, auto_detected, historical_import
         "confidence": event_data.get("confidence", 1.0),  # 0.0-1.0, higher is better
+        # Telegram response tracking for bidirectional communication
+        "telegram_notification_sent": event_data.get("telegram_notification_sent", False),
+        "telegram_notification_timestamp": event_data.get("telegram_notification_timestamp"),
+        "telegram_response_received": event_data.get("telegram_response_received", False),
+        "telegram_response_timestamp": event_data.get("telegram_response_timestamp"),
+        "telegram_response_type": event_data.get("telegram_response_type"),  # text, photo, voice, callback
+        "telegram_response_raw": event_data.get("telegram_response_raw"),  # Raw text/transcription
+        "telegram_response_parsed": event_data.get("telegram_response_parsed"),  # AI-parsed structured data
+        "telegram_photo_file_id": event_data.get("telegram_photo_file_id"),  # For photo responses
+        "telegram_voice_file_id": event_data.get("telegram_voice_file_id"),  # For voice responses
+        "telegram_message_id": event_data.get("telegram_message_id"),  # ID of the notification message for threading
     }
     
     data["refueling_log"].append(refuel_record)
