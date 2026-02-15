@@ -2722,10 +2722,10 @@ class FWCAMCard extends HTMLElement {
   
   /**
    * Generate static map image using OSM tiles directly
-   * Creates a canvas-based map with a marker pin
+   * Returns the OSM tile URL that contains the coordinates
    * More reliable than staticmap.openstreetmap.de which is often down
    */
-  getStaticMapUrl(lat, lon, width = 250, height = 250) {
+  getStaticMapUrl(lat, lon) {
     // Validate coordinate bounds
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
       console.warn('[FWCAM Card] Invalid coordinates for static map:', { lat, lon });
@@ -2748,31 +2748,11 @@ class FWCAMCard extends HTMLElement {
     const xtile = Math.floor((lon + 180) / 360 * n);
     const ytile = Math.floor(latToMercatorY(clampedLat) * n);
     
-    // Calculate pixel position of marker within tile
-    const tileX = (lon + 180) / 360 * n;
-    const tileY = latToMercatorY(clampedLat) * n;
-    const pixelX = (tileX - xtile) * TILE_SIZE_PX;
-    const pixelY = (tileY - ytile) * TILE_SIZE_PX;
+    console.log('[FWCAM Card] Generating static map:', { lat, lon, clampedLat, zoom, xtile, ytile });
     
-    console.log('[FWCAM Card] Generating static map:', { lat, lon, clampedLat, zoom, xtile, ytile, pixelX, pixelY });
-    
-    // SVG path for map marker pin (teardrop shape with rounded top)
-    const markerPath = "M 0,-30 Q -10,-30 -10,-20 Q -10,-10 0,0 Q 10,-10 10,-20 Q 10,-30 0,-30 Z";
-    
-    // Create an SVG with the tile image and marker overlay
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
-           width="${width}" height="${height}" viewBox="0 0 ${TILE_SIZE_PX} ${TILE_SIZE_PX}">
-        <image href="https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png" 
-               width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}" x="0" y="0"/>
-        <g transform="translate(${pixelX}, ${pixelY})">
-          <path d="${markerPath}" fill="#E74C3C" stroke="#FFFFFF" stroke-width="2"/>
-          <circle cx="0" cy="-20" r="6" fill="#FFFFFF"/>
-        </g>
-      </svg>
-    `.trim();
-    
-    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    // Return the direct OSM tile URL
+    // This will show the map tile that contains the coordinates
+    return `https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`;
   }
   
   /**
