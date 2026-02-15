@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FWCAM - Vehicle Position Marker Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+    
+    .header h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    .header p {
+      font-size: 1.2em;
+      opacity: 0.9;
+    }
+    
+    .content {
+      padding: 40px;
+    }
+    
+    .feature-box {
+      background: #f8f9fa;
+      border-left: 4px solid #667eea;
+      padding: 20px;
+      margin-bottom: 30px;
+      border-radius: 8px;
+    }
+    
+    .feature-box h3 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 1.5em;
+    }
+    
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin: 30px 0;
+    }
+    
+    .comparison-item {
+      background: white;
+      border: 2px solid #e9ecef;
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .comparison-item:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    }
+    
+    .comparison-item.before {
+      border-color: #dc3545;
+    }
+    
+    .comparison-item.after {
+      border-color: #28a745;
+      background: #f8fff9;
+    }
+    
+    .comparison-item h4 {
+      margin-bottom: 15px;
+      font-size: 1.3em;
+    }
+    
+    .comparison-item.before h4 {
+      color: #dc3545;
+    }
+    
+    .comparison-item.after h4 {
+      color: #28a745;
+    }
+    
+    .map-preview {
+      width: 100%;
+      max-width: 300px;
+      aspect-ratio: 1;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      margin: 0 auto;
+      display: block;
+    }
+    
+    .location-info {
+      margin-top: 15px;
+      padding: 10px;
+      background: #fff3cd;
+      border-radius: 6px;
+      font-size: 0.9em;
+      color: #856404;
+    }
+    
+    .badge {
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.8em;
+      font-weight: bold;
+      margin: 5px;
+    }
+    
+    .badge.red {
+      background: #dc3545;
+      color: white;
+    }
+    
+    .badge.green {
+      background: #28a745;
+      color: white;
+    }
+    
+    .marker-legend {
+      background: #e7f3ff;
+      border: 2px solid #2196F3;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 30px 0;
+    }
+    
+    .marker-legend h3 {
+      color: #2196F3;
+      margin-bottom: 15px;
+    }
+    
+    .marker-example {
+      display: inline-block;
+      margin: 10px 15px;
+      text-align: center;
+    }
+    
+    .marker-visual {
+      width: 50px;
+      height: 50px;
+      position: relative;
+      margin: 0 auto 10px;
+    }
+    
+    .marker-visual svg {
+      width: 100%;
+      height: 100%;
+    }
+    
+    @media (max-width: 768px) {
+      .comparison {
+        grid-template-columns: 1fr;
+      }
+      
+      .header h1 {
+        font-size: 1.8em;
+      }
+      
+      .content {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚗 FWCAM Vehicle Position Marker</h1>
+      <p>Visual Enhancement for Map Previews</p>
+    </div>
+    
+    <div class="content">
+      <div class="feature-box">
+        <h3>✨ What's New?</h3>
+        <p>Map previews in the trip edit dialog now display a <strong>red position marker</strong> showing the exact location of the vehicle. This makes it easy to identify where your trip started or ended at a glance!</p>
+      </div>
+      
+      <div class="comparison">
+        <div class="comparison-item before">
+          <h4>❌ Before (PR #101)</h4>
+          <span class="badge red">No Position Indicator</span>
+          <img id="map-before" class="map-preview" alt="Map without marker">
+          <div class="location-info">
+            <strong>Problem:</strong> Map shows the area, but where is the vehicle? 🤔
+          </div>
+        </div>
+        
+        <div class="comparison-item after">
+          <h4>✅ After (Current)</h4>
+          <span class="badge green">With Position Marker</span>
+          <img id="map-after" class="map-preview" alt="Map with marker">
+          <div class="location-info">
+            <strong>Solution:</strong> Red marker clearly shows the exact vehicle position! 🎯
+          </div>
+        </div>
+      </div>
+      
+      <div class="marker-legend">
+        <h3>🎨 Marker Design</h3>
+        <p>The position marker uses a distinctive two-circle design for maximum visibility:</p>
+        <div style="margin-top: 20px;">
+          <div class="marker-example">
+            <div class="marker-visual">
+              <svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 50 50">
+                <rect width="50" height="50" fill="#e9ecef"/>
+                <circle cx="25" cy="25" r="12" fill="red" stroke="white" stroke-width="3" opacity="0.9"/>
+                <circle cx="25" cy="25" r="5" fill="white" opacity="0.9"/>
+              </svg>
+            </div>
+            <div><strong>Full Marker</strong></div>
+            <div style="font-size: 0.8em; color: #666;">Red outer circle + white center</div>
+          </div>
+          
+          <div class="marker-example">
+            <div class="marker-visual">
+              <svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 50 50">
+                <rect width="50" height="50" fill="#4CAF50"/>
+                <circle cx="25" cy="25" r="12" fill="red" stroke="white" stroke-width="3" opacity="0.9"/>
+                <circle cx="25" cy="25" r="5" fill="white" opacity="0.9"/>
+              </svg>
+            </div>
+            <div><strong>On Green</strong></div>
+            <div style="font-size: 0.8em; color: #666;">Visible on parks</div>
+          </div>
+          
+          <div class="marker-example">
+            <div class="marker-visual">
+              <svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 50 50">
+                <rect width="50" height="50" fill="#2196F3"/>
+                <circle cx="25" cy="25" r="12" fill="red" stroke="white" stroke-width="3" opacity="0.9"/>
+                <circle cx="25" cy="25" r="5" fill="white" opacity="0.9"/>
+              </svg>
+            </div>
+            <div><strong>On Blue</strong></div>
+            <div style="font-size: 0.8em; color: #666;">Visible on water</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="feature-box">
+        <h3>🔧 Technical Details</h3>
+        <ul style="list-style: none; padding-left: 0;">
+          <li style="margin: 10px 0;">✓ Uses Web Mercator projection for accurate positioning</li>
+          <li style="margin: 10px 0;">✓ SVG overlay on OpenStreetMap tiles</li>
+          <li style="margin: 10px 0;">✓ No external dependencies or API calls</li>
+          <li style="margin: 10px 0;">✓ Works in all modern browsers</li>
+          <li style="margin: 10px 0;">✓ Consistent 8px outer radius + 3px center dot design</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // Example coordinates: Berlin, Germany
+    const lat = 52.5200;
+    const lon = 13.4050;
+    
+    // Function to generate map without marker (simulating old version)
+    function getMapUrlWithoutMarker(lat, lon) {
+      const zoom = 15;
+      const TILE_SIZE_PX = 256;
+      const MAX_MERCATOR_LAT = 85.05112878;
+      const clampedLat = Math.max(-MAX_MERCATOR_LAT, Math.min(MAX_MERCATOR_LAT, lat));
+      
+      const latToMercatorY = (latitude) => 
+        (1 - Math.log(Math.tan(latitude * Math.PI / 180) + 1 / Math.cos(latitude * Math.PI / 180)) / Math.PI) / 2;
+      
+      const n = Math.pow(2, zoom);
+      const xtile = Math.floor((lon + 180) / 360 * n);
+      const ytile = Math.floor(latToMercatorY(clampedLat) * n);
+      
+      return `https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`;
+    }
+    
+    // Function to generate map with marker (new version)
+    function getMapUrlWithMarker(lat, lon) {
+      const zoom = 15;
+      const TILE_SIZE_PX = 256;
+      const MAX_MERCATOR_LAT = 85.05112878;
+      const clampedLat = Math.max(-MAX_MERCATOR_LAT, Math.min(MAX_MERCATOR_LAT, lat));
+      
+      const latToMercatorY = (latitude) => 
+        (1 - Math.log(Math.tan(latitude * Math.PI / 180) + 1 / Math.cos(latitude * Math.PI / 180)) / Math.PI) / 2;
+      
+      const n = Math.pow(2, zoom);
+      const xtile = Math.floor((lon + 180) / 360 * n);
+      const ytile = Math.floor(latToMercatorY(clampedLat) * n);
+      
+      const exactX = ((lon + 180) / 360 * n) - xtile;
+      const exactY = (latToMercatorY(clampedLat) * n) - ytile;
+      const pixelX = exactX * TILE_SIZE_PX;
+      const pixelY = exactY * TILE_SIZE_PX;
+      
+      // Validate pixel coordinates are finite numbers
+      if (!isFinite(pixelX) || !isFinite(pixelY)) {
+        console.warn('Invalid pixel coordinates:', { pixelX, pixelY });
+        return '';
+      }
+      
+      const tileUrl = `https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`;
+      
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}">
+        <image href="${tileUrl}" width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}"/>
+        <circle cx="${pixelX}" cy="${pixelY}" r="8" fill="red" stroke="white" stroke-width="2" opacity="0.9"/>
+        <circle cx="${pixelX}" cy="${pixelY}" r="3" fill="white" opacity="0.9"/>
+      </svg>`;
+      
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    }
+    
+    // Set the map images
+    document.getElementById('map-before').src = getMapUrlWithoutMarker(lat, lon);
+    document.getElementById('map-after').src = getMapUrlWithMarker(lat, lon);
+  </script>
+</body>
+</html>

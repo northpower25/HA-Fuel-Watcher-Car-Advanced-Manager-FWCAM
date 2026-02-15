@@ -2748,11 +2748,40 @@ class FWCAMCard extends HTMLElement {
     const xtile = Math.floor((lon + 180) / 360 * n);
     const ytile = Math.floor(latToMercatorY(clampedLat) * n);
     
-    console.log('[FWCAM Card] Generating static map:', { lat, lon, clampedLat, zoom, xtile, ytile });
+    // Validate tile coordinates are within valid range for the zoom level
+    const maxTile = n - 1;
+    if (xtile < 0 || xtile > maxTile || ytile < 0 || ytile > maxTile) {
+      console.warn('[FWCAM Card] Invalid tile coordinates:', { xtile, ytile, maxTile });
+      return '';
+    }
     
-    // Return the direct OSM tile URL
-    // This will show the map tile that contains the coordinates
-    return `https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`;
+    // Calculate the exact position within the tile (0-256 pixels)
+    const exactX = ((lon + 180) / 360 * n) - xtile;
+    const exactY = (latToMercatorY(clampedLat) * n) - ytile;
+    const pixelX = exactX * TILE_SIZE_PX;
+    const pixelY = exactY * TILE_SIZE_PX;
+    
+    // Validate pixel coordinates are finite numbers
+    if (!isFinite(pixelX) || !isFinite(pixelY)) {
+      console.warn('[FWCAM Card] Invalid pixel coordinates:', { pixelX, pixelY });
+      return '';
+    }
+    
+    console.log('[FWCAM Card] Generating static map:', { lat, lon, clampedLat, zoom, xtile, ytile, pixelX, pixelY });
+    
+    // Get the OSM tile URL
+    const tileUrl = `https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`;
+    
+    // Create an SVG with the tile image and a marker at the exact position
+    // Using an SVG data URI with inline image allows us to add a marker overlay
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}">
+      <image href="${tileUrl}" width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}"/>
+      <circle cx="${pixelX}" cy="${pixelY}" r="8" fill="red" stroke="white" stroke-width="2" opacity="0.9"/>
+      <circle cx="${pixelX}" cy="${pixelY}" r="3" fill="white" opacity="0.9"/>
+    </svg>`;
+    
+    // Return as data URI
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }
   
   /**
