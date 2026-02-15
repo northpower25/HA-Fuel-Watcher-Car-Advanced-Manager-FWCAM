@@ -1215,19 +1215,29 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         
                         try:
                             if start_lat and start_lon:
-                                start_address = await geocode_trip_location(start_lat, start_lon)
-                                if start_address:
-                                    trip_data["start_address"] = start_address
-                                    _LOGGER.debug("Geocoded start: %s", start_address)
+                                start_geo = await geocode_trip_location(start_lat, start_lon)
+                                if start_geo:
+                                    if start_geo.get("location_name"):
+                                        trip_data["start_name"] = start_geo["location_name"]
+                                    if start_geo.get("address"):
+                                        trip_data["start_address"] = start_geo["address"]
+                                    _LOGGER.debug("Geocoded start: name=%s, address=%s", 
+                                                start_geo.get("location_name"), 
+                                                start_geo.get("address"))
                         except Exception as geo_err:
                             _LOGGER.warning("Error geocoding start location: %s", geo_err)
                         
                         try:
                             if end_lat and end_lon:
-                                end_address = await geocode_trip_location(end_lat, end_lon)
-                                if end_address:
-                                    trip_data["end_address"] = end_address
-                                    _LOGGER.debug("Geocoded end: %s", end_address)
+                                end_geo = await geocode_trip_location(end_lat, end_lon)
+                                if end_geo:
+                                    if end_geo.get("location_name"):
+                                        trip_data["end_name"] = end_geo["location_name"]
+                                    if end_geo.get("address"):
+                                        trip_data["end_address"] = end_geo["address"]
+                                    _LOGGER.debug("Geocoded end: name=%s, address=%s", 
+                                                end_geo.get("location_name"), 
+                                                end_geo.get("address"))
                         except Exception as geo_err:
                             _LOGGER.warning("Error geocoding end location: %s", geo_err)
                     

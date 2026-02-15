@@ -99,6 +99,7 @@ async def load_data(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
                 "tax_mileage_rate_above_20km": 0.38,
                 "include_additional_costs": True,
             },
+            "geocoding_cache": {},  # Cache for reverse geocoding: {key: {location_name, address, timestamp}}
             "trip_statistics": {
                 "total_trips": 0,
                 "total_distance_km": 0.0,
