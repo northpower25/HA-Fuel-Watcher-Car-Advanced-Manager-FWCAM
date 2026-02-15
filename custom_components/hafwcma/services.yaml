@@ -350,7 +350,7 @@ add_trip:
         number:
           min: -90
           max: 90
-          step: 0.00001
+          step: any
     start_longitude:
       name: Start Longitude
       description: Longitude coordinate of trip start location
@@ -360,7 +360,7 @@ add_trip:
         number:
           min: -180
           max: 180
-          step: 0.00001
+          step: any
     end_latitude:
       name: End Latitude
       description: Latitude coordinate of trip end location
@@ -370,7 +370,7 @@ add_trip:
         number:
           min: -90
           max: 90
-          step: 0.00001
+          step: any
     end_longitude:
       name: End Longitude
       description: Longitude coordinate of trip end location
@@ -380,7 +380,7 @@ add_trip:
         number:
           min: -180
           max: 180
-          step: 0.00001
+          step: any
     start_name:
       name: Start Location Name
       description: Name or description of the start location
@@ -497,7 +497,7 @@ edit_trip:
         number:
           min: -90
           max: 90
-          step: 0.00001
+          step: any
     start_longitude:
       name: Start Longitude
       description: Longitude coordinate of trip start location
@@ -506,7 +506,7 @@ edit_trip:
         number:
           min: -180
           max: 180
-          step: 0.00001
+          step: any
     end_latitude:
       name: End Latitude
       description: Latitude coordinate of trip end location
@@ -515,7 +515,7 @@ edit_trip:
         number:
           min: -90
           max: 90
-          step: 0.00001
+          step: any
     end_longitude:
       name: End Longitude
       description: Longitude coordinate of trip end location
@@ -524,7 +524,7 @@ edit_trip:
         number:
           min: -180
           max: 180
-          step: 0.00001
+          step: any
     start_name:
       name: Start Location Name
       description: Name or description of the start location
