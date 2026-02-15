@@ -54,6 +54,8 @@ class FWCAMCard extends HTMLElement {
     this._allRefuelingsFetched = false;
     this._allTrips = [];
     this._allRefuelings = [];
+    // Rate limiting for Nominatim API (1 request per second)
+    this._lastNominatimRequest = 0;
   }
 
   /**
@@ -2696,7 +2698,12 @@ class FWCAMCard extends HTMLElement {
    * Generate Google Maps URL for coordinates
    */
   getMapUrl(lat, lon) {
-    return `https://www.google.com/maps?q=${lat},${lon}`;
+    // Validate coordinate bounds
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      console.warn('[FWCAM Card] Invalid coordinates for map URL:', { lat, lon });
+      return '#';
+    }
+    return `https://www.google.com/maps?q=${encodeURIComponent(lat)},${encodeURIComponent(lon)}`;
   }
   
   /**
@@ -2704,12 +2711,19 @@ class FWCAMCard extends HTMLElement {
    * Uses OSM Static Maps API which is free and doesn't require API key
    */
   getStaticMapUrl(lat, lon, width = 250, height = 250) {
+    // Validate coordinate bounds
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      console.warn('[FWCAM Card] Invalid coordinates for static map:', { lat, lon });
+      // Return a placeholder image or empty string
+      return '';
+    }
+    
     const zoom = 15;
     
     // Use staticmap.openstreetmap.de which supports markers
     // Format: ?center=lat,lon&zoom=15&size=widthxheight&markers=lat,lon,lightblue
     // Example: https://staticmap.openstreetmap.de/staticmap.php?center=53.736131,9.676176&zoom=15&size=250x250&markers=53.736131,9.676176,red-pushpin
-    return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${zoom}&size=${width}x${height}&markers=${lat},${lon},red-pushpin`;
+    return `https://staticmap.openstreetmap.de/staticmap.php?center=${encodeURIComponent(lat)},${encodeURIComponent(lon)}&zoom=${zoom}&size=${width}x${height}&markers=${encodeURIComponent(lat)},${encodeURIComponent(lon)},red-pushpin`;
   }
   
   /**
@@ -2789,6 +2803,7 @@ class FWCAMCard extends HTMLElement {
     const lat = parseFloat(latField.value);
     const lon = parseFloat(lonField.value);
     
+    // Validate coordinates
     if (isNaN(lat) || isNaN(lon)) {
       const lang = this.getUserLanguage();
       const messages = {
@@ -2799,11 +2814,37 @@ class FWCAMCard extends HTMLElement {
       return;
     }
     
+    // Validate coordinate bounds
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      const lang = this.getUserLanguage();
+      const messages = {
+        de: 'Ungültige Koordinaten. Latitude muss zwischen -90 und 90 liegen, Longitude zwischen -180 und 180.',
+        en: 'Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.'
+      };
+      alert(messages[lang] || messages['en']);
+      return;
+    }
+    
+    // Rate limiting: Enforce 1 request per second for Nominatim usage policy
+    const now = Date.now();
+    const timeSinceLastRequest = now - this._lastNominatimRequest;
+    if (timeSinceLastRequest < 1000) {
+      const waitTime = 1000 - timeSinceLastRequest;
+      const lang = this.getUserLanguage();
+      const messages = {
+        de: `Bitte warten Sie ${Math.ceil(waitTime / 1000)} Sekunde(n) vor der nächsten Anfrage.`,
+        en: `Please wait ${Math.ceil(waitTime / 1000)} second(s) before the next request.`
+      };
+      alert(messages[lang] || messages['en']);
+      return;
+    }
+    this._lastNominatimRequest = now;
+    
     try {
       // Use Nominatim API for reverse geocoding (free, no API key required)
-      // NOTE: Please respect Nominatim usage policy: max 1 request per second
+      // NOTE: Respecting Nominatim usage policy: max 1 request per second
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=18&addressdetails=1`,
         {
           headers: {
             'Accept': 'application/json',
