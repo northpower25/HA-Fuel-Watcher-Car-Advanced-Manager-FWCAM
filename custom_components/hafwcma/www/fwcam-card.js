@@ -270,9 +270,7 @@ class FWCAMCard extends HTMLElement {
         'hafwcma',
         'get_all_trips',
         { config_entry_id: configEntryId },
-        {},
-        true,
-        true
+        { return_response: true }
       );
       return response?.trips || [];
     } catch (error) {
@@ -300,9 +298,7 @@ class FWCAMCard extends HTMLElement {
         'hafwcma',
         'get_all_refuelings',
         { config_entry_id: configEntryId },
-        {},
-        true,
-        true
+        { return_response: true }
       );
       return response?.refuelings || [];
     } catch (error) {
