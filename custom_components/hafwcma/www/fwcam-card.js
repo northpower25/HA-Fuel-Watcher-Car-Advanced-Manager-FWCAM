@@ -1434,24 +1434,19 @@ class FWCAMCard extends HTMLElement {
                   ${this.renderTripSortIcon('category')}
                 </th>
                 <th>Purpose</th>
+                <th>Quality</th>
                 <th class="sortable ${sortColumn === 'fuel_consumed' ? 'sorted-' + sortDirection : ''}" 
                     data-sort-column="fuel_consumed" data-sort-type="trip">
                   Fuel (L)
                   ${this.renderTripSortIcon('fuel_consumed')}
                 </th>
-                <th class="sortable ${sortColumn === 'fuel_cost' ? 'sorted-' + sortDirection : ''}" 
-                    data-sort-column="fuel_cost" data-sort-type="trip">
-                  Fuel Cost (€)
-                  ${this.renderTripSortIcon('fuel_cost')}
-                </th>
-                <th>Additional Costs (€)</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               ${paginatedTrips.length === 0 ? `
                 <tr>
-                  <td colspan="8" class="no-data">No trips match the current filters</td>
+                  <td colspan="7" class="no-data">No trips match the current filters</td>
                 </tr>
               ` : paginatedTrips.map(trip => `
                 <tr data-trip-id="${trip.trip_id}">
@@ -1463,9 +1458,16 @@ class FWCAMCard extends HTMLElement {
                     </span>
                   </td>
                   <td>${trip.purpose || '-'}</td>
+                  <td>
+                    <span class="quality-badge quality-${trip.data_quality || 'manual'}">
+                      ${trip.data_quality || 'manual'}
+                    </span>
+                    <br>
+                    <span class="confidence-badge confidence-${this.getConfidenceLevel(trip.confidence !== undefined ? trip.confidence : 1.0)}">
+                      ${Math.round((trip.confidence !== undefined ? trip.confidence : 1.0) * 100)}%
+                    </span>
+                  </td>
                   <td>${trip.fuel_consumed ? this.formatNumber(trip.fuel_consumed, 2) : '-'}</td>
-                  <td>${trip.fuel_cost ? this.formatNumber(trip.fuel_cost, 2) : '-'}</td>
-                  <td>${trip.additional_costs ? this.formatNumber(trip.additional_costs, 2) : '0.00'}</td>
                   <td class="actions">
                     <button class="action-button edit-button" 
                             data-action="edit-trip" 
@@ -1681,6 +1683,22 @@ class FWCAMCard extends HTMLElement {
                     Notes
                     <textarea id="trip-notes" name="notes" rows="3" 
                               placeholder="Optional notes about this trip"></textarea>
+                  </label>
+                </div>
+                
+                <div class="form-row">
+                  <label for="trip-data-quality">
+                    Data Quality
+                    <select id="trip-data-quality" name="data_quality">
+                      <option value="manual">Manual</option>
+                      <option value="historical_import">Historical Import</option>
+                      <option value="auto_detected">Auto Detected</option>
+                    </select>
+                  </label>
+                  <label for="trip-confidence">
+                    Confidence (0.0 - 1.0)
+                    <input type="number" id="trip-confidence" name="confidence" 
+                           step="0.01" min="0" max="1" value="1.0">
                   </label>
                 </div>
               </div>
@@ -2067,6 +2085,10 @@ class FWCAMCard extends HTMLElement {
     // Set default category
     this.shadowRoot.getElementById('trip-category').value = 'private';
     
+    // Set default data quality and confidence
+    this.shadowRoot.getElementById('trip-data-quality').value = 'manual';
+    this.shadowRoot.getElementById('trip-confidence').value = 1.0;
+    
     // Populate autocomplete suggestions
     this.populateTripAutocomplete();
     
@@ -2160,6 +2182,10 @@ class FWCAMCard extends HTMLElement {
     this.shadowRoot.getElementById('trip-end-address').value = trip.end_address || '';
     this.shadowRoot.getElementById('trip-end-latitude').value = trip.end_latitude || '';
     this.shadowRoot.getElementById('trip-end-longitude').value = trip.end_longitude || '';
+    
+    // Data quality and confidence fields
+    this.shadowRoot.getElementById('trip-data-quality').value = trip.data_quality || 'manual';
+    this.shadowRoot.getElementById('trip-confidence').value = trip.confidence !== undefined ? trip.confidence : 1.0;
     
     // Populate autocomplete suggestions
     this.populateTripAutocomplete();
@@ -2259,6 +2285,14 @@ class FWCAMCard extends HTMLElement {
     }
     if (formData.get('end_address')) {
       serviceData.end_address = formData.get('end_address');
+    }
+    
+    // Add data quality and confidence fields
+    if (formData.get('data_quality')) {
+      serviceData.data_quality = formData.get('data_quality');
+    }
+    if (formData.get('confidence')) {
+      serviceData.confidence = parseFloat(formData.get('confidence'));
     }
     
     try {

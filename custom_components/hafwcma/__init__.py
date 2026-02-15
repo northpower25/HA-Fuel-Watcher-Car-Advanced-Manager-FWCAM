@@ -98,6 +98,8 @@ SCHEMA_ADD_TRIP = vol.Schema({
     vol.Optional("start_address"): cv.string,
     vol.Optional("end_name"): cv.string,
     vol.Optional("end_address"): cv.string,
+    vol.Optional("data_quality"): cv.string,
+    vol.Optional("confidence"): vol.Coerce(float),
 })
 
 SCHEMA_EDIT_TRIP = vol.Schema({
@@ -117,6 +119,8 @@ SCHEMA_EDIT_TRIP = vol.Schema({
     vol.Optional("start_address"): cv.string,
     vol.Optional("end_name"): cv.string,
     vol.Optional("end_address"): cv.string,
+    vol.Optional("data_quality"): cv.string,
+    vol.Optional("confidence"): vol.Coerce(float),
 })
 
 SCHEMA_DELETE_TRIP = vol.Schema({
@@ -323,6 +327,18 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "purpose": call.data.get("purpose"),
             "fuel_consumed": call.data.get("fuel_consumed"),
             "additional_costs": call.data.get("additional_costs", 0.0),
+            "odometer_start": call.data.get("odometer_start"),
+            "odometer_end": call.data.get("odometer_end"),
+            "start_latitude": call.data.get("start_latitude"),
+            "start_longitude": call.data.get("start_longitude"),
+            "end_latitude": call.data.get("end_latitude"),
+            "end_longitude": call.data.get("end_longitude"),
+            "start_name": call.data.get("start_name"),
+            "start_address": call.data.get("start_address"),
+            "end_name": call.data.get("end_name"),
+            "end_address": call.data.get("end_address"),
+            "data_quality": call.data.get("data_quality", "manual"),
+            "confidence": call.data.get("confidence", 1.0),
             "is_manual": True,
         }
         
