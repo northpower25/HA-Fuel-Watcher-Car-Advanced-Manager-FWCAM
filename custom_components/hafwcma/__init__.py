@@ -813,7 +813,7 @@ async def _import_historical_data_background(
     Imports historical vehicle data from Home Assistant's recorder
     to populate consumption history and enable predictions.
     Also imports trip history if trip tracking is enabled.
-    Additionally rebuilds the geocoding cache from existing trip data.
+    Also rebuilds the geocoding cache from existing trip data.
     
     Args:
         hass: Home Assistant instance
