@@ -18,9 +18,15 @@ import voluptuous as vol
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 import homeassistant.helpers.config_validation as cv
+
+# ServiceResponse is available in HA 2023.7+, but return type annotation is optional
+try:
+    from homeassistant.core import ServiceResponse
+except ImportError:
+    ServiceResponse = dict  # Fallback for older HA versions
 
 from .const import DOMAIN
 
