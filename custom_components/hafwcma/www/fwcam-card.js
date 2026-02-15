@@ -605,7 +605,10 @@ class FWCAMCard extends HTMLElement {
     
     // Store events for dialog access (use recent for now, fetch all when needed)
     this._recentEvents = recentEvents;
-    this._allRefuelings = recentEvents;
+    // Only reset _allRefuelings if we haven't fetched all refuelings yet
+    if (!this._allRefuelingsFetched) {
+      this._allRefuelings = recentEvents;
+    }
     
     // Trigger async fetch of all refuelings if we haven't fetched them yet
     if (!this._allRefuelingsFetched && this._config.show_refueling_log) {
@@ -634,7 +637,10 @@ class FWCAMCard extends HTMLElement {
     
     // Store events and trips for dialog access
     // For initial display, use recent items. All items will be fetched async when needed
-    this._allTrips = recentTrips;
+    // Only reset _allTrips if we haven't fetched all trips yet
+    if (!this._allTripsFetched) {
+      this._allTrips = recentTrips;
+    }
     // Trigger async fetch of all trips if we haven't fetched them yet
     if (!this._allTripsFetched && (this._config.show_trip_log || this._config.show_vehicle_info)) {
       this._fetchAllTripsAsync();
@@ -1757,7 +1763,7 @@ class FWCAMCard extends HTMLElement {
                   </button>
                 </div>
                 <div id="start-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="start-map-img" style="width: 250px; height: 250px; border-radius: 4px; cursor: pointer; object-fit: cover;" 
+                  <img id="start-map-img" style="width: 100%; aspect-ratio: 1; border-radius: 4px; cursor: pointer; object-fit: cover;" 
                        alt="Map preview of trip start location" title="Click to open in Google Maps">
                 </div>
               </div>
@@ -1797,7 +1803,7 @@ class FWCAMCard extends HTMLElement {
                   </button>
                 </div>
                 <div id="end-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="end-map-img" style="width: 250px; height: 250px; border-radius: 4px; cursor: pointer; object-fit: cover;" 
+                  <img id="end-map-img" style="width: 100%; aspect-ratio: 1; border-radius: 4px; cursor: pointer; object-fit: cover;" 
                        alt="Map preview of trip end location" title="Click to open in Google Maps">
                 </div>
                 <div id="trip-map-links" style="display: none; margin-top: 8px;">
@@ -2713,23 +2719,56 @@ class FWCAMCard extends HTMLElement {
   }
   
   /**
-   * Generate static map image URL with marker
-   * Uses OSM Static Maps API which is free and doesn't require API key
+   * Generate static map image using OSM tiles directly
+   * Creates a canvas-based map with a marker pin
+   * More reliable than staticmap.openstreetmap.de which is often down
    */
   getStaticMapUrl(lat, lon, width = 250, height = 250) {
     // Validate coordinate bounds
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
       console.warn('[FWCAM Card] Invalid coordinates for static map:', { lat, lon });
-      // Return a placeholder image or empty string
       return '';
     }
     
     const zoom = 15;
+    const TILE_SIZE_PX = 256; // OSM tiles are 256x256 pixels
+    const MAX_MERCATOR_LAT = 85.05112878; // Web Mercator projection valid range
     
-    // Use staticmap.openstreetmap.de which supports markers
-    // Format: ?center=lat,lon&zoom=15&size=widthxheight&markers=lat,lon,lightblue
-    // Example: https://staticmap.openstreetmap.de/staticmap.php?center=53.736131,9.676176&zoom=15&size=250x250&markers=53.736131,9.676176,red-pushpin
-    return `https://staticmap.openstreetmap.de/staticmap.php?center=${encodeURIComponent(lat)},${encodeURIComponent(lon)}&zoom=${zoom}&size=${width}x${height}&markers=${encodeURIComponent(lat)},${encodeURIComponent(lon)},red-pushpin`;
+    // Clamp latitude to Web Mercator valid range to prevent Infinity/NaN
+    const clampedLat = Math.max(-MAX_MERCATOR_LAT, Math.min(MAX_MERCATOR_LAT, lat));
+    
+    // Helper function: Convert latitude to Web Mercator Y coordinate
+    const latToMercatorY = (latitude) => 
+      (1 - Math.log(Math.tan(latitude * Math.PI / 180) + 1 / Math.cos(latitude * Math.PI / 180)) / Math.PI) / 2;
+    
+    // Calculate tile coordinates
+    const n = Math.pow(2, zoom);
+    const xtile = Math.floor((lon + 180) / 360 * n);
+    const ytile = Math.floor(latToMercatorY(clampedLat) * n);
+    
+    // Calculate pixel position of marker within tile
+    const tileX = (lon + 180) / 360 * n;
+    const tileY = latToMercatorY(clampedLat) * n;
+    const pixelX = (tileX - xtile) * TILE_SIZE_PX;
+    const pixelY = (tileY - ytile) * TILE_SIZE_PX;
+    
+    // SVG path for map marker pin (teardrop shape with rounded top)
+    const markerPath = "M 0,-30 Q -10,-30 -10,-20 Q -10,-10 0,0 Q 10,-10 10,-20 Q 10,-30 0,-30 Z";
+    
+    // Create an SVG with the tile image and marker overlay
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+           width="${width}" height="${height}" viewBox="0 0 ${TILE_SIZE_PX} ${TILE_SIZE_PX}">
+        <image href="https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png" 
+               width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}" x="0" y="0"/>
+        <g transform="translate(${pixelX}, ${pixelY})">
+          <path d="${markerPath}" fill="#E74C3C" stroke="#FFFFFF" stroke-width="2"/>
+          <circle cx="0" cy="-20" r="6" fill="#FFFFFF"/>
+        </g>
+      </svg>
+    `.trim();
+    
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
   
   /**
