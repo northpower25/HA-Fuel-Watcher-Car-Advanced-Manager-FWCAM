@@ -2942,26 +2942,17 @@ class FWCAMCard extends HTMLElement {
     const nameField = this.shadowRoot.getElementById(isStart ? 'trip-start-name' : 'trip-end-name');
     const addressField = this.shadowRoot.getElementById(isStart ? 'trip-start-address' : 'trip-end-address');
     
-    // Get raw values from input fields
+    // Get raw values and normalize decimal separator
+    // This handles locale-specific input (e.g., German: 53,759702 -> 53.759702)
     const latRaw = latField?.value || '';
     const lonRaw = lonField?.value || '';
-    
-    console.log('[FWCAM Card] Reverse geocoding - raw input values:', {
-      latitude: latRaw,
-      longitude: lonRaw,
-      isStart: isStart
-    });
-    
-    // Normalize decimal separator: replace comma with dot for proper parsing
-    // This handles locale-specific input (e.g., German: 53,759702 -> 53.759702)
     const lat = parseFloat(latRaw.replace(',', '.'));
     const lon = parseFloat(lonRaw.replace(',', '.'));
     
-    console.log('[FWCAM Card] Reverse geocoding - parsed coordinates:', {
-      latitude: lat,
-      longitude: lon,
-      isNaN_lat: isNaN(lat),
-      isNaN_lon: isNaN(lon)
+    console.log('[FWCAM Card] Reverse geocoding:', { 
+      raw: `${latRaw}, ${lonRaw}`, 
+      parsed: `${lat}, ${lon}`,
+      isStart 
     });
     
     // Validate coordinates
