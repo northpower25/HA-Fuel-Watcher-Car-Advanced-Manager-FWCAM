@@ -2808,7 +2808,7 @@ class FWCAMCard extends HTMLElement {
         // Show inline map preview
         if (startMapPreview && startMapImg) {
           const mapUrl = this.getStaticMapUrl(startLat, startLon);
-          console.log('[FWCAM Card] Setting start map preview URL:', mapUrl.substring(0, 100) + '...');
+          console.log('[FWCAM Card] Setting start map preview URL:', mapUrl.substring(0, Math.min(100, mapUrl.length)) + '...');
           startMapImg.src = mapUrl;
           startMapImg.onerror = (e) => {
             console.error('[FWCAM Card] Error loading start map preview:', e);
@@ -2833,7 +2833,7 @@ class FWCAMCard extends HTMLElement {
         // Show inline map preview
         if (endMapPreview && endMapImg) {
           const mapUrl = this.getStaticMapUrl(endLat, endLon);
-          console.log('[FWCAM Card] Setting end map preview URL:', mapUrl.substring(0, 100) + '...');
+          console.log('[FWCAM Card] Setting end map preview URL:', mapUrl.substring(0, Math.min(100, mapUrl.length)) + '...');
           endMapImg.src = mapUrl;
           endMapImg.onerror = (e) => {
             console.error('[FWCAM Card] Error loading end map preview:', e);
