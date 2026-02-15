@@ -660,21 +660,20 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             result = await geocode_trip_location(latitude, longitude, use_cache=use_cache)
             
             if result:
-                _LOGGER.debug("Reverse geocode result: name=%s, address=%s", 
-                            result.get("location_name"), result.get("address"))
+                _LOGGER.debug("Reverse geocode result: name=%s, address=%s, from_cache=%s", 
+                            result.get("location_name"), result.get("address"), result.get("from_cache"))
                 return {
                     "location_name": result.get("location_name", ""),
                     "address": result.get("address", ""),
                     "success": True,
-                    "from_cache": True,  # Assume cached if data found
+                    "from_cache": result.get("from_cache", False),
                 }
             else:
-                # No data found - this is NOT an error, just return empty fields
-                _LOGGER.debug("No geocoding data found for (%.4f, %.4f), leaving fields empty", latitude, longitude)
+                _LOGGER.debug("No geocoding data found for (%.4f, %.4f)", latitude, longitude)
                 return {
                     "location_name": "",
                     "address": "",
-                    "success": True,  # Success = no error, even if no data
+                    "success": True,
                     "from_cache": False,
                 }
         except Exception as err:
