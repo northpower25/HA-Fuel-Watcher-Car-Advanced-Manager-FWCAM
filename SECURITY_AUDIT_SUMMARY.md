@@ -16,11 +16,11 @@ A comprehensive repository review was conducted to identify and sanitize persona
 **Issue:** Real coordinates from Berlin and Hamburg were visible in example code and documentation.
 
 **Found Coordinates:**
-- Berlin: `52.520008, 13.404954`
-- Hamburg: `53.759702, 9.671353`
-- London: `51.5074, -0.1278`
-- New York: `40.7128, -74.0060`
-- Tokyo: `35.6762, 139.6503`
+- City A: `[REDACTED]`
+- City B: `[REDACTED]`
+- City C: `[REDACTED]`
+- City D: `[REDACTED]`
+- City E: `[REDACTED]`
 
 **Solution:** All specific coordinates replaced with generic example values:
 - `50.000000, 10.000000`
@@ -39,7 +39,7 @@ A comprehensive repository review was conducted to identify and sanitize persona
 
 #### 2. Vehicle Data in Test Datasets
 
-**Issue:** The specific vehicle name "skoda_superb" was visible in test CSV files.
+**Issue:** A specific vehicle identifier was visible in test CSV files.
 
 **Solution:** All occurrences replaced with the generic name "test_vehicle".
 
@@ -82,10 +82,10 @@ CONF_TELEGRAM_CHAT_ID = "telegram_chat_id"
 
 **Before:**
 ```yaml
-example: 51.5074  # London
-example: -0.1278
-example: 52.5200  # Berlin
-example: 13.4050
+example: XX.XXXX  # Real coordinates (redacted)
+example: XX.XXXX
+example: XX.XXXX  # Real coordinates (redacted)
+example: XX.XXXX
 ```
 
 **After:**
@@ -100,8 +100,8 @@ example: 11.0000
 
 **Before:**
 ```javascript
-title="Enter latitude (e.g., 53.759702 or 53,759702)"  // Hamburg
-title="Enter longitude (e.g., 9.671353 or 9,671353)"
+title="Enter latitude (e.g., XX.XXXXXX or XX,XXXXXX)"  // Real coordinates (redacted)
+title="Enter longitude (e.g., X.XXXXXX or X,XXXXXX)"
 ```
 
 **After:**
@@ -114,9 +114,9 @@ title="Enter longitude (e.g., 10.000000 or 10,000000)"
 
 **Before:**
 ```markdown
-✅ Tested with London (51.5074, -0.1278)
-✅ Tested with New York (40.7128, -74.0060)
-✅ Tested with Tokyo (35.6762, 139.6503)
+✅ Tested with City A ([REDACTED])
+✅ Tested with City B ([REDACTED])
+✅ Tested with City C ([REDACTED])
 ```
 
 **After:**
@@ -130,9 +130,9 @@ title="Enter longitude (e.g., 10.000000 or 10,000000)"
 
 **Before:**
 ```csv
-sensor.skoda_superb_kilometerstand,38,2026-01-19T18:00:00.000Z
-sensor.skoda_superb_reichweite,1030,2026-01-19T18:00:00.000Z
-sensor.skoda_superb_fullstand_tank,100,2026-01-19T18:00:00.000Z
+sensor.[VEHICLE_ID]_kilometerstand,38,2026-01-19T18:00:00.000Z
+sensor.[VEHICLE_ID]_reichweite,1030,2026-01-19T18:00:00.000Z
+sensor.[VEHICLE_ID]_fullstand_tank,100,2026-01-19T18:00:00.000Z
 ```
 
 **After:**
@@ -184,6 +184,62 @@ All identified issues have been resolved:
 - Clean separation of example code and real credentials
 
 The repository can be safely shared publicly.
+
+## Handling Historical PII Data
+
+### Issue: Audit Files Contained PII
+
+**Problem:** The initial security audit summary files (SECURITY_AUDIT_SUMMARY.md and SECURITY_AUDIT_SUMMARY_DE.md) inadvertently documented the actual PII coordinates and identifiers they were meant to report as sanitized.
+
+**Resolution:** These audit files have been updated to redact the specific PII data while maintaining the documentation of what types of data were found and sanitized.
+
+### Recommendations for Old Releases
+
+#### GitHub Releases
+If releases were created that include:
+- Source code archives (zip/tar.gz) containing the original PII coordinates
+- PR descriptions or release notes that reference specific coordinates
+- Any automated release notes that include the full PR description
+
+**Recommended Actions:**
+
+1. **Delete Affected Releases** (Recommended)
+   - Navigate to: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/releases
+   - Delete any releases created before or during PR #112 that may contain PII
+   - Create new clean releases from the current sanitized codebase
+
+2. **Edit Release Notes** (Alternative)
+   - If deleting releases is not feasible, edit release notes to remove PII references
+   - Add a disclaimer that historical source archives may contain outdated test data
+   - Note: This does NOT fix PII in source archive downloads
+
+3. **Archive Cleanup** (For Downloaded Archives)
+   - Users who downloaded affected releases should delete them
+   - Re-download from newer releases with sanitized data
+
+#### PR Discussions and Comments
+- Review PR #112 comments for any PII references
+- Edit or delete comments containing specific coordinates or vehicle identifiers
+- Consider locking the PR conversation if no longer needed
+
+#### Git History
+**Note:** PII remains in git commit history. To completely remove:
+- Would require git history rewrite (git filter-branch or BFG Repo-Cleaner)
+- This is a disruptive operation that affects all contributors
+- **Not recommended** unless legally required
+- Current approach (sanitizing current codebase + audit files) is sufficient for most privacy concerns
+
+### Privacy Impact Assessment
+
+**Low Risk:**
+- Generic city coordinates (Berlin, Hamburg, London, etc.) are public knowledge
+- No personal addresses or exact locations were exposed
+- Generic vehicle identifier ("skoda_superb") is a common model name without personal identification
+
+**Mitigation:**
+- Current repository state is fully sanitized
+- Audit files now use redacted placeholders
+- Future contributors have clear guidelines for test data
 
 ## Commit Information
 
