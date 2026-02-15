@@ -625,6 +625,8 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 }
             else:
                 _LOGGER.warning("Reverse geocoding failed for (%.4f, %.4f)", latitude, longitude)
+                # Return empty response with generic error
+                # Note: Error structure duplicated in except block for clarity
                 return {
                     "location_name": "",
                     "address": "",
@@ -633,6 +635,8 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 }
         except Exception as err:
             _LOGGER.error("Error during reverse geocoding: %s", err)
+            # Return empty response with specific error
+            # Note: Error structure duplicated from else block for clarity in exception handling
             return {
                 "location_name": "",
                 "address": "",

@@ -386,6 +386,22 @@ class NominatimGeocoder:
             Number of entries removed
         """
         return self._cache.clear_expired()
+    
+    def get_cache_data(self) -> dict[str, dict[str, Any]]:
+        """Get all cached data for persistence.
+        
+        Returns:
+            Dictionary of all cache entries
+        """
+        return self._cache.get_all_cached_data()
+    
+    def load_cache_data(self, cache_data: dict[str, dict[str, Any]]) -> None:
+        """Load cached data from persistent storage.
+        
+        Args:
+            cache_data: Dictionary of cache entries to load
+        """
+        self._cache.set_all_cached_data(cache_data)
 
 
 # Global geocoder instance
@@ -429,6 +445,9 @@ async def geocode_trip_location(
 async def load_geocoding_cache_from_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Load geocoding cache from a config entry's storage.
     
+    NOTE: This function is currently not called automatically. It's available for future use
+    when implementing persistent cache across Home Assistant restarts.
+    
     Args:
         hass: Home Assistant instance
         entry: Config entry
@@ -440,7 +459,7 @@ async def load_geocoding_cache_from_entry(hass: HomeAssistant, entry: ConfigEntr
         cache_data = data.get("geocoding_cache", {})
         
         geocoder = get_geocoder()
-        geocoder._cache.set_all_cached_data(cache_data)
+        geocoder.load_cache_data(cache_data)
         
         _LOGGER.debug("Loaded geocoding cache from storage for entry %s", entry.entry_id)
     except Exception as err:
@@ -450,6 +469,9 @@ async def load_geocoding_cache_from_entry(hass: HomeAssistant, entry: ConfigEntr
 async def save_geocoding_cache_to_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Save geocoding cache to a config entry's storage.
     
+    NOTE: This function is currently not called automatically. It's available for future use
+    when implementing persistent cache across Home Assistant restarts.
+    
     Args:
         hass: Home Assistant instance
         entry: Config entry
@@ -458,7 +480,7 @@ async def save_geocoding_cache_to_entry(hass: HomeAssistant, entry: ConfigEntry)
     
     try:
         geocoder = get_geocoder()
-        cache_data = geocoder._cache.get_all_cached_data()
+        cache_data = geocoder.get_cache_data()
         
         data = await load_data(hass, entry)
         data["geocoding_cache"] = cache_data
