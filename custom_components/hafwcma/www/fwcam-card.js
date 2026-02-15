@@ -266,7 +266,7 @@ class FWCAMCard extends HTMLElement {
     
     try {
       const configEntryId = this.getConfigEntryId();
-      const response = await this._hass.callService(
+      const result = await this._hass.callService(
         'hafwcma',
         'get_all_trips',
         { config_entry_id: configEntryId },
@@ -274,7 +274,8 @@ class FWCAMCard extends HTMLElement {
         true,   // notifyOnError
         true    // returnResponse
       );
-      return response?.trips || [];
+      // Service response is wrapped in result.response
+      return result?.response?.trips || [];
     } catch (error) {
       console.error('[FWCAM Card] Error fetching all trips:', error);
       // Fallback to recent_trips from sensor attributes
@@ -296,7 +297,7 @@ class FWCAMCard extends HTMLElement {
     
     try {
       const configEntryId = this.getConfigEntryId();
-      const response = await this._hass.callService(
+      const result = await this._hass.callService(
         'hafwcma',
         'get_all_refuelings',
         { config_entry_id: configEntryId },
@@ -304,7 +305,8 @@ class FWCAMCard extends HTMLElement {
         true,   // notifyOnError
         true    // returnResponse
       );
-      return response?.refuelings || [];
+      // Service response is wrapped in result.response
+      return result?.response?.refuelings || [];
     } catch (error) {
       console.error('[FWCAM Card] Error fetching all refuelings:', error);
       // Fallback to recent_events from sensor attributes
