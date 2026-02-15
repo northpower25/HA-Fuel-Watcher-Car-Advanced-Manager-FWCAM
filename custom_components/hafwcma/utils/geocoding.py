@@ -671,7 +671,6 @@ async def rebuild_cache_from_trips(hass: HomeAssistant, entry: ConfigEntry) -> i
                 trip.get("end_address", ""),
             ):
                 cache_count += 1
-                cache_count += 1
         
         _LOGGER.info(
             "Rebuilt geocoding cache from %d trips, created %d cache entries",
