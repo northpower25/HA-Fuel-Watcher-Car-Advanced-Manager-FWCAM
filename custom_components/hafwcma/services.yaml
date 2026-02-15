@@ -345,7 +345,7 @@ add_trip:
       name: Start Latitude
       description: Latitude coordinate of trip start location
       required: false
-      example: 51.5074
+      example: 50.0000
       selector:
         number:
           min: -90
@@ -355,7 +355,7 @@ add_trip:
       name: Start Longitude
       description: Longitude coordinate of trip start location
       required: false
-      example: -0.1278
+      example: 10.0000
       selector:
         number:
           min: -180
@@ -365,7 +365,7 @@ add_trip:
       name: End Latitude
       description: Latitude coordinate of trip end location
       required: false
-      example: 51.5074
+      example: 51.0000
       selector:
         number:
           min: -90
@@ -375,7 +375,7 @@ add_trip:
       name: End Longitude
       description: Longitude coordinate of trip end location
       required: false
-      example: -0.1278
+      example: 11.0000
       selector:
         number:
           min: -180
@@ -596,7 +596,7 @@ create_pattern:
       name: Start Latitude
       description: Latitude of start location
       required: true
-      example: 52.5200
+      example: 50.0000
       selector:
         number:
           min: -90
@@ -606,7 +606,7 @@ create_pattern:
       name: Start Longitude
       description: Longitude of start location
       required: true
-      example: 13.4050
+      example: 10.0000
       selector:
         number:
           min: -180
@@ -616,7 +616,7 @@ create_pattern:
       name: End Latitude
       description: Latitude of end location
       required: true
-      example: 52.5300
+      example: 51.0000
       selector:
         number:
           min: -90
@@ -626,7 +626,7 @@ create_pattern:
       name: End Longitude
       description: Longitude of end location
       required: true
-      example: 13.4150
+      example: 11.0000
       selector:
         number:
           min: -180
@@ -738,7 +738,7 @@ reverse_geocode:
       name: Latitude
       description: Latitude coordinate
       required: true
-      example: 52.5200
+      example: 50.0000
       selector:
         number:
           min: -90
@@ -748,7 +748,7 @@ reverse_geocode:
       name: Longitude
       description: Longitude coordinate
       required: true
-      example: 13.4050
+      example: 10.0000
       selector:
         number:
           min: -180

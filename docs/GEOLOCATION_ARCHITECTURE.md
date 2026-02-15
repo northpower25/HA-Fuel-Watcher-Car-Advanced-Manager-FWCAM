@@ -10,7 +10,7 @@
 │  │                     Vehicle Position Tracking                       │ │
 │  │                                                                     │ │
 │  │  📱 device_tracker.my_car                                          │ │
-│  │     Lat: 52.520008, Lon: 13.404954                                 │ │
+│  │     Lat: 50.000000, Lon: 10.000000                                 │ │
 │  │     Speed: 45 km/h                                                 │ │
 │  │     Update: every 30-60s (when moving)                             │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
@@ -177,8 +177,8 @@ Time    Vehicle Position    API Update           Proximity Check       Alert
 │        "name": "Shell Tankstelle",                             │
 │        "brand": "Shell",                                        │
 │        "address": "Hauptstraße 123, 12345 Berlin",             │
-│        "latitude": 52.520008,                                   │
-│        "longitude": 13.404954,                                  │
+│        "latitude": 50.000000,                                   │
+│        "longitude": 10.000000,                                  │
 │        "distance_km": 3.2,                                      │
 │        "price": 1.589,                                          │
 │        "fuel_type": "e10",                                      │
