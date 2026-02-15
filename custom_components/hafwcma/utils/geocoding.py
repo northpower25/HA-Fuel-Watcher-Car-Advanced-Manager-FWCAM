@@ -23,6 +23,11 @@ NOMINATIM_RATE_LIMIT_SECONDS = 1.0  # Nominatim requires 1 request per second
 NOMINATIM_REQUEST_TIMEOUT_SECONDS = 10  # Timeout for API requests
 CACHE_EXPIRY_DAYS = 30  # Cache geocoding results for 30 days
 
+# Session timeout configuration
+SESSION_TIMEOUT_TOTAL_SECONDS = 30  # Overall session timeout
+SESSION_TIMEOUT_CONNECT_SECONDS = 10  # Connection timeout
+SESSION_TIMEOUT_SOCK_READ_SECONDS = 20  # Socket read timeout
+
 
 class GeocodingCache:
     """Simple cache for geocoding results to reduce API calls."""
@@ -177,7 +182,11 @@ class NominatimGeocoder:
         """
         if self._session is None:
             # Create session with proper timeout configuration
-            timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
+            timeout = aiohttp.ClientTimeout(
+                total=SESSION_TIMEOUT_TOTAL_SECONDS,
+                connect=SESSION_TIMEOUT_CONNECT_SECONDS,
+                sock_read=SESSION_TIMEOUT_SOCK_READ_SECONDS
+            )
             self._session = aiohttp.ClientSession(timeout=timeout)
             self._own_session = True
         return self._session
