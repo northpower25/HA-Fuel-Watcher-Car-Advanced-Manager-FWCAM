@@ -2752,6 +2752,8 @@ class FWCAMCard extends HTMLElement {
     const pixelX = (tileX - xtile) * TILE_SIZE_PX;
     const pixelY = (tileY - ytile) * TILE_SIZE_PX;
     
+    console.log('[FWCAM Card] Generating static map:', { lat, lon, clampedLat, zoom, xtile, ytile, pixelX, pixelY });
+    
     // SVG path for map marker pin (teardrop shape with rounded top)
     const markerPath = "M 0,-30 Q -10,-30 -10,-20 Q -10,-10 0,0 Q 10,-10 10,-20 Q 10,-30 0,-30 Z";
     
@@ -2805,7 +2807,16 @@ class FWCAMCard extends HTMLElement {
         
         // Show inline map preview
         if (startMapPreview && startMapImg) {
-          startMapImg.src = this.getStaticMapUrl(startLat, startLon);
+          const mapUrl = this.getStaticMapUrl(startLat, startLon);
+          console.log('[FWCAM Card] Setting start map preview URL:', mapUrl.substring(0, 100) + '...');
+          startMapImg.src = mapUrl;
+          startMapImg.onerror = (e) => {
+            console.error('[FWCAM Card] Error loading start map preview:', e);
+            startMapPreview.style.display = 'none';
+          };
+          startMapImg.onload = () => {
+            console.log('[FWCAM Card] Start map preview loaded successfully');
+          };
           startMapImg.onclick = () => window.open(startUrl, '_blank');
           startMapPreview.style.display = 'block';
         }
@@ -2821,7 +2832,16 @@ class FWCAMCard extends HTMLElement {
         
         // Show inline map preview
         if (endMapPreview && endMapImg) {
-          endMapImg.src = this.getStaticMapUrl(endLat, endLon);
+          const mapUrl = this.getStaticMapUrl(endLat, endLon);
+          console.log('[FWCAM Card] Setting end map preview URL:', mapUrl.substring(0, 100) + '...');
+          endMapImg.src = mapUrl;
+          endMapImg.onerror = (e) => {
+            console.error('[FWCAM Card] Error loading end map preview:', e);
+            endMapPreview.style.display = 'none';
+          };
+          endMapImg.onload = () => {
+            console.log('[FWCAM Card] End map preview loaded successfully');
+          };
           endMapImg.onclick = () => window.open(endUrl, '_blank');
           endMapPreview.style.display = 'block';
         }
