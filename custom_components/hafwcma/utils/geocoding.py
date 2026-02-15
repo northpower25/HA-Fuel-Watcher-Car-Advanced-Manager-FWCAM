@@ -24,9 +24,13 @@ CACHE_EXPIRY_DAYS = 30  # Cache geocoding results for 30 days
 class GeocodingCache:
     """Simple cache for geocoding results to reduce API calls."""
     
-    def __init__(self) -> None:
-        """Initialize the geocoding cache."""
-        self._cache: dict[str, dict[str, Any]] = {}
+    def __init__(self, initial_cache: dict[str, dict[str, Any]] | None = None) -> None:
+        """Initialize the geocoding cache.
+        
+        Args:
+            initial_cache: Optional initial cache data loaded from storage
+        """
+        self._cache: dict[str, dict[str, Any]] = initial_cache or {}
     
     def _make_key(self, latitude: float, longitude: float) -> str:
         """Create a cache key from coordinates.
@@ -129,6 +133,23 @@ class GeocodingCache:
             _LOGGER.debug("Cleared %d expired geocoding cache entries", len(keys_to_remove))
         
         return len(keys_to_remove)
+    
+    def get_all_cached_data(self) -> dict[str, dict[str, Any]]:
+        """Get all cached data for persistence.
+        
+        Returns:
+            Dictionary of all cache entries
+        """
+        return self._cache.copy()
+    
+    def set_all_cached_data(self, cache_data: dict[str, dict[str, Any]]) -> None:
+        """Set all cached data from persistent storage.
+        
+        Args:
+            cache_data: Dictionary of cache entries to load
+        """
+        self._cache = cache_data.copy()
+        _LOGGER.debug("Loaded %d geocoding cache entries from storage", len(self._cache))
 
 
 class NominatimGeocoder:
@@ -400,3 +421,47 @@ async def geocode_trip_location(
     
     geocoder = get_geocoder()
     return await geocoder.reverse_geocode(latitude, longitude, use_cache=use_cache)
+
+
+async def load_geocoding_cache_from_entry(hass: HomeAssistant, entry) -> None:
+    """Load geocoding cache from a config entry's storage.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+    """
+    from .storage import load_data
+    
+    try:
+        data = await load_data(hass, entry)
+        cache_data = data.get("geocoding_cache", {})
+        
+        geocoder = get_geocoder()
+        geocoder._cache.set_all_cached_data(cache_data)
+        
+        _LOGGER.debug("Loaded geocoding cache from storage for entry %s", entry.entry_id)
+    except Exception as err:
+        _LOGGER.warning("Failed to load geocoding cache from storage: %s", err)
+
+
+async def save_geocoding_cache_to_entry(hass: HomeAssistant, entry) -> None:
+    """Save geocoding cache to a config entry's storage.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+    """
+    from .storage import load_data, save_data
+    
+    try:
+        geocoder = get_geocoder()
+        cache_data = geocoder._cache.get_all_cached_data()
+        
+        data = await load_data(hass, entry)
+        data["geocoding_cache"] = cache_data
+        await save_data(hass, entry, data)
+        
+        _LOGGER.debug("Saved geocoding cache to storage for entry %s (entries: %d)", 
+                     entry.entry_id, len(cache_data))
+    except Exception as err:
+        _LOGGER.warning("Failed to save geocoding cache to storage: %s", err)
