@@ -1108,6 +1108,7 @@ TRIP_DETECTION_MIN_DISTANCE_KM = 0.5  # Minimum distance to consider as a trip
 TRIP_MERGE_TIME_WINDOW_MINUTES = 5  # Time window to merge short stops into single trip
 TRIP_MAX_SPEED_KMH = 300  # Maximum reasonable speed (to filter outliers)
 TRIP_MIN_DURATION_MINUTES = 1  # Minimum trip duration
+MIN_LOCATION_DIFFERENCE_DEGREES = 0.001  # Minimum coordinate difference (~100m) to consider locations distinct
 
 
 async def import_historical_trip_data(
@@ -1456,8 +1457,20 @@ async def _import_trip_history(
                                 fuel_consumed = fuel_level_start - fuel_level_end
                             
                             # Get GPS coordinates
-                            start_lat, start_lon = _find_closest_location(location_states, prev_time)
-                            end_lat, end_lon = _find_closest_location(location_states, curr_time)
+                            # For start: prefer location just before the trip started
+                            # For end: prefer location just after the trip ended
+                            start_lat, start_lon = _find_closest_location(location_states, prev_time, prefer_after=False)
+                            end_lat, end_lon = _find_closest_location(location_states, curr_time, prefer_after=True)
+                            
+                            # Check if locations are distinct
+                            has_distinct_locations = False
+                            if (start_lat is not None and end_lat is not None and
+                                start_lon is not None and end_lon is not None):
+                                # Locations are considered different if they differ by at least MIN_LOCATION_DIFFERENCE_DEGREES (~100m)
+                                has_distinct_locations = (
+                                    abs(start_lat - end_lat) > MIN_LOCATION_DIFFERENCE_DEGREES or 
+                                    abs(start_lon - end_lon) > MIN_LOCATION_DIFFERENCE_DEGREES
+                                )
                             
                             # Create trip data
                             trip_data = {
@@ -1478,19 +1491,32 @@ async def _import_trip_history(
                                     fuel_consumed=fuel_consumed,
                                     start_lat=start_lat,
                                     end_lat=end_lat,
+                                    has_start_and_end_info=has_distinct_locations,
                                 ),
                             }
                             
                             pending_trips.append(trip_data)
                             existing_timestamps.add(prev_time)
                             
+                            # Log warning if start and end locations are the same
+                            if start_lat == end_lat and start_lon == end_lon and start_lat is not None:
+                                _LOGGER.warning(
+                                    "Trip detected with identical start and end GPS coordinates (%.4f, %.4f). "
+                                    "This may indicate infrequent location updates. Consider using a location "
+                                    "entity that updates more frequently during trips.",
+                                    start_lat,
+                                    start_lon,
+                                )
+                            
                             _LOGGER.debug(
-                                "Trip detected: %.1f km from %s to %s (%.1f min, avg speed: %.1f km/h)",
+                                "Trip detected: %.1f km from %s to %s (%.1f min, avg speed: %.1f km/h, "
+                                "distinct_locations: %s)",
                                 distance_km,
                                 prev_time.isoformat(),
                                 curr_time.isoformat(),
                                 duration_minutes,
                                 avg_speed,
+                                has_distinct_locations,
                             )
                         else:
                             trips_filtered_by_duplicate += 1
@@ -1750,12 +1776,14 @@ def _is_valid_coordinate(value: Any) -> bool:
 def _find_closest_location(
     location_states: list[Any],
     target_time: datetime,
+    prefer_after: bool = False,
 ) -> tuple[float | None, float | None]:
     """Find the closest GPS location to a target time.
     
     Args:
         location_states: List of location state objects
         target_time: Target timestamp
+        prefer_after: If True, prefer states after target_time when choosing closest
         
     Returns:
         Tuple of (latitude, longitude) or (None, None) if not found
@@ -1764,7 +1792,7 @@ def _find_closest_location(
         return None, None
     
     closest_state = None
-    min_diff_seconds = float('inf')
+    min_time_diff_seconds = float('inf')
     
     for state in location_states:
         if state.state in INVALID_SENSOR_STATES:
@@ -1772,11 +1800,30 @@ def _find_closest_location(
         
         try:
             state_time = state.last_changed
-            time_diff_seconds = abs((target_time - state_time).total_seconds())
+            time_diff_seconds = (target_time - state_time).total_seconds()
+            abs_time_diff_seconds = abs(time_diff_seconds)
             
-            if time_diff_seconds < min_diff_seconds:
-                min_diff_seconds = time_diff_seconds
-                closest_state = state
+            # Determine if we should update the closest state
+            should_update = False
+            
+            if abs_time_diff_seconds < min_time_diff_seconds:
+                # This state is closer - update unless we have a direction preference
+                if prefer_after:
+                    # Only update if this state is after target OR if no better option exists yet
+                    # time_diff_seconds < 0 means state_time > target_time (state is after target)
+                    should_update = time_diff_seconds < 0 or closest_state is None
+                else:
+                    # No preference or prefer before - just take the closer one
+                    should_update = True
+                    
+                if should_update:
+                    min_time_diff_seconds = abs_time_diff_seconds
+                    closest_state = state
+            elif abs_time_diff_seconds == min_time_diff_seconds and prefer_after:
+                # Equally close - prefer states after target when specified
+                # time_diff_seconds < 0 means state_time > target_time (state is after target)
+                if time_diff_seconds < 0:
+                    closest_state = state
         except Exception:
             continue
     
@@ -1795,25 +1842,43 @@ def _calculate_trip_confidence(
     fuel_consumed: float | None,
     start_lat: float | None,
     end_lat: float | None,
+    has_start_and_end_info: bool = False,
 ) -> float:
     """Calculate confidence score for a detected trip.
+    
+    Confidence levels:
+    - 1.0: Manual entry (set separately, not by this function)
+    - 0.7-0.8: Auto-detected with both start and end GPS + fuel data
+    - 0.5-0.7: Auto-detected with GPS but missing some data
+    - 0.3-0.5: Auto-detected without GPS or missing both locations
     
     Args:
         fuel_consumed: Fuel consumed during trip (None if not available)
         start_lat: Start latitude (None if not available)
         end_lat: End latitude (None if not available)
+        has_start_and_end_info: Whether trip has distinct start and end locations
         
     Returns:
-        Confidence score from 0.0 to 1.0 (higher is better)
+        Confidence score from 0.3 to 0.8 (higher is better)
     """
-    confidence = 0.4  # Base confidence for detected trip
+    # Base confidence for detected trip
+    confidence = 0.3
     
-    # Fuel consumption data available (30% weight)
-    if fuel_consumed is not None and fuel_consumed > 0:
-        confidence += 0.3
-    
-    # GPS location data available (30% weight)
+    # GPS location data available (up to +0.3)
     if start_lat is not None and end_lat is not None:
-        confidence += 0.3
+        # Check if start and end are different (not the same location)
+        if has_start_and_end_info or abs(start_lat - end_lat) > 0.001:
+            # Both locations present and different
+            confidence += 0.3
+        else:
+            # Both locations present but same (lower confidence)
+            confidence += 0.15
+    elif start_lat is not None or end_lat is not None:
+        # Only one location available
+        confidence += 0.1
+    
+    # Fuel consumption data available (up to +0.2)
+    if fuel_consumed is not None and fuel_consumed > 0:
+        confidence += 0.2
     
     return round(confidence, 2)

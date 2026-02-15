@@ -1434,24 +1434,19 @@ class FWCAMCard extends HTMLElement {
                   ${this.renderTripSortIcon('category')}
                 </th>
                 <th>Purpose</th>
+                <th>Quality</th>
                 <th class="sortable ${sortColumn === 'fuel_consumed' ? 'sorted-' + sortDirection : ''}" 
                     data-sort-column="fuel_consumed" data-sort-type="trip">
                   Fuel (L)
                   ${this.renderTripSortIcon('fuel_consumed')}
                 </th>
-                <th class="sortable ${sortColumn === 'fuel_cost' ? 'sorted-' + sortDirection : ''}" 
-                    data-sort-column="fuel_cost" data-sort-type="trip">
-                  Fuel Cost (€)
-                  ${this.renderTripSortIcon('fuel_cost')}
-                </th>
-                <th>Additional Costs (€)</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               ${paginatedTrips.length === 0 ? `
                 <tr>
-                  <td colspan="8" class="no-data">No trips match the current filters</td>
+                  <td colspan="7" class="no-data">No trips match the current filters</td>
                 </tr>
               ` : paginatedTrips.map(trip => `
                 <tr data-trip-id="${trip.trip_id}">
@@ -1463,9 +1458,16 @@ class FWCAMCard extends HTMLElement {
                     </span>
                   </td>
                   <td>${trip.purpose || '-'}</td>
+                  <td>
+                    <span class="quality-badge quality-${trip.data_quality || 'manual'}">
+                      ${trip.data_quality || 'manual'}
+                    </span>
+                    <br>
+                    <span class="confidence-badge confidence-${this.getConfidenceLevel(trip.confidence !== undefined ? trip.confidence : 1.0)}">
+                      ${Math.round((trip.confidence !== undefined ? trip.confidence : 1.0) * 100)}%
+                    </span>
+                  </td>
                   <td>${trip.fuel_consumed ? this.formatNumber(trip.fuel_consumed, 2) : '-'}</td>
-                  <td>${trip.fuel_cost ? this.formatNumber(trip.fuel_cost, 2) : '-'}</td>
-                  <td>${trip.additional_costs ? this.formatNumber(trip.additional_costs, 2) : '0.00'}</td>
                   <td class="actions">
                     <button class="action-button edit-button" 
                             data-action="edit-trip" 
@@ -1607,6 +1609,9 @@ class FWCAMCard extends HTMLElement {
                            step="0.000001" min="-180" max="180" placeholder="Optional">
                   </label>
                 </div>
+                <div id="start-location-map-preview" style="display: none; margin-top: 8px;">
+                  <img id="start-map-img" style="width: 100%; max-width: 300px; height: 150px; border-radius: 4px; cursor: pointer;" alt="Start location map">
+                </div>
               </div>
               
               <div class="form-section">
@@ -1634,6 +1639,9 @@ class FWCAMCard extends HTMLElement {
                     <input type="number" id="trip-end-longitude" name="end_longitude" 
                            step="0.000001" min="-180" max="180" placeholder="Optional">
                   </label>
+                </div>
+                <div id="end-location-map-preview" style="display: none; margin-top: 8px;">
+                  <img id="end-map-img" style="width: 100%; max-width: 300px; height: 150px; border-radius: 4px; cursor: pointer;" alt="End location map">
                 </div>
                 <div id="trip-map-links" style="display: none; margin-top: 8px;">
                   <a id="start-map-link" href="#" target="_blank" style="margin-right: 12px;">
@@ -1681,6 +1689,22 @@ class FWCAMCard extends HTMLElement {
                     Notes
                     <textarea id="trip-notes" name="notes" rows="3" 
                               placeholder="Optional notes about this trip"></textarea>
+                  </label>
+                </div>
+                
+                <div class="form-row">
+                  <label for="trip-data-quality">
+                    Data Quality
+                    <select id="trip-data-quality" name="data_quality">
+                      <option value="manual">Manual</option>
+                      <option value="historical_import">Historical Import</option>
+                      <option value="auto_detected">Auto Detected</option>
+                    </select>
+                  </label>
+                  <label for="trip-confidence">
+                    Confidence (0.0 - 1.0)
+                    <input type="number" id="trip-confidence" name="confidence" 
+                           step="0.01" min="0" max="1" value="1.0">
                   </label>
                 </div>
               </div>
@@ -2067,6 +2091,10 @@ class FWCAMCard extends HTMLElement {
     // Set default category
     this.shadowRoot.getElementById('trip-category').value = 'private';
     
+    // Set default data quality and confidence
+    this.shadowRoot.getElementById('trip-data-quality').value = 'manual';
+    this.shadowRoot.getElementById('trip-confidence').value = 1.0;
+    
     // Populate autocomplete suggestions
     this.populateTripAutocomplete();
     
@@ -2160,6 +2188,10 @@ class FWCAMCard extends HTMLElement {
     this.shadowRoot.getElementById('trip-end-address').value = trip.end_address || '';
     this.shadowRoot.getElementById('trip-end-latitude').value = trip.end_latitude || '';
     this.shadowRoot.getElementById('trip-end-longitude').value = trip.end_longitude || '';
+    
+    // Data quality and confidence fields
+    this.shadowRoot.getElementById('trip-data-quality').value = trip.data_quality || 'manual';
+    this.shadowRoot.getElementById('trip-confidence').value = trip.confidence !== undefined ? trip.confidence : 1.0;
     
     // Populate autocomplete suggestions
     this.populateTripAutocomplete();
@@ -2259,6 +2291,14 @@ class FWCAMCard extends HTMLElement {
     }
     if (formData.get('end_address')) {
       serviceData.end_address = formData.get('end_address');
+    }
+    
+    // Add data quality and confidence fields
+    if (formData.get('data_quality')) {
+      serviceData.data_quality = formData.get('data_quality');
+    }
+    if (formData.get('confidence')) {
+      serviceData.confidence = parseFloat(formData.get('confidence'));
     }
     
     try {
@@ -2431,8 +2471,91 @@ class FWCAMCard extends HTMLElement {
       field.removeEventListener('input', updateLinks);
       field.addEventListener('input', updateLinks);
     });
+    
+    // Set up location name change handlers for address auto-fill
+    this.setupLocationNameHandlers();
+  }
+  
+  /**
+   * Set up handlers to auto-fill addresses when location names are selected
+   */
+  setupLocationNameHandlers() {
+    const startName = this.shadowRoot.getElementById('trip-start-name');
+    const endName = this.shadowRoot.getElementById('trip-end-name');
+    
+    if (startName) {
+      startName.removeEventListener('change', this._startNameChangeHandler);
+      this._startNameChangeHandler = () => this.handleLocationNameChange('start');
+      startName.addEventListener('change', this._startNameChangeHandler);
+    }
+    
+    if (endName) {
+      endName.removeEventListener('change', this._endNameChangeHandler);
+      this._endNameChangeHandler = () => this.handleLocationNameChange('end');
+      endName.addEventListener('change', this._endNameChangeHandler);
+    }
+  }
+  
+  /**
+   * Handle location name change to auto-fill address from previous trips
+   */
+  handleLocationNameChange(locationType) {
+    const nameField = this.shadowRoot.getElementById(`trip-${locationType}-name`);
+    const addressField = this.shadowRoot.getElementById(`trip-${locationType}-address`);
+    const latField = this.shadowRoot.getElementById(`trip-${locationType}-latitude`);
+    const lonField = this.shadowRoot.getElementById(`trip-${locationType}-longitude`);
+    
+    if (!nameField || !addressField) return;
+    
+    const locationName = nameField.value.trim();
+    if (!locationName) return;
+    
+    // Don't overwrite if address is already filled
+    if (addressField.value && addressField.value.trim()) return;
+    
+    // Find a matching trip with this location name
+    if (!this._allTrips || this._allTrips.length === 0) return;
+    
+    for (const trip of this._allTrips) {
+      const tripName = locationType === 'start' ? trip.start_name : trip.end_name;
+      const tripAddress = locationType === 'start' ? trip.start_address : trip.end_address;
+      const tripLat = locationType === 'start' ? trip.start_latitude : trip.end_latitude;
+      const tripLon = locationType === 'start' ? trip.start_longitude : trip.end_longitude;
+      
+      // Match by name (case-insensitive)
+      if (tripName && tripName.toLowerCase() === locationName.toLowerCase()) {
+        // Auto-fill address if available
+        if (tripAddress) {
+          addressField.value = tripAddress;
+        }
+        
+        // Auto-fill coordinates if available and not already set
+        if (tripLat && tripLon && !latField.value && !lonField.value) {
+          latField.value = tripLat;
+          lonField.value = tripLon;
+          this.updateMapLinks();
+        }
+        
+        break; // Use first match
+      }
+    }
   }
 
+  /**
+   * Generate Google Maps URL for coordinates
+   */
+  getMapUrl(lat, lon) {
+    return `https://www.google.com/maps?q=${lat},${lon}`;
+  }
+  
+  /**
+   * Generate OpenStreetMap static map image URL
+   */
+  getStaticMapUrl(lat, lon, width = 300, height = 150) {
+    const zoom = 15;
+    return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${zoom}&size=${width}x${height}&markers=${lat},${lon},red-pushpin`;
+  }
+  
   /**
    * Update map links based on coordinates
    */
@@ -2446,6 +2569,12 @@ class FWCAMCard extends HTMLElement {
     const startMapLink = this.shadowRoot.getElementById('start-map-link');
     const endMapLink = this.shadowRoot.getElementById('end-map-link');
     
+    // Map preview elements
+    const startMapPreview = this.shadowRoot.getElementById('start-location-map-preview');
+    const endMapPreview = this.shadowRoot.getElementById('end-location-map-preview');
+    const startMapImg = this.shadowRoot.getElementById('start-map-img');
+    const endMapImg = this.shadowRoot.getElementById('end-map-img');
+    
     if (!mapLinks || !startMapLink || !endMapLink) return;
     
     const hasStart = !isNaN(startLat) && !isNaN(startLon);
@@ -2455,20 +2584,40 @@ class FWCAMCard extends HTMLElement {
       mapLinks.style.display = 'block';
       
       if (hasStart) {
-        startMapLink.href = `https://www.google.com/maps?q=${startLat},${startLon}`;
+        const startUrl = this.getMapUrl(startLat, startLon);
+        startMapLink.href = startUrl;
         startMapLink.style.display = 'inline-flex';
+        
+        // Show inline map preview
+        if (startMapPreview && startMapImg) {
+          startMapImg.src = this.getStaticMapUrl(startLat, startLon);
+          startMapImg.onclick = () => window.open(startUrl, '_blank');
+          startMapPreview.style.display = 'block';
+        }
       } else {
         startMapLink.style.display = 'none';
+        if (startMapPreview) startMapPreview.style.display = 'none';
       }
       
       if (hasEnd) {
-        endMapLink.href = `https://www.google.com/maps?q=${endLat},${endLon}`;
+        const endUrl = this.getMapUrl(endLat, endLon);
+        endMapLink.href = endUrl;
         endMapLink.style.display = 'inline-flex';
+        
+        // Show inline map preview
+        if (endMapPreview && endMapImg) {
+          endMapImg.src = this.getStaticMapUrl(endLat, endLon);
+          endMapImg.onclick = () => window.open(endUrl, '_blank');
+          endMapPreview.style.display = 'block';
+        }
       } else {
         endMapLink.style.display = 'none';
+        if (endMapPreview) endMapPreview.style.display = 'none';
       }
     } else {
       mapLinks.style.display = 'none';
+      if (startMapPreview) startMapPreview.style.display = 'none';
+      if (endMapPreview) endMapPreview.style.display = 'none';
     }
   }
 
