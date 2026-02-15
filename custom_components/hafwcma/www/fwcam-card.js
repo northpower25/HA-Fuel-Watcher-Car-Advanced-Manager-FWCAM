@@ -2725,7 +2725,7 @@ class FWCAMCard extends HTMLElement {
    * Returns the OSM tile URL that contains the coordinates
    * More reliable than staticmap.openstreetmap.de which is often down
    */
-  getStaticMapUrl(lat, lon, width = 250, height = 250) {
+  getStaticMapUrl(lat, lon) {
     // Validate coordinate bounds
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
       console.warn('[FWCAM Card] Invalid coordinates for static map:', { lat, lon });
