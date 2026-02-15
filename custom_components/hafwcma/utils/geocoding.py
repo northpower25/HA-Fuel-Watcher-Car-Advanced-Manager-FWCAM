@@ -455,6 +455,47 @@ async def geocode_trip_location(
     return await geocoder.reverse_geocode(latitude, longitude, use_cache=use_cache)
 
 
+def cache_manual_location(
+    latitude: float | None,
+    longitude: float | None,
+    location_name: str | None = None,
+    address: str | None = None,
+) -> None:
+    """Manually cache location data for coordinates.
+    
+    This is used when a user manually enters location information for a trip,
+    so that subsequent trips with the same coordinates can use the cached data.
+    
+    Args:
+        latitude: Latitude coordinate
+        longitude: Longitude coordinate
+        location_name: Location name to cache
+        address: Address to cache
+    """
+    if latitude is None or longitude is None:
+        return
+    
+    # Only cache if at least one field has data
+    if not location_name and not address:
+        return
+    
+    geocoder = get_geocoder()
+    geocoder._cache.set(
+        latitude=latitude,
+        longitude=longitude,
+        address=address or "",
+        location_name=location_name or "",
+    )
+    
+    _LOGGER.debug(
+        "Manually cached location for (%.4f, %.4f): name=%s, address=%s",
+        latitude,
+        longitude,
+        location_name or "",
+        address or "",
+    )
+
+
 async def load_geocoding_cache_from_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Load geocoding cache from a config entry's storage.
     

@@ -334,6 +334,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     async def handle_add_trip(call: ServiceCall) -> None:
         """Handle the add_trip service call."""
         from .utils.storage import add_trip
+        from .utils.geocoding import cache_manual_location
         from homeassistant.util import dt as dt_util
         
         entry_id = call.data["config_entry_id"]
@@ -369,6 +370,20 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         trip_id = await add_trip(hass, entry, trip_data)
         _LOGGER.info("Added trip with ID %s", trip_id)
         
+        # Cache manually entered location data for future auto-fill
+        cache_manual_location(
+            latitude=trip_data.get("start_latitude"),
+            longitude=trip_data.get("start_longitude"),
+            location_name=trip_data.get("start_name"),
+            address=trip_data.get("start_address"),
+        )
+        cache_manual_location(
+            latitude=trip_data.get("end_latitude"),
+            longitude=trip_data.get("end_longitude"),
+            location_name=trip_data.get("end_name"),
+            address=trip_data.get("end_address"),
+        )
+        
         # Trigger coordinator refresh
         coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
         if coordinator:
@@ -377,6 +392,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     async def handle_edit_trip(call: ServiceCall) -> None:
         """Handle the edit_trip service call."""
         from .utils.storage import update_trip
+        from .utils.geocoding import cache_manual_location
         
         entry_id = call.data["config_entry_id"]
         entry = hass.config_entries.async_get_entry(entry_id)
@@ -394,6 +410,24 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         success = await update_trip(hass, entry, trip_id, updates)
         if success:
             _LOGGER.info("Updated trip ID %s", trip_id)
+            
+            # Cache manually entered location data for future auto-fill
+            # Start location
+            if "start_latitude" in updates and "start_longitude" in updates:
+                cache_manual_location(
+                    latitude=updates.get("start_latitude"),
+                    longitude=updates.get("start_longitude"),
+                    location_name=updates.get("start_name"),
+                    address=updates.get("start_address"),
+                )
+            # End location
+            if "end_latitude" in updates and "end_longitude" in updates:
+                cache_manual_location(
+                    latitude=updates.get("end_latitude"),
+                    longitude=updates.get("end_longitude"),
+                    location_name=updates.get("end_name"),
+                    address=updates.get("end_address"),
+                )
         else:
             _LOGGER.error("Trip ID %s not found", trip_id)
         
