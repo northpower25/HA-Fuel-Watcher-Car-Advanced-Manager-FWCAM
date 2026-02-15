@@ -4,12 +4,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import aiohttp
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -423,7 +426,7 @@ async def geocode_trip_location(
     return await geocoder.reverse_geocode(latitude, longitude, use_cache=use_cache)
 
 
-async def load_geocoding_cache_from_entry(hass: HomeAssistant, entry) -> None:
+async def load_geocoding_cache_from_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Load geocoding cache from a config entry's storage.
     
     Args:
@@ -444,7 +447,7 @@ async def load_geocoding_cache_from_entry(hass: HomeAssistant, entry) -> None:
         _LOGGER.warning("Failed to load geocoding cache from storage: %s", err)
 
 
-async def save_geocoding_cache_to_entry(hass: HomeAssistant, entry) -> None:
+async def save_geocoding_cache_to_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Save geocoding cache to a config entry's storage.
     
     Args:

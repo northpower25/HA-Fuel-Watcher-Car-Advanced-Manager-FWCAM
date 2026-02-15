@@ -595,6 +595,13 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         
         Reverse geocodes coordinates to location name and address.
         Uses cache by default to avoid unnecessary API calls.
+        
+        Returns:
+            ServiceResponse dict with keys:
+                - location_name (str): Extracted location name (e.g., "Brandenburg Gate")
+                - address (str): Full formatted address (e.g., "Unter den Linden, 10117 Berlin")
+                - success (bool): True if geocoding succeeded, False otherwise
+                - error (str): Error message if success is False (optional)
         """
         from .utils.geocoding import geocode_trip_location
         
