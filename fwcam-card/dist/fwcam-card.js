@@ -1764,9 +1764,13 @@ class FWCAMCard extends HTMLElement {
                     <span>Auto-fill Name & Address</span>
                   </button>
                 </div>
-                <div id="start-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="start-map-img" style="width: 100%; aspect-ratio: 1; border-radius: 4px; cursor: pointer; object-fit: cover;" 
+                <div id="start-location-map-preview" style="display: none; margin-top: 8px; position: relative; width: 100%; aspect-ratio: 1;">
+                  <img id="start-map-img" style="width: 100%; height: 100%; border-radius: 4px; cursor: pointer; object-fit: cover;" 
                        alt="Map preview of trip start location" title="Click to open in Google Maps">
+                  <svg id="start-map-marker" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                    <circle id="start-marker-outer" cx="50%" cy="50%" r="8" fill="red" stroke="white" stroke-width="2" opacity="0.9"/>
+                    <circle id="start-marker-inner" cx="50%" cy="50%" r="3" fill="white" opacity="0.9"/>
+                  </svg>
                 </div>
               </div>
               
@@ -1804,9 +1808,13 @@ class FWCAMCard extends HTMLElement {
                     <span>Auto-fill Name & Address</span>
                   </button>
                 </div>
-                <div id="end-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="end-map-img" style="width: 100%; aspect-ratio: 1; border-radius: 4px; cursor: pointer; object-fit: cover;" 
+                <div id="end-location-map-preview" style="display: none; margin-top: 8px; position: relative; width: 100%; aspect-ratio: 1;">
+                  <img id="end-map-img" style="width: 100%; height: 100%; border-radius: 4px; cursor: pointer; object-fit: cover;" 
                        alt="Map preview of trip end location" title="Click to open in Google Maps">
+                  <svg id="end-map-marker" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                    <circle id="end-marker-outer" cx="50%" cy="50%" r="8" fill="red" stroke="white" stroke-width="2" opacity="0.9"/>
+                    <circle id="end-marker-inner" cx="50%" cy="50%" r="3" fill="white" opacity="0.9"/>
+                  </svg>
                 </div>
                 <div id="trip-map-links" style="display: none; margin-top: 8px;">
                   <a id="start-map-link" href="#" target="_blank" style="margin-right: 12px;">
@@ -2733,7 +2741,6 @@ class FWCAMCard extends HTMLElement {
     }
     
     const zoom = 15;
-    const TILE_SIZE_PX = 256; // OSM tiles are 256x256 pixels
     const MAX_MERCATOR_LAT = 85.05112878; // Web Mercator projection valid range
     
     // Clamp latitude to Web Mercator valid range to prevent Infinity/NaN
@@ -2755,33 +2762,50 @@ class FWCAMCard extends HTMLElement {
       return '';
     }
     
-    // Calculate the exact position within the tile (0-256 pixels)
+    console.log('[FWCAM Card] Generating static map:', { lat, lon, clampedLat, zoom, xtile, ytile });
+    
+    // Return direct OSM tile URL (PR #101 implementation)
+    return `https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`;
+  }
+  
+  /**
+   * Calculate marker position for overlay (PR #102 implementation)
+   * Returns the pixel position within the tile where the marker should be placed
+   */
+  getMapMarkerPosition(lat, lon) {
+    const zoom = 15;
+    const TILE_SIZE_PX = 256; // OSM tiles are 256x256 pixels
+    const MAX_MERCATOR_LAT = 85.05112878;
+    
+    // Clamp latitude to Web Mercator valid range
+    const clampedLat = Math.max(-MAX_MERCATOR_LAT, Math.min(MAX_MERCATOR_LAT, lat));
+    
+    // Helper function: Convert latitude to Web Mercator Y coordinate
+    const latToMercatorY = (latitude) => 
+      (1 - Math.log(Math.tan(latitude * Math.PI / 180) + 1 / Math.cos(latitude * Math.PI / 180)) / Math.PI) / 2;
+    
+    // Calculate tile coordinates
+    const n = Math.pow(2, zoom);
+    const xtile = Math.floor((lon + 180) / 360 * n);
+    const ytile = Math.floor(latToMercatorY(clampedLat) * n);
+    
+    // Calculate the exact position within the tile (0-1 as percentage)
     const exactX = ((lon + 180) / 360 * n) - xtile;
     const exactY = (latToMercatorY(clampedLat) * n) - ytile;
-    const pixelX = exactX * TILE_SIZE_PX;
-    const pixelY = exactY * TILE_SIZE_PX;
     
-    // Validate pixel coordinates are finite numbers
-    if (!isFinite(pixelX) || !isFinite(pixelY)) {
-      console.warn('[FWCAM Card] Invalid pixel coordinates:', { pixelX, pixelY });
-      return '';
+    // Validate coordinates are finite numbers
+    if (!isFinite(exactX) || !isFinite(exactY)) {
+      console.warn('[FWCAM Card] Invalid marker position:', { exactX, exactY });
+      return { x: 50, y: 50 }; // Return center as fallback
     }
     
-    console.log('[FWCAM Card] Generating static map:', { lat, lon, clampedLat, zoom, xtile, ytile, pixelX, pixelY });
+    // Convert to percentage (0-100)
+    const percentX = exactX * 100;
+    const percentY = exactY * 100;
     
-    // Get the OSM tile URL
-    const tileUrl = `https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`;
+    console.log('[FWCAM Card] Marker position:', { lat, lon, percentX, percentY });
     
-    // Create an SVG with the tile image and a marker at the exact position
-    // Using an SVG data URI with inline image allows us to add a marker overlay
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}">
-      <image href="${tileUrl}" width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}"/>
-      <circle cx="${pixelX}" cy="${pixelY}" r="8" fill="red" stroke="white" stroke-width="2" opacity="0.9"/>
-      <circle cx="${pixelX}" cy="${pixelY}" r="3" fill="white" opacity="0.9"/>
-    </svg>`;
-    
-    // Return as data URI
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    return { x: percentX, y: percentY };
   }
   
   /**
@@ -2819,7 +2843,7 @@ class FWCAMCard extends HTMLElement {
         // Show inline map preview
         if (startMapPreview && startMapImg) {
           const mapUrl = this.getStaticMapUrl(startLat, startLon);
-          console.log('[FWCAM Card] Setting start map preview URL:', mapUrl.length > 100 ? mapUrl.slice(0, 100) + '...' : mapUrl);
+          console.log('[FWCAM Card] Setting start map preview URL:', mapUrl);
           startMapImg.src = mapUrl;
           startMapImg.onerror = (e) => {
             console.error('[FWCAM Card] Error loading start map preview:', e);
@@ -2829,6 +2853,18 @@ class FWCAMCard extends HTMLElement {
             console.log('[FWCAM Card] Start map preview loaded successfully');
           };
           startMapImg.onclick = () => window.open(startUrl, '_blank');
+          
+          // Update marker position (PR #102 overlay implementation)
+          const markerPos = this.getMapMarkerPosition(startLat, startLon);
+          const startMarkerOuter = this.shadowRoot.getElementById('start-marker-outer');
+          const startMarkerInner = this.shadowRoot.getElementById('start-marker-inner');
+          if (startMarkerOuter && startMarkerInner) {
+            startMarkerOuter.setAttribute('cx', `${markerPos.x}%`);
+            startMarkerOuter.setAttribute('cy', `${markerPos.y}%`);
+            startMarkerInner.setAttribute('cx', `${markerPos.x}%`);
+            startMarkerInner.setAttribute('cy', `${markerPos.y}%`);
+          }
+          
           startMapPreview.style.display = 'block';
         }
       } else {
@@ -2844,7 +2880,7 @@ class FWCAMCard extends HTMLElement {
         // Show inline map preview
         if (endMapPreview && endMapImg) {
           const mapUrl = this.getStaticMapUrl(endLat, endLon);
-          console.log('[FWCAM Card] Setting end map preview URL:', mapUrl.length > 100 ? mapUrl.slice(0, 100) + '...' : mapUrl);
+          console.log('[FWCAM Card] Setting end map preview URL:', mapUrl);
           endMapImg.src = mapUrl;
           endMapImg.onerror = (e) => {
             console.error('[FWCAM Card] Error loading end map preview:', e);
@@ -2854,6 +2890,18 @@ class FWCAMCard extends HTMLElement {
             console.log('[FWCAM Card] End map preview loaded successfully');
           };
           endMapImg.onclick = () => window.open(endUrl, '_blank');
+          
+          // Update marker position (PR #102 overlay implementation)
+          const markerPos = this.getMapMarkerPosition(endLat, endLon);
+          const endMarkerOuter = this.shadowRoot.getElementById('end-marker-outer');
+          const endMarkerInner = this.shadowRoot.getElementById('end-marker-inner');
+          if (endMarkerOuter && endMarkerInner) {
+            endMarkerOuter.setAttribute('cx', `${markerPos.x}%`);
+            endMarkerOuter.setAttribute('cy', `${markerPos.y}%`);
+            endMarkerInner.setAttribute('cx', `${markerPos.x}%`);
+            endMarkerInner.setAttribute('cy', `${markerPos.y}%`);
+          }
+          
           endMapPreview.style.display = 'block';
         }
       } else {
