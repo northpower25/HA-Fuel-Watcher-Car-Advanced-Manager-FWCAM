@@ -2413,11 +2413,13 @@ class FWCAMCard extends HTMLElement {
     if (!tripId) {
       serviceData.timestamp_start = formData.get('timestamp_start');
       serviceData.timestamp_end = formData.get('timestamp_end');
-      serviceData.distance_km = parseFloat(formData.get('distance_km'));
+      // Normalize decimal separator for proper parsing
+      serviceData.distance_km = parseFloat((formData.get('distance_km') || '').replace(',', '.'));
       
       // fuel_consumed is only allowed in add_trip, not edit_trip
       if (formData.get('fuel_consumed')) {
-        serviceData.fuel_consumed = parseFloat(formData.get('fuel_consumed'));
+        // Normalize decimal separator for proper parsing
+        serviceData.fuel_consumed = parseFloat((formData.get('fuel_consumed') || '').replace(',', '.'));
       }
     }
     
@@ -2426,7 +2428,8 @@ class FWCAMCard extends HTMLElement {
       serviceData.purpose = formData.get('purpose');
     }
     if (formData.get('additional_costs')) {
-      serviceData.additional_costs = parseFloat(formData.get('additional_costs'));
+      // Normalize decimal separator for proper parsing
+      serviceData.additional_costs = parseFloat((formData.get('additional_costs') || '').replace(',', '.'));
     }
     if (formData.get('notes')) {
       serviceData.notes = formData.get('notes');
@@ -2434,18 +2437,22 @@ class FWCAMCard extends HTMLElement {
     
     // Add odometer fields
     if (formData.get('odometer_start')) {
-      serviceData.odometer_start = parseFloat(formData.get('odometer_start'));
+      // Normalize decimal separator for proper parsing
+      serviceData.odometer_start = parseFloat((formData.get('odometer_start') || '').replace(',', '.'));
     }
     if (formData.get('odometer_end')) {
-      serviceData.odometer_end = parseFloat(formData.get('odometer_end'));
+      // Normalize decimal separator for proper parsing
+      serviceData.odometer_end = parseFloat((formData.get('odometer_end') || '').replace(',', '.'));
     }
     
     // Add start location fields
     if (formData.get('start_latitude')) {
-      serviceData.start_latitude = parseFloat(formData.get('start_latitude'));
+      // Normalize decimal separator: replace comma with dot for proper parsing
+      serviceData.start_latitude = parseFloat((formData.get('start_latitude') || '').replace(',', '.'));
     }
     if (formData.get('start_longitude')) {
-      serviceData.start_longitude = parseFloat(formData.get('start_longitude'));
+      // Normalize decimal separator: replace comma with dot for proper parsing
+      serviceData.start_longitude = parseFloat((formData.get('start_longitude') || '').replace(',', '.'));
     }
     if (formData.get('start_name')) {
       serviceData.start_name = formData.get('start_name');
@@ -2456,10 +2463,12 @@ class FWCAMCard extends HTMLElement {
     
     // Add end location fields
     if (formData.get('end_latitude')) {
-      serviceData.end_latitude = parseFloat(formData.get('end_latitude'));
+      // Normalize decimal separator: replace comma with dot for proper parsing
+      serviceData.end_latitude = parseFloat((formData.get('end_latitude') || '').replace(',', '.'));
     }
     if (formData.get('end_longitude')) {
-      serviceData.end_longitude = parseFloat(formData.get('end_longitude'));
+      // Normalize decimal separator: replace comma with dot for proper parsing
+      serviceData.end_longitude = parseFloat((formData.get('end_longitude') || '').replace(',', '.'));
     }
     if (formData.get('end_name')) {
       serviceData.end_name = formData.get('end_name');
@@ -2473,7 +2482,8 @@ class FWCAMCard extends HTMLElement {
       serviceData.data_quality = formData.get('data_quality');
     }
     if (formData.get('confidence')) {
-      serviceData.confidence = parseFloat(formData.get('confidence'));
+      // Normalize decimal separator for proper parsing
+      serviceData.confidence = parseFloat((formData.get('confidence') || '').replace(',', '.'));
     }
     
     try {
@@ -2519,7 +2529,8 @@ class FWCAMCard extends HTMLElement {
     const serviceData = {
       config_entry_id: this.getConfigEntryId(),
       timestamp: formData.get('timestamp'),
-      liters_refueled: parseFloat(formData.get('liters_refueled'))
+      // Normalize decimal separator for proper parsing
+      liters_refueled: parseFloat((formData.get('liters_refueled') || '').replace(',', '.'))
     };
     
     // Add optional fields if provided
@@ -2527,10 +2538,12 @@ class FWCAMCard extends HTMLElement {
       serviceData.odometer_km = parseInt(formData.get('odometer_km'));
     }
     if (formData.get('price_per_liter')) {
-      serviceData.price_per_liter = parseFloat(formData.get('price_per_liter'));
+      // Normalize decimal separator for proper parsing
+      serviceData.price_per_liter = parseFloat((formData.get('price_per_liter') || '').replace(',', '.'));
     }
     if (formData.get('total_cost')) {
-      serviceData.total_cost = parseFloat(formData.get('total_cost'));
+      // Normalize decimal separator for proper parsing
+      serviceData.total_cost = parseFloat((formData.get('total_cost') || '').replace(',', '.'));
     }
     if (formData.get('station_name')) {
       serviceData.station_name = formData.get('station_name');
@@ -2545,7 +2558,8 @@ class FWCAMCard extends HTMLElement {
       serviceData.data_quality = formData.get('data_quality');
     }
     if (formData.get('confidence')) {
-      serviceData.confidence = parseFloat(formData.get('confidence'));
+      // Normalize decimal separator for proper parsing
+      serviceData.confidence = parseFloat((formData.get('confidence') || '').replace(',', '.'));
     }
     
     try {
@@ -2811,10 +2825,11 @@ class FWCAMCard extends HTMLElement {
    * Update map links based on coordinates
    */
   updateMapLinks() {
-    const startLat = parseFloat(this.shadowRoot.getElementById('trip-start-latitude').value);
-    const startLon = parseFloat(this.shadowRoot.getElementById('trip-start-longitude').value);
-    const endLat = parseFloat(this.shadowRoot.getElementById('trip-end-latitude').value);
-    const endLon = parseFloat(this.shadowRoot.getElementById('trip-end-longitude').value);
+    // Normalize decimal separator: replace comma with dot for proper parsing
+    const startLat = parseFloat((this.shadowRoot.getElementById('trip-start-latitude')?.value || '').replace(',', '.'));
+    const startLon = parseFloat((this.shadowRoot.getElementById('trip-start-longitude')?.value || '').replace(',', '.'));
+    const endLat = parseFloat((this.shadowRoot.getElementById('trip-end-latitude')?.value || '').replace(',', '.'));
+    const endLon = parseFloat((this.shadowRoot.getElementById('trip-end-longitude')?.value || '').replace(',', '.'));
     
     const mapLinks = this.shadowRoot.getElementById('trip-map-links');
     const startMapLink = this.shadowRoot.getElementById('start-map-link');
@@ -2923,8 +2938,10 @@ class FWCAMCard extends HTMLElement {
     const nameField = this.shadowRoot.getElementById(isStart ? 'trip-start-name' : 'trip-end-name');
     const addressField = this.shadowRoot.getElementById(isStart ? 'trip-start-address' : 'trip-end-address');
     
-    const lat = parseFloat(latField.value);
-    const lon = parseFloat(lonField.value);
+    // Normalize decimal separator: replace comma with dot for proper parsing
+    // This handles locale-specific input (e.g., German: 53,759702 -> 53.759702)
+    const lat = parseFloat((latField?.value || '').replace(',', '.'));
+    const lon = parseFloat((lonField?.value || '').replace(',', '.'));
     
     // Validate coordinates
     if (isNaN(lat) || isNaN(lon)) {
