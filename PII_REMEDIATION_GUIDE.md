@@ -141,7 +141,7 @@ https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/pull/
 
 1. **Use Generic Test Data**
    - ✅ Coordinates: `50.0000, 10.0000`
-   - ❌ Real locations: `52.520008, 13.404954`
+   - ❌ Real locations: `[REDACTED]`
    
 2. **Anonymize Examples**
    - ✅ Vehicle: `test_vehicle`, `example_car`
