@@ -1108,6 +1108,7 @@ TRIP_DETECTION_MIN_DISTANCE_KM = 0.5  # Minimum distance to consider as a trip
 TRIP_MERGE_TIME_WINDOW_MINUTES = 5  # Time window to merge short stops into single trip
 TRIP_MAX_SPEED_KMH = 300  # Maximum reasonable speed (to filter outliers)
 TRIP_MIN_DURATION_MINUTES = 1  # Minimum trip duration
+MIN_LOCATION_DIFFERENCE_DEGREES = 0.001  # Minimum coordinate difference (~100m) to consider locations distinct
 
 
 async def import_historical_trip_data(
@@ -1465,10 +1466,10 @@ async def _import_trip_history(
                             has_distinct_locations = False
                             if (start_lat is not None and end_lat is not None and
                                 start_lon is not None and end_lon is not None):
-                                # Locations are considered different if they differ by at least 0.001 degrees (~100m)
+                                # Locations are considered different if they differ by at least MIN_LOCATION_DIFFERENCE_DEGREES (~100m)
                                 has_distinct_locations = (
-                                    abs(start_lat - end_lat) > 0.001 or 
-                                    abs(start_lon - end_lon) > 0.001
+                                    abs(start_lat - end_lat) > MIN_LOCATION_DIFFERENCE_DEGREES or 
+                                    abs(start_lon - end_lon) > MIN_LOCATION_DIFFERENCE_DEGREES
                                 )
                             
                             # Create trip data
@@ -1800,15 +1801,16 @@ def _find_closest_location(
         try:
             state_time = state.last_changed
             time_diff_seconds = (target_time - state_time).total_seconds()
-            abs_diff = abs(time_diff_seconds)
+            abs_time_diff_seconds = abs(time_diff_seconds)
             
             # Update closest if this is closer, or if equally close and we prefer direction
-            if abs_diff < min_diff_seconds:
-                min_diff_seconds = abs_diff
+            if abs_time_diff_seconds < min_diff_seconds:
+                min_diff_seconds = abs_time_diff_seconds
                 closest_state = state
-            elif abs_diff == min_diff_seconds and prefer_after and time_diff_seconds < 0:
-                # Prefer states after target time when equally close
-                closest_state = state
+            elif abs_time_diff_seconds == min_diff_seconds and prefer_after:
+                # time_diff_seconds < 0 means state_time > target_time (state is after target)
+                if time_diff_seconds < 0:
+                    closest_state = state
         except Exception:
             continue
     

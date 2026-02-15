@@ -2525,7 +2525,7 @@ class FWCAMCard extends HTMLElement {
       // Match by name (case-insensitive)
       if (tripName && tripName.toLowerCase() === locationName.toLowerCase()) {
         // Auto-fill address if available
-        if (tripAddress && !addressField.value) {
+        if (tripAddress) {
           addressField.value = tripAddress;
         }
         
@@ -2541,6 +2541,21 @@ class FWCAMCard extends HTMLElement {
     }
   }
 
+  /**
+   * Generate Google Maps URL for coordinates
+   */
+  getMapUrl(lat, lon) {
+    return `https://www.google.com/maps?q=${lat},${lon}`;
+  }
+  
+  /**
+   * Generate OpenStreetMap static map image URL
+   */
+  getStaticMapUrl(lat, lon, width = 300, height = 150) {
+    const zoom = 15;
+    return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${zoom}&size=${width}x${height}&markers=${lat},${lon},red-pushpin`;
+  }
+  
   /**
    * Update map links based on coordinates
    */
@@ -2569,15 +2584,13 @@ class FWCAMCard extends HTMLElement {
       mapLinks.style.display = 'block';
       
       if (hasStart) {
-        const startUrl = `https://www.google.com/maps?q=${startLat},${startLon}`;
+        const startUrl = this.getMapUrl(startLat, startLon);
         startMapLink.href = startUrl;
         startMapLink.style.display = 'inline-flex';
         
-        // Show inline map preview using OpenStreetMap static tiles
+        // Show inline map preview
         if (startMapPreview && startMapImg) {
-          const zoom = 15;
-          // Using OpenStreetMap static map tile service
-          startMapImg.src = `https://staticmap.openstreetmap.de/staticmap.php?center=${startLat},${startLon}&zoom=${zoom}&size=300x150&markers=${startLat},${startLon},red-pushpin`;
+          startMapImg.src = this.getStaticMapUrl(startLat, startLon);
           startMapImg.onclick = () => window.open(startUrl, '_blank');
           startMapPreview.style.display = 'block';
         }
@@ -2587,14 +2600,13 @@ class FWCAMCard extends HTMLElement {
       }
       
       if (hasEnd) {
-        const endUrl = `https://www.google.com/maps?q=${endLat},${endLon}`;
+        const endUrl = this.getMapUrl(endLat, endLon);
         endMapLink.href = endUrl;
         endMapLink.style.display = 'inline-flex';
         
         // Show inline map preview
         if (endMapPreview && endMapImg) {
-          const zoom = 15;
-          endMapImg.src = `https://staticmap.openstreetmap.de/staticmap.php?center=${endLat},${endLon}&zoom=${zoom}&size=300x150&markers=${endLat},${endLon},red-pushpin`;
+          endMapImg.src = this.getStaticMapUrl(endLat, endLon);
           endMapImg.onclick = () => window.open(endUrl, '_blank');
           endMapPreview.style.display = 'block';
         }
