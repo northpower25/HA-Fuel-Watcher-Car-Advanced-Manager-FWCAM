@@ -2826,10 +2826,10 @@ class FWCAMCard extends HTMLElement {
    */
   updateMapLinks() {
     // Normalize decimal separator: replace comma with dot for proper parsing
-    const startLat = parseFloat(this.shadowRoot.getElementById('trip-start-latitude').value.replace(',', '.'));
-    const startLon = parseFloat(this.shadowRoot.getElementById('trip-start-longitude').value.replace(',', '.'));
-    const endLat = parseFloat(this.shadowRoot.getElementById('trip-end-latitude').value.replace(',', '.'));
-    const endLon = parseFloat(this.shadowRoot.getElementById('trip-end-longitude').value.replace(',', '.'));
+    const startLat = parseFloat((this.shadowRoot.getElementById('trip-start-latitude')?.value || '').replace(',', '.'));
+    const startLon = parseFloat((this.shadowRoot.getElementById('trip-start-longitude')?.value || '').replace(',', '.'));
+    const endLat = parseFloat((this.shadowRoot.getElementById('trip-end-latitude')?.value || '').replace(',', '.'));
+    const endLon = parseFloat((this.shadowRoot.getElementById('trip-end-longitude')?.value || '').replace(',', '.'));
     
     const mapLinks = this.shadowRoot.getElementById('trip-map-links');
     const startMapLink = this.shadowRoot.getElementById('start-map-link');
@@ -2940,8 +2940,8 @@ class FWCAMCard extends HTMLElement {
     
     // Normalize decimal separator: replace comma with dot for proper parsing
     // This handles locale-specific input (e.g., German: 53,759702 -> 53.759702)
-    const lat = parseFloat(latField.value.replace(',', '.'));
-    const lon = parseFloat(lonField.value.replace(',', '.'));
+    const lat = parseFloat((latField?.value || '').replace(',', '.'));
+    const lon = parseFloat((lonField?.value || '').replace(',', '.'));
     
     // Validate coordinates
     if (isNaN(lat) || isNaN(lon)) {
