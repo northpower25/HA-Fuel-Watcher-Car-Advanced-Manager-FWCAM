@@ -2968,7 +2968,7 @@ class FWCAMCard extends HTMLElement {
     try {
       // Call the backend service which checks cache first, then calls Nominatim if needed
       // The backend handles rate limiting and caching automatically
-      const result = await this.hass.callService(
+      const result = await this._hass.callService(
         'hafwcma',
         'reverse_geocode',
         {
