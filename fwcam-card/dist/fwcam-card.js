@@ -2748,6 +2748,13 @@ class FWCAMCard extends HTMLElement {
     const xtile = Math.floor((lon + 180) / 360 * n);
     const ytile = Math.floor(latToMercatorY(clampedLat) * n);
     
+    // Validate tile coordinates are within valid range for the zoom level
+    const maxTile = n - 1;
+    if (xtile < 0 || xtile > maxTile || ytile < 0 || ytile > maxTile) {
+      console.warn('[FWCAM Card] Invalid tile coordinates:', { xtile, ytile, maxTile });
+      return '';
+    }
+    
     // Calculate the exact position within the tile (0-256 pixels)
     const exactX = ((lon + 180) / 360 * n) - xtile;
     const exactY = (latToMercatorY(clampedLat) * n) - ytile;
