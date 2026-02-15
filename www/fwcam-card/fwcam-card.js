@@ -2761,6 +2761,12 @@ class FWCAMCard extends HTMLElement {
     const pixelX = exactX * TILE_SIZE_PX;
     const pixelY = exactY * TILE_SIZE_PX;
     
+    // Validate pixel coordinates are finite numbers
+    if (!isFinite(pixelX) || !isFinite(pixelY)) {
+      console.warn('[FWCAM Card] Invalid pixel coordinates:', { pixelX, pixelY });
+      return '';
+    }
+    
     console.log('[FWCAM Card] Generating static map:', { lat, lon, clampedLat, zoom, xtile, ytile, pixelX, pixelY });
     
     // Get the OSM tile URL

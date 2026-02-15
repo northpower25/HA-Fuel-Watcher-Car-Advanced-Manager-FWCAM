@@ -319,6 +319,12 @@
       const pixelX = exactX * TILE_SIZE_PX;
       const pixelY = exactY * TILE_SIZE_PX;
       
+      // Validate pixel coordinates are finite numbers
+      if (!isFinite(pixelX) || !isFinite(pixelY)) {
+        console.warn('Invalid pixel coordinates:', { pixelX, pixelY });
+        return '';
+      }
+      
       const tileUrl = `https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`;
       
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}">
