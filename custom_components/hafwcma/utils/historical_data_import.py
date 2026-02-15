@@ -1783,7 +1783,7 @@ def _find_closest_location(
     Args:
         location_states: List of location state objects
         target_time: Target timestamp
-        prefer_after: If True, prefer states after target_time when equally close
+        prefer_after: If True, prefer states after target_time when choosing closest
         
     Returns:
         Tuple of (latitude, longitude) or (None, None) if not found
@@ -1792,7 +1792,7 @@ def _find_closest_location(
         return None, None
     
     closest_state = None
-    min_diff_seconds = float('inf')
+    min_time_diff_seconds = float('inf')
     
     for state in location_states:
         if state.state in INVALID_SENSOR_STATES:
@@ -1803,11 +1803,24 @@ def _find_closest_location(
             time_diff_seconds = (target_time - state_time).total_seconds()
             abs_time_diff_seconds = abs(time_diff_seconds)
             
-            # Update closest if this is closer, or if equally close and we prefer direction
-            if abs_time_diff_seconds < min_diff_seconds:
-                min_diff_seconds = abs_time_diff_seconds
-                closest_state = state
-            elif abs_time_diff_seconds == min_diff_seconds and prefer_after:
+            # Determine if we should update the closest state
+            should_update = False
+            
+            if abs_time_diff_seconds < min_time_diff_seconds:
+                # This state is closer - update unless we have a direction preference
+                if prefer_after:
+                    # Only update if this state is after target OR if no better option exists yet
+                    # time_diff_seconds < 0 means state_time > target_time (state is after target)
+                    should_update = time_diff_seconds < 0 or closest_state is None
+                else:
+                    # No preference or prefer before - just take the closer one
+                    should_update = True
+                    
+                if should_update:
+                    min_time_diff_seconds = abs_time_diff_seconds
+                    closest_state = state
+            elif abs_time_diff_seconds == min_time_diff_seconds and prefer_after:
+                # Equally close - prefer states after target when specified
                 # time_diff_seconds < 0 means state_time > target_time (state is after target)
                 if time_diff_seconds < 0:
                     closest_state = state
