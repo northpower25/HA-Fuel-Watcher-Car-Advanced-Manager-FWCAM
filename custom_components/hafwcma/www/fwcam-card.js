@@ -1513,12 +1513,6 @@ class FWCAMCard extends HTMLElement {
       </div>
     `;
   }
-          <ha-icon icon="mdi:plus"></ha-icon>
-          <span>Add Trip</span>
-        </button>
-      </div>
-    `;
-  }
 
   /**
    * Render sort icon for trip table headers
