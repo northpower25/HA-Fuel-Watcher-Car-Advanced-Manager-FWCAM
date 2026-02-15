@@ -594,7 +594,10 @@ class FWCAMCard extends HTMLElement {
     
     // Store events for dialog access (use recent for now, fetch all when needed)
     this._recentEvents = recentEvents;
-    this._allRefuelings = recentEvents;
+    // Only reset _allRefuelings if we haven't fetched all refuelings yet
+    if (!this._allRefuelingsFetched) {
+      this._allRefuelings = recentEvents;
+    }
     
     // Trigger async fetch of all refuelings if we haven't fetched them yet
     if (!this._allRefuelingsFetched && this._config.show_refueling_log) {
@@ -623,7 +626,10 @@ class FWCAMCard extends HTMLElement {
     
     // Store events and trips for dialog access
     // For initial display, use recent items. All items will be fetched async when needed
-    this._allTrips = recentTrips;
+    // Only reset _allTrips if we haven't fetched all trips yet
+    if (!this._allTripsFetched) {
+      this._allTrips = recentTrips;
+    }
     // Trigger async fetch of all trips if we haven't fetched them yet
     if (!this._allTripsFetched && (this._config.show_trip_log || this._config.show_vehicle_info)) {
       this._fetchAllTripsAsync();
@@ -1728,7 +1734,7 @@ class FWCAMCard extends HTMLElement {
                   </label>
                 </div>
                 <div id="start-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="start-map-img" style="width: 100%; max-width: 300px; height: 150px; border-radius: 4px; cursor: pointer;" alt="Start location map">
+                  <img id="start-map-img" style="width: 100%; aspect-ratio: 1; border-radius: 4px; cursor: pointer; object-fit: cover;" alt="Start location map">
                 </div>
               </div>
               
@@ -1759,7 +1765,7 @@ class FWCAMCard extends HTMLElement {
                   </label>
                 </div>
                 <div id="end-location-map-preview" style="display: none; margin-top: 8px;">
-                  <img id="end-map-img" style="width: 100%; max-width: 300px; height: 150px; border-radius: 4px; cursor: pointer;" alt="End location map">
+                  <img id="end-map-img" style="width: 100%; aspect-ratio: 1; border-radius: 4px; cursor: pointer; object-fit: cover;" alt="End location map">
                 </div>
                 <div id="trip-map-links" style="display: none; margin-top: 8px;">
                   <a id="start-map-link" href="#" target="_blank" style="margin-right: 12px;">
@@ -2667,24 +2673,46 @@ class FWCAMCard extends HTMLElement {
   }
   
   /**
-   * Generate OpenStreetMap static map image URL
-   * Uses a single OSM tile centered on the location as a simple preview
+   * Generate static map image using OSM tiles directly
+   * Creates a canvas-based map with a marker pin
+   * More reliable than staticmap.openstreetmap.de which is often down
    */
-  getStaticMapUrl(lat, lon, width = 300, height = 150) {
+  getStaticMapUrl(lat, lon, width = 250, height = 250) {
+    // Validate coordinate bounds
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      console.warn('[FWCAM Card] Invalid coordinates for static map:', { lat, lon });
+      return '';
+    }
+    
     const zoom = 15;
     
-    // Convert lat/lon to tile coordinates using Web Mercator projection
-    // X coordinate: longitude to tile X index
-    const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
+    // Calculate tile coordinates
+    const n = Math.pow(2, zoom);
+    const xtile = Math.floor((lon + 180) / 360 * n);
+    const ytile = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
     
-    // Y coordinate: latitude to tile Y index using Mercator projection formula
-    // This accounts for the distortion in the Mercator projection near the poles
-    const latRad = lat * Math.PI / 180;
-    const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, zoom));
+    // We'll use a simple approach: embed a single OSM tile with overlay marker
+    // Calculate pixel position of marker within tile
+    const tileX = (lon + 180) / 360 * n;
+    const tileY = (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n;
+    const pixelX = (tileX - xtile) * 256;
+    const pixelY = (tileY - ytile) * 256;
     
-    // Use OpenStreetMap tile server (allowed for low-volume usage with attribution)
-    // For production, consider using your own tile server or a commercial service
-    return `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+    // Create an SVG with the tile image and marker
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+           width="${width}" height="${height}" viewBox="0 0 256 256">
+        <image href="https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png" 
+               width="256" height="256" x="0" y="0"/>
+        <g transform="translate(${pixelX}, ${pixelY})">
+          <path d="M 0,-30 Q -10,-30 -10,-20 Q -10,-10 0,0 Q 10,-10 10,-20 Q 10,-30 0,-30 Z" 
+                fill="#E74C3C" stroke="#FFFFFF" stroke-width="2"/>
+          <circle cx="0" cy="-20" r="6" fill="#FFFFFF"/>
+        </g>
+      </svg>
+    `.trim();
+    
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
   
   /**
