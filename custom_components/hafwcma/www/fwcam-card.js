@@ -252,16 +252,17 @@ class FWCAMCard extends HTMLElement {
    * @returns {Promise<Array>} Array of all trips
    */
   async fetchAllTrips() {
-    if (!this._hass || !this._config_entry_id) {
-      console.warn('[FWCAM Card] Cannot fetch all trips: hass or config_entry_id not available');
+    if (!this._hass) {
+      console.warn('[FWCAM Card] Cannot fetch all trips: hass not available');
       return [];
     }
     
     try {
+      const configEntryId = this.getConfigEntryId();
       const response = await this._hass.callService(
         'hafwcma',
         'get_all_trips',
-        { config_entry_id: this._config_entry_id },
+        { config_entry_id: configEntryId },
         { return_response: true }
       );
       return response?.trips || [];
@@ -279,16 +280,17 @@ class FWCAMCard extends HTMLElement {
    * @returns {Promise<Array>} Array of all refueling events
    */
   async fetchAllRefuelings() {
-    if (!this._hass || !this._config_entry_id) {
-      console.warn('[FWCAM Card] Cannot fetch all refuelings: hass or config_entry_id not available');
+    if (!this._hass) {
+      console.warn('[FWCAM Card] Cannot fetch all refuelings: hass not available');
       return [];
     }
     
     try {
+      const configEntryId = this.getConfigEntryId();
       const response = await this._hass.callService(
         'hafwcma',
         'get_all_refuelings',
-        { config_entry_id: this._config_entry_id },
+        { config_entry_id: configEntryId },
         { return_response: true }
       );
       return response?.refuelings || [];
