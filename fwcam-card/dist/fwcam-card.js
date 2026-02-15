@@ -2686,6 +2686,10 @@ class FWCAMCard extends HTMLElement {
     
     const zoom = 15;
     const TILE_SIZE_PX = 256; // OSM tiles are 256x256 pixels
+    const MAX_MERCATOR_LAT = 85.05112878; // Web Mercator projection valid range
+    
+    // Clamp latitude to Web Mercator valid range to prevent Infinity/NaN
+    const clampedLat = Math.max(-MAX_MERCATOR_LAT, Math.min(MAX_MERCATOR_LAT, lat));
     
     // Helper function: Convert latitude to Web Mercator Y coordinate
     const latToMercatorY = (latitude) => 
@@ -2694,11 +2698,11 @@ class FWCAMCard extends HTMLElement {
     // Calculate tile coordinates
     const n = Math.pow(2, zoom);
     const xtile = Math.floor((lon + 180) / 360 * n);
-    const ytile = Math.floor(latToMercatorY(lat) * n);
+    const ytile = Math.floor(latToMercatorY(clampedLat) * n);
     
     // Calculate pixel position of marker within tile
     const tileX = (lon + 180) / 360 * n;
-    const tileY = latToMercatorY(lat) * n;
+    const tileY = latToMercatorY(clampedLat) * n;
     const pixelX = (tileX - xtile) * TILE_SIZE_PX;
     const pixelY = (tileY - ytile) * TILE_SIZE_PX;
     
