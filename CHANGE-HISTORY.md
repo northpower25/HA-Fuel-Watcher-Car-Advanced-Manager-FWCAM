@@ -1,5 +1,21 @@
 # Change History
 
+## Version 0.0.95 (2026-02-15) - Bug Fix: Services.yaml Validation Error
+
+### Fixed
+- **Lovelace Card Not Displaying Data** (Issue after PR #96)
+  - Fixed services.yaml parsing error that prevented integration from loading properly
+  - Changed latitude/longitude `step` values from `0.00001` to `step: any` for GPS coordinate fields
+  - Affected services: `add_trip` and `edit_trip` (8 coordinate fields total)
+  - Error message resolved: "not a valid value for dictionary value @ data['add_trip']['fields']['start_latitude']['selector']['step']"
+  - Lovelace card now correctly displays refueling events and trip data again
+
+### Technical Details
+- Home Assistant's service YAML validator requires `step: any` for GPS coordinates to allow arbitrary decimal precision
+- Using numeric step values like `0.00001` can cause validation errors in some HA versions
+- Aligned coordinate field definitions with existing `create_pattern` service which already used `step: any`
+- No Python code changes required - issue was purely in the services.yaml UI configuration
+
 ## Version 0.0.25 (2026-02-09) - Bug Fix: Manual Prediction
 
 ### Fixed
