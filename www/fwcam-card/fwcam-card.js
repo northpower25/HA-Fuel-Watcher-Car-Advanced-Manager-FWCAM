@@ -2939,7 +2939,7 @@ class FWCAMCard extends HTMLElement {
     const addressField = this.shadowRoot.getElementById(isStart ? 'trip-start-address' : 'trip-end-address');
     
     // Normalize decimal separator: replace comma with dot for proper parsing
-    // This handles locale-specific input (e.g., German: 53,759702 -> 53.759702)
+    // This handles locale-specific input (e.g., German: 50,000000 -> 50.000000)
     const lat = parseFloat((latField?.value || '').replace(',', '.'));
     const lon = parseFloat((lonField?.value || '').replace(',', '.'));
     

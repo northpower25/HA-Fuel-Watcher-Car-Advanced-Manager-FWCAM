@@ -1749,13 +1749,13 @@ class FWCAMCard extends HTMLElement {
                     Latitude
                     <input type="text" id="trip-start-latitude" name="start_latitude" 
                            inputmode="decimal" placeholder="Optional" 
-                           title="Enter latitude (e.g., 53.759702 or 53,759702)">
+                           title="Enter latitude (e.g., 50.000000 or 50,000000)">
                   </label>
                   <label for="trip-start-longitude">
                     Longitude
                     <input type="text" id="trip-start-longitude" name="start_longitude" 
                            inputmode="decimal" placeholder="Optional" 
-                           title="Enter longitude (e.g., 9.671353 or 9,671353)">
+                           title="Enter longitude (e.g., 10.000000 or 10,000000)">
                   </label>
                 </div>
                 <div class="form-row" style="margin-top: 8px;">
@@ -1795,13 +1795,13 @@ class FWCAMCard extends HTMLElement {
                     Latitude
                     <input type="text" id="trip-end-latitude" name="end_latitude" 
                            inputmode="decimal" placeholder="Optional" 
-                           title="Enter latitude (e.g., 53.759702 or 53,759702)">
+                           title="Enter latitude (e.g., 51.000000 or 51,000000)">
                   </label>
                   <label for="trip-end-longitude">
                     Longitude
                     <input type="text" id="trip-end-longitude" name="end_longitude" 
                            inputmode="decimal" placeholder="Optional" 
-                           title="Enter longitude (e.g., 9.671353 or 9,671353)">
+                           title="Enter longitude (e.g., 11.000000 or 11,000000)">
                   </label>
                 </div>
                 <div class="form-row" style="margin-top: 8px;">
@@ -2943,7 +2943,7 @@ class FWCAMCard extends HTMLElement {
     const addressField = this.shadowRoot.getElementById(isStart ? 'trip-start-address' : 'trip-end-address');
     
     // Get raw values and normalize decimal separator
-    // This handles locale-specific input (e.g., German: 53,759702 -> 53.759702)
+    // This handles locale-specific input (e.g., German: 50,000000 -> 50.000000)
     const latRaw = latField?.value || '';
     const lonRaw = lonField?.value || '';
     const lat = parseFloat(latRaw.replace(',', '.'));

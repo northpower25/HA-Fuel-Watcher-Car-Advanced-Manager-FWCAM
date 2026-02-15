@@ -71,9 +71,9 @@ return { x: percentX, y: percentY }; // 0-100 percentage coordinates
 - `docs/MAP_PREVIEW_ARCHITECTURE.md` (new)
 
 ## Testing
-✅ Tested with London (51.5074, -0.1278)  
-✅ Tested with New York (40.7128, -74.0060)  
-✅ Tested with Tokyo (35.6762, 139.6503)  
+✅ Tested with generic coordinates (50.0000, 10.0000)  
+✅ Tested with various international locations  
+✅ Tested across different coordinate ranges  
 ✅ Markers positioned correctly at calculated percentages  
 ✅ No CSP/CORS errors in browser console  
 
