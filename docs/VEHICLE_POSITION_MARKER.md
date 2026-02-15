@@ -3,41 +3,83 @@
 ## Problem
 After implementing PR #101, map preview images were displayed in the trip edit dialog, but they lacked a visual indicator showing the exact vehicle position. Users could see the map tile but couldn't identify where the coordinates were located.
 
-## Solution
-Modified the `getStaticMapUrl()` function in `fwcam-card.js` to overlay a position marker on the OpenStreetMap tiles.
+With PR #102, a marker overlay was added, but due to browser security restrictions (CSP/CORS), SVG data URIs with external image references don't work - the map tile image disappeared, showing only the marker.
+
+## Solution (Fixed)
+The fix separates the OSM tile image (PR #101) from the marker overlay (PR #102) using a layered approach:
+1. Display the OSM tile directly as an `<img>` element 
+2. Overlay an SVG with position markers using absolute positioning
+3. Calculate and position the marker dynamically based on coordinates
+
+This approach combines both features successfully while respecting browser security constraints.
 
 ## Technical Implementation
 
-### Calculation of Exact Position
-The function now calculates the precise pixel coordinates of the vehicle position within the 256×256 pixel OSM tile:
+### HTML Structure
+Map previews now use a container with layered elements:
 
-```javascript
-// Calculate the exact position within the tile (0-256 pixels)
-const exactX = ((lon + 180) / 360 * n) - xtile;
-const exactY = (latToMercatorY(clampedLat) * n) - ytile;
-const pixelX = exactX * TILE_SIZE_PX;
-const pixelY = exactY * TILE_SIZE_PX;
+```html
+<div id="start-location-map-preview" style="position: relative; width: 100%; aspect-ratio: 1;">
+  <!-- Background: OSM tile image (PR #101) -->
+  <img id="start-map-img" style="width: 100%; height: 100%; border-radius: 4px; cursor: pointer; object-fit: cover;">
+  
+  <!-- Overlay: Position marker (PR #102) -->
+  <svg id="start-map-marker" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+    <circle id="start-marker-outer" cx="50%" cy="50%" r="8" fill="red" stroke="white" stroke-width="2" opacity="0.9"/>
+    <circle id="start-marker-inner" cx="50%" cy="50%" r="3" fill="white" opacity="0.9"/>
+  </svg>
+</div>
 ```
 
-### SVG Overlay with Marker
-The function creates an SVG that includes:
-1. The OSM tile as a background image
-2. A red circle marker (8px radius) with white border at the exact coordinates
-3. A white center dot (3px radius) for better visibility
+### Calculation of OSM Tile URL
+The `getStaticMapUrl()` function returns the direct OSM tile URL:
 
 ```javascript
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}">
-  <image href="${tileUrl}" width="${TILE_SIZE_PX}" height="${TILE_SIZE_PX}"/>
-  <circle cx="${pixelX}" cy="${pixelY}" r="8" fill="red" stroke="white" stroke-width="2" opacity="0.9"/>
-  <circle cx="${pixelX}" cy="${pixelY}" r="3" fill="white" opacity="0.9"/>
-</svg>`;
+getStaticMapUrl(lat, lon) {
+  // Validate and clamp coordinates
+  const clampedLat = Math.max(-MAX_MERCATOR_LAT, Math.min(MAX_MERCATOR_LAT, lat));
+  
+  // Calculate tile coordinates using Web Mercator projection
+  const n = Math.pow(2, zoom);
+  const xtile = Math.floor((lon + 180) / 360 * n);
+  const ytile = Math.floor(latToMercatorY(clampedLat) * n);
+  
+  // Return direct OSM tile URL (browser-compatible)
+  return `https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`;
+}
 ```
 
-### Data URI Encoding
-The SVG is encoded as a data URI and returned to be displayed in the img element:
+### Calculation of Marker Position
+The `getMapMarkerPosition()` function calculates where to place the marker within the tile:
 
 ```javascript
-return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+getMapMarkerPosition(lat, lon) {
+  // Calculate exact position within tile (0-1 range)
+  const exactX = ((lon + 180) / 360 * n) - xtile;
+  const exactY = (latToMercatorY(clampedLat) * n) - ytile;
+  
+  // Convert to percentage (0-100)
+  const percentX = exactX * 100;
+  const percentY = exactY * 100;
+  
+  return { x: percentX, y: percentY };
+}
+```
+
+### Dynamic Marker Positioning
+In `updateMapLinks()`, the marker position is updated dynamically:
+
+```javascript
+// Set the map tile image
+const mapUrl = this.getStaticMapUrl(startLat, startLon);
+startMapImg.src = mapUrl;
+
+// Calculate and apply marker position
+const markerPos = this.getMapMarkerPosition(startLat, startLon);
+startMarkerOuter.setAttribute('cx', `${markerPos.x}%`);
+startMarkerOuter.setAttribute('cy', `${markerPos.y}%`);
+startMarkerInner.setAttribute('cx', `${markerPos.x}%`);
+startMarkerInner.setAttribute('cy', `${markerPos.y}%`);
 ```
 
 ## Changes Made
@@ -47,23 +89,33 @@ return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 - `fwcam-card/dist/fwcam-card.js` (standalone distribution)
 - `www/fwcam-card/fwcam-card.js` (legacy copy)
 
+### Key Changes
+1. **HTML Structure**: Changed from single `<img>` to container with layered `<img>` + `<svg>` overlay
+2. **getStaticMapUrl()**: Simplified to return direct OSM tile URL (browser-compatible, fixes PR #101)
+3. **getMapMarkerPosition()**: New function to calculate marker position as percentage
+4. **updateMapLinks()**: Enhanced to dynamically position markers using calculated coordinates
+
 ### Key Features
-- **Accurate positioning**: Uses Web Mercator projection calculations for precise marker placement
-- **Visual marker**: Red/white circle design is clearly visible on any map background
-- **Browser compatible**: SVG data URIs work in all modern browsers
-- **No external dependencies**: Pure JavaScript implementation without additional libraries
+- **Shows both map and marker**: Combines PR #101 (tile image) + PR #102 (position overlay)
+- **Browser compatible**: No SVG data URIs with external images (CSP/CORS compliant)
+- **Accurate positioning**: Uses Web Mercator projection for precise marker placement
+- **Visual marker**: Red/white circle design clearly visible on any map background
+- **No external dependencies**: Pure JavaScript and CSS implementation
 
 ## Testing
 The implementation was tested with:
 - Multiple coordinate sets (London, New York, Tokyo)
 - Edge cases (near poles, invalid coordinates)
 - Web Mercator projection clamping for extreme latitudes
+- Layered HTML structure for image + overlay compatibility
 
 ## Benefits
-✅ Users can now immediately see where their vehicle is located on the map  
+✅ Users can now see BOTH the map tile AND the position marker  
+✅ Fixes browser security issues with SVG data URIs containing external images  
 ✅ Improves usability of trip start/end location previews  
 ✅ No additional API calls or external services required  
 ✅ Consistent marker appearance across all maps  
+✅ Combines benefits of both PR #101 and PR #102  
 
 ## Future Enhancements
 Possible improvements could include:
