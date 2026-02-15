@@ -2672,9 +2672,15 @@ class FWCAMCard extends HTMLElement {
    */
   getStaticMapUrl(lat, lon, width = 300, height = 150) {
     const zoom = 15;
-    // Calculate tile coordinates from lat/lon
+    
+    // Convert lat/lon to tile coordinates using Web Mercator projection
+    // X coordinate: longitude to tile X index
     const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
-    const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+    
+    // Y coordinate: latitude to tile Y index using Mercator projection formula
+    // This accounts for the distortion in the Mercator projection near the poles
+    const latRad = lat * Math.PI / 180;
+    const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, zoom));
     
     // Use OpenStreetMap tile server (allowed for low-volume usage with attribution)
     // For production, consider using your own tile server or a commercial service
