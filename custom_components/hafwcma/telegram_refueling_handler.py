@@ -773,7 +773,7 @@ class TelegramRefuelingHandler:
         # Send confirmation
         await self._send_telegram_message(
             f"✅ Daten für Tankvorgang #{refuel_id} aktualisiert!\n\n"
-            f"Erkannte Daten:\n{html.escape(json.dumps(parsed_data, indent=2, ensure_ascii=False))}"
+            f"Erkannte Daten:\n<code>{html.escape(json.dumps(parsed_data, indent=2, ensure_ascii=False))}</code>"
         )
         
         # Remove from pending
@@ -930,8 +930,8 @@ class TelegramRefuelingHandler:
         # Send confirmation
         await self._send_telegram_message(
             f"📷 Quittung für Tankvorgang #{refuel_id} empfangen!\n\n"
-            f"OCR-Text:\n{html.escape(ocr_text or 'Keine Daten erkannt')}\n\n"
-            f"Erkannte Daten:\n{html.escape(json.dumps(parsed_data, indent=2, ensure_ascii=False))}"
+            f"OCR-Text:\n<code>{html.escape(ocr_text or 'Keine Daten erkannt')}</code>\n\n"
+            f"Erkannte Daten:\n<code>{html.escape(json.dumps(parsed_data, indent=2, ensure_ascii=False))}</code>"
         )
         
         # Remove from pending
@@ -999,8 +999,8 @@ class TelegramRefuelingHandler:
         # Send confirmation
         await self._send_telegram_message(
             f"🎤 Sprachnachricht für Tankvorgang #{refuel_id} empfangen!\n\n"
-            f"Transkription:\n{html.escape(transcription or 'Keine Daten erkannt')}\n\n"
-            f"Erkannte Daten:\n{html.escape(json.dumps(parsed_data, indent=2, ensure_ascii=False))}"
+            f"Transkription:\n<code>{html.escape(transcription or 'Keine Daten erkannt')}</code>\n\n"
+            f"Erkannte Daten:\n<code>{html.escape(json.dumps(parsed_data, indent=2, ensure_ascii=False))}</code>"
         )
         
         # Remove from pending
