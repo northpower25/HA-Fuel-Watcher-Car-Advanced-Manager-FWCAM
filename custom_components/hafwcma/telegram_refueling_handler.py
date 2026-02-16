@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -240,8 +241,11 @@ class TelegramRefuelingHandler:
             self.chat_id
         )
         
-        # Build notification message
-        message_parts = ["⛽ <b>Neuer Tankvorgang erkannt!</b>\n"]
+        # Build notification message with refuel ID prominently displayed
+        message_parts = [
+            f"⛽ <b>Tankvorgang #{refuel_id}</b>\n",
+            "<i>Neuer Tankvorgang erkannt!</i>\n"
+        ]
         
         # Show detected data
         timestamp = refuel_data.get("timestamp", "Unbekannt")
@@ -300,11 +304,12 @@ class TelegramRefuelingHandler:
             message_parts.append(f"\n❓ <b>Fehlende Informationen:</b>")
             message_parts.append(", ".join(missing_fields))
             message_parts.append(
-                "\n💡 <b>Wie können Sie antworten:</b>\n"
-                "• Antworten Sie mit Text (z.B. '45.5 L, 1.599 €/L, Shell')\n"
-                "• Senden Sie ein Foto der Quittung\n"
-                "• Senden Sie eine Sprachnachricht\n"
-                "• Nutzen Sie die Schaltflächen unten"
+                f"\n💡 <b>Wie können Sie antworten:</b>\n"
+                f"• Antworten Sie mit 'Tankvorgang #{refuel_id}: <Ihre Daten>'\n"
+                f"• Oder einfach: '45.5 L, 1.599 €/L, Shell' (wird automatisch zugeordnet)\n"
+                f"• Senden Sie ein Foto der Quittung\n"
+                f"• Senden Sie eine Sprachnachricht\n"
+                f"• Nutzen Sie die Schaltflächen unten"
             )
         
         message = "\n".join(message_parts)
@@ -413,18 +418,37 @@ class TelegramRefuelingHandler:
             return
         
         text = event_data.get("text", "")
-        reply_to_message_id = event_data.get("reply_to_message", {}).get("message_id")
         
-        # Check if this is a reply to one of our refueling notifications
-        refuel_id = self._find_refuel_by_message_id(reply_to_message_id)
+        _LOGGER.info("📨 Received Telegram text message: '%s' (length: %d)", text[:50], len(text))
+        
+        # Strategy 1: Try to extract refuel_id from text content (e.g., "Tankvorgang #123")
+        refuel_id = self._extract_refuel_id_from_text(text)
+        if refuel_id:
+            _LOGGER.info("✅ Extracted refuel_id %s from text content", refuel_id)
+        
+        # Strategy 2: Try to find by message_id (will be None due to HA limitations)
+        if not refuel_id:
+            reply_to_message_id = event_data.get("reply_to_message", {}).get("message_id")
+            refuel_id = self._find_refuel_by_message_id(reply_to_message_id)
+        
+        # Strategy 3: Use temporal matching (most recent) as fallback
+        if not refuel_id:
+            _LOGGER.debug(
+                "Explicit ID and message_id matching failed. "
+                "Using temporal matching to find most recent pending refueling."
+            )
+            refuel_id = self._find_most_recent_pending_refuel()
         
         if refuel_id:
-            _LOGGER.debug("Received text response for refuel ID %s: %s", refuel_id, text[:50])
+            _LOGGER.info("✅ Matched text response to refuel ID %s: %s", refuel_id, text[:50])
             self.hass.async_create_task(
                 self._process_text_response(refuel_id, text)
             )
         else:
-            _LOGGER.debug("Text message not linked to any pending refueling")
+            _LOGGER.info(
+                "⚠️ Text message not linked to any pending refueling. "
+                "No pending refuelings available or all have been processed."
+            )
 
     @callback
     def _handle_telegram_callback_response(self, event: Event) -> None:
@@ -437,22 +461,59 @@ class TelegramRefuelingHandler:
         
         # Only handle events from our configured chat
         if str(event_data.get("chat_id")) != str(self.chat_id):
+            _LOGGER.debug(
+                "Ignoring callback from different chat (expected: %s, got: %s)",
+                self.chat_id,
+                event_data.get("chat_id")
+            )
             return
         
         callback_data = event_data.get("data", "")
+        callback_id = event_data.get("id")
         
-        _LOGGER.debug("Received callback: %s", callback_data)
+        _LOGGER.info("🔘 Received Telegram callback: data='%s', id=%s", callback_data, callback_id)
         
         # Parse callback data
         if callback_data.startswith("refuel_"):
             parts = callback_data.split("_")
+            _LOGGER.debug("Callback data parts: %s", parts)
+            
             if len(parts) >= 3:
                 action = parts[1]
-                refuel_id = int(parts[2])
-                
-                self.hass.async_create_task(
-                    self._process_callback_action(refuel_id, action, event_data)
+                try:
+                    refuel_id = int(parts[2])
+                    _LOGGER.info(
+                        "✅ Parsed callback action='%s' for refuel_id=%s",
+                        action,
+                        refuel_id
+                    )
+                    self.hass.async_create_task(
+                        self._process_callback_action(refuel_id, action, event_data)
+                    )
+                except ValueError as err:
+                    _LOGGER.error(
+                        "❌ Failed to parse refuel_id from callback_data '%s': %s",
+                        callback_data,
+                        err
+                    )
+                    # Answer callback query with error
+                    self.hass.async_create_task(
+                        self._answer_callback_query(callback_id, "❌ Fehler beim Parsen der Daten")
+                    )
+            else:
+                _LOGGER.warning(
+                    "⚠️ Invalid callback data format: '%s' (expected at least 3 parts)",
+                    callback_data
                 )
+                # Answer callback query with error
+                self.hass.async_create_task(
+                    self._answer_callback_query(callback_id, "❌ Ungültiges Format")
+                )
+        else:
+            _LOGGER.debug(
+                "Ignoring callback with non-refuel data: '%s'",
+                callback_data
+            )
 
     @callback
     def _handle_telegram_photo_response(self, event: Event) -> None:
@@ -469,19 +530,45 @@ class TelegramRefuelingHandler:
         
         photo = event_data.get("photo", [])
         caption = event_data.get("caption", "")
-        reply_to_message_id = event_data.get("reply_to_message", {}).get("message_id")
+        
+        _LOGGER.info("📷 Received Telegram photo message with caption: '%s'", caption[:50] if caption else "(no caption)")
         
         # Get the largest photo (best quality)
         file_id = None
         if photo and len(photo) > 0:
             file_id = photo[-1].get("file_id")
         
-        refuel_id = self._find_refuel_by_message_id(reply_to_message_id)
+        if not file_id:
+            _LOGGER.warning("⚠️ Photo message received but no file_id found")
+            return
         
-        if refuel_id and file_id:
-            _LOGGER.debug("Received photo response for refuel ID %s", refuel_id)
+        # Strategy 1: Try to extract refuel_id from caption (e.g., "Tankvorgang #123")
+        refuel_id = self._extract_refuel_id_from_text(caption) if caption else None
+        if refuel_id:
+            _LOGGER.info("✅ Extracted refuel_id %s from photo caption", refuel_id)
+        
+        # Strategy 2: Try to find by message_id (will be None due to HA limitations)
+        if not refuel_id:
+            reply_to_message_id = event_data.get("reply_to_message", {}).get("message_id")
+            refuel_id = self._find_refuel_by_message_id(reply_to_message_id)
+        
+        # Strategy 3: Use temporal matching (most recent) as fallback
+        if not refuel_id:
+            _LOGGER.debug(
+                "Explicit ID and message_id matching failed. "
+                "Using temporal matching to find most recent pending refueling."
+            )
+            refuel_id = self._find_most_recent_pending_refuel()
+        
+        if refuel_id:
+            _LOGGER.info("✅ Matched photo response to refuel ID %s", refuel_id)
             self.hass.async_create_task(
                 self._process_photo_response(refuel_id, file_id, caption)
+            )
+        else:
+            _LOGGER.info(
+                "⚠️ Photo message not linked to any pending refueling. "
+                "No pending refuelings available or all have been processed."
             )
 
     @callback
@@ -498,18 +585,90 @@ class TelegramRefuelingHandler:
             return
         
         file_id = event_data.get("file_id")
-        reply_to_message_id = event_data.get("reply_to_message", {}).get("message_id")
         
+        _LOGGER.info("🎤 Received Telegram voice message (file_id: %s)", file_id[:20] if file_id else "None")
+        
+        if not file_id:
+            _LOGGER.warning("⚠️ Voice message received but no file_id found")
+            return
+        
+        # Try to find by message_id first (will be None due to HA limitations)
+        reply_to_message_id = event_data.get("reply_to_message", {}).get("message_id")
         refuel_id = self._find_refuel_by_message_id(reply_to_message_id)
         
-        if refuel_id and file_id:
-            _LOGGER.debug("Received voice response for refuel ID %s", refuel_id)
+        # If not found by message_id, use temporal matching (most recent)
+        if not refuel_id:
+            _LOGGER.debug(
+                "Message ID matching failed (reply_to_message_id: %s). "
+                "Using temporal matching to find most recent pending refueling.",
+                reply_to_message_id
+            )
+            refuel_id = self._find_most_recent_pending_refuel()
+        
+        if refuel_id:
+            _LOGGER.info("✅ Matched voice response to refuel ID %s", refuel_id)
             self.hass.async_create_task(
                 self._process_voice_response(refuel_id, file_id)
             )
+        else:
+            _LOGGER.info(
+                "⚠️ Voice message not linked to any pending refueling. "
+                "No pending refuelings available or all have been processed."
+            )
+
+    def _extract_refuel_id_from_text(self, text: str) -> int | None:
+        """Extract refuel ID from text message.
+        
+        Looks for patterns like:
+        - "Tankvorgang #123"
+        - "#123"
+        - "Refuel #123"
+        
+        Args:
+            text: Text to parse
+            
+        Returns:
+            Refuel ID if found, None otherwise
+        """
+        if not text:
+            return None
+        
+        # Pattern: "Tankvorgang #123" or "#123" or "Refuel #123"
+        patterns = [
+            r'[Tt]ankvorgang\s*#(\d+)',
+            r'[Rr]efuel\s*#(\d+)',
+            r'#(\d+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    refuel_id = int(match.group(1))
+                    # Verify this refuel_id is in pending refuelings
+                    if refuel_id in self._pending_refuelings:
+                        _LOGGER.debug(
+                            "Extracted refuel_id %s from text using pattern '%s'",
+                            refuel_id,
+                            pattern
+                        )
+                        return refuel_id
+                    else:
+                        _LOGGER.debug(
+                            "Extracted refuel_id %s from text but not in pending refuelings",
+                            refuel_id
+                        )
+                except (ValueError, AttributeError):
+                    continue
+        
+        return None
 
     def _find_refuel_by_message_id(self, message_id: int | None) -> int | None:
         """Find refuel ID by Telegram message ID.
+        
+        NOTE: Due to Home Assistant telegram_bot integration limitations,
+        message_id is never available, so this method always returns None.
+        Use _find_most_recent_pending_refuel() instead.
         
         Args:
             message_id: Telegram message ID
@@ -525,6 +684,42 @@ class TelegramRefuelingHandler:
                 return refuel_id
         
         return None
+
+    def _find_most_recent_pending_refuel(self) -> int | None:
+        """Find the most recent pending refueling event.
+        
+        Since message threading via message_id is not available in Home Assistant's
+        telegram_bot integration, we use temporal matching - assuming the user is
+        responding to the most recently sent notification.
+        
+        Returns:
+            Refuel ID of the most recent pending refueling, or None if no pending refuelings
+        """
+        if not self._pending_refuelings:
+            _LOGGER.debug("No pending refuelings found")
+            return None
+        
+        # Find the most recent by comparing notified_at timestamps
+        most_recent_id = None
+        most_recent_time = None
+        
+        for refuel_id, context in self._pending_refuelings.items():
+            notified_at = context.get("notified_at")
+            if notified_at:
+                if most_recent_time is None or notified_at > most_recent_time:
+                    most_recent_time = notified_at
+                    most_recent_id = refuel_id
+        
+        if most_recent_id:
+            _LOGGER.debug(
+                "Found most recent pending refueling: ID=%s, notified_at=%s",
+                most_recent_id,
+                most_recent_time
+            )
+        else:
+            _LOGGER.debug("No refuelings with valid notified_at timestamp found")
+        
+        return most_recent_id
 
     async def _process_text_response(self, refuel_id: int, text: str) -> None:
         """Process unstructured text response.
@@ -821,8 +1016,6 @@ class TelegramRefuelingHandler:
         Returns:
             Dictionary with extracted data
         """
-        import re
-        
         parsed = {}
         
         if not text:
