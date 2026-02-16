@@ -13,29 +13,40 @@ Eine vollständige, produktionsreife Lösung für die intelligente Erfassung von
    - Bietet vier verschiedene Antwortmöglichkeiten
 
 2. **Vier Antwortmethoden** 💬
-   - ✅ **Inline-Tasten**: Schnelles Bestätigen/Bearbeiten/Löschen
-   - ✅ **Text**: Freie Eingabe wie "45.5 L, 1.599 €/L, Shell"
-   - ✅ **Foto**: Quittung fotografieren (OCR-Platzhalter mit Implementierungsanleitung)
-   - ✅ **Sprache**: Sprachnachricht senden (STT-Platzhalter mit Implementierungsanleitung)
+   - ✅ **Inline-Tasten**: Schnelles Bestätigen/Bearbeiten/Löschen (VOLL IMPLEMENTIERT)
+   - ✅ **Text**: Freie Eingabe wie "45.5 L, 1.599 €/L, Shell" (VOLL IMPLEMENTIERT)
+   - 🔄 **Foto**: Quittung fotografieren (PLATZHALTER - OCR muss implementiert werden)
+   - 🔄 **Sprache**: Sprachnachricht senden (PLATZHALTER - STT muss implementiert werden)
 
-3. **KI-gestütztes Parsing** 🤖
+3. **KI-gestütztes Parsing** 🤖 (VOLL IMPLEMENTIERT)
    - Extrahiert automatisch Daten aus unstrukturierten Eingaben
    - Erkennt Liter, Preis, Kosten, KM-Stand, Tankstelle
    - Unterstützt verschiedene Formate und Schreibweisen
+   - Markiert Tankvorgänge als "AI Processed" bei erfolgreicher Verarbeitung
 
-4. **Vollständige Datenspeicherung** 💾
+4. **Vollständige Datenspeicherung** 💾 (VOLL IMPLEMENTIERT)
    - Rohdaten der Benutzerantwort
    - Geparste, strukturierte Daten
    - Telegram File-IDs für Fotos/Sprachnachrichten
    - Perfekt für Debugging und Nachvollziehbarkeit
+   - Neue Data Quality: "AI Processed" für automatisch verarbeitete Daten
 
-5. **Test-Service** 🧪
-   - Einfaches Testen mit `hafwcma.simulate_refueling_event`
-   - Simuliert Tankvorgänge mit/ohne fehlende Daten
+5. **Test-Button** 🧪 (NEU - VOLL IMPLEMENTIERT)
+   - Button "Telegram API Test" im Home Assistant Dashboard
+   - Erstellt echten Test-Tankvorgang mit fehlenden Daten
+   - Wartet auf Benutzerantwort via Telegram
+   - Zeigt Antwortzeit und erkannte Daten in Button-Attributen
+   - Perfekt zum Testen der bidirektionalen Kommunikation
 
-6. **Status-Anzeige** 📊
+6. **Status-Anzeige** 📊 (VOLL IMPLEMENTIERT)
    - Binary Sensor zeigt Telegram-Bot-Status
    - Detaillierte Attribute zur Konfiguration
+   - Button-Attribute zeigen Test-Ergebnisse
+
+7. **Lovelace Card Integration** 💳 (NEU - VOLL IMPLEMENTIERT)
+   - Zeigt Benutzer-Nachricht und AI-erkannte Daten nebeneinander
+   - Sichtbar beim Bearbeiten von Tankvorgängen
+   - Nur angezeigt wenn Telegram-Antwort vorhanden
 
 ## 🚀 Schnellstart
 
@@ -63,14 +74,40 @@ Wenn Telegram noch nicht konfiguriert ist, siehe: [TELEGRAM_SETUP_DE.md](docs/TE
 
 ### Erste Schritte
 
-1. **Test-Tankvorgang simulieren** über Developer Tools → Services
-2. **Telegram-Nachricht empfangen** mit Tankvorgangs-Details
-3. **Antworten** mit einer der vier Methoden:
-   - Inline-Taste drücken
+1. **Test-Button nutzen**
+   - Öffnen Sie Home Assistant Dashboard
+   - Suchen Sie den Button "Telegram API Test" für Ihr Fahrzeug
+   - Klicken Sie den Button
+   - Bei bidirektionaler Unterstützung: Antworten Sie auf die Telegram-Nachricht
+   - Prüfen Sie die Button-Attribute für Testergebnisse
+
+2. **Alternativ: Test-Tankvorgang über Service simulieren**
+   ```yaml
+   service: hafwcma.simulate_refueling_event
+   data:
+     config_entry_id: "IHRE_CONFIG_ENTRY_ID"
+     include_missing_data: true
+   ```
+
+3. **Config Entry ID finden:**
+   - Methode 1: Developer Tools → States → Suchen Sie `sensor.[fahrzeugname]_*` → Schauen Sie in die Attribute
+   - Methode 2: Prüfen Sie die Button-Attribute von `button.[fahrzeugname]_telegram_api_test`
+   - Methode 3: `.storage/core.config_entries` Datei (für fortgeschrittene Benutzer)
+
+4. **Telegram-Nachricht empfangen** mit Tankvorgangs-Details
+
+5. **Antworten** mit einer der Methoden:
+   - Inline-Taste drücken (✅ Bestätigen / ✏️ Bearbeiten)
    - Text antworten: "45.5 L, 1.599 €/L, Shell"
-   - Foto der Quittung senden
-   - Sprachnachricht senden
-4. **Bestätigung erhalten** mit den erkannten Daten
+   - Foto der Quittung senden (OCR muss noch implementiert werden)
+   - Sprachnachricht senden (STT muss noch implementiert werden)
+
+6. **Bestätigung erhalten** mit den erkannten Daten
+
+7. **Tankvorgang prüfen** in der Lovelace Card:
+   - Öffnen Sie den Tankvorgang zum Bearbeiten
+   - Scrollen Sie nach unten zum Abschnitt "📱 Telegram Response"
+   - Sehen Sie Ihre ursprüngliche Nachricht und die AI-erkannten Daten nebeneinander
 
 ## 📚 Dokumentation
 
@@ -180,33 +217,106 @@ Das System versteht verschiedene Formate:
 
 ## 📸 Foto-Support (Optional)
 
+**STATUS: 🔄 IN VORBEREITUNG - Implementierung erforderlich**
+
+Die Infrastruktur für Foto-Verarbeitung ist vorhanden, aber die OCR-Engine muss noch implementiert werden.
+
+### Was bereits funktioniert:
+- ✅ Foto-Upload via Telegram wird empfangen
+- ✅ File-ID wird gespeichert
+- ✅ Foto wird als "telegram_response_type: photo" markiert
+- ✅ Platzhalter-Nachricht wird angezeigt
+
+### Was noch implementiert werden muss:
+- ❌ OCR-Engine zur Texterkennung
+- ❌ Download des Fotos vom Telegram-Server
+- ❌ Verarbeitung und Texterkennung
+
+### Implementierungsoptionen:
+
 Für die Quittungs-Erkennung können Sie eine OCR-Lösung implementieren:
 
 ### Lokale Optionen (Datenschutz)
 - **Tesseract OCR**: Kostenlos, offline
+  - Installation: `apt-get install tesseract-ocr` + Python: `pip install pytesseract`
+  - Config Flow Erweiterung: Checkbox "Use Tesseract OCR"
 - **EasyOCR**: Bessere Genauigkeit, mehrsprachig
+  - Installation: `pip install easyocr`
+  - Config Flow Erweiterung: Checkbox "Use EasyOCR"
 - **PaddleOCR**: Sehr gute Genauigkeit, schnell
+  - Installation: `pip install paddleocr`
+  - Config Flow Erweiterung: Checkbox "Use PaddleOCR"
 
 ### Cloud-Optionen (Hohe Genauigkeit)
 - **Google Cloud Vision**: Bis 1000 Anfragen/Monat kostenlos
+  - Config Flow Erweiterung: API Key Feld
 - **AWS Textract**: Spezialisiert auf Dokumente
+  - Config Flow Erweiterung: AWS Credentials
 - **Azure Computer Vision**: Microsoft-Integration
+  - Config Flow Erweiterung: Azure API Key
+
+### Erforderliche Config Flow Änderungen:
+1. Neuer Schritt "OCR Configuration" im Setup
+2. Auswahl zwischen Local/Cloud
+3. Bei Local: Auswahl der Engine (Tesseract/EasyOCR/PaddleOCR)
+4. Bei Cloud: API-Schlüssel Eingabe
+5. Test-Button zur Verifikation
+
+**Implementierungsort**: `telegram_refueling_handler.py` → Methode `_perform_ocr()`
 
 **Implementierungsanleitung** in der Dokumentation!
 
 ## 🎤 Sprach-Support (Optional)
 
+**STATUS: 🔄 IN VORBEREITUNG - Implementierung erforderlich**
+
+Die Infrastruktur für Sprachnachrichten-Verarbeitung ist vorhanden, aber die STT-Engine muss noch implementiert werden.
+
+### Was bereits funktioniert:
+- ✅ Sprachnachrichten via Telegram werden empfangen
+- ✅ File-ID wird gespeichert
+- ✅ Voice-Nachricht wird als "telegram_response_type: voice" markiert
+- ✅ Platzhalter-Nachricht wird angezeigt
+
+### Was noch implementiert werden muss:
+- ❌ Speech-to-Text Engine zur Transkription
+- ❌ Download der Sprachdatei vom Telegram-Server
+- ❌ Audio-Konvertierung (Telegram sendet .ogg Format)
+- ❌ Transkription und Verarbeitung
+
+### Implementierungsoptionen:
+
 Für Sprachnachrichten können Sie eine Speech-to-Text-Lösung implementieren:
 
 ### Lokale Optionen (Datenschutz)
 - **Whisper (OpenAI)**: State-of-the-art, offline möglich
+  - Installation: `pip install openai-whisper`
+  - Modellgröße wählbar (tiny bis large)
+  - Config Flow Erweiterung: Whisper Model Selection (tiny/base/small/medium/large)
 - **Faster-Whisper**: 4x schneller als Whisper
+  - Installation: `pip install faster-whisper`
+  - Config Flow Erweiterung: Checkbox "Use Faster-Whisper"
 - **Vosk**: Leichtgewichtig, schnell
+  - Installation: `pip install vosk` + Modell-Download
+  - Config Flow Erweiterung: Vosk Model Path
 
 ### Cloud-Optionen (Hohe Genauigkeit)
 - **Google Speech-to-Text**: Bis 60 Min/Monat kostenlos
+  - Config Flow Erweiterung: Google Cloud API Key
 - **AWS Transcribe**: Batch-Verarbeitung
+  - Config Flow Erweiterung: AWS Credentials
 - **Azure Speech**: Mehrsprachig
+  - Config Flow Erweiterung: Azure Speech Key
+
+### Erforderliche Config Flow Änderungen:
+1. Neuer Schritt "Speech-to-Text Configuration" im Setup
+2. Auswahl zwischen Local/Cloud
+3. Bei Local: Auswahl der Engine und Modell
+4. Bei Cloud: API-Schlüssel Eingabe
+5. Sprach-Auswahl (Deutsch, Englisch, etc.)
+6. Test-Button zur Verifikation
+
+**Implementierungsort**: `telegram_refueling_handler.py` → Methode `_transcribe_voice()`
 
 **Implementierungsanleitung** in der Dokumentation!
 
@@ -226,7 +336,39 @@ Für Sprachnachrichten können Sie eine Speech-to-Text-Lösung implementieren:
 
 ## 🧪 Testen
 
-### Test-Service verwenden
+### Methode 1: Test-Button verwenden (EMPFOHLEN)
+
+Der einfachste Weg zum Testen:
+
+1. **Button finden**:
+   - Öffnen Sie Ihr Home Assistant Dashboard
+   - Suchen Sie nach `button.[fahrzeugname]_telegram_api_test`
+   - Oder: Entities → Filter "telegram"
+
+2. **Button drücken**:
+   - Klicken Sie auf den Button
+   - System prüft automatisch ob bidirektionale Kommunikation verfügbar ist
+   - Bei Unterstützung: Echter Tankvorgang wird erstellt
+   - Sonst: Einfache Test-Nachricht wird gesendet
+
+3. **Auf Telegram antworten**:
+   - Sie erhalten eine Nachricht über einen neuen Tankvorgang
+   - Antworten Sie mit: "45.5 L, 1.599 €/L, Shell, 123456 km"
+   - Oder nutzen Sie die Inline-Buttons
+
+4. **Ergebnisse prüfen**:
+   - Öffnen Sie die Button-Entität
+   - Schauen Sie in die Attribute:
+     - `test_refuel_id`: ID des Test-Tankvorgangs
+     - `test_refuel_created_at`: Zeitpunkt der Erstellung
+     - `test_refuel_response_at`: Zeitpunkt der Antwort
+     - `test_response_time_seconds`: Antwortzeit in Sekunden
+     - `test_refuel_response_raw`: Ihre ursprüngliche Nachricht
+     - `test_refuel_response_parsed`: Die erkannten Daten
+
+### Methode 2: Test-Service verwenden
+
+Für fortgeschrittene Benutzer oder Automationen:
 
 ```yaml
 service: hafwcma.simulate_refueling_event
@@ -237,8 +379,9 @@ data:
 
 **Config Entry ID finden:**
 1. Developer Tools → States
-2. Suchen Sie nach `sensor.[fahrzeugname]_*`
+2. Suchen Sie nach `sensor.[fahrzeugname]_*` oder `button.[fahrzeugname]_telegram_api_test`
 3. Schauen Sie in die Attribute
+4. Oder: Prüfen Sie `.storage/core.config_entries` (für Experten)
 
 ### Status überprüfen
 

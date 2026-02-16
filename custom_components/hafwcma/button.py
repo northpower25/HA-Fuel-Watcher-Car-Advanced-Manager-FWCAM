@@ -779,7 +779,7 @@ class ConsumptionPredictionButton(ButtonEntity):
 
 
 class TelegramTestButton(ButtonEntity):
-    """Button to test Telegram API connection and method."""
+    """Button to test Telegram API connection and bidirectional refueling flow."""
     
     _attr_icon = "mdi:telegram"
     _attr_has_entity_name = True
@@ -814,6 +814,13 @@ class TelegramTestButton(ButtonEntity):
         self._last_receive_result = None
         self._last_received_message = None
         
+        # Refueling test flow attributes
+        self._test_refuel_id: int | None = None
+        self._test_refuel_created_at: str | None = None
+        self._test_refuel_response_at: str | None = None
+        self._test_refuel_response_raw: str | None = None
+        self._test_refuel_response_parsed: dict | None = None
+        
         # Device info for grouping
         self._attr_device_info = {
             "identifiers": {(DOMAIN, config_entry.entry_id)},
@@ -824,6 +831,31 @@ class TelegramTestButton(ButtonEntity):
         
         # Determine method on initialization
         self._update_method_info()
+        
+        # Listen for refueling response events
+        self._setup_event_listener()
+    
+    def _setup_event_listener(self) -> None:
+        """Set up event listener for refueling responses."""
+        from homeassistant.core import callback
+        
+        @callback
+        def _handle_refueling_response(event):
+            """Handle refueling response event."""
+            # Check if this is a response to our test refueling
+            refuel_id = event.data.get("refuel_id")
+            if refuel_id == self._test_refuel_id:
+                self._test_refuel_response_at = dt_util.now().isoformat()
+                self._test_refuel_response_raw = event.data.get("telegram_response_raw")
+                self._test_refuel_response_parsed = event.data.get("telegram_response_parsed")
+                self._last_receive_result = "response_received"
+                self.async_write_ha_state()
+        
+        # Listen for refueling update events
+        self._hass.bus.async_listen(
+            f"{DOMAIN}_refueling_updated",
+            _handle_refueling_response
+        )
     
     def _update_method_info(self) -> None:
         """Update information about which Telegram method is being used."""
@@ -838,7 +870,7 @@ class TelegramTestButton(ButtonEntity):
             self._supports_bidirectional = False
     
     async def async_press(self) -> None:
-        """Handle button press - trigger Telegram API test."""
+        """Handle button press - trigger Telegram API test with refueling flow."""
         from telegram import Bot
         from telegram.error import TelegramError
         from .const import (
@@ -865,45 +897,14 @@ class TelegramTestButton(ButtonEntity):
         
         # Test sending message
         try:
-            test_message = (
-                "🧪 <b>Telegram API Test</b>\n\n"
-                f"Method: <code>{self._method_used}</code>\n"
-                f"Timestamp: {timestamp}\n\n"
-                "✅ Send test successful!"
-            )
-            
-            if self._method_used == TELEGRAM_METHOD_INTEGRATION:
-                # Use Home Assistant's telegram_bot service
-                await self._hass.services.async_call(
-                    "telegram_bot",
-                    "send_message",
-                    {
-                        "target": telegram_chat_id,
-                        "message": test_message,
-                        "parse_mode": "HTML",
-                    },
-                    blocking=True,
-                )
-                _LOGGER.info("Test message sent via telegram_bot integration")
+            # If bidirectional is supported, create a real test refueling
+            if self._supports_bidirectional:
+                await self._test_bidirectional_flow(timestamp)
             else:
-                # Use direct Bot API
-                bot = Bot(token=telegram_token)
-                await bot.send_message(
-                    chat_id=telegram_chat_id,
-                    text=test_message,
-                    parse_mode="HTML",
-                )
-                _LOGGER.info("Test message sent via direct Bot API")
+                # Just send a simple test message
+                await self._test_unidirectional_flow(timestamp, telegram_token, telegram_chat_id)
             
             self._last_send_result = "success"
-            
-            # For bidirectional test, we would need to set up a listener
-            if self._supports_bidirectional:
-                self._last_receive_result = "supported_not_tested"
-                _LOGGER.info("Bidirectional communication is supported via telegram_bot integration")
-            else:
-                self._last_receive_result = "not_supported"
-                _LOGGER.info("Bidirectional communication not supported with direct API")
             
         except TelegramError as err:
             _LOGGER.error("Telegram API test failed: %s", err)
@@ -913,6 +914,106 @@ class TelegramTestButton(ButtonEntity):
             _LOGGER.error("Unexpected error during Telegram test: %s", err)
             self._last_send_result = f"error: {err}"
             self._last_receive_result = "not_tested"
+    
+    async def _test_bidirectional_flow(self, timestamp: str) -> None:
+        """Test the bidirectional flow by creating a real refueling event.
+        
+        Args:
+            timestamp: Test timestamp
+        """
+        from .utils.storage import add_refuel_event
+        import random
+        
+        _LOGGER.info("Testing bidirectional Telegram flow with real refueling event")
+        
+        # Create a test refueling with missing data
+        liters = round(random.uniform(30.0, 55.0), 2)
+        event_data = {
+            "timestamp": timestamp,
+            "liters_refueled": liters,
+            "fuel_type": "e10",
+            "data_quality": "manual",  # Will be changed to ai_processed when user responds
+            "confidence": 0.8,
+            "notes": "🧪 TEST - Created by Telegram Test Button",
+            # Intentionally omit: odometer_km, price_per_liter, total_cost, station_name
+        }
+        
+        # Add the refueling event
+        event_id = await add_refuel_event(self._hass, self._config_entry, event_data)
+        self._test_refuel_id = event_id
+        self._test_refuel_created_at = timestamp
+        self._test_refuel_response_at = None
+        self._test_refuel_response_raw = None
+        self._test_refuel_response_parsed = None
+        
+        _LOGGER.info("Test refueling created with ID %s", event_id)
+        
+        # Fire event for Telegram notification (this will trigger the notification)
+        self._hass.bus.async_fire(
+            f"{DOMAIN}_refueling_added",
+            {
+                "config_entry_id": self._config_entry.entry_id,
+                "refuel_id": event_id,
+                "refuel_data": event_data,
+            }
+        )
+        
+        # Update status
+        self._last_receive_result = "waiting_for_response"
+        
+        # Trigger coordinator refresh to update sensors immediately
+        if self._coordinator:
+            await self._coordinator.async_request_refresh()
+    
+    async def _test_unidirectional_flow(
+        self,
+        timestamp: str,
+        telegram_token: str,
+        telegram_chat_id: str
+    ) -> None:
+        """Test unidirectional flow (direct API without telegram_bot integration).
+        
+        Args:
+            timestamp: Test timestamp
+            telegram_token: Telegram bot token
+            telegram_chat_id: Telegram chat ID
+        """
+        from telegram import Bot
+        from .const import TELEGRAM_METHOD_INTEGRATION
+        
+        test_message = (
+            "🧪 <b>Telegram API Test</b>\n\n"
+            f"Method: <code>{self._method_used}</code>\n"
+            f"Timestamp: {timestamp}\n\n"
+            "✅ Send test successful!\n\n"
+            "⚠️ <b>Note:</b> Bidirectional communication requires the "
+            "<code>telegram_bot</code> integration to be installed and configured."
+        )
+        
+        if self._method_used == TELEGRAM_METHOD_INTEGRATION:
+            # Use Home Assistant's telegram_bot service
+            await self._hass.services.async_call(
+                "telegram_bot",
+                "send_message",
+                {
+                    "target": telegram_chat_id,
+                    "message": test_message,
+                    "parse_mode": "HTML",
+                },
+                blocking=True,
+            )
+            _LOGGER.info("Test message sent via telegram_bot integration")
+        else:
+            # Use direct Bot API
+            bot = Bot(token=telegram_token)
+            await bot.send_message(
+                chat_id=telegram_chat_id,
+                text=test_message,
+                parse_mode="HTML",
+            )
+            _LOGGER.info("Test message sent via direct Bot API")
+        
+        self._last_receive_result = "not_supported"
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -936,6 +1037,31 @@ class TelegramTestButton(ButtonEntity):
         
         if self._last_received_message:
             attrs["last_received_message"] = self._last_received_message
+        
+        # Add refueling test flow attributes
+        if self._test_refuel_id:
+            attrs["test_refuel_id"] = self._test_refuel_id
+        
+        if self._test_refuel_created_at:
+            attrs["test_refuel_created_at"] = self._test_refuel_created_at
+        
+        if self._test_refuel_response_at:
+            attrs["test_refuel_response_at"] = self._test_refuel_response_at
+            # Calculate response time
+            try:
+                from datetime import datetime
+                created = datetime.fromisoformat(self._test_refuel_created_at)
+                responded = datetime.fromisoformat(self._test_refuel_response_at)
+                response_time_seconds = (responded - created).total_seconds()
+                attrs["test_response_time_seconds"] = round(response_time_seconds, 2)
+            except:
+                pass
+        
+        if self._test_refuel_response_raw:
+            attrs["test_refuel_response_raw"] = self._test_refuel_response_raw
+        
+        if self._test_refuel_response_parsed:
+            attrs["test_refuel_response_parsed"] = self._test_refuel_response_parsed
         
         return attrs
 
