@@ -36,6 +36,11 @@ _LOGGER = logging.getLogger(__name__)
 MAX_REASONABLE_DAILY_KM = 800.0
 MIN_REASONABLE_DAILY_KM = 0.1
 
+# Minimum time interval for meaningful daily km calculations
+# Skip data points that are too close together (e.g., during active driving with frequent updates)
+# 4 hours = 0.167 days provides a reasonable baseline for daily pattern analysis
+MIN_TIME_INTERVAL_DAYS = 0.167  # ~4 hours
+
 
 def _parse_iso_timestamp(ts: str) -> Optional[datetime]:
     """Parse ISO format timestamp.
@@ -157,6 +162,16 @@ async def analyze_consumption_patterns(
         # Validation: Skip invalid or suspicious data
         if days_elapsed <= 0:
             _LOGGER.debug("Skipping entry with non-positive time elapsed: %.4f days", days_elapsed)
+            continue
+        
+        # Skip very short time intervals to avoid inflated daily km calculations
+        # During active driving, odometer updates every few minutes can create artificially high daily km values
+        if days_elapsed < MIN_TIME_INTERVAL_DAYS:
+            _LOGGER.debug(
+                "Skipping entry with too short time interval: %.4f days (%.1f hours). "
+                "Short intervals during driving can create inflated daily km calculations.",
+                days_elapsed, days_elapsed * 24
+            )
             continue
         
         if km_driven < 0:
