@@ -10,6 +10,7 @@ including:
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
@@ -287,17 +288,17 @@ class TelegramRefuelingHandler:
         
         station_name = refuel_data.get("station_name")
         if station_name:
-            message_parts.append(f"🏪 Tankstelle: {station_name}")
+            message_parts.append(f"🏪 Tankstelle: {html.escape(str(station_name))}")
         else:
             missing_fields.append("Tankstellenname")
         
         station_address = refuel_data.get("station_address")
         if station_address:
-            message_parts.append(f"📍 Adresse: {station_address}")
+            message_parts.append(f"📍 Adresse: {html.escape(str(station_address))}")
         
         fuel_type = refuel_data.get("fuel_type")
         if fuel_type:
-            message_parts.append(f"⚡ Kraftstoffart: {fuel_type}")
+            message_parts.append(f"⚡ Kraftstoffart: {html.escape(str(fuel_type))}")
         
         # Show missing fields
         if missing_fields:
@@ -305,7 +306,7 @@ class TelegramRefuelingHandler:
             message_parts.append(", ".join(missing_fields))
             message_parts.append(
                 f"\n💡 <b>Wie können Sie antworten:</b>\n"
-                f"• Antworten Sie mit 'Tankvorgang #{refuel_id}: <Ihre Daten>'\n"
+                f"• Antworten Sie mit 'Tankvorgang #{refuel_id}: &lt;Ihre Daten&gt;'\n"
                 f"• Oder einfach: '45.5 L, 1.599 €/L, Shell' (wird automatisch zugeordnet)\n"
                 f"• Senden Sie ein Foto der Quittung\n"
                 f"• Senden Sie eine Sprachnachricht\n"
@@ -772,7 +773,7 @@ class TelegramRefuelingHandler:
         # Send confirmation
         await self._send_telegram_message(
             f"✅ Daten für Tankvorgang #{refuel_id} aktualisiert!\n\n"
-            f"Erkannte Daten:\n{json.dumps(parsed_data, indent=2, ensure_ascii=False)}"
+            f"Erkannte Daten:\n<code>{html.escape(json.dumps(parsed_data, indent=2, ensure_ascii=False))}</code>"
         )
         
         # Remove from pending
@@ -929,8 +930,8 @@ class TelegramRefuelingHandler:
         # Send confirmation
         await self._send_telegram_message(
             f"📷 Quittung für Tankvorgang #{refuel_id} empfangen!\n\n"
-            f"OCR-Text:\n{ocr_text or 'Keine Daten erkannt'}\n\n"
-            f"Erkannte Daten:\n{json.dumps(parsed_data, indent=2, ensure_ascii=False)}"
+            f"OCR-Text:\n<code>{html.escape(ocr_text or 'Keine Daten erkannt')}</code>\n\n"
+            f"Erkannte Daten:\n<code>{html.escape(json.dumps(parsed_data, indent=2, ensure_ascii=False))}</code>"
         )
         
         # Remove from pending
@@ -998,8 +999,8 @@ class TelegramRefuelingHandler:
         # Send confirmation
         await self._send_telegram_message(
             f"🎤 Sprachnachricht für Tankvorgang #{refuel_id} empfangen!\n\n"
-            f"Transkription:\n{transcription or 'Keine Daten erkannt'}\n\n"
-            f"Erkannte Daten:\n{json.dumps(parsed_data, indent=2, ensure_ascii=False)}"
+            f"Transkription:\n<code>{html.escape(transcription or 'Keine Daten erkannt')}</code>\n\n"
+            f"Erkannte Daten:\n<code>{html.escape(json.dumps(parsed_data, indent=2, ensure_ascii=False))}</code>"
         )
         
         # Remove from pending
