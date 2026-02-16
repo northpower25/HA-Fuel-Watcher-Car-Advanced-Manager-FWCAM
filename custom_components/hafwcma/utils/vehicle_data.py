@@ -86,15 +86,25 @@ def _normalize_numeric_string(value: str | float | int) -> str:
         value_str = value_str.replace(',', '')
     elif comma_count == 1:
         # Single comma - could be decimal separator or thousands separator
-        # Check position: if there are 3 digits after comma, it's likely thousands separator
+        # Heuristics:
+        # - If exactly 3 digits after comma AND comma is not near start: thousands separator (e.g., "1,234")
+        # - If 1-2 digits after comma: likely decimal separator (e.g., "123,45" or "1,5")
+        # - If comma is very early (first or second position): likely decimal (e.g., "1,5" or "12,34")
         comma_pos = value_str.find(',')
         digits_after_comma = len(value_str) - comma_pos - 1
         
-        if digits_after_comma == 3 and comma_pos > 0:
-            # Likely thousands separator (e.g., "1,234")
-            value_str = value_str.replace(',', '')
+        if digits_after_comma == 3 and comma_pos >= 1:
+            # Likely thousands separator (e.g., "1,234" or "12,345")
+            # But only if there are enough digits before comma
+            digits_before_comma = comma_pos
+            if digits_before_comma >= 1 and digits_before_comma <= 3:
+                # This looks like thousands separator format
+                value_str = value_str.replace(',', '')
+            else:
+                # Unusual format - treat as decimal to be safe
+                value_str = value_str.replace(',', '.')
         else:
-            # Likely decimal separator (e.g., "1,5" or "123,45")
+            # 1-2 digits after comma, or > 3 digits - likely decimal separator
             value_str = value_str.replace(',', '.')
     elif dot_count > 1:
         # Multiple dots - they're thousands separators (German format: "1.234.567")
