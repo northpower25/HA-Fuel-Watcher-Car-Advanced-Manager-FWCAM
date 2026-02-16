@@ -218,15 +218,16 @@ async def analyze_consumption_patterns(
             sorted_km = sorted(km_list)
             
             # Use statistics.quantiles for accurate quartile calculation
-            # quantiles(data, n=4) returns 3 cut points for quartiles
+            # quantiles(data, n=4) returns exactly 3 cut points: [Q1, Q2, Q3]
             try:
                 quartiles = statistics.quantiles(sorted_km, n=4)
                 
-                # Ensure we have the expected number of quartiles
-                if len(quartiles) >= 3:
-                    q1 = quartiles[0]  # 25th percentile
-                    q3 = quartiles[2]  # 75th percentile
-                    iqr = q3 - q1
+                # statistics.quantiles(n=4) always returns exactly 3 values when successful
+                if len(quartiles) == 3:
+                    q1 = quartiles[0]  # 25th percentile (Q1)
+                    # q2 = quartiles[1]  # 50th percentile (Q2/median) - not needed for IQR
+                    q3 = quartiles[2]  # 75th percentile (Q3)
+                    iqr = q3 - q1  # Interquartile range
                     
                     # Define outliers as values outside [Q1 - 1.5*IQR, Q3 + 1.5*IQR]
                     lower_bound = q1 - 1.5 * iqr
