@@ -405,7 +405,7 @@ async def analyze_forecast_recommendation(
     if predicted_avg is None:
         return {
             "has_forecast": False,
-            "reason": f"No data for {weekday_names[predicted_weekday]}"
+            "reason": f"No data for {WEEKDAY_NAMES[predicted_weekday]}"
         }
     
     # Find cheapest weekday in history
