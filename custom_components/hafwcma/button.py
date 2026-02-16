@@ -949,6 +949,12 @@ class TelegramTestButton(ButtonEntity):
         _LOGGER.info("Test refueling created with ID %s", event_id)
         
         # Fire event for Telegram notification (this will trigger the notification)
+        _LOGGER.info(
+            "Firing %s_refueling_added event (config_entry_id: %s, refuel_id: %s)",
+            DOMAIN,
+            self._config_entry.entry_id,
+            event_id
+        )
         self._hass.bus.async_fire(
             f"{DOMAIN}_refueling_added",
             {
@@ -957,6 +963,7 @@ class TelegramTestButton(ButtonEntity):
                 "refuel_data": event_data,
             }
         )
+        _LOGGER.info("Event fired successfully. Notification should be sent shortly.")
         
         # Update status
         self._last_receive_result = "waiting_for_response"
