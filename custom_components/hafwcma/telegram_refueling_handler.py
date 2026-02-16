@@ -742,6 +742,8 @@ class TelegramRefuelingHandler:
         fuel_type = refuel_data.get("fuel_type")
         if fuel_type:
             message_parts.append(f"⚡ Kraftstoffart: {html.escape(str(fuel_type))}")
+        else:
+            missing_fields.append("Kraftstoffart")
         
         # Show missing fields or completion status
         if missing_fields:
@@ -1330,6 +1332,20 @@ class TelegramRefuelingHandler:
             station_match = re.search(r"(?:Station|Tankstelle)[:\s]+([A-Za-zäöüÄÖÜß\s]+)", text, re.IGNORECASE)
             if station_match:
                 parsed["station_name"] = station_match.group(1).strip()
+        
+        # Extract fuel type
+        # Examples: "E5", "E10", "Super", "Diesel", "Super Plus"
+        fuel_type_patterns = [
+            (r"\b(e\s*5|super\s*e5)\b", "e5"),
+            (r"\b(e\s*10|super\s*e10)\b", "e10"),
+            (r"\b(diesel)\b", "diesel"),
+            (r"\b(super\s*plus|super\+)\b", "e5"),  # Super Plus typically means E5
+        ]
+        for pattern, fuel_type in fuel_type_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                parsed["fuel_type"] = fuel_type
+                _LOGGER.debug("Extracted fuel type: %s", fuel_type)
+                break
         
         # Calculate price_per_liter if we have total_cost and liters but no explicit price
         if "price_per_liter" not in parsed and "total_cost" in parsed and "liters_refueled" in parsed:
