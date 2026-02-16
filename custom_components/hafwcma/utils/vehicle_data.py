@@ -49,10 +49,76 @@ async def async_get_entity_state(
     return state
 
 
+def _normalize_numeric_string(value: str | float | int) -> str:
+    """Normalize numeric string by replacing comma decimal separators with dots.
+    
+    Handles both German locale format (e.g., "1.234,56") and standard format (e.g., "1234.56").
+    This prevents misinterpretation of localized number formats.
+    
+    Args:
+        value: Numeric value as string, float, or int
+        
+    Returns:
+        Normalized string with dot as decimal separator
+    """
+    if isinstance(value, (int, float)):
+        return str(value)
+    
+    value_str = str(value).strip()
+    
+    # Count dots and commas to determine format
+    dot_count = value_str.count('.')
+    comma_count = value_str.count(',')
+    
+    if comma_count > 0 and dot_count > 0:
+        # Mixed format - determine which is decimal separator
+        last_dot_pos = value_str.rfind('.')
+        last_comma_pos = value_str.rfind(',')
+        
+        if last_comma_pos > last_dot_pos:
+            # Comma is decimal separator (German format: "1.234,56")
+            value_str = value_str.replace('.', '').replace(',', '.')
+        else:
+            # Dot is decimal separator (English format: "1,234.56")
+            value_str = value_str.replace(',', '')
+    elif comma_count > 1:
+        # Multiple commas - they're thousands separators (English format: "1,234,567")
+        value_str = value_str.replace(',', '')
+    elif comma_count == 1:
+        # Single comma - could be decimal separator or thousands separator
+        # Heuristics:
+        # - If exactly 3 digits after comma AND comma is not near start: thousands separator (e.g., "1,234")
+        # - If 1-2 digits after comma: likely decimal separator (e.g., "123,45" or "1,5")
+        # - If comma is very early (first or second position): likely decimal (e.g., "1,5" or "12,34")
+        comma_pos = value_str.find(',')
+        digits_after_comma = len(value_str) - comma_pos - 1
+        
+        if digits_after_comma == 3 and comma_pos >= 1:
+            # Likely thousands separator (e.g., "1,234" or "12,345")
+            # But only if there are enough digits before comma
+            digits_before_comma = comma_pos
+            if digits_before_comma >= 1 and digits_before_comma <= 3:
+                # This looks like thousands separator format
+                value_str = value_str.replace(',', '')
+            else:
+                # Unusual format - treat as decimal to be safe
+                value_str = value_str.replace(',', '.')
+        else:
+            # 1-2 digits after comma, or > 3 digits - likely decimal separator
+            value_str = value_str.replace(',', '.')
+    elif dot_count > 1:
+        # Multiple dots - they're thousands separators (German format: "1.234.567")
+        value_str = value_str.replace('.', '')
+    
+    return value_str
+
+
 async def async_get_numeric_state(
     hass: HomeAssistant, entity_id: str | None, default: float | None = None, silent: bool = False
 ) -> float | None:
     """Get numeric state value from an entity.
+    
+    Handles localized number formats with comma decimal separators.
     
     Args:
         hass: Home Assistant instance
@@ -73,11 +139,13 @@ async def async_get_numeric_state(
         return default
         
     try:
-        return float(state.state)
-    except (ValueError, TypeError):
+        normalized = _normalize_numeric_string(state.state)
+        return float(normalized)
+    except (ValueError, TypeError) as err:
         if not silent:
             _LOGGER.warning(
-                "Could not convert state of %s to float: %s", entity_id, state.state
+                "Could not convert state of %s to float: %s (error: %s)", 
+                entity_id, state.state, err
             )
         return default
 

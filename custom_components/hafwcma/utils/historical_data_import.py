@@ -29,6 +29,71 @@ from .storage import (
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _normalize_numeric_string(value: str | float | int) -> str:
+    """Normalize numeric string by replacing comma decimal separators with dots.
+    
+    Handles both German locale format (e.g., "1.234,56") and standard format (e.g., "1234.56").
+    This prevents misinterpretation of localized number formats.
+    
+    Args:
+        value: Numeric value as string, float, or int
+        
+    Returns:
+        Normalized string with dot as decimal separator
+    """
+    if isinstance(value, (int, float)):
+        return str(value)
+    
+    value_str = str(value).strip()
+    
+    # Count dots and commas to determine format
+    dot_count = value_str.count('.')
+    comma_count = value_str.count(',')
+    
+    if comma_count > 0 and dot_count > 0:
+        # Mixed format - determine which is decimal separator
+        last_dot_pos = value_str.rfind('.')
+        last_comma_pos = value_str.rfind(',')
+        
+        if last_comma_pos > last_dot_pos:
+            # Comma is decimal separator (German format: "1.234,56")
+            value_str = value_str.replace('.', '').replace(',', '.')
+        else:
+            # Dot is decimal separator (English format: "1,234.56")
+            value_str = value_str.replace(',', '')
+    elif comma_count > 1:
+        # Multiple commas - they're thousands separators (English format: "1,234,567")
+        value_str = value_str.replace(',', '')
+    elif comma_count == 1:
+        # Single comma - could be decimal separator or thousands separator
+        # Heuristics:
+        # - If exactly 3 digits after comma AND comma is not near start: thousands separator (e.g., "1,234")
+        # - If 1-2 digits after comma: likely decimal separator (e.g., "123,45" or "1,5")
+        # - If comma is very early (first or second position): likely decimal (e.g., "1,5" or "12,34")
+        comma_pos = value_str.find(',')
+        digits_after_comma = len(value_str) - comma_pos - 1
+        
+        if digits_after_comma == 3 and comma_pos >= 1:
+            # Likely thousands separator (e.g., "1,234" or "12,345")
+            # But only if there are enough digits before comma
+            digits_before_comma = comma_pos
+            if digits_before_comma >= 1 and digits_before_comma <= 3:
+                # This looks like thousands separator format
+                value_str = value_str.replace(',', '')
+            else:
+                # Unusual format - treat as decimal to be safe
+                value_str = value_str.replace(',', '.')
+        else:
+            # 1-2 digits after comma, or > 3 digits - likely decimal separator
+            value_str = value_str.replace(',', '.')
+    elif dot_count > 1:
+        # Multiple dots - they're thousands separators (German format: "1.234.567")
+        value_str = value_str.replace('.', '')
+    
+    return value_str
+
+
 # Simple state-like class for wrapping long-term statistics data
 class _StateLike:
     """Minimal state-like object to wrap long-term statistics data."""
@@ -409,8 +474,8 @@ async def _import_odometer_history(
                 if state.state in INVALID_SENSOR_STATES:
                     continue
                 
-                # Parse odometer value
-                odometer_value = float(state.state)
+                # Parse odometer value with normalization for comma decimal separators
+                odometer_value = float(_normalize_numeric_string(state.state))
                 timestamp = state.last_changed
                 
                 # Keep this reading if:
@@ -656,7 +721,7 @@ async def _import_tank_history_and_detect_refueling(
         for state in all_odometer_states:
                 try:
                     if state.state not in INVALID_SENSOR_STATES:
-                        odometer_lookup[state.last_changed] = float(state.state)
+                        odometer_lookup[state.last_changed] = float(_normalize_numeric_string(state.state))
                 except (ValueError, TypeError):
                     continue
         
@@ -709,7 +774,7 @@ async def _import_tank_history_and_detect_refueling(
                     states_skipped_invalid += 1
                     continue
                 
-                current_level = float(state.state)
+                current_level = float(_normalize_numeric_string(state.state))
                 
                 # Convert percentage to liters if needed
                 if tank_level_in_percentage:
