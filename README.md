@@ -210,7 +210,7 @@ Each sensor provides additional attributes:
 - `recommendation`: User-friendly recommendation text
 - `price_delta`: Absolute price change from last known price (EUR)
 - `price_delta_percent`: Percentage price change
-- `costsaving_fare_vs_near_station`: Total cost savings (in EUR) when comparing the cheapest station within 10 km vs 20 km radius. Positive value means you save money by driving to the farther station. Already accounts for extra fuel costs for the round trip based on average consumption. Shows "Waiting for more data" when insufficient data is available.
+- `costsaving_far_vs_near_station`: Total cost savings (in EUR) when comparing the cheapest station within 10 km vs 20 km radius. Positive value means you save money by driving to the farther station. Already accounts for extra fuel costs for the round trip based on average consumption. Shows "Waiting for more data" when insufficient data is available.
 - `station_comparison`: Detailed breakdown of 10km vs 20km station comparison including distances, prices, fuel consumption, and total costs
 - `history_price_pattern`: Weekday-based price statistics with the following structure for each weekday (Monday-Sunday):
   - `avg_price`: Average price for all observations on that weekday in the last week (EUR/L)

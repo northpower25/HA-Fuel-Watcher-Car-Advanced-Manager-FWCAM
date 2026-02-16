@@ -1742,23 +1742,23 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
             # Negative value = lose money by driving farther (better to stay close)
             savings_value = radius_comparison.get("savings")
             if savings_value is not None:
-                attributes["costsaving_fare_vs_near_station"] = f"{savings_value:.2f} €"
+                attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} €"
             else:
-                attributes["costsaving_fare_vs_near_station"] = "Waiting for more data"
+                attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
         elif radius_comparison:
             # radius_comparison exists but has_comparison is False - show reason
             reason = radius_comparison.get("reason", "Unknown")
             if reason == "No stations available":
-                attributes["costsaving_fare_vs_near_station"] = "Waiting for station data"
+                attributes["costsaving_far_vs_near_station"] = "Waiting for station data"
             elif reason == "Tank is full":
-                attributes["costsaving_fare_vs_near_station"] = "Tank is full - no savings calculation"
+                attributes["costsaving_far_vs_near_station"] = "Tank is full - no savings calculation"
             elif reason in ["No different stations to compare", "Only 20km station available"]:
-                attributes["costsaving_fare_vs_near_station"] = "Not applicable - only one station available"
+                attributes["costsaving_far_vs_near_station"] = "Not applicable - only one station available"
             else:
-                attributes["costsaving_fare_vs_near_station"] = f"Not available ({reason})"
+                attributes["costsaving_far_vs_near_station"] = f"Not available ({reason})"
         else:
             # No radius_comparison data at all
-            attributes["costsaving_fare_vs_near_station"] = "Waiting for more data"
+            attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
         
         # Add price statistics if available (history price pattern)
         price_statistics = self.coordinator.data.get("price_statistics")
