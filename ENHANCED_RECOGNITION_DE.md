@@ -190,9 +190,9 @@ Dies erkennt:
 
 ## Technische Implementation
 
-Die Erkennung erfolgt durch reguläre Ausdrücke (Regex) in der Methode `_parse_refuel_text` in `telegram_refueling_handler.py`:
+Die Erkennung erfolgt durch reguläre Ausdrücke (Regex) in der Methode `_parse_refuel_text` in der Datei `telegram_refueling_handler.py`:
 
-- **Zeilen 1233-1247**: Kilometerstand-Erkennung
-- **Zeilen 1249-1315**: Tankstellennamen-Erkennung mit strukturierter Mustererkennung
+- **Kilometerstand-Erkennung**: Siehe Kommentare bei "Extract odometer"
+- **Tankstellennamen-Erkennung**: Siehe Kommentare bei "Extract station name with enhanced pattern matching"
 
 Alle Muster sind case-insensitive und unterstützen deutsche Umlaute (ä, ö, ü, ß).

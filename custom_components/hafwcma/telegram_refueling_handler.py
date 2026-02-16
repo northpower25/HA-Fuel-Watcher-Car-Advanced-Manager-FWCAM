@@ -1249,9 +1249,9 @@ class TelegramRefuelingHandler:
         # Extract station name with enhanced pattern matching
         # Supports: "BRAND CITY", "BRAND CITY STREET", postal codes, house numbers
         # Examples: "HEM Kummerfeld", "ARAL Elmshorn Musterstrasse", "Shell 12345 Hamburg Hauptstr. 42"
-        station_brands = ["Shell", "Aral", "ARAL", "Esso", "ESSO", "Total", "TOTAL", "Jet", "JET", 
-                         "OMV", "Agip", "AGIP", "HEM", "Hem", "Westfalen", "WESTFALEN", 
-                         "Star", "STAR", "Raiffeisen", "RAIFFEISEN", "bft", "BFT"]
+        station_brands = ["Shell", "Aral", "Esso", "Total", "Jet", 
+                         "OMV", "Agip", "HEM", "Westfalen", 
+                         "Star", "Raiffeisen", "bft"]
         
         # Try to find brand followed by location information
         # Pattern: BRAND [PLZ] CITY [STREET] [HOUSENR]
@@ -1271,6 +1271,11 @@ class TelegramRefuelingHandler:
                 
                 # Try to extract structured location info
                 # Pattern: [PLZ] CITY [STREET] [HOUSENR]
+                # Components:
+                #   (\d{5})? - Optional 5-digit postal code (PLZ)
+                #   ([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?) - City name (capitalized, may be multi-word)
+                #   ([A-ZÄÖÜ][a-zäöüß]+(?:straße|strasse|str\.?|weg|platz|allee)?)? - Optional street name
+                #   (\d{1,3})? - Optional 1-3 digit house number
                 location_pattern = r"^(?:(\d{5})\s+)?([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)(?:\s+([A-ZÄÖÜ][a-zäöüß]+(?:straße|strasse|str\.?|weg|platz|allee)?))?(?:\s+(\d{1,3}))?(?:\s|$)"
                 location_match = re.search(location_pattern, remaining_text, re.IGNORECASE)
                 
