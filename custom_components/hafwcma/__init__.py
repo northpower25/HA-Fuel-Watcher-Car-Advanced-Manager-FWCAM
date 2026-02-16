@@ -868,6 +868,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     
     # Initialize Telegram event handler for bidirectional communication
+    # Defer initialization until Home Assistant is fully started to ensure telegram_bot is loaded
     from .const import CONF_TELEGRAM_CHAT_ID, CONF_TELEGRAM_TOKEN
     from .telegram_handler import TelegramEventHandler
     
@@ -876,35 +877,58 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     if telegram_chat_id and telegram_token:
         _LOGGER.info(
-            "Telegram credentials found (chat_id: %s). Initializing Telegram handlers...",
+            "Telegram credentials found (chat_id: %s). "
+            "Will initialize Telegram handlers after Home Assistant startup completes.",
             telegram_chat_id
         )
-        telegram_handler = TelegramEventHandler(hass, entry, telegram_chat_id)
-        await telegram_handler.async_setup()
-        hass.data[DOMAIN][entry.entry_id]["telegram_handler"] = telegram_handler
-        _LOGGER.info("Telegram event handler initialized for bidirectional communication")
         
-        # Initialize Telegram refueling handler for bidirectional refueling tracking
-        from .telegram_refueling_handler import TelegramRefuelingHandler
-        
-        _LOGGER.debug("Creating TelegramRefuelingHandler instance...")
-        telegram_refueling_handler = TelegramRefuelingHandler(
-            hass,
-            entry,
-            telegram_chat_id,
-            telegram_handler
-        )
-        setup_result = await telegram_refueling_handler.async_setup()
-        
-        if setup_result:
-            hass.data[DOMAIN][entry.entry_id]["telegram_refueling_handler"] = telegram_refueling_handler
-            _LOGGER.info("✅ Telegram refueling handler successfully initialized and ready for notifications")
-        else:
-            _LOGGER.error(
-                "❌ Telegram refueling handler setup FAILED. "
-                "Refueling notifications will NOT be sent. "
-                "Check that telegram_bot integration is properly configured."
+        async def _initialize_telegram_handlers(event):
+            """Initialize Telegram handlers after HA is fully started.
+            
+            This ensures telegram_bot integration is loaded before we try to use it.
+            """
+            _LOGGER.info("Home Assistant started - initializing Telegram handlers now...")
+            
+            # Check if telegram_bot is now available
+            if "telegram_bot" not in hass.config.components:
+                _LOGGER.warning(
+                    "telegram_bot integration still not found after HA startup. "
+                    "Telegram features will not be available. "
+                    "Please configure the telegram_bot integration. "
+                    "See: https://www.home-assistant.io/integrations/telegram_bot/"
+                )
+                return
+            
+            telegram_handler = TelegramEventHandler(hass, entry, telegram_chat_id)
+            await telegram_handler.async_setup()
+            hass.data[DOMAIN][entry.entry_id]["telegram_handler"] = telegram_handler
+            _LOGGER.info("Telegram event handler initialized for bidirectional communication")
+            
+            # Initialize Telegram refueling handler for bidirectional refueling tracking
+            from .telegram_refueling_handler import TelegramRefuelingHandler
+            
+            _LOGGER.debug("Creating TelegramRefuelingHandler instance...")
+            telegram_refueling_handler = TelegramRefuelingHandler(
+                hass,
+                entry,
+                telegram_chat_id,
+                telegram_handler
             )
+            setup_result = await telegram_refueling_handler.async_setup()
+            
+            if setup_result:
+                hass.data[DOMAIN][entry.entry_id]["telegram_refueling_handler"] = telegram_refueling_handler
+                _LOGGER.info("✅ Telegram refueling handler successfully initialized and ready for notifications")
+            else:
+                _LOGGER.error(
+                    "❌ Telegram refueling handler setup FAILED. "
+                    "Refueling notifications will NOT be sent. "
+                    "Check that telegram_bot integration is properly configured."
+                )
+        
+        # Register to initialize telegram handlers after HA is fully started
+        hass.bus.async_listen_once("homeassistant_started", _initialize_telegram_handlers)
+        _LOGGER.debug("Registered telegram handler initialization for homeassistant_started event")
     else:
         _LOGGER.info(
             "Telegram not configured (chat_id: %s, token: %s), skipping event handler setup",
