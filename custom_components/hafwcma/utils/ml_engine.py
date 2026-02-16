@@ -119,6 +119,11 @@ async def analyze_consumption_patterns(
     # Calculate daily km for each day
     weekday_km: Dict[int, List[float]] = {i: [] for i in range(7)}
     
+    # Track outliers for logging
+    outliers_detected = 0
+    MAX_REASONABLE_DAILY_KM = 800.0  # Extremely high but possible for long-distance driving
+    MIN_REASONABLE_DAILY_KM = 0.1    # Minimum to avoid near-zero calculations
+    
     for i in range(len(sorted_history) - 1):
         current = sorted_history[i]
         next_entry = sorted_history[i + 1]
@@ -129,22 +134,114 @@ async def analyze_consumption_patterns(
         if not current_ts or not next_ts:
             continue
         
-        current_km = float(current.get("value", 0))
-        next_km = float(next_entry.get("value", 0))
+        try:
+            current_km = float(current.get("value", 0))
+            next_km = float(next_entry.get("value", 0))
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid odometer value in ML analysis: current=%s, next=%s (error: %s)",
+                current.get("value"), next_entry.get("value"), err
+            )
+            continue
         
         # Calculate km driven
         km_driven = next_km - current_km
         days_elapsed = (next_ts - current_ts).total_seconds() / 86400
         
-        if days_elapsed > 0 and km_driven >= 0 and days_elapsed <= 2:  # Max 2 days between readings
-            daily_km = km_driven / days_elapsed
-            weekday = current_ts.weekday()
-            weekday_km[weekday].append(daily_km)
+        # Validation: Skip invalid or suspicious data
+        if days_elapsed <= 0:
+            _LOGGER.debug("Skipping entry with non-positive time elapsed: %.4f days", days_elapsed)
+            continue
+        
+        if km_driven < 0:
+            _LOGGER.debug(
+                "Skipping entry with negative km driven: %.1f km (odometer rollback or reset?)",
+                km_driven
+            )
+            continue
+        
+        if days_elapsed > 2:
+            # Skip entries with gaps > 2 days to avoid inaccurate attribution
+            continue
+        
+        # Calculate daily km
+        daily_km = km_driven / days_elapsed
+        
+        # Outlier detection: Flag and skip extremely high daily km values
+        if daily_km > MAX_REASONABLE_DAILY_KM:
+            outliers_detected += 1
+            _LOGGER.warning(
+                "Outlier detected: %.1f km/day (%.1f km over %.2f days) from %s to %s. "
+                "Skipping this data point. Check odometer readings: current=%.1f km, next=%.1f km",
+                daily_km,
+                km_driven,
+                days_elapsed,
+                current_ts.strftime("%Y-%m-%d %H:%M"),
+                next_ts.strftime("%Y-%m-%d %H:%M"),
+                current_km,
+                next_km
+            )
+            continue
+        
+        # Skip extremely low values that might indicate sensor errors
+        if daily_km < MIN_REASONABLE_DAILY_KM:
+            _LOGGER.debug("Skipping very low daily km: %.4f km/day", daily_km)
+            continue
+        
+        # Assign to weekday
+        weekday = current_ts.weekday()
+        weekday_km[weekday].append(daily_km)
     
-    # Calculate weekday pattern
+    # Log outlier detection summary
+    if outliers_detected > 0:
+        _LOGGER.warning(
+            "ML Pattern Analysis: Detected and filtered %d outlier(s) with suspiciously high daily km values. "
+            "This can happen due to comma/decimal separator issues, odometer reading errors, or data corruption.",
+            outliers_detected
+        )
+    
+    # Calculate weekday pattern with additional outlier filtering
     weekday_pattern = {}
     for weekday, km_list in weekday_km.items():
-        if km_list:
+        if not km_list:
+            continue
+        
+        # Apply statistical outlier removal within each weekday's data
+        # Use IQR method if we have enough data points
+        if len(km_list) >= 4:
+            sorted_km = sorted(km_list)
+            q1_idx = len(sorted_km) // 4
+            q3_idx = (3 * len(sorted_km)) // 4
+            q1 = sorted_km[q1_idx]
+            q3 = sorted_km[q3_idx]
+            iqr = q3 - q1
+            
+            # Define outliers as values outside [Q1 - 1.5*IQR, Q3 + 1.5*IQR]
+            lower_bound = q1 - 1.5 * iqr
+            upper_bound = q3 + 1.5 * iqr
+            
+            # Filter outliers
+            filtered_km = [km for km in km_list if lower_bound <= km <= upper_bound]
+            
+            if filtered_km:
+                weekday_pattern[weekday] = sum(filtered_km) / len(filtered_km)
+                
+                # Log if we filtered out values
+                if len(filtered_km) < len(km_list):
+                    _LOGGER.info(
+                        "Weekday %d: Filtered %d/%d outliers using IQR method (bounds: %.1f-%.1f km/day)",
+                        weekday, len(km_list) - len(filtered_km), len(km_list),
+                        lower_bound, upper_bound
+                    )
+            else:
+                # All values were outliers - use median as fallback
+                weekday_pattern[weekday] = sorted_km[len(sorted_km) // 2]
+                _LOGGER.warning(
+                    "Weekday %d: All values were statistical outliers. Using median: %.1f km/day",
+                    weekday, weekday_pattern[weekday]
+                )
+        else:
+            # Not enough data for statistical filtering, just average
             weekday_pattern[weekday] = sum(km_list) / len(km_list)
     
     # Calculate weekend factor (Sat/Sun vs Mon-Fri)

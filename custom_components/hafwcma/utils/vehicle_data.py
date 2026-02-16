@@ -49,10 +49,61 @@ async def async_get_entity_state(
     return state
 
 
+def _normalize_numeric_string(value: str | float | int) -> str:
+    """Normalize numeric string by replacing comma decimal separators with dots.
+    
+    Handles both German locale format (e.g., "1.234,56") and standard format (e.g., "1234.56").
+    This prevents misinterpretation of localized number formats.
+    
+    Args:
+        value: Numeric value as string, float, or int
+        
+    Returns:
+        Normalized string with dot as decimal separator
+    """
+    if isinstance(value, (int, float)):
+        return str(value)
+    
+    value_str = str(value).strip()
+    
+    # Remove thousands separators (both dots and spaces)
+    # German: "1.234.567,89" -> "1234567,89"
+    # English: "1,234,567.89" -> "1234567.89"
+    # We need to detect which format is being used
+    
+    # Count dots and commas to determine format
+    dot_count = value_str.count('.')
+    comma_count = value_str.count(',')
+    
+    if comma_count > 0 and dot_count > 0:
+        # Mixed format - determine which is decimal separator
+        last_dot_pos = value_str.rfind('.')
+        last_comma_pos = value_str.rfind(',')
+        
+        if last_comma_pos > last_dot_pos:
+            # Comma is decimal separator (German format: "1.234,56")
+            value_str = value_str.replace('.', '').replace(',', '.')
+        else:
+            # Dot is decimal separator (English format: "1,234.56")
+            value_str = value_str.replace(',', '')
+    elif comma_count > 0:
+        # Only commas - assume comma is decimal separator
+        value_str = value_str.replace(',', '.')
+    elif dot_count > 1:
+        # Multiple dots - they're thousands separators, keep only last as decimal
+        # Actually, with multiple dots, they're all thousands separators
+        # E.g., "1.234.567" -> "1234567"
+        value_str = value_str.replace('.', '')
+    
+    return value_str
+
+
 async def async_get_numeric_state(
     hass: HomeAssistant, entity_id: str | None, default: float | None = None, silent: bool = False
 ) -> float | None:
     """Get numeric state value from an entity.
+    
+    Handles localized number formats with comma decimal separators.
     
     Args:
         hass: Home Assistant instance
@@ -73,11 +124,13 @@ async def async_get_numeric_state(
         return default
         
     try:
-        return float(state.state)
-    except (ValueError, TypeError):
+        normalized = _normalize_numeric_string(state.state)
+        return float(normalized)
+    except (ValueError, TypeError) as err:
         if not silent:
             _LOGGER.warning(
-                "Could not convert state of %s to float: %s", entity_id, state.state
+                "Could not convert state of %s to float: %s (error: %s)", 
+                entity_id, state.state, err
             )
         return default
 
