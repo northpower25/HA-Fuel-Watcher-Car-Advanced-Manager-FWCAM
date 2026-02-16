@@ -279,7 +279,7 @@ class TelegramBotStatusSensor(BinarySensorEntity):
     @property
     def icon(self) -> str:
         """Return icon based on status."""
-        return "mdi:telegram" if self.is_on else "mdi:telegram-off"
+        return "mdi:message-check" if self.is_on else "mdi:message-cog"
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

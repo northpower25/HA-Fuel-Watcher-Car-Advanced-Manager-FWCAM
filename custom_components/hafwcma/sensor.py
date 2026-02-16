@@ -1628,14 +1628,14 @@ def add_prediction_metadata_to_attributes(
 
 def format_weekday_pattern(
     weekday_pattern: dict[int, float] | None,
-) -> dict[str, float] | None:
-    """Convert weekday pattern from numeric keys to named keys.
+) -> dict[str, str] | None:
+    """Convert weekday pattern from numeric keys to named keys with units.
     
     Args:
         weekday_pattern: Dictionary with weekday numbers (0-6) as keys and km values
         
     Returns:
-        Dictionary with weekday names as keys and rounded km values, or None if input is None
+        Dictionary with weekday names as keys and formatted km values with units, or None if input is None
     """
     if not weekday_pattern:
         return None
@@ -1645,7 +1645,7 @@ def format_weekday_pattern(
     formatted_pattern = {}
     for weekday, km in weekday_pattern.items():
         if isinstance(weekday, int) and 0 <= weekday < 7:
-            formatted_pattern[weekday_names[weekday]] = round(km, 1)
+            formatted_pattern[weekday_names[weekday]] = f"{round(km, 1)} km"
     
     return formatted_pattern if formatted_pattern else None
 
@@ -1742,7 +1742,10 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
             # Negative value = lose money by driving farther (better to stay close)
             savings_value = radius_comparison.get("savings")
             if savings_value is not None:
-                attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} €"
+                if savings_value >= 0:
+                    attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving farther)"
+                else:
+                    attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (cost more by driving farther)"
             else:
                 attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
         elif radius_comparison:
@@ -2187,7 +2190,7 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
                     formatted_pattern[weekday_names[weekday]] = round(km, 1)
             
             if formatted_pattern:
-                attributes["weekday_driving_pattern"] = formatted_pattern
+                attributes["weekday_driving_pattern (km)"] = formatted_pattern
         
         # Add forecast recommendation if available
         # This is computed in the coordinator based on predicted refuel date and historical prices
@@ -2196,7 +2199,8 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             attributes["forecast_trend"] = forecast.get("forecast_trend", "stable")
             attributes["forecast_should_refuel"] = forecast.get("should_refuel", False)
             attributes["forecast_urgency"] = forecast.get("urgency", "low")
-            attributes["forecast_recommendation"] = forecast.get("recommendation", "")
+            recommendation_text = forecast.get("recommendation", "")
+            attributes["forecast_recommendation"] = recommendation_text if recommendation_text else "Not enough data for price forecast"
             
             # Add detailed forecast data
             if forecast.get("has_forecast"):
@@ -2205,6 +2209,9 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
                 attributes["forecast_cheapest_weekday"] = forecast.get("cheapest_weekday")
                 attributes["forecast_cheapest_avg_price"] = forecast.get("cheapest_avg_price")
                 attributes["forecast_price_difference"] = forecast.get("price_difference")
+        else:
+            # No forecast recommendation data available
+            attributes["forecast_recommendation"] = "Waiting for consumption prediction and price history data"
         
         return attributes
 
@@ -2366,6 +2373,7 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = None
     _attr_has_entity_name = True
+    _attr_suggested_display_precision = 2  # Limit to 2 decimal places in history
 
     def __init__(
         self,
@@ -2422,16 +2430,16 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
         
         # Initialize attributes with default null values for all forecast periods
         attributes = {
-            "tomorrow_consumption": None,
+            "tomorrow_consumption": None,  # L/100km
             "tomorrow_confidence": None,
             "tomorrow_data_source": None,
-            "next_week_consumption": None,
+            "next_week_consumption": None,  # L/100km
             "next_week_confidence": None,
             "next_week_data_source": None,
-            "next_14_days_consumption": None,
+            "next_14_days_consumption": None,  # L/100km
             "next_14_days_confidence": None,
             "next_14_days_data_source": None,
-            "next_month_consumption": None,
+            "next_month_consumption": None,  # L/100km
             "next_month_confidence": None,
             "next_month_data_source": None,
         }
@@ -2487,7 +2495,7 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             weekday_pattern = consumption_prediction.get("weekday_pattern")
             formatted_pattern = format_weekday_pattern(weekday_pattern)
             if formatted_pattern:
-                attributes["weekday_driving_pattern"] = formatted_pattern
+                attributes["weekday_driving_pattern (km)"] = formatted_pattern
         
         # Add metadata from consumption_prediction if available
         self._add_prediction_metadata(attributes, consumption_prediction)
