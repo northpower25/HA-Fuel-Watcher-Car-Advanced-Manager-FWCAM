@@ -66,11 +66,6 @@ def _normalize_numeric_string(value: str | float | int) -> str:
     
     value_str = str(value).strip()
     
-    # Remove thousands separators (both dots and spaces)
-    # German: "1.234.567,89" -> "1234567,89"
-    # English: "1,234,567.89" -> "1234567.89"
-    # We need to detect which format is being used
-    
     # Count dots and commas to determine format
     dot_count = value_str.count('.')
     comma_count = value_str.count(',')
@@ -86,13 +81,23 @@ def _normalize_numeric_string(value: str | float | int) -> str:
         else:
             # Dot is decimal separator (English format: "1,234.56")
             value_str = value_str.replace(',', '')
-    elif comma_count > 0:
-        # Only commas - assume comma is decimal separator
-        value_str = value_str.replace(',', '.')
+    elif comma_count > 1:
+        # Multiple commas - they're thousands separators (English format: "1,234,567")
+        value_str = value_str.replace(',', '')
+    elif comma_count == 1:
+        # Single comma - could be decimal separator or thousands separator
+        # Check position: if there are 3 digits after comma, it's likely thousands separator
+        comma_pos = value_str.find(',')
+        digits_after_comma = len(value_str) - comma_pos - 1
+        
+        if digits_after_comma == 3 and comma_pos > 0:
+            # Likely thousands separator (e.g., "1,234")
+            value_str = value_str.replace(',', '')
+        else:
+            # Likely decimal separator (e.g., "1,5" or "123,45")
+            value_str = value_str.replace(',', '.')
     elif dot_count > 1:
-        # Multiple dots - they're thousands separators, keep only last as decimal
-        # Actually, with multiple dots, they're all thousands separators
-        # E.g., "1.234.567" -> "1234567"
+        # Multiple dots - they're thousands separators (German format: "1.234.567")
         value_str = value_str.replace('.', '')
     
     return value_str

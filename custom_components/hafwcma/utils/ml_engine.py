@@ -12,6 +12,7 @@ Features:
 from __future__ import annotations
 
 import logging
+import statistics
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -210,36 +211,42 @@ async def analyze_consumption_patterns(
         # Use IQR method if we have enough data points
         if len(km_list) >= 4:
             sorted_km = sorted(km_list)
-            q1_idx = len(sorted_km) // 4
-            q3_idx = (3 * len(sorted_km)) // 4
-            q1 = sorted_km[q1_idx]
-            q3 = sorted_km[q3_idx]
-            iqr = q3 - q1
             
-            # Define outliers as values outside [Q1 - 1.5*IQR, Q3 + 1.5*IQR]
-            lower_bound = q1 - 1.5 * iqr
-            upper_bound = q3 + 1.5 * iqr
-            
-            # Filter outliers
-            filtered_km = [km for km in km_list if lower_bound <= km <= upper_bound]
-            
-            if filtered_km:
-                weekday_pattern[weekday] = sum(filtered_km) / len(filtered_km)
+            # Use statistics.quantiles for accurate quartile calculation
+            # quantiles(data, n=4) returns 3 cut points for quartiles
+            try:
+                quartiles = statistics.quantiles(sorted_km, n=4)
+                q1 = quartiles[0]  # 25th percentile
+                q3 = quartiles[2]  # 75th percentile
+                iqr = q3 - q1
                 
-                # Log if we filtered out values
-                if len(filtered_km) < len(km_list):
-                    _LOGGER.info(
-                        "Weekday %d: Filtered %d/%d outliers using IQR method (bounds: %.1f-%.1f km/day)",
-                        weekday, len(km_list) - len(filtered_km), len(km_list),
-                        lower_bound, upper_bound
+                # Define outliers as values outside [Q1 - 1.5*IQR, Q3 + 1.5*IQR]
+                lower_bound = q1 - 1.5 * iqr
+                upper_bound = q3 + 1.5 * iqr
+                
+                # Filter outliers
+                filtered_km = [km for km in km_list if lower_bound <= km <= upper_bound]
+                
+                if filtered_km:
+                    weekday_pattern[weekday] = sum(filtered_km) / len(filtered_km)
+                    
+                    # Log if we filtered out values
+                    if len(filtered_km) < len(km_list):
+                        _LOGGER.info(
+                            "Weekday %d: Filtered %d/%d outliers using IQR method (bounds: %.1f-%.1f km/day)",
+                            weekday, len(km_list) - len(filtered_km), len(km_list),
+                            lower_bound, upper_bound
+                        )
+                else:
+                    # All values were outliers - use median as fallback
+                    weekday_pattern[weekday] = statistics.median(sorted_km)
+                    _LOGGER.warning(
+                        "Weekday %d: All values were statistical outliers. Using median: %.1f km/day",
+                        weekday, weekday_pattern[weekday]
                     )
-            else:
-                # All values were outliers - use median as fallback
-                weekday_pattern[weekday] = sorted_km[len(sorted_km) // 2]
-                _LOGGER.warning(
-                    "Weekday %d: All values were statistical outliers. Using median: %.1f km/day",
-                    weekday, weekday_pattern[weekday]
-                )
+            except statistics.StatisticsError:
+                # Not enough data or all values identical - just use average
+                weekday_pattern[weekday] = sum(km_list) / len(km_list)
         else:
             # Not enough data for statistical filtering, just average
             weekday_pattern[weekday] = sum(km_list) / len(km_list)
