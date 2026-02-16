@@ -899,6 +899,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
                 return
             
+            # Also check if the telegram_bot service is available
+            if not hass.services.has_service("telegram_bot", "send_message"):
+                _LOGGER.warning(
+                    "telegram_bot integration loaded but send_message service not available. "
+                    "This may indicate the integration is still initializing. "
+                    "Telegram features may not work correctly."
+                )
+            else:
+                _LOGGER.info("telegram_bot send_message service is available")
+            
             telegram_handler = TelegramEventHandler(hass, entry, telegram_chat_id)
             await telegram_handler.async_setup()
             hass.data[DOMAIN][entry.entry_id]["telegram_handler"] = telegram_handler

@@ -170,7 +170,7 @@ class TelegramRefuelingHandler:
         Args:
             event: Refueling added event
         """
-        _LOGGER.info("Received refueling_added event")
+        _LOGGER.info("📨 TelegramRefuelingHandler received refueling_added event")
         event_data = event.data
         
         # Only handle events from our config entry
@@ -193,7 +193,7 @@ class TelegramRefuelingHandler:
         refuel_data = event_data.get("refuel_data", {})
         
         _LOGGER.info(
-            "Processing new refueling event: ID=%s, liters=%.2f, fuel_type=%s",
+            "✅ Matched config entry - Processing refueling event: ID=%s, liters=%.2f, fuel_type=%s",
             refuel_id,
             refuel_data.get("liters_refueled", 0),
             refuel_data.get("fuel_type", "unknown")
@@ -205,7 +205,7 @@ class TelegramRefuelingHandler:
             "notified_at": datetime.now().isoformat(),
         }
         
-        _LOGGER.info("Creating task to send Telegram notification for refuel ID %s", refuel_id)
+        _LOGGER.info("📤 Creating task to send Telegram notification for refuel ID %s", refuel_id)
         # Send notification asynchronously
         self.hass.async_create_task(
             self._send_refueling_notification(refuel_id, refuel_data)
@@ -309,8 +309,18 @@ class TelegramRefuelingHandler:
         ]
         
         try:
+            # Check if telegram_bot service is still available
+            if not self.hass.services.has_service("telegram_bot", "send_message"):
+                _LOGGER.error(
+                    "❌ telegram_bot send_message service is not available! "
+                    "Cannot send notification for refuel ID %s. "
+                    "The telegram_bot integration may not be properly configured.",
+                    refuel_id
+                )
+                return
+            
             _LOGGER.info(
-                "Sending notification via telegram_bot service (target: %s, parse_mode: html)",
+                "📤 Sending notification via telegram_bot service (target: %s, parse_mode: html)",
                 self.chat_id
             )
             _LOGGER.debug("Notification message: %s", message[:MAX_LOG_MESSAGE_LENGTH])
@@ -330,7 +340,7 @@ class TelegramRefuelingHandler:
                 blocking=True,
             )
             
-            _LOGGER.info("Telegram notification service call completed successfully for refuel ID %s", refuel_id)
+            _LOGGER.info("✅ Telegram notification service call completed successfully for refuel ID %s", refuel_id)
             
             # Update refueling record with notification data
             # Note: We cannot get message_id from the service call as it doesn't support return_response
@@ -346,7 +356,7 @@ class TelegramRefuelingHandler:
             )
             _LOGGER.debug("Updated refueling record with notification metadata")
             
-            _LOGGER.info("Refueling notification sent for ID %s", refuel_id)
+            _LOGGER.info("✅ Refueling notification sent for ID %s", refuel_id)
             
         except ServiceValidationError as err:
             _LOGGER.error(
