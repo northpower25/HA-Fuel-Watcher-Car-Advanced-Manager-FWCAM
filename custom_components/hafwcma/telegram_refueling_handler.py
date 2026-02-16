@@ -350,18 +350,15 @@ class TelegramRefuelingHandler:
             
         except ServiceValidationError as err:
             _LOGGER.error(
-                "Failed to send refueling notification for ID %s: %s\n\n"
-                "⚠️ This error indicates that the telegram_bot integration is not properly configured.\n"
-                "Please ensure your configuration.yaml includes:\n\n"
-                "telegram_bot:\n"
-                "  - platform: polling\n"
-                "    api_key: YOUR_BOT_TOKEN\n"
-                "    allowed_chat_ids:\n"
-                "      - %s\n\n"
-                "See documentation: https://www.home-assistant.io/integrations/telegram_bot/",
-                refuel_id,
-                err,
-                self.chat_id
+                f"Failed to send refueling notification for ID {refuel_id}: {err}\n\n"
+                f"⚠️ This error indicates that the telegram_bot integration is not properly configured.\n"
+                f"Please ensure your configuration.yaml includes:\n\n"
+                f"telegram_bot:\n"
+                f"  - platform: polling\n"
+                f"    api_key: YOUR_BOT_TOKEN\n"
+                f"    allowed_chat_ids:\n"
+                f"      - {self.chat_id}\n\n"
+                f"See documentation: https://www.home-assistant.io/integrations/telegram_bot/"
             )
         except Exception as err:
             _LOGGER.error(
