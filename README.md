@@ -210,6 +210,13 @@ Each sensor provides additional attributes:
 - `recommendation`: User-friendly recommendation text
 - `price_delta`: Absolute price change from last known price (EUR)
 - `price_delta_percent`: Percentage price change
+- `costsaving_far_vs_near_station`: Total cost savings (in EUR) when comparing the cheapest station within 10 km vs 20 km radius. Positive value means you save money by driving to the farther station. Already accounts for extra fuel costs for the round trip based on average consumption. Possible values:
+  - `"X.XX €"`: Savings amount (positive = save by driving farther, negative = lose money by driving farther)
+  - `"Waiting for more data"`: Comparison data not yet available
+  - `"Waiting for station data"`: No gas stations found
+  - `"Tank is full - no savings calculation"`: Cannot calculate savings when tank is already full
+  - `"Not applicable - only one station available"`: Only one station available in range, no comparison possible
+- `station_comparison`: Detailed breakdown of 10km vs 20km station comparison including distances, prices, fuel consumption, and total costs
 - `history_price_pattern`: Weekday-based price statistics with the following structure for each weekday (Monday-Sunday):
   - `avg_price`: Average price for all observations on that weekday in the last week (EUR/L)
   - `best_timeframe`: Best time to refuel on that weekday (`morning` 7:00-12:00, `afternoon` 12:01-17:00, `evening` 17:01-21:00, `night` 21:01-6:59)
