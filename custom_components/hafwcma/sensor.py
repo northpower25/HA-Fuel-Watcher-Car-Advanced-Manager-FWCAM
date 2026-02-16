@@ -95,6 +95,12 @@ from .utils.geolocation import (
     format_alert_message,
     get_navigation_urls,
 )
+from .utils.refuel_recommendation_engine import (
+    PositionTracker,
+    compare_stations_by_radius,
+    analyze_forecast_recommendation,
+    DEFAULT_AVG_CONSUMPTION,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -200,6 +206,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             cooldown_seconds=GEOLOCATION_ALERT_COOLDOWN,
             hysteresis_factor=GEOLOCATION_HYSTERESIS_FACTOR,
         )  # Track proximity alerts
+        self._position_tracker = PositionTracker()  # Track position changes for recommendation cooldown
         
         # Startup delay and caching to prevent timing issues
         from homeassistant.util import dt as dt_util
@@ -449,6 +456,27 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         
         # Store prediction result for accuracy tracking
         await store_prediction_result(self.hass, self.config_entry, prediction)
+        
+        # Calculate forecast recommendation based on predicted refuel date
+        forecast_recommendation = None
+        predicted_refuel_date = prediction.get("predicted_refuel_date")
+        fuel_price = self.data.get("fuel_price") if self.data else None
+        
+        if predicted_refuel_date and fuel_price:
+            try:
+                forecast_recommendation = await analyze_forecast_recommendation(
+                    self.hass,
+                    self.config_entry,
+                    predicted_refuel_date,
+                    fuel_price,
+                )
+                _LOGGER.debug("Forecast recommendation: %s", forecast_recommendation)
+            except Exception as forecast_err:
+                _LOGGER.warning("Error calculating forecast recommendation: %s", forecast_err)
+        
+        # Add forecast recommendation to prediction
+        if forecast_recommendation:
+            prediction["forecast_recommendation"] = forecast_recommendation
         
         _LOGGER.info(
             "Consumption prediction updated: %.1f days until refuel (source: %s, confidence: %.2f)",
@@ -1346,17 +1374,70 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         
         # Get refuel recommendation if we have price and tank info
         recommendation = None
+        position_change_info = None
+        radius_comparison = None
+        
         if fuel_price is not None and tank_percentage is not None:
             try:
-                recommendation = await evaluate_refuel_strategy(
-                    self.hass,
-                    self.config_entry,
-                    current_price=fuel_price,
-                    tank_percentage=tank_percentage,
-                    range_km=vehicle_data.get("range_km"),
-                    station_name=nearest_station.get("name") if nearest_station else None,
-                )
-                _LOGGER.debug("Refuel recommendation: %s", recommendation)
+                # Track position changes and check cooldown status
+                if vehicle_lat is not None and vehicle_lon is not None:
+                    position_change_info = self._position_tracker.update(
+                        vehicle_lat, vehicle_lon, fuel_price
+                    )
+                    _LOGGER.debug("Position change info: %s", position_change_info)
+                
+                # Only generate recommendation if not in cooldown
+                if not position_change_info or not position_change_info.get("in_cooldown", False):
+                    recommendation = await evaluate_refuel_strategy(
+                        self.hass,
+                        self.config_entry,
+                        current_price=fuel_price,
+                        tank_percentage=tank_percentage,
+                        range_km=vehicle_data.get("range_km"),
+                        station_name=nearest_station.get("name") if nearest_station else None,
+                    )
+                    _LOGGER.debug("Refuel recommendation: %s", recommendation)
+                else:
+                    # In cooldown - provide modified recommendation
+                    cooldown_reason = position_change_info.get("cooldown_reason", "Position change cooldown")
+                    recommendation = {
+                        "should_refuel": False,
+                        "reason": "position_change_cooldown",
+                        "urgency": "low",
+                        "price_delta": 0.0,
+                        "price_delta_percent": 0.0,
+                        "days_left": None,
+                        "recommendation": f"⏸️ {cooldown_reason}. Recommendations paused temporarily.",
+                        "in_cooldown": True,
+                        "cooldown_remaining_minutes": position_change_info.get("cooldown_remaining_minutes"),
+                    }
+                    _LOGGER.info("Recommendation in cooldown: %s", cooldown_reason)
+                
+                # Compare stations by radius if we have nearby stations data
+                if nearby_cheap_stations_data and tank_level_liters is not None:
+                    stations_list = nearby_cheap_stations_data.get("stations", [])
+                    if stations_list and vehicle_lat and vehicle_lon:
+                        # Get average consumption from consumption history
+                        avg_consumption = DEFAULT_AVG_CONSUMPTION  # Default from shared constant
+                        if consumption_history:
+                            history_consumption = consumption_history.get("avg_consumption")
+                            if history_consumption and history_consumption > 0:
+                                avg_consumption = history_consumption
+                        
+                        try:
+                            radius_comparison = await compare_stations_by_radius(
+                                self.hass,
+                                self.config_entry,
+                                stations_list,
+                                vehicle_lat,
+                                vehicle_lon,
+                                tank_level_liters,
+                                tank_capacity,
+                                avg_consumption,
+                            )
+                            _LOGGER.debug("Radius comparison: %s", radius_comparison)
+                        except Exception as comp_err:
+                            _LOGGER.warning("Error comparing stations by radius: %s", comp_err)
             except Exception as err:
                 _LOGGER.warning("Error evaluating refuel strategy: %s", err)
         
@@ -1469,6 +1550,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "trip_tracking_config": trip_tracking_config,  # Add trip tracking config
             "trips": trips,  # Add trips list
             "trip_statistics": trip_statistics,  # Add trip statistics
+            "position_change_info": position_change_info,  # Add position change tracking
+            "radius_comparison": radius_comparison,  # Add 10km vs 20km comparison
         }
         
         # Apply randomization for next update interval
@@ -1635,6 +1718,23 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
             attributes[ATTR_RECOMMENDATION] = recommendation.get("recommendation", "")
             attributes[ATTR_PRICE_DELTA] = recommendation.get("price_delta")
             attributes[ATTR_PRICE_DELTA_PERCENT] = recommendation.get("price_delta_percent")
+            
+            # Add cooldown information if present
+            if recommendation.get("in_cooldown"):
+                attributes["in_cooldown"] = True
+                attributes["cooldown_remaining_minutes"] = recommendation.get("cooldown_remaining_minutes")
+        
+        # Add radius comparison if available
+        radius_comparison = self.coordinator.data.get("radius_comparison")
+        if radius_comparison and radius_comparison.get("has_comparison"):
+            attributes["station_comparison"] = {
+                "10km": radius_comparison.get("station_10km"),
+                "20km": radius_comparison.get("station_20km"),
+                "savings": radius_comparison.get("savings"),
+                "savings_percent": radius_comparison.get("savings_percent"),
+                "comparison_recommendation": radius_comparison.get("recommendation"),
+                "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+            }
         
         # Add price statistics if available (history price pattern)
         price_statistics = self.coordinator.data.get("price_statistics")
@@ -2064,6 +2164,23 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             
             if formatted_pattern:
                 attributes["weekday_driving_pattern"] = formatted_pattern
+        
+        # Add forecast recommendation if available
+        # This is computed in the coordinator based on predicted refuel date and historical prices
+        if prediction.get("forecast_recommendation"):
+            forecast = prediction["forecast_recommendation"]
+            attributes["forecast_trend"] = forecast.get("forecast_trend", "stable")
+            attributes["forecast_should_refuel"] = forecast.get("should_refuel", False)
+            attributes["forecast_urgency"] = forecast.get("urgency", "low")
+            attributes["forecast_recommendation"] = forecast.get("recommendation", "")
+            
+            # Add detailed forecast data
+            if forecast.get("has_forecast"):
+                attributes["forecast_predicted_weekday"] = forecast.get("predicted_weekday")
+                attributes["forecast_predicted_avg_price"] = forecast.get("predicted_avg_price")
+                attributes["forecast_cheapest_weekday"] = forecast.get("cheapest_weekday")
+                attributes["forecast_cheapest_avg_price"] = forecast.get("cheapest_avg_price")
+                attributes["forecast_price_difference"] = forecast.get("price_difference")
         
         return attributes
 
