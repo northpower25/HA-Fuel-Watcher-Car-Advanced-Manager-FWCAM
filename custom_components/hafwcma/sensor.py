@@ -1372,6 +1372,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.warning("Error computing price trend: %s", err)
         
+        # Calculate consumption history early as it's needed for radius comparison
+        consumption_history = None
+        try:
+            consumption_history = await self._calculate_consumption_history()
+        except Exception as err:
+            _LOGGER.warning("Error calculating consumption history: %s", err)
+        
         # Get refuel recommendation if we have price and tank info
         recommendation = None
         position_change_info = None
@@ -1475,13 +1482,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         # Get timestamps for last successful data
         last_price_timestamp = await storage.get_last_price_timestamp(self.hass, self.config_entry)
         last_station_timestamp = await storage.get_last_station_timestamp(self.hass, self.config_entry)
-        
-        # Calculate consumption history
-        consumption_history = None
-        try:
-            consumption_history = await self._calculate_consumption_history()
-        except Exception as err:
-            _LOGGER.warning("Error calculating consumption history: %s", err)
         
         # Calculate consumption forecast
         consumption_forecast = None
