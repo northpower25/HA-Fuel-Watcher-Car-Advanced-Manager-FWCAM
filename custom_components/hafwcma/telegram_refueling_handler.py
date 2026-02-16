@@ -447,6 +447,7 @@ class TelegramRefuelingHandler:
             "telegram_response_type": "text",
             "telegram_response_raw": text,
             "telegram_response_parsed": parsed_data,
+            "data_quality": "ai_processed",  # Mark as AI processed
         }
         
         # Merge parsed data into updates
@@ -458,6 +459,17 @@ class TelegramRefuelingHandler:
             self.config_entry,
             refuel_id,
             updates
+        )
+        
+        # Fire event for test button to catch
+        self.hass.bus.async_fire(
+            f"{DOMAIN}_refueling_updated",
+            {
+                "config_entry_id": self.config_entry.entry_id,
+                "refuel_id": refuel_id,
+                "telegram_response_raw": text,
+                "telegram_response_parsed": parsed_data,
+            }
         )
         
         # Send confirmation
@@ -496,6 +508,18 @@ class TelegramRefuelingHandler:
                     "telegram_response_timestamp": datetime.now().isoformat(),
                     "telegram_response_type": "callback",
                     "telegram_response_raw": "confirmed",
+                    "data_quality": "ai_processed",  # Mark as AI processed
+                }
+            )
+            
+            # Fire event for test button to catch
+            self.hass.bus.async_fire(
+                f"{DOMAIN}_refueling_updated",
+                {
+                    "config_entry_id": self.config_entry.entry_id,
+                    "refuel_id": refuel_id,
+                    "telegram_response_raw": "confirmed",
+                    "telegram_response_parsed": {},
                 }
             )
             
@@ -580,6 +604,7 @@ class TelegramRefuelingHandler:
             "telegram_response_raw": f"Caption: {caption}\nOCR: {ocr_text}",
             "telegram_response_parsed": parsed_data,
             "telegram_photo_file_id": file_id,
+            "data_quality": "ai_processed",  # Mark as AI processed
         }
         
         # Merge parsed data
@@ -591,6 +616,17 @@ class TelegramRefuelingHandler:
             self.config_entry,
             refuel_id,
             updates
+        )
+        
+        # Fire event for test button to catch
+        self.hass.bus.async_fire(
+            f"{DOMAIN}_refueling_updated",
+            {
+                "config_entry_id": self.config_entry.entry_id,
+                "refuel_id": refuel_id,
+                "telegram_response_raw": f"Caption: {caption}\nOCR: {ocr_text}",
+                "telegram_response_parsed": parsed_data,
+            }
         )
         
         # Send confirmation
@@ -637,6 +673,7 @@ class TelegramRefuelingHandler:
             "telegram_response_raw": transcription,
             "telegram_response_parsed": parsed_data,
             "telegram_voice_file_id": file_id,
+            "data_quality": "ai_processed",  # Mark as AI processed
         }
         
         # Merge parsed data
@@ -648,6 +685,17 @@ class TelegramRefuelingHandler:
             self.config_entry,
             refuel_id,
             updates
+        )
+        
+        # Fire event for test button to catch
+        self.hass.bus.async_fire(
+            f"{DOMAIN}_refueling_updated",
+            {
+                "config_entry_id": self.config_entry.entry_id,
+                "refuel_id": refuel_id,
+                "telegram_response_raw": transcription,
+                "telegram_response_parsed": parsed_data,
+            }
         )
         
         # Send confirmation
