@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -629,8 +630,6 @@ class TelegramRefuelingHandler:
         Returns:
             Refuel ID if found, None otherwise
         """
-        import re
-        
         if not text:
             return None
         
@@ -1017,8 +1016,6 @@ class TelegramRefuelingHandler:
         Returns:
             Dictionary with extracted data
         """
-        import re
-        
         parsed = {}
         
         if not text:
