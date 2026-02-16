@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import service
 
 from .const import DOMAIN
@@ -347,6 +348,21 @@ class TelegramRefuelingHandler:
             
             _LOGGER.info("Refueling notification sent for ID %s", refuel_id)
             
+        except ServiceValidationError as err:
+            _LOGGER.error(
+                "Failed to send refueling notification for ID %s: %s\n\n"
+                "⚠️ This error indicates that the telegram_bot integration is not properly configured.\n"
+                "Please ensure your configuration.yaml includes:\n\n"
+                "telegram_bot:\n"
+                "  - platform: polling\n"
+                "    api_key: YOUR_BOT_TOKEN\n"
+                "    allowed_chat_ids:\n"
+                "      - %s\n\n"
+                "See documentation: https://www.home-assistant.io/integrations/telegram_bot/",
+                refuel_id,
+                err,
+                self.chat_id
+            )
         except Exception as err:
             _LOGGER.error(
                 "Failed to send refueling notification for ID %s: %s (type: %s)",
