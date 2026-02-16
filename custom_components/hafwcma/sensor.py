@@ -99,6 +99,7 @@ from .utils.refuel_recommendation_engine import (
     PositionTracker,
     compare_stations_by_radius,
     analyze_forecast_recommendation,
+    DEFAULT_AVG_CONSUMPTION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -1417,7 +1418,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     stations_list = nearby_cheap_stations_data.get("stations", [])
                     if stations_list and vehicle_lat and vehicle_lon:
                         # Get average consumption from consumption history
-                        avg_consumption = 7.0  # Default
+                        avg_consumption = DEFAULT_AVG_CONSUMPTION  # Default from shared constant
                         if consumption_history:
                             history_consumption = consumption_history.get("avg_consumption")
                             if history_consumption and history_consumption > 0:

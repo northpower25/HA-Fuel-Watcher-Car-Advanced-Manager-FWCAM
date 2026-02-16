@@ -28,6 +28,14 @@ SIGNIFICANT_POSITION_CHANGE_KM = 50.0  # Distance that triggers cooldown
 POSITION_CHANGE_COOLDOWN_MINUTES = 30  # Cooldown period after significant movement
 PRICE_CHANGE_THRESHOLD_FOR_COOLDOWN = 0.10  # 10 cents - only apply cooldown if price change is large
 
+# Savings calculation constants
+DEFAULT_AVG_CONSUMPTION = 7.0  # L/100km - typical value for mid-size vehicles
+
+# Forecast recommendation constants
+FORECAST_SIGNIFICANT_PRICE_DIFFERENCE = 0.05  # €0.05/L - threshold for significant day-to-day price differences
+FORECAST_NEAR_BEST_PRICE_MARGIN = 0.03  # €0.03/L - margin to consider current price "close to historical cheapest"
+FORECAST_NEAR_HISTORICAL_BEST_MARGIN = 0.02  # €0.02/L - margin to consider current price "near historical best"
+
 
 class PositionTracker:
     """Tracks vehicle position changes and manages recommendation cooldowns."""
@@ -156,7 +164,7 @@ async def compare_stations_by_radius(
     
     # Ensure we have valid consumption data
     if avg_consumption <= 0:
-        avg_consumption = 7.0  # Reasonable default
+        avg_consumption = DEFAULT_AVG_CONSUMPTION  # Use default for typical mid-size vehicle
     
     # Calculate fuel to purchase (full tank minus current level)
     fuel_to_purchase = max(0, tank_capacity - current_tank_level)
@@ -413,12 +421,15 @@ async def analyze_forecast_recommendation(
     current_vs_predicted = current_price - predicted_avg
     current_vs_cheapest = current_price - cheapest_avg
     
-    if price_difference > 0.05:  # Predicted day is significantly more expensive
-        if current_vs_cheapest < 0.03:  # Current price is close to historical cheapest
+    # Check if predicted day is significantly more expensive
+    if price_difference > FORECAST_SIGNIFICANT_PRICE_DIFFERENCE:
+        # Check if current price is close to historical cheapest
+        if current_vs_cheapest < FORECAST_NEAR_BEST_PRICE_MARGIN:
             should_refuel_early = True
             urgency = "medium"
             forecast_trend = "favorable_now"
-        elif cheapest_weekday_num < predicted_weekday:  # Cheaper day is before prediction
+        # Check if cheaper day is before predicted day
+        elif cheapest_weekday_num < predicted_weekday:
             should_refuel_early = True
             urgency = "low"
             forecast_trend = "favorable_earlier"
@@ -478,7 +489,7 @@ def _format_forecast_recommendation(
     price_diff = predicted_avg - cheapest_avg
     
     if should_refuel_early:
-        if current_price <= cheapest_avg + 0.02:
+        if current_price <= cheapest_avg + FORECAST_NEAR_HISTORICAL_BEST_MARGIN:
             return (
                 f"📊 Forecast: Current price (€{current_price:.3f}) is near historical best! "
                 f"{predicted_day} avg is €{predicted_avg:.3f}. Consider refueling now."
@@ -490,7 +501,7 @@ def _format_forecast_recommendation(
                 f"Consider refueling earlier."
             )
     else:
-        if price_diff < 0.02:
+        if price_diff < FORECAST_NEAR_HISTORICAL_BEST_MARGIN:
             return (
                 f"📊 Forecast: Prices stable. {predicted_day} avg (€{predicted_avg:.3f}) "
                 f"similar to other days. Refuel when convenient."
