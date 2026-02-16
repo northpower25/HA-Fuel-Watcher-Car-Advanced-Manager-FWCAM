@@ -36,17 +36,120 @@ if refuel_id:
 - Therefore, `_find_refuel_by_message_id()` **always returns None**
 - All response handlers fail silently because `refuel_id` is always `None`
 
-## Solution: Temporal Matching
+## Solution: Three-Strategy Matching
 
-Since message threading via `message_id` is not available, we implemented **temporal matching** as a fallback:
+We implemented a **three-strategy matching system** to reliably match responses to refuelings:
 
-1. **Track notification timestamps**: Each pending refueling stores its `notified_at` timestamp
-2. **Find most recent**: When a response arrives, match it to the most recently notified refueling
-3. **Fallback strategy**: Try message_id first (for future compatibility), then fall back to temporal matching
+### Strategy 1: Explicit ID Extraction (NEW - Most Reliable) ⭐
+
+The notification message now **prominently displays the refuel ID** at the top:
+
+```
+⛽ Tankvorgang #123
+Neuer Tankvorgang erkannt!
+
+🕐 Zeitpunkt: 16.02.2026 16:43
+...
+```
+
+Users can explicitly reference this ID in their responses:
+- `"Tankvorgang #123: 45.5 L, 1.599 €/L, Shell"`
+- `"#123 - hier sind die Daten"`
+- Or simply include `#123` anywhere in the message
+
+The system extracts the ID from the text and matches it to pending refuelings.
+
+### Strategy 2: Message ID (HA Limitation)
+
+Try to use Telegram's `message_id` for threading (currently always returns None due to HA limitations, but kept for future compatibility).
+
+### Strategy 3: Temporal Matching (Fallback)
+
+As a last resort, match to the most recently notified refueling.
+
+## Implementation Details
 
 ### Code Changes
 
-#### 1. New Method: `_find_most_recent_pending_refuel()`
+#### 1. Updated Notification Message
+
+```python
+# Build notification message with refuel ID prominently displayed
+message_parts = [
+    f"⛽ <b>Tankvorgang #{refuel_id}</b>\n",
+    "<i>Neuer Tankvorgang erkannt!</i>\n"
+]
+```
+
+The refuel ID is now the first thing users see, making it easy to reference.
+
+#### 2. New Method: `_extract_refuel_id_from_text()`
+
+```python
+def _extract_refuel_id_from_text(self, text: str) -> int | None:
+    """Extract refuel ID from text message.
+    
+    Looks for patterns like:
+    - "Tankvorgang #123"
+    - "#123"
+    - "Refuel #123"
+    """
+    import re
+    
+    patterns = [
+        r'[Tt]ankvorgang\s*#(\d+)',
+        r'[Rr]efuel\s*#(\d+)',
+        r'#(\d+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            refuel_id = int(match.group(1))
+            # Verify this refuel_id is in pending refuelings
+            if refuel_id in self._pending_refuelings:
+                return refuel_id
+    
+    return None
+```
+
+#### 3. Updated Response Handlers
+
+All response handlers now follow this pattern:
+
+```python
+@callback
+def _handle_telegram_text_response(self, event: Event) -> None:
+    """Handle text responses to refueling notifications."""
+    event_data = event.data
+    text = event_data.get("text", "")
+    
+    # Strategy 1: Try to extract refuel_id from text content
+    refuel_id = self._extract_refuel_id_from_text(text)
+    if refuel_id:
+        _LOGGER.info("✅ Extracted refuel_id %s from text content", refuel_id)
+    
+    # Strategy 2: Try to find by message_id (will be None due to HA limitations)
+    if not refuel_id:
+        reply_to_message_id = event_data.get("reply_to_message", {}).get("message_id")
+        refuel_id = self._find_refuel_by_message_id(reply_to_message_id)
+    
+    # Strategy 3: Use temporal matching (most recent) as fallback
+    if not refuel_id:
+        refuel_id = self._find_most_recent_pending_refuel()
+    
+    if refuel_id:
+        self.hass.async_create_task(
+            self._process_text_response(refuel_id, text)
+        )
+```
+
+The same three-strategy pattern was applied to:
+- `_handle_telegram_text_response()` - Extracts ID from text ✅
+- `_handle_telegram_photo_response()` - Extracts ID from caption ✅
+- `_handle_telegram_voice_response()` - Uses temporal matching (voice has no text to parse)
+
+#### 4. New Method: `_find_most_recent_pending_refuel()`
 
 ```python
 def _find_most_recent_pending_refuel(self) -> int | None:
@@ -77,73 +180,75 @@ def _find_most_recent_pending_refuel(self) -> int | None:
     return most_recent_id
 ```
 
-#### 2. Updated Response Handlers
+## What Works Now ✅
 
-All response handlers now follow this pattern:
+After this fix, all response methods now work with **three matching strategies**:
 
-```python
-@callback
-def _handle_telegram_text_response(self, event: Event) -> None:
-    """Handle text responses to refueling notifications."""
-    event_data = event.data
-    
-    # Only handle events from our configured chat
-    if str(event_data.get("chat_id")) != str(self.chat_id):
-        return
-    
-    text = event_data.get("text", "")
-    
-    _LOGGER.info("📨 Received Telegram text message: '%s'", text[:50])
-    
-    # Try to find by message_id first (will be None due to HA limitations)
-    reply_to_message_id = event_data.get("reply_to_message", {}).get("message_id")
-    refuel_id = self._find_refuel_by_message_id(reply_to_message_id)
-    
-    # If not found by message_id, use temporal matching (most recent)
-    if not refuel_id:
-        _LOGGER.debug(
-            "Message ID matching failed. Using temporal matching."
-        )
-        refuel_id = self._find_most_recent_pending_refuel()
-    
-    if refuel_id:
-        _LOGGER.info("✅ Matched text response to refuel ID %s", refuel_id)
-        self.hass.async_create_task(
-            self._process_text_response(refuel_id, text)
-        )
-    else:
-        _LOGGER.info(
-            "⚠️ Text message not linked to any pending refueling."
-        )
+1. ✅ **Text responses**: 
+   - Can include explicit ID: `"Tankvorgang #123: 45.5 L, 1.599 €/L, Shell"` (BEST)
+   - Or simple text: `"45.5 L, 1.599 €/L, Shell"` (uses temporal matching)
+
+2. ✅ **Photo responses**: 
+   - Can include ID in caption: `"#123 Quittung"` (BEST)
+   - Or just send photo (uses temporal matching)
+
+3. ✅ **Voice responses**: 
+   - Uses temporal matching (no text to parse)
+   - Processing not yet implemented, but handler receives them
+
+4. ✅ **Inline keyboard buttons**: 
+   - Always work correctly (embed refuel_id in callback_data)
+
+5. ✅ **Comprehensive logging**: 
+   - All events are logged for debugging
+   - Shows which matching strategy was successful
+
+## Enhanced User Experience
+
+### Example Notification
+
+```
+⛽ Tankvorgang #123
+Neuer Tankvorgang erkannt!
+
+🕐 Zeitpunkt: 16.02.2026 16:43
+📊 Menge: 44.87 Liter
+⚡️ Kraftstoffart: e10
+
+❓ Fehlende Informationen:
+KM-Stand, Preis pro Liter, Gesamtkosten, Tankstellenname
+
+💡 Wie können Sie antworten:
+• Antworten Sie mit 'Tankvorgang #123: <Ihre Daten>'
+• Oder einfach: '45.5 L, 1.599 €/L, Shell' (wird automatisch zugeordnet)
+• Senden Sie ein Foto der Quittung
+• Senden Sie eine Sprachnachricht
+• Nutzen Sie die Schaltflächen unten
+
+[✅ Bestätigen] [✏️ Bearbeiten] [🗑️ Löschen]
 ```
 
-The same pattern was applied to:
-- `_handle_telegram_text_response()` - Text messages ✅
-- `_handle_telegram_photo_response()` - Photo receipts ✅
-- `_handle_telegram_voice_response()` - Voice messages ✅
+### Example User Responses
 
-#### 3. Enhanced Callback Handler
+**Explicit ID (Most Reliable):**
+- `"Tankvorgang #123: 180000 km, 1.599€/L, 71.85€, Shell"` ✅
+- `"#123 - 45.5 L vollgetankt"` ✅
+- `"Für #123: Aral Tankstelle"` ✅
 
-The callback handler already had the `refuel_id` embedded in the button's `callback_data`, so it didn't need temporal matching. However, we added:
+**Simple (Temporal Matching):**
+- `"45.5 L, 1.599 €/L, Shell"` ✅ (matches to most recent)
 
-- Better error handling for malformed callback data
-- Comprehensive logging to track button presses
-- Error responses back to Telegram when parsing fails
+**Photo with Caption:**
+- Send photo with caption: `"#123"` ✅ (most reliable)
+- Send photo without caption ✅ (uses temporal matching)
 
-```python
-@callback
-def _handle_telegram_callback_response(self, event: Event) -> None:
-    """Handle inline keyboard button presses."""
-    event_data = event.data
-    
-    # Only handle events from our configured chat
-    if str(event_data.get("chat_id")) != str(self.chat_id):
-        return
-    
-    callback_data = event_data.get("data", "")
-    callback_id = event_data.get("id")
-    
-    _LOGGER.info("🔘 Received Telegram callback: data='%s'", callback_data)
+## Advantages of This Approach ⭐
+
+1. **Explicit is Better**: Users can be 100% certain which refueling they're updating
+2. **Flexible**: Works with or without explicit ID
+3. **Multiple Refuelings**: No confusion when multiple refuelings exist
+4. **Future-Proof**: If HA adds message_id support, we can use it
+5. **User-Friendly**: Clear instructions in the notification
     
     # Parse callback data
     if callback_data.startswith("refuel_"):
@@ -174,27 +279,45 @@ After this fix, all response methods now work:
 4. ✅ **Inline keyboard buttons**: All buttons (✅ Bestätigen, ✏️ Bearbeiten, 🗑️ Löschen) work correctly
 5. ✅ **Comprehensive logging**: All events are logged for debugging
 
-## Limitations ⚠️
+## Limitations and Recommendations ⚠️
 
-### Temporal Matching Limitations
+### When to Use Each Matching Strategy
 
-1. **Single active refueling**: Works best when there's only one pending refueling at a time
-2. **Recent notifications**: If multiple refuelings are notified quickly, responses will all match to the most recent one
-3. **No explicit threading**: Users can't explicitly specify which refueling they're responding to
+**Best Practice - Explicit ID (Recommended for Multiple Refuelings):**
+- Include `#123` in your message: `"Tankvorgang #123: 45.5 L, 1.599€/L"`
+- 100% reliable even with many pending refuelings
+- Clear which refueling you're updating
+
+**Temporal Matching (Fallback):**
+- Just send data without ID: `"45.5 L, 1.599 €/L, Shell"`
+- Works great when you have only one pending refueling
+- Matches to most recent notification automatically
+
+**Inline Buttons (Always Works):**
+- Most reliable for confirmations and deletions
+- No typing required
+- ID automatically included in button data
 
 ### Recommended User Flow
 
-For best results:
-1. **Respond immediately** after receiving a notification
-2. **One refueling at a time**: Complete the response for one refueling before creating another
-3. **Prefer inline buttons**: The inline keyboard buttons always work correctly because they embed the `refuel_id`
+**Single Refueling:**
+1. Receive notification
+2. Respond immediately with simple text or photo
+3. Temporal matching handles it automatically ✅
+
+**Multiple Refuelings:**
+1. Receive first notification: `"⛽ Tankvorgang #123"`
+2. Receive second notification: `"⛽ Tankvorgang #124"`
+3. **Include ID in response**: `"#123: 45.5 L, 1.599€/L"` ✅
+4. Or use inline keyboard buttons ✅
 
 ## Enhanced Logging 📝
 
 All handlers now include comprehensive logging:
 
 - 📨 **Text received**: "Received Telegram text message: '45.5 L...'"
-- 📷 **Photo received**: "Received Telegram photo message with caption: '...'"
+- 🎯 **ID extracted**: "Extracted refuel_id 123 from text content"
+- 📷 **Photo received**: "Received Telegram photo message with caption: '#123'"
 - 🎤 **Voice received**: "Received Telegram voice message (file_id: ...)"
 - 🔘 **Button pressed**: "Received Telegram callback: data='refuel_confirm_123'"
 - ✅ **Match found**: "Matched text response to refuel ID 123"
@@ -206,21 +329,45 @@ This makes it much easier to debug issues in production.
 
 After this fix, test the following scenarios:
 
-### 1. Text Response Test
+### 1. Text Response Test with Explicit ID
 1. Create a test refueling event (or use the Telegram test button)
-2. Wait for the Telegram notification
-3. Reply with text: "45.5 L, 1.599 €/L, Shell"
-4. **Expected:** Integration processes the response and updates the refueling record
-5. **Expected:** Confirmation message sent back via Telegram
+2. Wait for the Telegram notification showing "⛽ Tankvorgang #123"
+3. Reply with text: "Tankvorgang #123: 45.5 L, 1.599 €/L, Shell"
+4. **Expected:** Integration extracts ID from text and processes the response
+5. **Expected:** Log shows "✅ Extracted refuel_id 123 from text content"
+6. **Expected:** Confirmation message sent back via Telegram
 
-### 2. Photo Response Test
+### 2. Text Response Test without ID (Temporal Matching)
+1. Create a single test refueling event
+2. Wait for the Telegram notification
+3. Reply with text: "45.5 L, 1.599 €/L, Shell" (no ID)
+4. **Expected:** Integration uses temporal matching
+5. **Expected:** Log shows "Using temporal matching to find most recent"
+6. **Expected:** Confirmation message sent back via Telegram
+
+### 3. Multiple Refuelings Test
+1. Create two test refueling events quickly
+2. Wait for both notifications (#123 and #124)
+3. Reply: "#123: Daten für ersten Tankvorgang"
+4. **Expected:** Response matched to #123 (not #124)
+5. **Expected:** Log shows "Extracted refuel_id 123 from text content"
+
+### 4. Photo Response Test with ID in Caption
+1. Create a test refueling event
+2. Wait for the notification showing "⛽ Tankvorgang #123"
+3. Send a photo with caption: "#123"
+4. **Expected:** Integration extracts ID from caption
+5. **Expected:** Log shows "Extracted refuel_id 123 from photo caption"
+6. **Expected:** Confirmation message sent back via Telegram
+
+### 5. Photo Response Test without Caption
 1. Create a test refueling event
 2. Wait for the Telegram notification
-3. Send a photo of a receipt (or any photo as a test)
-4. **Expected:** Integration receives the photo and processes it
+3. Send a photo without caption
+4. **Expected:** Integration uses temporal matching
 5. **Expected:** Confirmation message sent back via Telegram
 
-### 3. Voice Response Test
+### 6. Voice Response Test
 1. Create a test refueling event
 2. Wait for the Telegram notification
 3. Send a voice message

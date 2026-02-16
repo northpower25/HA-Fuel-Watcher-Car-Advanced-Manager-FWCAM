@@ -36,17 +36,120 @@ if refuel_id:
 - Daher gibt `_find_refuel_by_message_id()` **immer None zurück**
 - Alle Antwort-Handler schlagen stillschweigend fehl, weil `refuel_id` immer `None` ist
 
-## Lösung: Zeitliche Zuordnung (Temporal Matching)
+## Lösung: Drei-Stufen Zuordnungssystem
 
-Da Nachrichten-Threading über `message_id` nicht verfügbar ist, haben wir **zeitliche Zuordnung** als Fallback implementiert:
+Wir haben ein **Drei-Stufen Zuordnungssystem** implementiert, um Antworten zuverlässig Tankvorgängen zuzuordnen:
 
-1. **Benachrichtigungs-Zeitstempel verfolgen**: Jeder ausstehende Tankvorgang speichert seinen `notified_at` Zeitstempel
-2. **Finde den neuesten**: Wenn eine Antwort eintrifft, ordne sie dem zuletzt benachrichtigten Tankvorgang zu
-3. **Fallback-Strategie**: Versuche zuerst message_id (für zukünftige Kompatibilität), dann falle auf zeitliche Zuordnung zurück
+### Strategie 1: Explizite ID-Extraktion (NEU - Am zuverlässigsten) ⭐
+
+Die Benachrichtigung zeigt jetzt **prominent die Tankvorgang-Nummer** ganz oben:
+
+```
+⛽ Tankvorgang #123
+Neuer Tankvorgang erkannt!
+
+🕐 Zeitpunkt: 16.02.2026 16:43
+...
+```
+
+Benutzer können diese ID explizit in ihren Antworten referenzieren:
+- `"Tankvorgang #123: 45.5 L, 1.599 €/L, Shell"`
+- `"#123 - hier sind die Daten"`
+- Oder einfach `#123` irgendwo in der Nachricht
+
+Das System extrahiert die ID aus dem Text und ordnet sie ausstehenden Tankvorgängen zu.
+
+### Strategie 2: Message ID (HA-Limitation)
+
+Versuche Telegrams `message_id` für Threading zu verwenden (derzeit immer None wegen HA-Limitierung, aber für zukünftige Kompatibilität beibehalten).
+
+### Strategie 3: Zeitliche Zuordnung (Fallback)
+
+Als letzte Option: Zuordnung zum zuletzt benachrichtigten Tankvorgang.
+
+## Implementierungsdetails
 
 ### Code-Änderungen
 
-#### 1. Neue Methode: `_find_most_recent_pending_refuel()`
+#### 1. Aktualisierte Benachrichtigung
+
+```python
+# Erstelle Benachrichtigung mit prominent angezeigter Tankvorgang-Nummer
+message_parts = [
+    f"⛽ <b>Tankvorgang #{refuel_id}</b>\n",
+    "<i>Neuer Tankvorgang erkannt!</i>\n"
+]
+```
+
+Die Tankvorgang-Nummer ist jetzt das Erste, was Benutzer sehen, und einfach zu referenzieren.
+
+#### 2. Neue Methode: `_extract_refuel_id_from_text()`
+
+```python
+def _extract_refuel_id_from_text(self, text: str) -> int | None:
+    """Extrahiere Tankvorgang-ID aus Textnachricht.
+    
+    Sucht nach Mustern wie:
+    - "Tankvorgang #123"
+    - "#123"
+    - "Refuel #123"
+    """
+    import re
+    
+    patterns = [
+        r'[Tt]ankvorgang\s*#(\d+)',
+        r'[Rr]efuel\s*#(\d+)',
+        r'#(\d+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            refuel_id = int(match.group(1))
+            # Prüfe ob diese refuel_id in ausstehenden Tankvorgängen ist
+            if refuel_id in self._pending_refuelings:
+                return refuel_id
+    
+    return None
+```
+
+#### 3. Aktualisierte Antwort-Handler
+
+Alle Antwort-Handler folgen jetzt diesem Muster:
+
+```python
+@callback
+def _handle_telegram_text_response(self, event: Event) -> None:
+    """Verarbeite Textantworten auf Tankbenachrichtigungen."""
+    event_data = event.data
+    text = event_data.get("text", "")
+    
+    # Strategie 1: Versuche refuel_id aus Textinhalt zu extrahieren
+    refuel_id = self._extract_refuel_id_from_text(text)
+    if refuel_id:
+        _LOGGER.info("✅ Refuel_id %s aus Textinhalt extrahiert", refuel_id)
+    
+    # Strategie 2: Versuche über message_id zu finden (wird None sein wegen HA-Limitation)
+    if not refuel_id:
+        reply_to_message_id = event_data.get("reply_to_message", {}).get("message_id")
+        refuel_id = self._find_refuel_by_message_id(reply_to_message_id)
+    
+    # Strategie 3: Verwende zeitliche Zuordnung (neueste) als Fallback
+    if not refuel_id:
+        refuel_id = self._find_most_recent_pending_refuel()
+    
+    if refuel_id:
+        self.hass.async_create_task(
+            self._process_text_response(refuel_id, text)
+        )
+```
+
+Das gleiche Drei-Stufen-Muster wurde angewendet auf:
+- `_handle_telegram_text_response()` - Extrahiert ID aus Text ✅
+- `_handle_telegram_photo_response()` - Extrahiert ID aus Bildunterschrift ✅
+- `_handle_telegram_voice_response()` - Verwendet zeitliche Zuordnung (Sprache hat keinen Text zum Parsen)
+
+#### 4. Neue Methode: `_find_most_recent_pending_refuel()`
 
 ```python
 def _find_most_recent_pending_refuel(self) -> int | None:
@@ -61,7 +164,6 @@ def _find_most_recent_pending_refuel(self) -> int | None:
         Refuel ID des neuesten ausstehenden Tankvorgangs, oder None
     """
     if not self._pending_refuelings:
-        _LOGGER.debug("Keine ausstehenden Tankvorgänge gefunden")
         return None
     
     # Finde den neuesten durch Vergleich der notified_at Zeitstempel
@@ -78,23 +180,107 @@ def _find_most_recent_pending_refuel(self) -> int | None:
     return most_recent_id
 ```
 
-#### 2. Aktualisierte Antwort-Handler
+## Was funktioniert jetzt ✅
 
-Alle Antwort-Handler folgen jetzt diesem Muster:
+Nach diesem Fix funktionieren alle Antwortmethoden mit **drei Zuordnungsstrategien**:
 
-```python
-@callback
-def _handle_telegram_text_response(self, event: Event) -> None:
-    """Verarbeite Textantworten auf Tankbenachrichtigungen."""
-    event_data = event.data
-    
-    # Verarbeite nur Events aus unserem konfigurierten Chat
-    if str(event_data.get("chat_id")) != str(self.chat_id):
-        return
-    
-    text = event_data.get("text", "")
-    
-    _LOGGER.info("📨 Telegram-Textnachricht empfangen: '%s'", text[:50])
+1. ✅ **Textantworten**: 
+   - Kann explizite ID enthalten: `"Tankvorgang #123: 45.5 L, 1.599 €/L, Shell"` (BESTE)
+   - Oder einfacher Text: `"45.5 L, 1.599 €/L, Shell"` (verwendet zeitliche Zuordnung)
+
+2. ✅ **Foto-Antworten**: 
+   - Kann ID in Bildunterschrift enthalten: `"#123 Quittung"` (BESTE)
+   - Oder nur Foto senden (verwendet zeitliche Zuordnung)
+
+3. ✅ **Sprachantworten**: 
+   - Verwendet zeitliche Zuordnung (kein Text zum Parsen)
+   - Verarbeitung noch nicht implementiert, aber Handler empfängt sie
+
+4. ✅ **Inline-Tastatur-Buttons**: 
+   - Funktionieren immer korrekt (refuel_id in callback_data eingebettet)
+
+5. ✅ **Umfassendes Logging**: 
+   - Alle Events werden für Debugging geloggt
+   - Zeigt welche Zuordnungsstrategie erfolgreich war
+
+## Verbessertes Benutzererlebnis
+
+### Beispiel-Benachrichtigung
+
+```
+⛽ Tankvorgang #123
+Neuer Tankvorgang erkannt!
+
+🕐 Zeitpunkt: 16.02.2026 16:43
+📊 Menge: 44.87 Liter
+⚡️ Kraftstoffart: e10
+
+❓ Fehlende Informationen:
+KM-Stand, Preis pro Liter, Gesamtkosten, Tankstellenname
+
+💡 Wie können Sie antworten:
+• Antworten Sie mit 'Tankvorgang #123: <Ihre Daten>'
+• Oder einfach: '45.5 L, 1.599 €/L, Shell' (wird automatisch zugeordnet)
+• Senden Sie ein Foto der Quittung
+• Senden Sie eine Sprachnachricht
+• Nutzen Sie die Schaltflächen unten
+
+[✅ Bestätigen] [✏️ Bearbeiten] [🗑️ Löschen]
+```
+
+### Beispiel Benutzer-Antworten
+
+**Explizite ID (Am zuverlässigsten):**
+- `"Tankvorgang #123: 180000 km, 1.599€/L, 71.85€, Shell"` ✅
+- `"#123 - 45.5 L vollgetankt"` ✅
+- `"Für #123: Aral Tankstelle"` ✅
+
+**Einfach (Zeitliche Zuordnung):**
+- `"45.5 L, 1.599 €/L, Shell"` ✅ (ordnet zu neuesten zu)
+
+**Foto mit Bildunterschrift:**
+- Foto senden mit Bildunterschrift: `"#123"` ✅ (am zuverlässigsten)
+- Foto ohne Bildunterschrift senden ✅ (verwendet zeitliche Zuordnung)
+
+## Vorteile dieses Ansatzes ⭐
+
+1. **Explizit ist besser**: Benutzer können 100% sicher sein, welchen Tankvorgang sie aktualisieren
+2. **Flexibel**: Funktioniert mit oder ohne explizite ID
+3. **Mehrere Tankvorgänge**: Keine Verwirrung bei mehreren Tankvorgängen
+4. **Zukunftssicher**: Wenn HA message_id-Unterstützung hinzufügt, können wir sie verwenden
+5. **Benutzerfreundlich**: Klare Anweisungen in der Benachrichtigung
+
+## Einschränkungen und Empfehlungen ⚠️
+
+### Wann welche Zuordnungsstrategie verwenden
+
+**Best Practice - Explizite ID (Empfohlen bei mehreren Tankvorgängen):**
+- `#123` in Ihrer Nachricht einschließen: `"Tankvorgang #123: 45.5 L, 1.599€/L"`
+- 100% zuverlässig auch bei vielen ausstehenden Tankvorgängen
+- Klar welchen Tankvorgang Sie aktualisieren
+
+**Zeitliche Zuordnung (Fallback):**
+- Senden Sie nur Daten ohne ID: `"45.5 L, 1.599 €/L, Shell"`
+- Funktioniert prima wenn Sie nur einen ausstehenden Tankvorgang haben
+- Ordnet automatisch zur neuesten Benachrichtigung zu
+
+**Inline-Buttons (Funktioniert immer):**
+- Am zuverlässigsten für Bestätigungen und Löschungen
+- Kein Tippen erforderlich
+- ID automatisch in Button-Daten enthalten
+
+### Empfohlener Benutzer-Workflow
+
+**Einzelner Tankvorgang:**
+1. Benachrichtigung empfangen
+2. Sofort mit einfachem Text oder Foto antworten
+3. Zeitliche Zuordnung erledigt es automatisch ✅
+
+**Mehrere Tankvorgänge:**
+1. Erste Benachrichtigung empfangen: `"⛽ Tankvorgang #123"`
+2. Zweite Benachrichtigung empfangen: `"⛽ Tankvorgang #124"`
+3. **ID in Antwort einschließen**: `"#123: 45.5 L, 1.599€/L"` ✅
+4. Oder Inline-Tastatur-Buttons verwenden ✅
     
     # Versuche zuerst über message_id zu finden (wird None sein wegen HA-Limitierungen)
     reply_to_message_id = event_data.get("reply_to_message", {}).get("message_id")
