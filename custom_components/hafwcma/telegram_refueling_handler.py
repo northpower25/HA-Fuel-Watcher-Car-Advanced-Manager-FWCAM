@@ -813,6 +813,15 @@ class TelegramRefuelingHandler:
             }
         )
         
+        # Save station to POI cache if station name was provided
+        if parsed_data.get("station_name"):
+            await self._save_station_to_poi(
+                station_name=parsed_data["station_name"],
+                station_address=parsed_data.get("station_address"),
+                # Note: We don't have coordinates from text parsing alone
+                # These would need to come from the refueling record or geocoding
+            )
+        
         # Get updated refueling data
         refuel_data = await get_refueling_record(
             self.hass,
@@ -1095,6 +1104,7 @@ class TelegramRefuelingHandler:
         """Parse unstructured text to extract refueling data.
         
         Uses pattern matching and AI to extract structured data.
+        Enhanced to recognize German number formats and smart price detection.
         
         Args:
             text: Unstructured text input
@@ -1108,10 +1118,10 @@ class TelegramRefuelingHandler:
             return parsed
         
         # Extract liters (various formats)
-        # Examples: "45.5 L", "45,5 Liter", "45.5L", "45.5 liters"
+        # Examples: "45.5 L", "45,5 Liter", "45.5L", "45.5 liters", "20 L", "20l"
         liter_patterns = [
-            r"(\d+[.,]\d+)\s*(?:L|l|Liter|liter)",
-            r"(\d+)\s*(?:L|l|Liter|liter)",
+            r"(\d+[.,]\d+)\s*(?:L|l|Liter|liter)(?!\s*/)",  # Decimal with L/Liter (not €/L)
+            r"(\d+)\s*(?:L|l|Liter|liter)(?!\s*/)",        # Integer with L/Liter (not €/L)
         ]
         for pattern in liter_patterns:
             match = re.search(pattern, text)
@@ -1119,15 +1129,16 @@ class TelegramRefuelingHandler:
                 try:
                     value = float(match.group(1).replace(",", "."))
                     parsed["liters_refueled"] = value
+                    _LOGGER.debug("Extracted liters: %s", value)
                     break
                 except:
                     pass
         
-        # Extract price per liter
+        # Extract price per liter - prioritize explicit €/L formats first
         # Examples: "1.599 €/L", "1,599€/Liter", "1.59 EUR/l"
         price_patterns = [
-            r"(\d+[.,]\d+)\s*(?:€|EUR|euro)?\s*/\s*(?:L|l|Liter)",
-            r"Preis[:\s]+(\d+[.,]\d+)",
+            r"(\d+[.,]\d+)\s*(?:€|EUR|euro)?\s*/\s*(?:L|l|Liter)",  # With explicit /L
+            r"Preis[:\s]+(\d+[.,]\d+)",  # After "Preis:"
         ]
         for pattern in price_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
@@ -1135,15 +1146,34 @@ class TelegramRefuelingHandler:
                 try:
                     value = float(match.group(1).replace(",", "."))
                     parsed["price_per_liter"] = value
+                    _LOGGER.debug("Extracted price/liter (explicit): %s", value)
                     break
                 except:
                     pass
         
+        # Smart price detection: Numbers like 1,xxx or 2,xxx are likely €/L prices
+        # Only if no explicit price/liter was found and value is between 1.0 and 3.0
+        if "price_per_liter" not in parsed:
+            standalone_price_pattern = r"\b([12][.,]\d{1,3})\b"
+            matches = re.findall(standalone_price_pattern, text)
+            for match in matches:
+                try:
+                    value = float(match.replace(",", "."))
+                    # Fuel prices are typically between 1.0 and 3.0 €/L
+                    if 1.0 <= value <= 3.0:
+                        parsed["price_per_liter"] = value
+                        _LOGGER.debug("Extracted price/liter (smart detection): %s", value)
+                        break
+                except:
+                    pass
+        
         # Extract total cost
-        # Examples: "71.96 €", "71,96 EUR", "Total: 71.96"
+        # Examples: "71.96 €", "71,96 EUR", "Total: 71.96", "20eur", "20 €", "20 EUR"
+        # Numbers 20-99 without L/Liter suffix are likely total costs
         cost_patterns = [
-            r"(?:Gesamt|Total|Summe)[:\s]+(\d+[.,]\d+)",
-            r"(\d+[.,]\d+)\s*(?:€|EUR|euro)(?!\s*/)",
+            r"(?:Gesamt|Total|Summe)[:\s]+(\d+[.,]\d+)",  # With keyword
+            r"(\d+[.,]\d+)\s*(?:€|EUR|euro|eur)(?!\s*/)",  # Decimal with currency (not €/L)
+            r"(\d+)\s*(?:€|EUR|euro|eur)(?!\s*/)",         # Integer with currency (not €/L)
         ]
         for pattern in cost_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
@@ -1151,7 +1181,35 @@ class TelegramRefuelingHandler:
                 try:
                     value = float(match.group(1).replace(",", "."))
                     parsed["total_cost"] = value
+                    _LOGGER.debug("Extracted total cost (explicit): %s", value)
                     break
+                except:
+                    pass
+        
+        # Smart total cost detection: Numbers 20-99 (or 10-99 with decimals) are likely total costs
+        # Only if no explicit total cost was found and no liter suffix
+        if "total_cost" not in parsed:
+            # Match decimal numbers 10.xx - 99.xx or integers 20-99
+            standalone_cost_pattern = r"\b((?:[1-9]\d)[.,]?\d{0,2})\b"
+            matches = re.findall(standalone_cost_pattern, text)
+            for match in matches:
+                # Skip if this number is already used for price_per_liter
+                if "price_per_liter" in parsed:
+                    price_str = str(parsed["price_per_liter"]).replace(".", ",")
+                    if match.replace(",", ".") == str(parsed["price_per_liter"]):
+                        continue
+                
+                try:
+                    value = float(match.replace(",", "."))
+                    # Total costs typically between 10 and 200 EUR
+                    if 10.0 <= value <= 200.0:
+                        # Make sure it's not the same as liters
+                        if "liters_refueled" in parsed:
+                            if abs(value - parsed["liters_refueled"]) < 0.01:
+                                continue
+                        parsed["total_cost"] = value
+                        _LOGGER.debug("Extracted total cost (smart detection): %s", value)
+                        break
                 except:
                     pass
         
@@ -1185,8 +1243,103 @@ class TelegramRefuelingHandler:
             if station_match:
                 parsed["station_name"] = station_match.group(1).strip()
         
+        # Calculate price_per_liter if we have total_cost and liters but no explicit price
+        if "price_per_liter" not in parsed and "total_cost" in parsed and "liters_refueled" in parsed:
+            try:
+                calculated_price = parsed["total_cost"] / parsed["liters_refueled"]
+                # Sanity check: fuel price should be between 1.0 and 3.0 €/L
+                if 1.0 <= calculated_price <= 3.0:
+                    parsed["price_per_liter"] = round(calculated_price, 3)
+                    _LOGGER.debug(
+                        "Calculated price/liter: %.3f (from total %.2f / liters %.2f)",
+                        calculated_price,
+                        parsed["total_cost"],
+                        parsed["liters_refueled"]
+                    )
+            except (ZeroDivisionError, ValueError):
+                pass
+        
+        # Calculate total_cost if we have price_per_liter and liters but no explicit total
+        if "total_cost" not in parsed and "price_per_liter" in parsed and "liters_refueled" in parsed:
+            try:
+                calculated_total = parsed["price_per_liter"] * parsed["liters_refueled"]
+                parsed["total_cost"] = round(calculated_total, 2)
+                _LOGGER.debug(
+                    "Calculated total cost: %.2f (from price %.3f * liters %.2f)",
+                    calculated_total,
+                    parsed["price_per_liter"],
+                    parsed["liters_refueled"]
+                )
+            except (ValueError):
+                pass
+        
         _LOGGER.debug("Parsed data from text: %s", parsed)
         return parsed
+
+    async def _save_station_to_poi(
+        self,
+        station_name: str,
+        station_address: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+    ) -> None:
+        """Save a gas station to POI cache for trip tracking.
+        
+        Args:
+            station_name: Name of the gas station
+            station_address: Optional address of the station
+            latitude: Optional latitude coordinate
+            longitude: Optional longitude coordinate
+        """
+        try:
+            from .utils.storage import get_pois, add_poi
+            from .utils.poi_management import find_poi_at_location, suggest_poi_from_location
+            
+            # Get existing POIs
+            existing_pois = await get_pois(self.hass, self.config_entry)
+            
+            # Check if this station already exists as POI
+            if latitude and longitude:
+                existing_poi = find_poi_at_location(
+                    latitude, longitude, existing_pois, max_distance_m=200.0
+                )
+                if existing_poi:
+                    _LOGGER.debug("Station already exists as POI: %s", existing_poi.get("name"))
+                    return
+            
+            # Check if a POI with this name already exists
+            for poi in existing_pois:
+                if poi.get("name", "").lower() == station_name.lower():
+                    _LOGGER.debug("Station with name '%s' already exists in POI cache", station_name)
+                    return
+            
+            # Create new POI for the gas station
+            if latitude and longitude:
+                poi_data = suggest_poi_from_location(
+                    latitude, longitude, station_address, poi_type="gas_station"
+                )
+                poi_data["name"] = station_name
+            else:
+                # Create POI without coordinates (will be updated later if location is found)
+                poi_data = {
+                    "name": station_name,
+                    "latitude": None,
+                    "longitude": None,
+                    "radius_m": 200.0,
+                    "address": station_address,
+                    "poi_type": "gas_station",
+                    "category": None,
+                    "icon": "mdi:gas-station",
+                    "visit_count": 0,
+                    "is_favorite": False,
+                    "notes": "Auto-added from refueling data",
+                }
+            
+            poi_id = await add_poi(self.hass, self.config_entry, poi_data)
+            _LOGGER.info("Added gas station '%s' to POI cache (ID: %s)", station_name, poi_id)
+            
+        except Exception as err:
+            _LOGGER.warning("Failed to save station to POI cache: %s", err)
 
     async def _perform_ocr(self, file_id: str) -> str | None:
         """Perform OCR on a photo file.
