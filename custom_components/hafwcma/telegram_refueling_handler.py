@@ -242,89 +242,10 @@ class TelegramRefuelingHandler:
             self.chat_id
         )
         
-        # Build notification message with refuel ID prominently displayed
-        message_parts = [
-            f"⛽ <b>Tankvorgang #{refuel_id}</b>\n",
-            "<i>Neuer Tankvorgang erkannt!</i>\n"
-        ]
-        
-        # Show detected data
-        timestamp = refuel_data.get("timestamp", "Unbekannt")
-        if timestamp:
-            try:
-                dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-                timestamp = dt.strftime("%d.%m.%Y %H:%M")
-            except:
-                pass
-        
-        message_parts.append(f"🕐 Zeitpunkt: {timestamp}")
-        
-        # Track what's missing
-        missing_fields = []
-        
-        liters = refuel_data.get("liters_refueled")
-        if liters:
-            message_parts.append(f"📊 Menge: {liters:.2f} Liter")
-        else:
-            missing_fields.append("Tankvolumen")
-        
-        odometer = refuel_data.get("odometer_km")
-        if odometer:
-            message_parts.append(f"🔢 KM-Stand: {odometer:.1f} km")
-        else:
-            missing_fields.append("KM-Stand")
-        
-        price_per_liter = refuel_data.get("price_per_liter")
-        if price_per_liter:
-            message_parts.append(f"💰 Preis/Liter: {price_per_liter:.3f} €")
-        else:
-            missing_fields.append("Preis pro Liter")
-        
-        total_cost = refuel_data.get("total_cost")
-        if total_cost:
-            message_parts.append(f"💵 Gesamtkosten: {total_cost:.2f} €")
-        else:
-            missing_fields.append("Gesamtkosten")
-        
-        station_name = refuel_data.get("station_name")
-        if station_name:
-            message_parts.append(f"🏪 Tankstelle: {html.escape(str(station_name))}")
-        else:
-            missing_fields.append("Tankstellenname")
-        
-        station_address = refuel_data.get("station_address")
-        if station_address:
-            message_parts.append(f"📍 Adresse: {html.escape(str(station_address))}")
-        
-        fuel_type = refuel_data.get("fuel_type")
-        if fuel_type:
-            message_parts.append(f"⚡ Kraftstoffart: {html.escape(str(fuel_type))}")
-        
-        # Show missing fields
-        if missing_fields:
-            message_parts.append(f"\n❓ <b>Fehlende Informationen:</b>")
-            message_parts.append(", ".join(missing_fields))
-            message_parts.append(
-                f"\n💡 <b>Wie können Sie antworten:</b>\n"
-                f"• Antworten Sie mit 'Tankvorgang #{refuel_id}: &lt;Ihre Daten&gt;'\n"
-                f"• Oder einfach: '45.5 L, 1.599 €/L, Shell' (wird automatisch zugeordnet)\n"
-                f"• Senden Sie ein Foto der Quittung\n"
-                f"• Senden Sie eine Sprachnachricht\n"
-                f"• Nutzen Sie die Schaltflächen unten"
-            )
-        
-        message = "\n".join(message_parts)
-        
-        # Create inline keyboard for quick actions
-        inline_keyboard = [
-            [
-                {"text": "✅ Bestätigen", "callback_data": f"refuel_confirm_{refuel_id}"},
-                {"text": "✏️ Bearbeiten", "callback_data": f"refuel_edit_{refuel_id}"},
-            ],
-            [
-                {"text": "🗑️ Löschen", "callback_data": f"refuel_delete_{refuel_id}"},
-            ],
-        ]
+        # Build notification message using helper
+        message, inline_keyboard = await self._build_refuel_status_message(
+            refuel_id, refuel_data, is_update=False
+        )
         
         try:
             # Check if telegram_bot service is still available
@@ -722,6 +643,128 @@ class TelegramRefuelingHandler:
         
         return most_recent_id
 
+    async def _build_refuel_status_message(
+        self,
+        refuel_id: int,
+        refuel_data: dict[str, Any],
+        is_update: bool = False,
+    ) -> tuple[str, list]:
+        """Build a status message for a refueling event.
+        
+        Args:
+            refuel_id: ID of the refueling event
+            refuel_data: Refueling event data
+            is_update: Whether this is an update message (vs initial notification)
+            
+        Returns:
+            Tuple of (message, inline_keyboard)
+        """
+        # Build status message
+        message_parts = [
+            f"⛽ <b>Tankvorgang #{refuel_id}</b>\n",
+        ]
+        
+        if is_update:
+            message_parts.append("<i>✅ Daten aktualisiert!</i>\n")
+        else:
+            message_parts.append("<i>Neuer Tankvorgang erkannt!</i>\n")
+        
+        # Show detected data
+        timestamp = refuel_data.get("timestamp", "Unbekannt")
+        if timestamp:
+            try:
+                dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                timestamp = dt.strftime("%d.%m.%Y %H:%M")
+            except:
+                pass
+        
+        message_parts.append(f"🕐 Zeitpunkt: {timestamp}")
+        
+        # Track what's missing
+        missing_fields = []
+        
+        liters = refuel_data.get("liters_refueled")
+        if liters:
+            message_parts.append(f"📊 Menge: {liters:.2f} Liter")
+        else:
+            missing_fields.append("Tankvolumen")
+        
+        odometer = refuel_data.get("odometer_km")
+        if odometer:
+            message_parts.append(f"🔢 KM-Stand: {odometer:.1f} km")
+        else:
+            missing_fields.append("KM-Stand")
+        
+        price_per_liter = refuel_data.get("price_per_liter")
+        if price_per_liter:
+            message_parts.append(f"💰 Preis/Liter: {price_per_liter:.3f} €")
+        else:
+            missing_fields.append("Preis pro Liter")
+        
+        total_cost = refuel_data.get("total_cost")
+        if total_cost:
+            message_parts.append(f"💵 Gesamtkosten: {total_cost:.2f} €")
+        else:
+            missing_fields.append("Gesamtkosten")
+        
+        station_name = refuel_data.get("station_name")
+        if station_name:
+            message_parts.append(f"🏪 Tankstelle: {html.escape(str(station_name))}")
+        else:
+            missing_fields.append("Tankstellenname")
+        
+        station_address = refuel_data.get("station_address")
+        if station_address:
+            message_parts.append(f"📍 Adresse: {html.escape(str(station_address))}")
+        
+        fuel_type = refuel_data.get("fuel_type")
+        if fuel_type:
+            message_parts.append(f"⚡ Kraftstoffart: {html.escape(str(fuel_type))}")
+        
+        # Show missing fields or completion status
+        if missing_fields:
+            message_parts.append(f"\n❓ <b>Fehlende Informationen:</b>")
+            message_parts.append(", ".join(missing_fields))
+            message_parts.append(
+                f"\n💡 <b>Wie können Sie antworten:</b>\n"
+                f"• Antworten Sie mit 'Tankvorgang #{refuel_id}: &lt;Ihre Daten&gt;'\n"
+                f"• Oder einfach: '45.5 L, 1.599 €/L, Shell' (wird automatisch zugeordnet)\n"
+                f"• Senden Sie ein Foto der Quittung\n"
+                f"• Senden Sie eine Sprachnachricht\n"
+                f"• Nutzen Sie die Schaltflächen unten"
+            )
+        else:
+            message_parts.append(f"\n✅ <b>Alle Daten vollständig!</b>")
+        
+        message = "\n".join(message_parts)
+        
+        # Create inline keyboard
+        # Format: [["Button Text", "callback_data"]] for Home Assistant telegram_bot service
+        if missing_fields:
+            # Still have missing data - offer Continue and Done options
+            inline_keyboard = [
+                [
+                    ["✅ Fertig", f"refuel_done_{refuel_id}"],
+                    ["✏️ Weiter bearbeiten", f"refuel_edit_{refuel_id}"],
+                ],
+                [
+                    ["🗑️ Löschen", f"refuel_delete_{refuel_id}"],
+                ],
+            ]
+        else:
+            # All data complete - offer Confirm and Delete
+            inline_keyboard = [
+                [
+                    ["✅ Bestätigen", f"refuel_confirm_{refuel_id}"],
+                    ["✏️ Bearbeiten", f"refuel_edit_{refuel_id}"],
+                ],
+                [
+                    ["🗑️ Löschen", f"refuel_delete_{refuel_id}"],
+                ],
+            ]
+        
+        return message, inline_keyboard
+
     async def _process_text_response(self, refuel_id: int, text: str) -> None:
         """Process unstructured text response.
         
@@ -737,7 +780,7 @@ class TelegramRefuelingHandler:
         parsed_data = await self._parse_refuel_text(text)
         
         # Update refueling record
-        from .utils.storage import update_refueling_record
+        from .utils.storage import update_refueling_record, get_refueling_record
         
         updates = {
             "telegram_response_received": True,
@@ -770,14 +813,45 @@ class TelegramRefuelingHandler:
             }
         )
         
-        # Send confirmation
-        await self._send_telegram_message(
-            f"✅ Daten für Tankvorgang #{refuel_id} aktualisiert!\n\n"
-            f"Erkannte Daten:\n<code>{html.escape(json.dumps(parsed_data, indent=2, ensure_ascii=False))}</code>"
+        # Get updated refueling data
+        refuel_data = await get_refueling_record(
+            self.hass,
+            self.config_entry,
+            refuel_id
         )
         
-        # Remove from pending
-        self._pending_refuelings.pop(refuel_id, None)
+        if not refuel_data:
+            _LOGGER.error("Failed to get refueling record %s after update", refuel_id)
+            return
+        
+        # Send updated status message with current data and remaining missing fields
+        message, inline_keyboard = await self._build_refuel_status_message(
+            refuel_id, refuel_data, is_update=True
+        )
+        
+        # Send the updated message via telegram_bot service
+        try:
+            target_chat_id = int(self.chat_id) if isinstance(self.chat_id, str) else self.chat_id
+            
+            await self.hass.services.async_call(
+                "telegram_bot",
+                "send_message",
+                {
+                    "target": target_chat_id,
+                    "message": message,
+                    "parse_mode": "html",
+                    "inline_keyboard": inline_keyboard,
+                },
+                blocking=True,
+            )
+            
+            _LOGGER.info("✅ Sent updated status message for refuel ID %s", refuel_id)
+        except Exception as err:
+            _LOGGER.error("Failed to send updated status message: %s", err)
+        
+        # DON'T remove from pending - keep dialog open for multi-turn interaction
+        # Only remove when user clicks "Fertig" or "Bestätigen" button
+        _LOGGER.debug("Keeping refuel ID %s in pending for multi-turn dialog", refuel_id)
 
     async def _process_callback_action(
         self,
@@ -829,8 +903,18 @@ class TelegramRefuelingHandler:
             # Remove from pending
             self._pending_refuelings.pop(refuel_id, None)
             
+        elif action == "done":
+            # User indicates they're done adding data (even if incomplete)
+            await self._answer_callback_query(
+                event_data.get("id"),
+                "✅ Tankvorgang abgeschlossen!"
+            )
+            
+            # Remove from pending
+            self._pending_refuelings.pop(refuel_id, None)
+            
         elif action == "edit":
-            # Prompt for editing
+            # Prompt for editing - keep in pending for multi-turn dialog
             await self._answer_callback_query(
                 event_data.get("id"),
                 "✏️ Bitte senden Sie die aktualisierten Daten"
@@ -840,6 +924,7 @@ class TelegramRefuelingHandler:
                 f"✏️ Bitte antworten Sie mit den aktualisierten Daten für Tankvorgang #{refuel_id}:\n\n"
                 "Beispiel: 45.5 Liter, 1.599 €/Liter, Shell Tankstelle"
             )
+            # Don't remove from pending - keep dialog open
             
         elif action == "delete":
             # Delete the refueling event
