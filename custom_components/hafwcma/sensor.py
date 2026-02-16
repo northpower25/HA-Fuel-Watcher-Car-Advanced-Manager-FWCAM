@@ -1693,11 +1693,41 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
         """Return additional attributes."""
         station = self.coordinator.data.get("nearest_station", {})
         recommendation = self.coordinator.data.get("recommendation", {})
+        radius_comparison = self.coordinator.data.get("radius_comparison")
+        
+        # Determine which station to display as primary
+        # If we have a comparison and a clear recommendation, show the recommended station
+        display_station = station  # Default to nearest by price
+        
+        if radius_comparison and radius_comparison.get("has_comparison"):
+            comparison_rec = radius_comparison.get("recommendation", "")
+            savings = radius_comparison.get("savings", 0)
+            
+            # If the farther station actually saves money (positive savings),
+            # or if the recommendation suggests it's better, show the 20km station
+            # Otherwise (negative savings or similar cost), show the 10km station
+            if "20km" in comparison_rec or savings > 0.50:  # More than 50 cent savings
+                station_20km = radius_comparison.get("station_20km", {})
+                if station_20km:
+                    # Build station data from 20km comparison data
+                    display_station = {
+                        "name": station_20km.get("name"),
+                        "distance": station_20km.get("distance_km"),
+                        # Note: address not available in comparison data
+                    }
+            else:
+                # Show 10km station as recommended
+                station_10km = radius_comparison.get("station_10km", {})
+                if station_10km:
+                    display_station = {
+                        "name": station_10km.get("name"),
+                        "distance": station_10km.get("distance_km"),
+                    }
         
         attributes = {
-            ATTR_STATION_NAME: station.get("name"),
-            ATTR_STATION_ADDRESS: station.get("address"),
-            ATTR_DISTANCE: station.get("distance"),
+            ATTR_STATION_NAME: display_station.get("name"),
+            ATTR_STATION_ADDRESS: display_station.get("address"),
+            ATTR_DISTANCE: display_station.get("distance"),
             ATTR_FORECAST_TREND: self.coordinator.data.get("forecast_trend"),
         }
         
