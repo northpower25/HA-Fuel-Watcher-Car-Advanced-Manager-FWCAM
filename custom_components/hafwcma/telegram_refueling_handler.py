@@ -648,6 +648,7 @@ class TelegramRefuelingHandler:
         refuel_id: int,
         refuel_data: dict[str, Any],
         is_update: bool = False,
+        newly_recognized: dict[str, Any] | None = None,
     ) -> tuple[str, list]:
         """Build a status message for a refueling event.
         
@@ -655,6 +656,7 @@ class TelegramRefuelingHandler:
             refuel_id: ID of the refueling event
             refuel_data: Refueling event data
             is_update: Whether this is an update message (vs initial notification)
+            newly_recognized: Dictionary of fields that were just recognized in this update
             
         Returns:
             Tuple of (message, inline_keyboard)
@@ -664,8 +666,28 @@ class TelegramRefuelingHandler:
             f"⛽ <b>Tankvorgang #{refuel_id}</b>\n",
         ]
         
-        if is_update:
-            message_parts.append("<i>✅ Daten aktualisiert!</i>\n")
+        if is_update and newly_recognized:
+            # Show what was just recognized
+            recognized_items = []
+            if newly_recognized.get("liters_refueled"):
+                recognized_items.append(f"📊 {newly_recognized['liters_refueled']:.2f} Liter")
+            if newly_recognized.get("odometer_km"):
+                recognized_items.append(f"🔢 {newly_recognized['odometer_km']:.1f} km")
+            if newly_recognized.get("price_per_liter"):
+                recognized_items.append(f"💰 {newly_recognized['price_per_liter']:.3f} €/L")
+            if newly_recognized.get("total_cost"):
+                recognized_items.append(f"💵 {newly_recognized['total_cost']:.2f} €")
+            if newly_recognized.get("station_name"):
+                recognized_items.append(f"🏪 {html.escape(str(newly_recognized['station_name']))}")
+            if newly_recognized.get("fuel_type"):
+                recognized_items.append(f"⚡ {html.escape(str(newly_recognized['fuel_type']))}")
+            
+            if recognized_items:
+                message_parts.append("<i>✅ <b>Erkannt:</b> " + ", ".join(recognized_items) + "</i>\n")
+            else:
+                message_parts.append("<i>Daten aktualisiert!</i>\n")
+        elif is_update:
+            message_parts.append("<i>Daten aktualisiert!</i>\n")
         else:
             message_parts.append("<i>Neuer Tankvorgang erkannt!</i>\n")
         
@@ -723,15 +745,9 @@ class TelegramRefuelingHandler:
         
         # Show missing fields or completion status
         if missing_fields:
-            message_parts.append(f"\n❓ <b>Fehlende Informationen:</b>")
-            message_parts.append(", ".join(missing_fields))
+            message_parts.append(f"\n❓ <b>Noch fehlend:</b> {', '.join(missing_fields)}")
             message_parts.append(
-                f"\n💡 <b>Wie können Sie antworten:</b>\n"
-                f"• Antworten Sie mit 'Tankvorgang #{refuel_id}: &lt;Ihre Daten&gt;'\n"
-                f"• Oder einfach: '45.5 L, 1.599 €/L, Shell' (wird automatisch zugeordnet)\n"
-                f"• Senden Sie ein Foto der Quittung\n"
-                f"• Senden Sie eine Sprachnachricht\n"
-                f"• Nutzen Sie die Schaltflächen unten"
+                f"\n💡 <b>Tipp:</b> Einfach weitere Daten senden (z.B. '155000 km, Shell')"
             )
         else:
             message_parts.append(f"\n✅ <b>Alle Daten vollständig!</b>")
@@ -834,8 +850,9 @@ class TelegramRefuelingHandler:
             return
         
         # Send updated status message with current data and remaining missing fields
+        # Pass the parsed_data as newly_recognized to highlight what was just added
         message, inline_keyboard = await self._build_refuel_status_message(
-            refuel_id, refuel_data, is_update=True
+            refuel_id, refuel_data, is_update=True, newly_recognized=parsed_data
         )
         
         # Send the updated message via telegram_bot service
