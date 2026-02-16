@@ -124,7 +124,118 @@ telegram_bot:
       - 12345678  # Your chat ID from @userinfobot
 ```
 
-### 3. Enable Debug Logging
+### 3. "Access denied from 127.0.0.1" Error
+
+**Symptom:** The following error appears in Home Assistant logs:
+```
+Logger: homeassistant.components.telegram_bot.webhooks
+Access denied from 127.0.0.1
+```
+
+**Cause:** This error originates from the Home Assistant telegram_bot integration itself (not from haFWCMA). It occurs when the telegram_bot integration is configured in webhook mode and receives requests from untrusted IP addresses.
+
+**What happens:**
+- When you press inline keyboard buttons (✅ Confirm, ✏️ Edit, 🗑️ Delete), Telegram sends a webhook callback to Home Assistant
+- If Home Assistant runs behind a reverse proxy, the request appears to come from 127.0.0.1
+- Without proper `trusted_networks` configuration, this request is blocked
+- Buttons don't work because callbacks cannot be processed
+
+**Solution 1: Use Polling (Easiest)**
+
+If you don't have a publicly accessible Home Assistant instance, use polling instead of webhooks:
+
+```yaml
+telegram_bot:
+  - platform: polling
+    api_key: "YOUR_BOT_TOKEN"
+    allowed_chat_ids:
+      - 12345678  # Your chat ID
+```
+
+**Solution 2: Configure Trusted Networks (For Webhook Mode)**
+
+If you want to use webhooks (e.g., with Nabu Casa or your own public URL), add trusted networks:
+
+```yaml
+telegram_bot:
+  - platform: webhooks
+    api_key: "YOUR_BOT_TOKEN"
+    allowed_chat_ids:
+      - 12345678  # Your chat ID
+    trusted_networks:
+      - 127.0.0.1/32          # Local reverse proxy
+      - 149.154.160.0/20      # Telegram IP range 1
+      - 91.108.4.0/22         # Telegram IP range 2
+      # If using Cloudflare: Add Cloudflare IP ranges
+```
+
+**Important:**
+- After configuration changes: **Fully restart Home Assistant** (not just reload configuration)
+- If using Nabu Casa: Add `127.0.0.1/32` to trusted_networks
+- If using your own reverse proxy: Add the proxy's IP address
+
+**Further Information:**
+- [Home Assistant telegram_bot Documentation](https://www.home-assistant.io/integrations/telegram_bot/)
+- [GitHub Issue about this problem](https://github.com/home-assistant/core/issues/101980)
+
+### 4. Inline Keyboard Buttons - Text and Symbols
+
+**Question:** Why do buttons show "✅ Confirm" instead of just "✅"?
+
+**Answer:** Buttons intentionally display **Emoji + Text** together. This is:
+- ✅ **Standard in Telegram bots**: Most professional Telegram bots use text labels with emojis
+- ✅ **Better user experience**: Clear labels prevent misunderstandings
+- ✅ **Accessibility**: Screen readers can read text, but not all emojis are unambiguous
+
+**Button Labels:**
+- `✅ Confirm` - Confirms the refueling with automatically detected data
+- `✏️ Edit` - Allows manual input/correction of data
+- `🗑️ Delete` - Deletes the refueling completely
+
+**Technical Background:**
+Buttons are sent as `inline_keyboard` in this format:
+```python
+{
+    "text": "✅ Confirm",
+    "callback_data": "refuel_confirm_123"
+}
+```
+
+This follows the official Telegram Bot API specification and best practices for Telegram bot development.
+
+**Note:** If buttons don't work at all or show "Loading..." indefinitely, see the "Access denied from 127.0.0.1" error above.
+
+### 5. Replying to Telegram Messages
+
+**Problem:** "When I reply to the message, nothing is recognized"
+
+**Solution:** To correctly match a reply, use one of the following methods:
+
+**Method 1: Mention Refuel ID in Text (Recommended)**
+
+Include the refueling number (#15, #16, etc.) in your reply:
+```
+Refueling #15: 45.5 liters, 1.599 €/liter, Shell
+```
+
+The integration automatically detects `#15` and correctly assigns the data.
+
+**Method 2: Use Inline Keyboard Buttons (Easiest)**
+
+Use the buttons in the notification:
+- Press `✏️ Edit`, then enter data
+- No manual matching needed
+
+**Method 3: Time-based Matching**
+
+If you reply within a few minutes of receiving a notification, the reply is automatically assigned to the most recent pending refueling.
+
+**Important:**
+- The integration **cannot** retrieve message_id from sent messages (Home Assistant API limitation)
+- Therefore, "Reply to message" doesn't work reliably
+- **Use the #-number or buttons instead**
+
+### 6. Enable Debug Logging
 
 Add to `configuration.yaml`:
 ```yaml
@@ -138,7 +249,7 @@ logger:
 
 Restart Home Assistant.
 
-### 4. Run Test Flow
+### 7. Run Test Flow
 
 1. Press the "Telegram API Test" button
 2. Watch logs in real-time
@@ -155,7 +266,7 @@ Restart Home Assistant.
 [telegram_refueling_handler] Notification sent successfully with message_id: 456
 ```
 
-### 5. Manual Service Test
+### 8. Manual Service Test
 
 Test telegram_bot directly in Developer Tools → Services:
 
