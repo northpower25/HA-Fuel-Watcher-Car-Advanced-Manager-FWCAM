@@ -892,7 +892,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Check if telegram_bot is now available
             if "telegram_bot" not in hass.config.components:
                 _LOGGER.warning(
-                    "telegram_bot integration still not found after HA startup. "
+                    "telegram_bot integration still not found after Home Assistant startup. "
                     "Telegram features will not be available. "
                     "Please configure the telegram_bot integration. "
                     "See: https://www.home-assistant.io/integrations/telegram_bot/"

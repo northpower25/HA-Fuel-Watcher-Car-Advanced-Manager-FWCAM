@@ -335,7 +335,7 @@ class TelegramRefuelingHandler:
             try:
                 target_chat_id = int(self.chat_id) if isinstance(self.chat_id, str) else self.chat_id
             except (ValueError, TypeError):
-                # If conversion fails, use as-is (string chat_id)
+                # If conversion fails, use original value as-is
                 target_chat_id = self.chat_id
             
             _LOGGER.info(
