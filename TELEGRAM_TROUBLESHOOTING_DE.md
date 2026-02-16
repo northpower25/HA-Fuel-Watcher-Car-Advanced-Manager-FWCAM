@@ -163,24 +163,93 @@ telegram_bot:
 - ✅ **Barrierefreiheit**: Screenreader können Text vorlesen, aber nicht alle Emojis sind eindeutig
 
 **Button-Beschriftungen:**
-- `✅ Bestätigen` - Bestätigt den Tankvorgang mit den automatisch erkannten Daten
-- `✏️ Bearbeiten` - Ermöglicht die manuelle Eingabe/Korrektur der Daten
+- `✅ Bestätigen` / `✅ Fertig` - Bestätigt den Tankvorgang oder markiert ihn als abgeschlossen
+- `✏️ Bearbeiten` / `✏️ Weiter bearbeiten` - Ermöglicht weitere Dateneingabe
 - `🗑️ Löschen` - Löscht den Tankvorgang komplett
 
 **Technischer Hintergrund:**
-Die Buttons werden als `inline_keyboard` in folgender Form gesendet:
+Die Buttons werden als `inline_keyboard` im Array-Format gesendet:
 ```python
-{
-    "text": "✅ Bestätigen",
-    "callback_data": "refuel_confirm_123"
-}
+["✅ Bestätigen", "refuel_confirm_123"]
 ```
 
-Dies entspricht der offiziellen Telegram Bot API Spezifikation und den Best Practices für Telegram Bot Entwicklung.
+Dies entspricht dem Format, das die Home Assistant telegram_bot Integration erwartet.
+
+#### ❌ Problem: Buttons zeigen "text" statt Beschriftungen
+
+**Symptom:** Statt "✅ Bestätigen", "✏️ Bearbeiten", "🗑️ Löschen" sehen Sie dreimal "text"
+
+**Ursache:** Veraltete Integration-Version oder falsches Button-Format
+
+**Lösung:** 
+1. Stellen Sie sicher, dass Sie die neueste Version der haFWCMA Integration verwenden
+2. Die Integration verwendet jetzt das korrekte Array-Format: `["Button Text", "callback_data"]`
+3. Wenn das Problem weiterhin besteht:
+   - Stoppen Sie Home Assistant
+   - Löschen Sie den Cache: `rm -rf config/.storage/core.restore_state`
+   - Starten Sie Home Assistant neu
+
+**Weitere Informationen:** Siehe `TELEGRAM_MULTI_TURN_DIALOG.md` für Details zum Button-Format
 
 **Hinweis:** Wenn die Buttons gar nicht funktionieren oder dauerhaft "Laden..." anzeigen, siehe "Access denied from 127.0.0.1" Fehler oben.
 
-### 4. Antworten auf Telegram-Nachrichten
+### 4. Multi-Turn Dialog - Mehrfache Dateneingabe
+
+**Frage:** "Kann ich mehrfach Daten für denselben Tankvorgang nachliefern?"
+
+**Antwort:** ✅ Ja! Die Integration unterstützt jetzt einen Multi-Turn-Dialog.
+
+**So funktioniert es:**
+
+1. **Initiale Nachricht** zeigt erkannte Daten und fehlende Felder
+2. **Erste Antwort:** Senden Sie Daten (z.B. "155000 km, Shell")
+3. **Aktualisierte Nachricht:** System zeigt aktuelle Daten + verbleibende fehlende Felder
+4. **Weitere Antworten:** Sie können beliebig viele weitere Nachrichten senden
+5. **Abschluss:** Klicken Sie "✅ Fertig" (bei unvollständigen Daten) oder "✅ Bestätigen" (bei vollständigen Daten)
+
+**Beispiel-Dialog:**
+
+```
+⛽ Tankvorgang #15
+Neuer Tankvorgang erkannt!
+📊 Menge: 39.30 Liter
+❓ Fehlende Informationen: KM-Stand, Preis, Tankstelle
+
+[✅ Fertig] [✏️ Weiter bearbeiten] [🗑️ Löschen]
+```
+
+Sie: `"155000 km"`
+
+```
+⛽ Tankvorgang #15
+✅ Daten aktualisiert!
+📊 Menge: 39.30 Liter
+🔢 KM-Stand: 155000.0 km
+❓ Fehlende Informationen: Preis, Tankstelle
+
+[✅ Fertig] [✏️ Weiter bearbeiten] [🗑️ Löschen]
+```
+
+Sie: `"1.599 €/L, Shell Tankstelle"`
+
+```
+⛽ Tankvorgang #15
+✅ Daten aktualisiert!
+📊 Menge: 39.30 Liter
+🔢 KM-Stand: 155000.0 km
+💰 Preis/Liter: 1.599 €
+🏪 Tankstelle: Shell Tankstelle
+✅ Alle Daten vollständig!
+
+[✅ Bestätigen] [✏️ Bearbeiten] [🗑️ Löschen]
+```
+
+**Wichtig:**
+- Der Dialog bleibt offen, bis Sie "Fertig" oder "Bestätigen" klicken
+- Sie können so oft antworten, wie Sie möchten
+- Jede Antwort zeigt den aktualisierten Status
+
+### 5. Antworten auf Telegram-Nachrichten
 
 **Problem:** "Wenn ich auf die Nachricht antworte, wird nichts erkannt"
 
@@ -210,7 +279,7 @@ Wenn Sie innerhalb weniger Minuten nach einer Benachrichtigung antworten, wird d
 - Daher funktioniert "Auf Nachricht antworten" nicht zuverlässig
 - **Verwenden Sie stattdessen die #-Nummer oder die Buttons**
 
-### 5. Parse Mode Einstellungen
+### 6. Parse Mode Einstellungen
 
 Die Integration verwendet **HTML** als Parse Mode für alle Telegram-Nachrichten.
 
@@ -242,7 +311,7 @@ Die Integration nutzt folgende HTML-Tags:
 
 Dies ist mit allen telegram_bot Konfigurationen kompatibel.
 
-### 6. Test-Flow durchführen
+### 7. Test-Flow durchführen
 
 1. Drücken Sie die "Telegram API Test" Schaltfläche in Home Assistant
 2. Beobachten Sie die Logs (siehe oben)
@@ -253,7 +322,7 @@ Dies ist mit allen telegram_bot Konfigurationen kompatibel.
 - Eine Telegram-Benachrichtigung wird versendet
 - Die Nachricht enthält interaktive Schaltflächen (✅ Bestätigen, ✏️ Bearbeiten, 🗑️ Löschen)
 
-### 7. Debug-Modus aktivieren
+### 8. Debug-Modus aktivieren
 
 Um noch detailliertere Logs zu erhalten, fügen Sie dies zu Ihrer `configuration.yaml` hinzu:
 
