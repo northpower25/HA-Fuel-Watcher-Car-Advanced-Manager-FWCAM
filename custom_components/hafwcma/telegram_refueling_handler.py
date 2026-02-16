@@ -1234,7 +1234,7 @@ class TelegramRefuelingHandler:
         # Examples: "123456 km", "123.456 km", "KM-Stand: 123456", "1650km", "1650 KM"
         odometer_patterns = [
             r"(?:KM-Stand|Kilometerstand|Odometer)[:\s]+(\d+[.,]?\d*)",  # With label
-            r"(\d{4,7})\s*(?:km|KM)",  # 4-7 digits followed by km/KM (with/without space)
+            r"(\d{4,7})\s*km",  # 4-7 digits followed by km (with/without space)
         ]
         for pattern in odometer_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
@@ -1269,15 +1269,26 @@ class TelegramRefuelingHandler:
                 start_pos = brand_match.end()
                 remaining_text = text[start_pos:].strip()
                 
-                # Try to extract structured location info
+                # Try to extract structured location info using verbose regex
                 # Pattern: [PLZ] CITY [STREET] [HOUSENR]
                 # Components:
                 #   (\d{5})? - Optional 5-digit postal code (PLZ)
                 #   ([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?) - City name (capitalized, may be multi-word)
                 #   ([A-ZÄÖÜ][a-zäöüß]+(?:straße|strasse|str\.?|weg|platz|allee)?)? - Optional street name
                 #   (\d{1,3})? - Optional 1-3 digit house number
-                location_pattern = r"^(?:(\d{5})\s+)?([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)(?:\s+([A-ZÄÖÜ][a-zäöüß]+(?:straße|strasse|str\.?|weg|platz|allee)?))?(?:\s+(\d{1,3}))?(?:\s|$)"
-                location_match = re.search(location_pattern, remaining_text, re.IGNORECASE)
+                location_pattern = r"""
+                    ^                           # Start of string
+                    (?:(\d{5})\s+)?            # Group 1: Optional 5-digit postal code
+                    ([A-ZÄÖÜ][a-zäöüß]+        # Group 2: City name starting with capital
+                        (?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)  # Optional multi-word city
+                    (?:\s+                      # Optional street section
+                        ([A-ZÄÖÜ][a-zäöüß]+     # Group 3: Street name
+                            (?:straße|strasse|str\.?|weg|platz|allee)?)
+                    )?
+                    (?:\s+(\d{1,3}))?          # Group 4: Optional house number
+                    (?:\s|$)                    # End with space or end of string
+                """
+                location_match = re.search(location_pattern, remaining_text, re.IGNORECASE | re.VERBOSE)
                 
                 if location_match:
                     # Build station name from components
