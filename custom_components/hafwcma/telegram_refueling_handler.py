@@ -1231,10 +1231,10 @@ class TelegramRefuelingHandler:
                     pass
         
         # Extract odometer
-        # Examples: "123456 km", "123.456 km", "KM-Stand: 123456"
+        # Examples: "123456 km", "123.456 km", "KM-Stand: 123456", "1650km", "1650 KM"
         odometer_patterns = [
-            r"(?:KM-Stand|Kilometerstand|Odometer|km)[:\s]+(\d+[.,]?\d*)",
-            r"(\d{5,7})\s*km",
+            r"(?:KM-Stand|Kilometerstand|Odometer)[:\s]+(\d+[.,]?\d*)",  # With label
+            r"(\d{4,7})\s*(?:km|KM)",  # 4-7 digits followed by km/KM (with/without space)
         ]
         for pattern in odometer_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
@@ -1246,15 +1246,69 @@ class TelegramRefuelingHandler:
                 except:
                     pass
         
-        # Extract station name (simple heuristic)
-        # Look for known brands or "Station:" prefix
-        station_brands = ["Shell", "Aral", "Esso", "Total", "Jet", "OMV", "Agip"]
-        for brand in station_brands:
-            if brand.lower() in text.lower():
-                parsed["station_name"] = brand
-                break
+        # Extract station name with enhanced pattern matching
+        # Supports: "BRAND CITY", "BRAND CITY STREET", postal codes, house numbers
+        # Examples: "HEM Kummerfeld", "ARAL Elmshorn Musterstrasse", "Shell 12345 Hamburg Hauptstr. 42"
+        station_brands = ["Shell", "Aral", "ARAL", "Esso", "ESSO", "Total", "TOTAL", "Jet", "JET", 
+                         "OMV", "Agip", "AGIP", "HEM", "Hem", "Westfalen", "WESTFALEN", 
+                         "Star", "STAR", "Raiffeisen", "RAIFFEISEN", "bft", "BFT"]
         
-        # Check for station keyword
+        # Try to find brand followed by location information
+        # Pattern: BRAND [PLZ] CITY [STREET] [HOUSENR]
+        # PLZ: 5-digit postal code (optional)
+        # CITY: City name (required)
+        # STREET: Street name (optional)
+        # HOUSENR: 2-3 digit house number (optional)
+        for brand in station_brands:
+            # Case-insensitive search for brand name
+            brand_pattern = re.compile(rf"\b({re.escape(brand)})\b", re.IGNORECASE)
+            brand_match = brand_pattern.search(text)
+            
+            if brand_match:
+                # Extract everything after the brand name
+                start_pos = brand_match.end()
+                remaining_text = text[start_pos:].strip()
+                
+                # Try to extract structured location info
+                # Pattern: [PLZ] CITY [STREET] [HOUSENR]
+                location_pattern = r"^(?:(\d{5})\s+)?([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)(?:\s+([A-ZÄÖÜ][a-zäöüß]+(?:straße|strasse|str\.?|weg|platz|allee)?))?(?:\s+(\d{1,3}))?(?:\s|$)"
+                location_match = re.search(location_pattern, remaining_text, re.IGNORECASE)
+                
+                if location_match:
+                    # Build station name from components
+                    plz = location_match.group(1)
+                    city = location_match.group(2)
+                    street = location_match.group(3)
+                    housenr = location_match.group(4)
+                    
+                    # Construct full station name
+                    station_parts = [brand_match.group(1)]
+                    if plz:
+                        station_parts.append(plz)
+                    if city:
+                        station_parts.append(city)
+                    if street:
+                        station_parts.append(street)
+                    if housenr:
+                        station_parts.append(housenr)
+                    
+                    parsed["station_name"] = " ".join(station_parts)
+                    _LOGGER.debug("Extracted station name: %s", parsed["station_name"])
+                    break
+                else:
+                    # Fallback: Use brand + first few words after it
+                    words = remaining_text.split()[:3]  # Take up to 3 words
+                    if words:
+                        parsed["station_name"] = f"{brand_match.group(1)} {' '.join(words)}"
+                        _LOGGER.debug("Extracted station name (fallback): %s", parsed["station_name"])
+                        break
+                    else:
+                        # Just the brand name
+                        parsed["station_name"] = brand_match.group(1)
+                        _LOGGER.debug("Extracted station name (brand only): %s", parsed["station_name"])
+                        break
+        
+        # Check for station keyword if no brand was found
         if "station_name" not in parsed:
             station_match = re.search(r"(?:Station|Tankstelle)[:\s]+([A-Za-zäöüÄÖÜß\s]+)", text, re.IGNORECASE)
             if station_match:
