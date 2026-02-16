@@ -8,6 +8,7 @@ to enable bidirectional communication for advanced features like:
 """
 from __future__ import annotations
 
+import html
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -232,7 +233,8 @@ class TelegramEventHandler:
                 status_lines.append("\n⛽ <b>Fuel Prices</b>")
                 if "nearest_station" in price_data:
                     station = price_data["nearest_station"]
-                    status_lines.append(f"\n{station.get('name', 'Unknown Station')}")
+                    station_name = station.get('name', 'Unknown Station')
+                    status_lines.append(f"\n{html.escape(str(station_name))}")
                     status_lines.append(f"Price: €{station.get('price', 'N/A')}/L")
                     status_lines.append(f"Distance: {station.get('distance', 'N/A')} km")
         else:

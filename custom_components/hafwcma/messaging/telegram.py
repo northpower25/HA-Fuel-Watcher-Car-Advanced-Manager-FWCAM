@@ -1,6 +1,7 @@
 """Telegram notification service for haFWCMA."""
 from __future__ import annotations
 
+import html
 import logging
 from typing import TYPE_CHECKING
 
@@ -141,8 +142,8 @@ class TelegramNotifier(MessageService):
 
         message = (
             f"{fuel_emoji} <b>Fuel Price Alert</b>\n\n"
-            f"Station: {station_name}\n"
-            f"Fuel Type: {fuel_type.upper()}\n"
+            f"Station: {html.escape(str(station_name))}\n"
+            f"Fuel Type: {html.escape(str(fuel_type).upper())}\n"
             f"Price: €{price:.3f}/L\n"
         )
 
@@ -178,13 +179,13 @@ class TelegramNotifier(MessageService):
 
         message = (
             f"{emoji} <b>Refuel Recommendation</b>\n\n"
-            f"Vehicle: {vehicle_name}\n"
+            f"Vehicle: {html.escape(str(vehicle_name))}\n"
             f"Action: <b>{action}</b>\n\n"
-            f"Reason: {reasoning}\n"
+            f"Reason: {html.escape(str(reasoning))}\n"
         )
 
         if "station_name" in kwargs:
-            message += f"\nRecommended Station: {kwargs['station_name']}\n"
+            message += f"\nRecommended Station: {html.escape(str(kwargs['station_name']))}\n"
 
         if "price" in kwargs:
             message += f"Price: €{kwargs['price']:.3f}/L\n"
@@ -214,7 +215,7 @@ class TelegramNotifier(MessageService):
         """
         message = (
             f"⚠️ <b>Low Tank Alert</b>\n\n"
-            f"Vehicle: {vehicle_name}\n"
+            f"Vehicle: {html.escape(str(vehicle_name))}\n"
             f"Tank Level: {tank_level:.1f}L\n"
             f"Estimated Range: {range_km:.0f} km\n\n"
             f"Consider refueling soon."
