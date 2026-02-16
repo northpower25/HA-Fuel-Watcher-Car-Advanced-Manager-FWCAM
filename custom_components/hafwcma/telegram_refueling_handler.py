@@ -78,7 +78,7 @@ class TelegramRefuelingHandler:
         """
         # Check if telegram_bot integration is loaded
         _LOGGER.info(
-            "Setting up Telegram refueling handler. Checking for telegram_bot integration..."
+            "🔧 Setting up Telegram refueling handler. Checking for telegram_bot integration..."
         )
         _LOGGER.debug(
             "Available integrations: %s",
@@ -87,14 +87,23 @@ class TelegramRefuelingHandler:
         
         if "telegram_bot" not in self.hass.config.components:
             _LOGGER.warning(
-                "telegram_bot integration NOT FOUND! "
+                "❌ telegram_bot integration NOT FOUND! "
                 "Bidirectional refueling features will not be available. "
                 "Please configure the telegram_bot integration in Home Assistant. "
                 "See: https://www.home-assistant.io/integrations/telegram_bot/"
             )
             return False
         
-        _LOGGER.info("telegram_bot integration found - proceeding with event listener setup")
+        _LOGGER.info("✅ telegram_bot integration found - proceeding with event listener setup")
+        
+        # Verify telegram_bot service is available
+        if not self.hass.services.has_service("telegram_bot", "send_message"):
+            _LOGGER.warning(
+                "⚠️ telegram_bot integration loaded but send_message service not available yet. "
+                "Proceeding with listener setup, but notifications may fail."
+            )
+        else:
+            _LOGGER.info("✅ telegram_bot.send_message service is available")
 
         # Listen for new refueling events (custom event)
         self._remove_listeners.append(
@@ -103,7 +112,7 @@ class TelegramRefuelingHandler:
                 self._handle_new_refueling_event
             )
         )
-        _LOGGER.debug("Registered listener for %s_refueling_added events", DOMAIN)
+        _LOGGER.info("✅ Registered listener for %s_refueling_added events", DOMAIN)
         
         # Listen for Telegram text responses (replies to our messages)
         self._remove_listeners.append(
@@ -142,8 +151,11 @@ class TelegramRefuelingHandler:
         _LOGGER.debug("Registered listener for telegram_voice events")
         
         _LOGGER.info(
-            "Telegram refueling handler successfully initialized with %d event listeners",
-            len(self._remove_listeners)
+            "✅ Telegram refueling handler successfully initialized with %d event listeners. "
+            "Listening for '%s_refueling_added' events for config_entry_id: %s",
+            len(self._remove_listeners),
+            DOMAIN,
+            self.config_entry.entry_id
         )
         return True
 
@@ -319,9 +331,17 @@ class TelegramRefuelingHandler:
                 )
                 return
             
+            # Ensure chat_id is in the correct format (integer for telegram_bot service)
+            try:
+                target_chat_id = int(self.chat_id) if isinstance(self.chat_id, str) else self.chat_id
+            except (ValueError, TypeError):
+                # If conversion fails, use as-is (string chat_id)
+                target_chat_id = self.chat_id
+            
             _LOGGER.info(
-                "📤 Sending notification via telegram_bot service (target: %s, parse_mode: html)",
-                self.chat_id
+                "📤 Sending notification via telegram_bot service (target: %s [type: %s], parse_mode: html)",
+                target_chat_id,
+                type(target_chat_id).__name__
             )
             _LOGGER.debug("Notification message: %s", message[:MAX_LOG_MESSAGE_LENGTH])
             
@@ -332,7 +352,7 @@ class TelegramRefuelingHandler:
                 "telegram_bot",
                 "send_message",
                 {
-                    "target": self.chat_id,
+                    "target": target_chat_id,
                     "message": message,
                     "parse_mode": "html",
                     "inline_keyboard": inline_keyboard,
