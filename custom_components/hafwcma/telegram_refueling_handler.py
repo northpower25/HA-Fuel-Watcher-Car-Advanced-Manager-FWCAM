@@ -1258,7 +1258,7 @@ class TelegramRefuelingHandler:
         # PLZ: 5-digit postal code (optional)
         # CITY: City name (required)
         # STREET: Street name (optional)
-        # HOUSENR: 2-3 digit house number (optional)
+        # HOUSENR: 1-3 digit house number (optional)
         for brand in station_brands:
             # Case-insensitive search for brand name
             brand_pattern = re.compile(rf"\b({re.escape(brand)})\b", re.IGNORECASE)
@@ -1273,17 +1273,18 @@ class TelegramRefuelingHandler:
                 # Pattern: [PLZ] CITY [STREET] [HOUSENR]
                 # Components:
                 #   (\d{5})? - Optional 5-digit postal code (PLZ)
-                #   ([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?) - City name (capitalized, may be multi-word)
-                #   ([A-ZÄÖÜ][a-zäöüß]+(?:straße|strasse|str\.?|weg|platz|allee)?)? - Optional street name
+                #   ([A-Za-zäöüÄÖÜß]+(?:\s+[A-Za-zäöüÄÖÜß]+)?) - City name (may be multi-word, flexible capitalization)
+                #   ([A-Za-zäöüÄÖÜß]+(?:straße|strasse|str\.?|weg|platz|allee))? - Optional street name with suffix
                 #   (\d{1,3})? - Optional 1-3 digit house number
+                # Note: City names accept any capitalization for flexibility
                 location_pattern = r"""
                     ^                           # Start of string
                     (?:(\d{5})\s+)?            # Group 1: Optional 5-digit postal code
-                    ([A-ZÄÖÜ][a-zäöüß]+        # Group 2: City name starting with capital
-                        (?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)  # Optional multi-word city
+                    ([A-Za-zäöüÄÖÜß]+          # Group 2: City name (any capitalization)
+                        (?:\s+[A-Za-zäöüÄÖÜß]+)?)  # Optional multi-word city
                     (?:\s+                      # Optional street section
-                        ([A-ZÄÖÜ][a-zäöüß]+     # Group 3: Street name
-                            (?:straße|strasse|str\.?|weg|platz|allee)?)
+                        ([A-Za-zäöüÄÖÜß]+       # Group 3: Street name with mandatory suffix
+                            (?:straße|strasse|str\.?|weg|platz|allee))
                     )?
                     (?:\s+(\d{1,3}))?          # Group 4: Optional house number
                     (?:\s|$)                    # End with space or end of string
