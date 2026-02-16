@@ -32,9 +32,13 @@ PRICE_CHANGE_THRESHOLD_FOR_COOLDOWN = 0.10  # 10 cents - only apply cooldown if 
 DEFAULT_AVG_CONSUMPTION = 7.0  # L/100km - typical value for mid-size vehicles
 
 # Forecast recommendation constants
+FORECAST_MIN_HISTORY_POINTS = 10  # Minimum number of price observations needed for forecast
 FORECAST_SIGNIFICANT_PRICE_DIFFERENCE = 0.05  # €0.05/L - threshold for significant day-to-day price differences
 FORECAST_NEAR_BEST_PRICE_MARGIN = 0.03  # €0.03/L - margin to consider current price "close to historical cheapest"
 FORECAST_NEAR_HISTORICAL_BEST_MARGIN = 0.02  # €0.02/L - margin to consider current price "near historical best"
+
+# Weekday names - used across multiple functions
+WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
 class PositionTracker:
@@ -151,7 +155,8 @@ async def compare_stations_by_radius(
         vehicle_lon: Vehicle longitude
         current_tank_level: Current tank level in liters
         tank_capacity: Maximum tank capacity in liters
-        avg_consumption: Average consumption in L/100km
+        avg_consumption: Average consumption in L/100km (values <= 0 will be replaced
+                        with DEFAULT_AVG_CONSUMPTION)
         
     Returns:
         Dictionary with comparison results and savings calculation
@@ -162,7 +167,7 @@ async def compare_stations_by_radius(
             "reason": "No stations available"
         }
     
-    # Ensure we have valid consumption data
+    # Ensure we have valid consumption data (replace invalid values with default)
     if avg_consumption <= 0:
         avg_consumption = DEFAULT_AVG_CONSUMPTION  # Use default for typical mid-size vehicle
     
@@ -342,7 +347,7 @@ async def analyze_forecast_recommendation(
     # Get historical price data
     try:
         price_history = await get_price_history(hass, entry)
-        if not price_history or len(price_history) < 10:
+        if not price_history or len(price_history) < FORECAST_MIN_HISTORY_POINTS:
             return {
                 "has_forecast": False,
                 "reason": "Insufficient historical data"
@@ -358,8 +363,7 @@ async def analyze_forecast_recommendation(
     predicted_weekday = predicted_refuel_date.weekday()
     predicted_hour = predicted_refuel_date.hour
     
-    # Analyze historical prices by weekday and timeframe
-    weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    # Analyze historical prices by weekday
     weekday_prices = defaultdict(list)
     
     # Parse price history
@@ -442,15 +446,15 @@ async def analyze_forecast_recommendation(
         cheapest_avg,
         current_price,
         should_refuel_early,
-        weekday_names
+        WEEKDAY_NAMES
     )
     
     return {
         "has_forecast": True,
         "predicted_date": predicted_refuel_date.isoformat(),
-        "predicted_weekday": weekday_names[predicted_weekday],
+        "predicted_weekday": WEEKDAY_NAMES[predicted_weekday],
         "predicted_avg_price": round(predicted_avg, 3),
-        "cheapest_weekday": weekday_names[cheapest_weekday_num],
+        "cheapest_weekday": WEEKDAY_NAMES[cheapest_weekday_num],
         "cheapest_avg_price": round(cheapest_avg, 3),
         "current_price": round(current_price, 3),
         "price_difference": round(price_difference, 3),
