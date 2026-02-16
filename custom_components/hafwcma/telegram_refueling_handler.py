@@ -315,7 +315,9 @@ class TelegramRefuelingHandler:
             _LOGGER.debug("Notification message: %s", message[:MAX_LOG_MESSAGE_LENGTH])
             
             # Send message via telegram_bot service
-            result = await self.hass.services.async_call(
+            # Note: telegram_bot.send_message does not support return_response parameter
+            # The service completes successfully but doesn't return message_id
+            await self.hass.services.async_call(
                 "telegram_bot",
                 "send_message",
                 {
@@ -325,38 +327,23 @@ class TelegramRefuelingHandler:
                     "inline_keyboard": inline_keyboard,
                 },
                 blocking=True,
-                return_response=True,
             )
             
-            _LOGGER.debug("telegram_bot service call returned: %s", result)
+            _LOGGER.info("Telegram notification service call completed successfully for refuel ID %s", refuel_id)
             
-            # Store message ID for threading
-            if result and "message_id" in result:
-                message_id = result["message_id"]
-                self._pending_refuelings[refuel_id]["message_id"] = message_id
-                _LOGGER.info(
-                    "Notification sent successfully with message_id: %s",
-                    message_id
-                )
-                
-                # Update refueling record with notification data
-                from .utils.storage import update_refueling_record
-                await update_refueling_record(
-                    self.hass,
-                    self.config_entry,
-                    refuel_id,
-                    {
-                        "telegram_notification_sent": True,
-                        "telegram_notification_timestamp": datetime.now().isoformat(),
-                        "telegram_message_id": message_id,
-                    }
-                )
-                _LOGGER.debug("Updated refueling record with notification metadata")
-            else:
-                _LOGGER.warning(
-                    "telegram_bot service returned but no message_id found in result: %s",
-                    result
-                )
+            # Update refueling record with notification data
+            # Note: We cannot get message_id from the service call as it doesn't support return_response
+            from .utils.storage import update_refueling_record
+            await update_refueling_record(
+                self.hass,
+                self.config_entry,
+                refuel_id,
+                {
+                    "telegram_notification_sent": True,
+                    "telegram_notification_timestamp": datetime.now().isoformat(),
+                }
+            )
+            _LOGGER.debug("Updated refueling record with notification metadata")
             
             _LOGGER.info("Refueling notification sent for ID %s", refuel_id)
             
