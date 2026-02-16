@@ -309,7 +309,7 @@ class TelegramRefuelingHandler:
         
         try:
             _LOGGER.info(
-                "Sending notification via telegram_bot service (target: %s, parse_mode: HTML)",
+                "Sending notification via telegram_bot service (target: %s, parse_mode: html)",
                 self.chat_id
             )
             _LOGGER.debug("Notification message: %s", message[:MAX_LOG_MESSAGE_LENGTH])
@@ -321,7 +321,7 @@ class TelegramRefuelingHandler:
                 {
                     "target": self.chat_id,
                     "message": message,
-                    "parse_mode": "HTML",
+                    "parse_mode": "html",
                     "inline_keyboard": inline_keyboard,
                 },
                 blocking=True,
@@ -924,7 +924,7 @@ class TelegramRefuelingHandler:
                 {
                     "target": self.chat_id,
                     "message": message,
-                    "parse_mode": "HTML",
+                    "parse_mode": "html",
                 },
                 blocking=True,
             )

@@ -118,7 +118,7 @@ Die Integration verwendet **HTML** als Parse Mode für alle Telegram-Nachrichten
 {
     "target": chat_id,
     "message": message,
-    "parse_mode": "HTML",  # <-- Explizit gesetzt
+    "parse_mode": "html",  # <-- Explizit gesetzt
     "inline_keyboard": inline_keyboard,
 }
 ```

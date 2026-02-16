@@ -274,7 +274,7 @@ class TelegramEventHandler:
                 {
                     "target": self.chat_id,
                     "message": message,
-                    "parse_mode": "HTML",
+                    "parse_mode": "html",
                 },
                 blocking=True,
             )

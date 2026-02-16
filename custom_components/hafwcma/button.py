@@ -1005,7 +1005,7 @@ class TelegramTestButton(ButtonEntity):
                 {
                     "target": telegram_chat_id,
                     "message": test_message,
-                    "parse_mode": "HTML",
+                    "parse_mode": "html",
                 },
                 blocking=True,
             )

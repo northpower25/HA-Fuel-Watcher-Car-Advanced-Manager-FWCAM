@@ -81,7 +81,7 @@ await self.hass.services.async_call(
     {
         "target": self.chat_id,
         "message": message,
-        "parse_mode": "HTML",  # ← Always HTML, regardless of global setting
+        "parse_mode": "html",  # ← Always html, regardless of global setting
         "inline_keyboard": inline_keyboard,
     }
 )
