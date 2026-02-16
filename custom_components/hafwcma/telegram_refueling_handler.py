@@ -73,12 +73,24 @@ class TelegramRefuelingHandler:
             True if setup was successful
         """
         # Check if telegram_bot integration is loaded
+        _LOGGER.info(
+            "Setting up Telegram refueling handler. Checking for telegram_bot integration..."
+        )
+        _LOGGER.debug(
+            "Available integrations: %s",
+            ", ".join(sorted(self.hass.config.components))
+        )
+        
         if "telegram_bot" not in self.hass.config.components:
-            _LOGGER.info(
-                "telegram_bot integration not found. "
-                "Bidirectional refueling features will not be available."
+            _LOGGER.warning(
+                "telegram_bot integration NOT FOUND! "
+                "Bidirectional refueling features will not be available. "
+                "Please configure the telegram_bot integration in Home Assistant. "
+                "See: https://www.home-assistant.io/integrations/telegram_bot/"
             )
             return False
+        
+        _LOGGER.info("telegram_bot integration found - proceeding with event listener setup")
 
         # Listen for new refueling events (custom event)
         self._remove_listeners.append(
@@ -87,6 +99,7 @@ class TelegramRefuelingHandler:
                 self._handle_new_refueling_event
             )
         )
+        _LOGGER.debug("Registered listener for %s_refueling_added events", DOMAIN)
         
         # Listen for Telegram text responses (replies to our messages)
         self._remove_listeners.append(
@@ -95,6 +108,7 @@ class TelegramRefuelingHandler:
                 self._handle_telegram_text_response
             )
         )
+        _LOGGER.debug("Registered listener for telegram_text events")
         
         # Listen for Telegram callback (inline keyboard button presses)
         self._remove_listeners.append(
@@ -103,6 +117,7 @@ class TelegramRefuelingHandler:
                 self._handle_telegram_callback_response
             )
         )
+        _LOGGER.debug("Registered listener for telegram_callback events")
         
         # Listen for Telegram photo messages
         self._remove_listeners.append(
@@ -111,6 +126,7 @@ class TelegramRefuelingHandler:
                 self._handle_telegram_photo_response
             )
         )
+        _LOGGER.debug("Registered listener for telegram_photo events")
         
         # Listen for Telegram voice messages
         self._remove_listeners.append(
@@ -119,8 +135,12 @@ class TelegramRefuelingHandler:
                 self._handle_telegram_voice_response
             )
         )
+        _LOGGER.debug("Registered listener for telegram_voice events")
         
-        _LOGGER.info("Telegram refueling handler initialized")
+        _LOGGER.info(
+            "Telegram refueling handler successfully initialized with %d event listeners",
+            len(self._remove_listeners)
+        )
         return True
 
     async def async_unload(self) -> bool:
@@ -146,16 +166,34 @@ class TelegramRefuelingHandler:
         Args:
             event: Refueling added event
         """
+        _LOGGER.info("Received refueling_added event")
         event_data = event.data
         
         # Only handle events from our config entry
-        if event_data.get("config_entry_id") != self.config_entry.entry_id:
+        config_entry_id = event_data.get("config_entry_id")
+        _LOGGER.debug(
+            "Event config_entry_id: %s, Handler config_entry_id: %s",
+            config_entry_id,
+            self.config_entry.entry_id
+        )
+        
+        if config_entry_id != self.config_entry.entry_id:
+            _LOGGER.debug(
+                "Ignoring event from different config entry (expected: %s, got: %s)",
+                self.config_entry.entry_id,
+                config_entry_id
+            )
             return
         
         refuel_id = event_data.get("refuel_id")
         refuel_data = event_data.get("refuel_data", {})
         
-        _LOGGER.debug("New refueling event detected: ID=%s", refuel_id)
+        _LOGGER.info(
+            "Processing new refueling event: ID=%s, liters=%.2f, fuel_type=%s",
+            refuel_id,
+            refuel_data.get("liters_refueled", 0),
+            refuel_data.get("fuel_type", "unknown")
+        )
         
         # Store in pending dict for response tracking
         self._pending_refuelings[refuel_id] = {
@@ -163,6 +201,7 @@ class TelegramRefuelingHandler:
             "notified_at": datetime.now().isoformat(),
         }
         
+        _LOGGER.info("Creating task to send Telegram notification for refuel ID %s", refuel_id)
         # Send notification asynchronously
         self.hass.async_create_task(
             self._send_refueling_notification(refuel_id, refuel_data)
@@ -179,6 +218,12 @@ class TelegramRefuelingHandler:
             refuel_id: ID of the refueling event
             refuel_data: Refueling event data
         """
+        _LOGGER.info(
+            "Preparing Telegram notification for refuel ID %s (chat_id: %s)",
+            refuel_id,
+            self.chat_id
+        )
+        
         # Build notification message
         message_parts = ["⛽ <b>Neuer Tankvorgang erkannt!</b>\n"]
         
@@ -260,6 +305,12 @@ class TelegramRefuelingHandler:
         ]
         
         try:
+            _LOGGER.info(
+                "Sending notification via telegram_bot service (target: %s, parse_mode: HTML)",
+                self.chat_id
+            )
+            _LOGGER.debug("Notification message: %s", message[:200])  # Log first 200 chars
+            
             # Send message via telegram_bot service
             result = await self.hass.services.async_call(
                 "telegram_bot",
@@ -274,10 +325,16 @@ class TelegramRefuelingHandler:
                 return_response=True,
             )
             
+            _LOGGER.debug("telegram_bot service call returned: %s", result)
+            
             # Store message ID for threading
             if result and "message_id" in result:
                 message_id = result["message_id"]
                 self._pending_refuelings[refuel_id]["message_id"] = message_id
+                _LOGGER.info(
+                    "Notification sent successfully with message_id: %s",
+                    message_id
+                )
                 
                 # Update refueling record with notification data
                 from .utils.storage import update_refueling_record
@@ -291,11 +348,23 @@ class TelegramRefuelingHandler:
                         "telegram_message_id": message_id,
                     }
                 )
+                _LOGGER.debug("Updated refueling record with notification metadata")
+            else:
+                _LOGGER.warning(
+                    "telegram_bot service returned but no message_id found in result: %s",
+                    result
+                )
             
             _LOGGER.info("Refueling notification sent for ID %s", refuel_id)
             
         except Exception as err:
-            _LOGGER.error("Failed to send refueling notification: %s", err)
+            _LOGGER.error(
+                "Failed to send refueling notification for ID %s: %s (type: %s)",
+                refuel_id,
+                err,
+                type(err).__name__,
+                exc_info=True
+            )
 
     @callback
     def _handle_telegram_text_response(self, event: Event) -> None:

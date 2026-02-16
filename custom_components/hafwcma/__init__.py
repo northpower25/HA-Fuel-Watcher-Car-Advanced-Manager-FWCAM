@@ -278,9 +278,14 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         }
         
         event_id = await add_refuel_event(hass, entry, event_data)
-        _LOGGER.info("Added refuel event with ID %s", event_id)
+        _LOGGER.info("Added refuel event with ID %s via service call", event_id)
         
         # Fire event for Telegram notification
+        _LOGGER.info(
+            "Firing %s_refueling_added event for service call (refuel_id: %s)",
+            DOMAIN,
+            event_id
+        )
         hass.bus.async_fire(
             f"{DOMAIN}_refueling_added",
             {
@@ -870,6 +875,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     telegram_token = entry.data.get(CONF_TELEGRAM_TOKEN)
     
     if telegram_chat_id and telegram_token:
+        _LOGGER.info(
+            "Telegram credentials found (chat_id: %s). Initializing Telegram handlers...",
+            telegram_chat_id
+        )
         telegram_handler = TelegramEventHandler(hass, entry, telegram_chat_id)
         await telegram_handler.async_setup()
         hass.data[DOMAIN][entry.entry_id]["telegram_handler"] = telegram_handler
@@ -878,17 +887,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Initialize Telegram refueling handler for bidirectional refueling tracking
         from .telegram_refueling_handler import TelegramRefuelingHandler
         
+        _LOGGER.debug("Creating TelegramRefuelingHandler instance...")
         telegram_refueling_handler = TelegramRefuelingHandler(
             hass,
             entry,
             telegram_chat_id,
             telegram_handler
         )
-        await telegram_refueling_handler.async_setup()
-        hass.data[DOMAIN][entry.entry_id]["telegram_refueling_handler"] = telegram_refueling_handler
-        _LOGGER.info("Telegram refueling handler initialized for bidirectional refueling tracking")
+        setup_result = await telegram_refueling_handler.async_setup()
+        
+        if setup_result:
+            hass.data[DOMAIN][entry.entry_id]["telegram_refueling_handler"] = telegram_refueling_handler
+            _LOGGER.info("✅ Telegram refueling handler successfully initialized and ready for notifications")
+        else:
+            _LOGGER.error(
+                "❌ Telegram refueling handler setup FAILED. "
+                "Refueling notifications will NOT be sent. "
+                "Check that telegram_bot integration is properly configured."
+            )
     else:
-        _LOGGER.debug("Telegram not configured, skipping event handler setup")
+        _LOGGER.info(
+            "Telegram not configured (chat_id: %s, token: %s), skipping event handler setup",
+            "present" if telegram_chat_id else "missing",
+            "present" if telegram_token else "missing"
+        )
     
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     
