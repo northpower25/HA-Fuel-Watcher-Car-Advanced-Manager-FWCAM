@@ -99,7 +99,187 @@ data:
   parse_mode: "HTML"
 ```
 
-### 3. Parse Mode Einstellungen
+#### ❌ "Access denied from 127.0.0.1" Fehler
+
+**Symptom:** In den Home Assistant Logs erscheint folgender Fehler:
+```
+Logger: homeassistant.components.telegram_bot.webhooks
+Access denied from 127.0.0.1
+```
+
+**Ursache:** Dieser Fehler stammt von der Home Assistant telegram_bot Integration selbst (nicht von haFWCMA). Er tritt auf, wenn die telegram_bot Integration im Webhook-Modus konfiguriert ist und Anfragen von nicht vertrauenswürdigen IP-Adressen erhält.
+
+**Was passiert:**
+- Wenn Sie inline Keyboard Buttons (✅ Bestätigen, ✏️ Bearbeiten, 🗑️ Löschen) drücken, sendet Telegram einen Webhook-Callback an Home Assistant
+- Wenn Home Assistant hinter einem Reverse Proxy läuft, erscheint die Anfrage als von 127.0.0.1 kommend
+- Ohne korrekte `trusted_networks` Konfiguration wird diese Anfrage blockiert
+- Die Buttons funktionieren nicht, weil die Callbacks nicht verarbeitet werden können
+
+**Lösung 1: Polling verwenden (Einfachste Lösung)**
+
+Wenn Sie keinen öffentlich erreichbaren Home Assistant haben, verwenden Sie Polling statt Webhooks:
+
+```yaml
+telegram_bot:
+  - platform: polling
+    api_key: "IHR_BOT_API_KEY"
+    allowed_chat_ids:
+      - 12345678  # Ihre Chat ID
+```
+
+**Lösung 2: Trusted Networks konfigurieren (Bei Webhook-Modus)**
+
+Wenn Sie Webhooks verwenden möchten (z.B. mit Nabu Casa oder eigenem öffentlichen URL), fügen Sie die vertrauenswürdigen Netzwerke hinzu:
+
+```yaml
+telegram_bot:
+  - platform: webhooks
+    api_key: "IHR_BOT_API_KEY"
+    allowed_chat_ids:
+      - 12345678  # Ihre Chat ID
+    trusted_networks:
+      - 127.0.0.1/32          # Lokaler Reverse Proxy
+      - 149.154.160.0/20      # Telegram IP-Bereich 1
+      - 91.108.4.0/22         # Telegram IP-Bereich 2
+      # Bei Verwendung von Cloudflare: Cloudflare IP-Bereiche hinzufügen
+```
+
+**Wichtig:**
+- Nach Änderung der Konfiguration: Home Assistant **vollständig neu starten** (nicht nur Konfiguration neu laden)
+- Wenn Sie Nabu Casa verwenden: `127.0.0.1/32` zu trusted_networks hinzufügen
+- Wenn Sie einen eigenen Reverse Proxy verwenden: IP-Adresse des Proxys hinzufügen
+
+**Weitere Informationen:**
+- [Home Assistant telegram_bot Dokumentation](https://www.home-assistant.io/integrations/telegram_bot/)
+- [GitHub Issue zu diesem Problem](https://github.com/home-assistant/core/issues/101980)
+
+### 3. Inline Keyboard Buttons - Text und Symbole
+
+**Frage:** Warum zeigen die Buttons "✅ Bestätigen" statt nur "✅"?
+
+**Antwort:** Die Buttons zeigen bewusst **Emoji + Text** zusammen an. Dies ist:
+- ✅ **Standard in Telegram-Bots**: Die meisten professionellen Telegram-Bots verwenden Text-Labels zusammen mit Emojis
+- ✅ **Bessere Benutzerfreundlichkeit**: Klare Beschriftungen verhindern Missverständnisse
+- ✅ **Barrierefreiheit**: Screenreader können Text vorlesen, aber nicht alle Emojis sind eindeutig
+
+**Button-Beschriftungen:**
+- `✅ Bestätigen` / `✅ Fertig` - Bestätigt den Tankvorgang oder markiert ihn als abgeschlossen
+- `✏️ Bearbeiten` / `✏️ Weiter bearbeiten` - Ermöglicht weitere Dateneingabe
+- `🗑️ Löschen` - Löscht den Tankvorgang komplett
+
+**Technischer Hintergrund:**
+Die Buttons werden als `inline_keyboard` im Array-Format gesendet:
+```python
+["✅ Bestätigen", "refuel_confirm_123"]
+```
+
+Dies entspricht dem Format, das die Home Assistant telegram_bot Integration erwartet.
+
+#### ❌ Problem: Buttons zeigen "text" statt Beschriftungen
+
+**Symptom:** Statt "✅ Bestätigen", "✏️ Bearbeiten", "🗑️ Löschen" sehen Sie dreimal "text"
+
+**Ursache:** Veraltete Integration-Version oder falsches Button-Format
+
+**Lösung:** 
+1. Stellen Sie sicher, dass Sie die neueste Version der haFWCMA Integration verwenden
+2. Die Integration verwendet jetzt das korrekte Array-Format: `["Button Text", "callback_data"]`
+3. Wenn das Problem weiterhin besteht:
+   - Stoppen Sie Home Assistant
+   - Löschen Sie den Cache: `rm -rf config/.storage/core.restore_state`
+   - Starten Sie Home Assistant neu
+
+**Weitere Informationen:** Siehe `TELEGRAM_MULTI_TURN_DIALOG.md` für Details zum Button-Format
+
+**Hinweis:** Wenn die Buttons gar nicht funktionieren oder dauerhaft "Laden..." anzeigen, siehe "Access denied from 127.0.0.1" Fehler oben.
+
+### 4. Multi-Turn Dialog - Mehrfache Dateneingabe
+
+**Frage:** "Kann ich mehrfach Daten für denselben Tankvorgang nachliefern?"
+
+**Antwort:** ✅ Ja! Die Integration unterstützt jetzt einen Multi-Turn-Dialog.
+
+**So funktioniert es:**
+
+1. **Initiale Nachricht** zeigt erkannte Daten und fehlende Felder
+2. **Erste Antwort:** Senden Sie Daten (z.B. "155000 km, Shell")
+3. **Aktualisierte Nachricht:** System zeigt aktuelle Daten + verbleibende fehlende Felder
+4. **Weitere Antworten:** Sie können beliebig viele weitere Nachrichten senden
+5. **Abschluss:** Klicken Sie "✅ Fertig" (bei unvollständigen Daten) oder "✅ Bestätigen" (bei vollständigen Daten)
+
+**Beispiel-Dialog:**
+
+```
+⛽ Tankvorgang #15
+Neuer Tankvorgang erkannt!
+📊 Menge: 39.30 Liter
+❓ Fehlende Informationen: KM-Stand, Preis, Tankstelle
+
+[✅ Fertig] [✏️ Weiter bearbeiten] [🗑️ Löschen]
+```
+
+Sie: `"155000 km"`
+
+```
+⛽ Tankvorgang #15
+✅ Daten aktualisiert!
+📊 Menge: 39.30 Liter
+🔢 KM-Stand: 155000.0 km
+❓ Fehlende Informationen: Preis, Tankstelle
+
+[✅ Fertig] [✏️ Weiter bearbeiten] [🗑️ Löschen]
+```
+
+Sie: `"1.599 €/L, Shell Tankstelle"`
+
+```
+⛽ Tankvorgang #15
+✅ Daten aktualisiert!
+📊 Menge: 39.30 Liter
+🔢 KM-Stand: 155000.0 km
+💰 Preis/Liter: 1.599 €
+🏪 Tankstelle: Shell Tankstelle
+✅ Alle Daten vollständig!
+
+[✅ Bestätigen] [✏️ Bearbeiten] [🗑️ Löschen]
+```
+
+**Wichtig:**
+- Der Dialog bleibt offen, bis Sie "Fertig" oder "Bestätigen" klicken
+- Sie können so oft antworten, wie Sie möchten
+- Jede Antwort zeigt den aktualisierten Status
+
+### 5. Antworten auf Telegram-Nachrichten
+
+**Problem:** "Wenn ich auf die Nachricht antworte, wird nichts erkannt"
+
+**Lösung:** Um eine Antwort korrekt zuzuordnen, verwenden Sie eine der folgenden Methoden:
+
+**Methode 1: Refuel-ID im Text erwähnen (Empfohlen)**
+
+Schreiben Sie die Tankvorgang-Nummer (#15, #16, etc.) in Ihre Antwort:
+```
+Tankvorgang #15: 45.5 Liter, 1.599 €/Liter, Shell
+```
+
+Die Integration erkennt automatisch die `#15` und ordnet die Daten korrekt zu.
+
+**Methode 2: Inline Keyboard Buttons verwenden (Am Einfachsten)**
+
+Verwenden Sie die Buttons in der Benachrichtigung:
+- `✏️ Bearbeiten` drücken, dann Daten eingeben
+- Keine manuelle Zuordnung nötig
+
+**Methode 3: Zeitbasierte Zuordnung**
+
+Wenn Sie innerhalb weniger Minuten nach einer Benachrichtigung antworten, wird die Antwort automatisch dem neuesten ausstehenden Tankvorgang zugeordnet.
+
+**Wichtig:** 
+- Die Integration kann **keine** message_id von gesendeten Nachrichten abrufen (Home Assistant API-Limitation)
+- Daher funktioniert "Auf Nachricht antworten" nicht zuverlässig
+- **Verwenden Sie stattdessen die #-Nummer oder die Buttons**
+
+### 6. Parse Mode Einstellungen
 
 Die Integration verwendet **HTML** als Parse Mode für alle Telegram-Nachrichten.
 
@@ -131,7 +311,7 @@ Die Integration nutzt folgende HTML-Tags:
 
 Dies ist mit allen telegram_bot Konfigurationen kompatibel.
 
-### 4. Test-Flow durchführen
+### 7. Test-Flow durchführen
 
 1. Drücken Sie die "Telegram API Test" Schaltfläche in Home Assistant
 2. Beobachten Sie die Logs (siehe oben)
@@ -142,7 +322,7 @@ Dies ist mit allen telegram_bot Konfigurationen kompatibel.
 - Eine Telegram-Benachrichtigung wird versendet
 - Die Nachricht enthält interaktive Schaltflächen (✅ Bestätigen, ✏️ Bearbeiten, 🗑️ Löschen)
 
-### 5. Debug-Modus aktivieren
+### 8. Debug-Modus aktivieren
 
 Um noch detailliertere Logs zu erhalten, fügen Sie dies zu Ihrer `configuration.yaml` hinzu:
 
