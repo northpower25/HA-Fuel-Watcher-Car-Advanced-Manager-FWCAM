@@ -82,7 +82,7 @@ class TelegramNotifier(MessageService):
             MessagingError: If sending fails
         """
         chat_id = kwargs.get("chat_id", self.chat_id)
-        parse_mode = kwargs.get("parse_mode", "HTML")
+        parse_mode = kwargs.get("parse_mode", "html")
 
         try:
             if self._use_ha_service and self.hass:
@@ -146,7 +146,7 @@ class TelegramNotifier(MessageService):
             f"Price: €{price:.3f}/L\n"
         )
 
-        return await self.send_message(message, parse_mode="HTML", **kwargs)
+        return await self.send_message(message, parse_mode="html", **kwargs)
 
     async def send_refuel_recommendation(
         self,
@@ -192,7 +192,7 @@ class TelegramNotifier(MessageService):
         if "savings" in kwargs:
             message += f"Potential Savings: €{kwargs['savings']:.2f}\n"
 
-        return await self.send_message(message, parse_mode="HTML", **kwargs)
+        return await self.send_message(message, parse_mode="html", **kwargs)
 
     async def send_tank_low_alert(
         self,
@@ -220,4 +220,4 @@ class TelegramNotifier(MessageService):
             f"Consider refueling soon."
         )
 
-        return await self.send_message(message, parse_mode="HTML", **kwargs)
+        return await self.send_message(message, parse_mode="html", **kwargs)
