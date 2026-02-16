@@ -104,6 +104,10 @@ from .utils.refuel_recommendation_engine import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Station recommendation constants
+# Minimum savings in EUR required to recommend driving to a farther station
+STATION_RECOMMENDATION_MIN_SAVINGS = 0.50  # EUR
+
 # Constants for tank percentage validation
 MIN_TANK_PERCENTAGE = 0.0
 MAX_TANK_PERCENTAGE = 100.0
@@ -1706,14 +1710,16 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
             # If the farther station actually saves money (positive savings),
             # or if the recommendation suggests it's better, show the 20km station
             # Otherwise (negative savings or similar cost), show the 10km station
-            if "20km" in comparison_rec or savings > 0.50:  # More than 50 cent savings
+            if "20km" in comparison_rec or savings > STATION_RECOMMENDATION_MIN_SAVINGS:
                 station_20km = radius_comparison.get("station_20km", {})
                 if station_20km:
                     # Build station data from 20km comparison data
+                    # Note: Station address is not available in comparison data as it only
+                    # contains essential fields (name, distance, price) for cost calculation.
+                    # The address would require an additional lookup from the full station list.
                     display_station = {
                         "name": station_20km.get("name"),
                         "distance": station_20km.get("distance_km"),
-                        # Note: address not available in comparison data
                     }
             else:
                 # Show 10km station as recommended

@@ -1335,11 +1335,13 @@ class TelegramRefuelingHandler:
         
         # Extract fuel type
         # Examples: "E5", "E10", "Super", "Diesel", "Super Plus"
+        # Note: Regional assumption - Super Plus typically means E5 in Germany
+        # In other markets, Super Plus may refer to different fuel types
         fuel_type_patterns = [
             (r"\b(e\s*5|super\s*e5)\b", "e5"),
             (r"\b(e\s*10|super\s*e10)\b", "e10"),
             (r"\b(diesel)\b", "diesel"),
-            (r"\b(super\s*plus|super\+)\b", "e5"),  # Super Plus typically means E5
+            (r"\b(super\s*plus|super\+)\b", "e5"),  # German market convention
         ]
         for pattern, fuel_type in fuel_type_patterns:
             if re.search(pattern, text, re.IGNORECASE):
