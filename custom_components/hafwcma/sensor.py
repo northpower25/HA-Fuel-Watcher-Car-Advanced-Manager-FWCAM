@@ -1735,7 +1735,7 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
                 "comparison_recommendation": radius_comparison.get("recommendation"),
                 "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
             }
-            
+
             # Add explicit cost savings attribute as requested in PR #121
             # This shows the total EUR savings when going to the farther (20km) station
             # Positive value = save money by driving farther
