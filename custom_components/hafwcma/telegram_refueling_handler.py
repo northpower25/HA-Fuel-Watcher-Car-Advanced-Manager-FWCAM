@@ -25,6 +25,9 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Constants for logging
+MAX_LOG_MESSAGE_LENGTH = 200  # Maximum characters to log from notification message
+
 
 class TelegramRefuelingHandler:
     """Handle Telegram interactions for refueling events.
@@ -309,7 +312,7 @@ class TelegramRefuelingHandler:
                 "Sending notification via telegram_bot service (target: %s, parse_mode: HTML)",
                 self.chat_id
             )
-            _LOGGER.debug("Notification message: %s", message[:200])  # Log first 200 chars
+            _LOGGER.debug("Notification message: %s", message[:MAX_LOG_MESSAGE_LENGTH])
             
             # Send message via telegram_bot service
             result = await self.hass.services.async_call(
