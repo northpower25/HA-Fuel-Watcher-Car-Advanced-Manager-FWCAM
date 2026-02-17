@@ -2462,7 +2462,7 @@ class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
             return {"status": "No coordinator data"}
         
         vehicle_data = self.coordinator.data.get("vehicle_data", {})
-        consumption_prediction = self.coordinator.data.get("consumption_prediction", {})
+        consumption_prediction = self.coordinator.data.get("consumption_prediction") or {}
         
         from homeassistant.util import dt as dt_util
         from datetime import datetime
