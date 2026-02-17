@@ -570,6 +570,9 @@ async def _import_tank_history_and_detect_refueling(
                 try:
                     ts = dt_util.parse_datetime(event["timestamp"])
                     if ts:
+                        # Ensure timezone-aware for comparison
+                        if ts.tzinfo is None:
+                            ts = dt_util.as_local(ts)
                         existing_timestamps.add(ts)
                 except (ValueError, TypeError):
                     pass
@@ -721,7 +724,11 @@ async def _import_tank_history_and_detect_refueling(
         for state in all_odometer_states:
                 try:
                     if state.state not in INVALID_SENSOR_STATES:
-                        odometer_lookup[state.last_changed] = float(_normalize_numeric_string(state.state))
+                        timestamp = state.last_changed
+                        # Ensure timezone-aware
+                        if timestamp.tzinfo is None:
+                            timestamp = dt_util.as_local(timestamp)
+                        odometer_lookup[timestamp] = float(_normalize_numeric_string(state.state))
                 except (ValueError, TypeError):
                     continue
         
@@ -803,8 +810,14 @@ async def _import_tank_history_and_detect_refueling(
                     if level_increase > threshold_liters:
                         # Check if this refueling is a duplicate
                         is_duplicate = False
+                        
+                        # Ensure current_time is timezone-aware for comparison
+                        current_time_aware = current_time
+                        if current_time_aware.tzinfo is None:
+                            current_time_aware = dt_util.as_local(current_time_aware)
+                        
                         for existing_ts in existing_timestamps:
-                            time_diff_hours = abs((current_time - existing_ts).total_seconds()) / SECONDS_PER_HOUR
+                            time_diff_hours = abs((current_time_aware - existing_ts).total_seconds()) / SECONDS_PER_HOUR
                             if time_diff_hours < DUPLICATE_DETECTION_WINDOW_HOURS:
                                 is_duplicate = True
                                 _LOGGER.warning(
@@ -818,7 +831,7 @@ async def _import_tank_history_and_detect_refueling(
                         if not is_duplicate:
                             # Add to pending events for potential merging
                             pending_refuel_events.append({
-                                "timestamp": current_time,
+                                "timestamp": current_time_aware,
                                 "liters": level_increase,
                             })
                             _LOGGER.info(
@@ -933,7 +946,12 @@ async def _import_tank_history_and_detect_refueling(
             }
             
             await add_refuel_event(hass, entry, event_data)
-            existing_timestamps.add(current_time)  # Add to prevent duplicates in same import
+            
+            # Add to prevent duplicates in same import (ensure timezone-aware)
+            current_time_aware = current_time
+            if current_time_aware.tzinfo is None:
+                current_time_aware = dt_util.as_local(current_time_aware)
+            existing_timestamps.add(current_time_aware)
             refuel_count += 1
             
             if merged_count > 1:
@@ -1103,7 +1121,14 @@ async def _get_current_price(
                 if not price_time:
                     continue
                 
-                time_diff = abs((price_time - timestamp).total_seconds())
+                # Ensure timezone-aware for comparison
+                if price_time.tzinfo is None:
+                    price_time = dt_util.as_local(price_time)
+                timestamp_aware = timestamp
+                if timestamp_aware.tzinfo is None:
+                    timestamp_aware = dt_util.as_local(timestamp_aware)
+                
+                time_diff = abs((price_time - timestamp_aware).total_seconds())
                 
                 # Use price if within configured time window
                 if time_diff < min_time_diff and time_diff < max_price_age_seconds:
@@ -1439,6 +1464,9 @@ async def _import_trip_history(
                 try:
                     ts = dt_util.parse_datetime(trip["timestamp_start"])
                     if ts:
+                        # Ensure timezone-aware for comparison
+                        if ts.tzinfo is None:
+                            ts = dt_util.as_local(ts)
                         existing_timestamps.add(ts)
                 except Exception:
                     pass
@@ -1491,6 +1519,12 @@ async def _import_trip_history(
                 if not prev_time or not curr_time:
                     previous_point = current_point
                     continue
+                
+                # Ensure timezone-aware for comparisons
+                if prev_time.tzinfo is None:
+                    prev_time = dt_util.as_local(prev_time)
+                if curr_time.tzinfo is None:
+                    curr_time = dt_util.as_local(curr_time)
                 
                 # Calculate duration
                 duration_seconds = (curr_time - prev_time).total_seconds()
@@ -1794,7 +1828,14 @@ def _find_closest_tank_level(
         
         try:
             state_time = state.last_changed
-            time_diff_seconds = abs((target_time - state_time).total_seconds())
+            # Ensure timezone-aware for comparison
+            if state_time.tzinfo is None:
+                state_time = dt_util.as_local(state_time)
+            target_time_aware = target_time
+            if target_time_aware.tzinfo is None:
+                target_time_aware = dt_util.as_local(target_time_aware)
+            
+            time_diff_seconds = abs((target_time_aware - state_time).total_seconds())
             
             if time_diff_seconds < min_diff_seconds:
                 min_diff_seconds = time_diff_seconds
@@ -1865,7 +1906,14 @@ def _find_closest_location(
         
         try:
             state_time = state.last_changed
-            time_diff_seconds = (target_time - state_time).total_seconds()
+            # Ensure timezone-aware for comparison
+            if state_time.tzinfo is None:
+                state_time = dt_util.as_local(state_time)
+            target_time_aware = target_time
+            if target_time_aware.tzinfo is None:
+                target_time_aware = dt_util.as_local(target_time_aware)
+            
+            time_diff_seconds = (target_time_aware - state_time).total_seconds()
             abs_time_diff_seconds = abs(time_diff_seconds)
             
             # Determine if we should update the closest state
