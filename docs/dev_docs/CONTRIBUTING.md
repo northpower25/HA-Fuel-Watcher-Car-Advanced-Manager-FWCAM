@@ -236,7 +236,7 @@ async def test_fuel_price_sensor(hass: HomeAssistant):
 
 ### Proposing Features
 
-1. Check [TODO.md](../TODO.md) and existing issues
+1. Check [TODO.md](../../TODO.md) and existing issues
 2. Create a feature request issue
 3. Discuss design and implementation
 4. Get approval before starting work

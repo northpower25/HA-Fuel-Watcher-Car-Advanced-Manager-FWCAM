@@ -212,7 +212,7 @@ Kosten: 2.75€
 
 **Funktion**: Warnt wenn Sie sich in der Nähe einer günstigen Tankstelle befinden.
 
-**Status**: 🚧 In Planung (siehe [docs/GEOLOCATION_CONCEPT.md](docs/GEOLOCATION_CONCEPT.md))
+**Status**: 🚧 In Planung (siehe [docs/GEOLOCATION_CONCEPT.md](../dev_docs/GEOLOCATION_CONCEPT.md))
 
 **Import-Link**:
 ```
@@ -440,10 +440,10 @@ intent_script:
 ## 📚 Weitere Ressourcen
 
 - **Haupt-Dokumentation**: [DOKUMENTATION_DE.md](DOKUMENTATION_DE.md)
-- **README**: [README.md](README.md)
-- **TODO & Roadmap**: [TODO.md](TODO.md)
-- **Telegram Setup**: [docs/TELEGRAM_SETUP_DE.md](docs/TELEGRAM_SETUP_DE.md)
-- **Trip Tracking**: [docs/TRIP_TRACKING_README.md](docs/TRIP_TRACKING_README.md)
+- **README**: [README.md](../../README.md)
+- **TODO & Roadmap**: [TODO.md](../../TODO.md)
+- **Telegram Setup**: [docs/TELEGRAM_SETUP_DE.md](TELEGRAM_SETUP_DE.md)
+- **Trip Tracking**: [docs/TRIP_TRACKING_README.md](TRIP_TRACKING_README.md)
 
 ---
 

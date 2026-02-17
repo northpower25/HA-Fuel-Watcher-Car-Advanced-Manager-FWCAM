@@ -173,7 +173,7 @@ Verknüpfen Sie vorhandene Home Assistant Entities:
 
 **Wichtig**: Nur device_tracker Entities werden für Position unterstützt.
 
-📖 **Details**: [docs/VEHICLE_ENTITIES.md](docs/VEHICLE_ENTITIES.md)
+📖 **Details**: [docs/VEHICLE_ENTITIES.md](VEHICLE_ENTITIES.md)
 
 #### Schritt 4: Telegram (Optional)
 - **Bot Token**: Von @BotFather erhalten
@@ -510,7 +510,7 @@ Nur Benachrichtigungen empfangen, keine Befehle senden.
 2. **Chat-ID** ermitteln (via @userinfobot)
 3. **In haFWCMA konfigurieren** (Bot Token + Chat ID)
 
-📖 **Detaillierte Anleitung**: [docs/TELEGRAM_SETUP_DE.md](docs/TELEGRAM_SETUP_DE.md)
+📖 **Detaillierte Anleitung**: [docs/TELEGRAM_SETUP_DE.md](TELEGRAM_SETUP_DE.md)
 
 #### Benachrichtigungstypen
 - 📉 **Preisalarme**: "Diesel unter 1.40€ bei Shell!"
@@ -536,7 +536,7 @@ telegram_bot:
 
 **Wichtig**: Verwenden Sie den gleichen Bot Token wie in haFWCMA!
 
-📖 **Detaillierte Anleitung**: [docs/TELEGRAM_SETUP_DE.md](docs/TELEGRAM_SETUP_DE.md)
+📖 **Detaillierte Anleitung**: [docs/TELEGRAM_SETUP_DE.md](TELEGRAM_SETUP_DE.md)
 
 ### 5.4 Tankvorgang-Protokollierung per Telegram
 
@@ -655,7 +655,7 @@ Das **Fahrtenbuch-Feature** erkennt und protokolliert automatisch Ihre Fahrten:
 - Zweck (Arbeit, Privat, Geschäftlich)
 - Anonymisierung für Datenschutz
 
-📖 **Detaillierte Dokumentation**: [docs/TRIP_TRACKING_README.md](docs/TRIP_TRACKING_README.md)
+📖 **Detaillierte Dokumentation**: [docs/TRIP_TRACKING_README.md](TRIP_TRACKING_README.md)
 
 #### Automatische Fahrterkennung
 
@@ -1221,8 +1221,8 @@ attributes:
 **Status**: Konzept erstellt, Implementierung ausstehend
 
 📖 **Konzept-Dokumente**:
-- [docs/GEOLOCATION_CONCEPT.md](docs/GEOLOCATION_CONCEPT.md) (Deutsch)
-- [docs/GEOLOCATION_CONCEPT_EN.md](docs/GEOLOCATION_CONCEPT_EN.md) (English)
+- [docs/GEOLOCATION_CONCEPT.md](../dev_docs/GEOLOCATION_CONCEPT.md) (Deutsch)
+- [docs/GEOLOCATION_CONCEPT_EN.md](../dev_docs/GEOLOCATION_CONCEPT_EN.md) (English)
 
 **Geplante Features:**
 - Sensor für N günstigste Stationen im Radius
@@ -1341,7 +1341,7 @@ https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/
 
 #### Telegram funktioniert nicht
 📖 **Siehe**: 
-- [docs/TELEGRAM_TROUBLESHOOTING_DE.md](docs/TELEGRAM_TROUBLESHOOTING_DE.md)
+- [docs/TELEGRAM_TROUBLESHOOTING_DE.md](TELEGRAM_TROUBLESHOOTING_DE.md)
 - [TELEGRAM_ISSUE_RESOLUTION.md](TELEGRAM_ISSUE_RESOLUTION.md)
 
 ### 9.2 Debug-Logs aktivieren
@@ -1364,19 +1364,19 @@ Siehe TODO.md → "Diagnostic Data Export Feature"
 ## 📚 Weitere Dokumentation
 
 ### Englische Dokumentation
-- [README.md](README.md) - English overview
-- [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md)
-- [docs/GEOLOCATION_CONCEPT_EN.md](docs/GEOLOCATION_CONCEPT_EN.md)
+- [README.md](../../README.md) - English overview
+- [docs/TELEGRAM_SETUP.md](TELEGRAM_SETUP.md)
+- [docs/GEOLOCATION_CONCEPT_EN.md](../dev_docs/GEOLOCATION_CONCEPT_EN.md)
 
 ### Deutsche Dokumentation
 - [HACS_INSTALLATION_DE.md](HACS_INSTALLATION_DE.md)
-- [docs/TELEGRAM_SETUP_DE.md](docs/TELEGRAM_SETUP_DE.md)
-- [docs/REFUELING_LOG_GUIDE_DE.md](docs/REFUELING_LOG_GUIDE_DE.md)
+- [docs/TELEGRAM_SETUP_DE.md](TELEGRAM_SETUP_DE.md)
+- [docs/REFUELING_LOG_GUIDE_DE.md](REFUELING_LOG_GUIDE_DE.md)
 
 ### Technische Dokumentation
 - [DEVELOPER_NOTES.md](DEVELOPER_NOTES.md)
-- [docs/API.md](docs/API.md)
-- [docs/DATA_STORAGE.md](docs/DATA_STORAGE.md)
+- [docs/API.md](../dev_docs/API.md)
+- [docs/DATA_STORAGE.md](DATA_STORAGE.md)
 
 ---
 

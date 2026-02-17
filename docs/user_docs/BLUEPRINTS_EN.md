@@ -327,9 +327,9 @@ intent_script:
 ## 📖 Documentation
 
 - **German Blueprint Guide**: [BLUEPRINTS_DE.md](../BLUEPRINTS_DE.md)
-- **Main Documentation**: [README.md](../README.md)
+- **Main Documentation**: [README.md](../../README.md)
 - **German Full Documentation**: [DOKUMENTATION_DE.md](../DOKUMENTATION_DE.md)
-- **Documentation Index**: [DOCUMENTATION_INDEX.md](../DOCUMENTATION_INDEX.md)
+- **Documentation Index**: [DOCUMENTATION_INDEX.md](../../DOCUMENTATION_INDEX.md)
 
 ---
 
@@ -354,7 +354,7 @@ Have a useful blueprint? Share it!
 
 ## 📝 License
 
-MIT License - See [LICENSE](../LICENSE)
+MIT License - See [LICENSE](../../LICENSE)
 
 ---
 
