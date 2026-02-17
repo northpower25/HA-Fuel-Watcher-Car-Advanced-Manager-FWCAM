@@ -830,6 +830,11 @@ class TelegramRefuelingHandler:
             updates
         )
         
+        # Trigger coordinator refresh to update sensors with new data
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+        
         # Fire event for test button to catch
         self.hass.bus.async_fire(
             f"{DOMAIN}_refueling_updated",
@@ -921,6 +926,11 @@ class TelegramRefuelingHandler:
                     "data_quality": "ai_processed",  # Mark as AI processed
                 }
             )
+            
+            # Trigger coordinator refresh to update sensors with new data
+            coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {}).get("coordinator")
+            if coordinator:
+                await coordinator.async_request_refresh()
             
             # Fire event for test button to catch
             self.hass.bus.async_fire(
@@ -1039,6 +1049,11 @@ class TelegramRefuelingHandler:
             updates
         )
         
+        # Trigger coordinator refresh to update sensors with new data
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+        
         # Fire event for test button to catch
         self.hass.bus.async_fire(
             f"{DOMAIN}_refueling_updated",
@@ -1107,6 +1122,11 @@ class TelegramRefuelingHandler:
             refuel_id,
             updates
         )
+        
+        # Trigger coordinator refresh to update sensors with new data
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
         
         # Fire event for test button to catch
         self.hass.bus.async_fire(
