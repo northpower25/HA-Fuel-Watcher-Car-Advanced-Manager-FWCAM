@@ -400,6 +400,27 @@ async def predict_days_until_refuel(
     
     now = dt_util.now()
     
+    # Early return for startup scenario where no vehicle data is available yet
+    # This prevents unnecessary processing and log spam during HA restart
+    if current_range_km is None and current_tank_level is None:
+        _LOGGER.debug(
+            "Skipping consumption prediction - no vehicle data available yet (startup scenario). "
+            "Prediction will run once vehicle sensors restore state or provide data."
+        )
+        # Return a minimal valid result with fallback values
+        return {
+            "days_until_refuel": None,
+            "predicted_refuel_date": None,
+            "data_source": "no_vehicle_data",
+            "confidence": 0.0,
+            "avg_daily_km": fallback_daily_km,
+            "avg_consumption_rate": fallback_consumption_rate,
+            "last_prediction_time": now.isoformat(),
+            "data_points_used": 0,
+            "ml_prediction": None,
+            "weekday_pattern": None,
+        }
+    
     # Check data sufficiency
     sufficiency = await check_data_sufficiency(hass, entry, min_data_points)
     
@@ -582,22 +603,38 @@ async def predict_days_until_refuel(
     
     # Log final result before returning
     if days_until_refuel is None:
-        _LOGGER.warning(
-            "ALL METHODS FAILED: days_until_refuel is None. "
-            "current_range_km=%s, current_tank_level=%s, tank_capacity=%s, "
-            "avg_daily_km=%.2f, avg_consumption_rate=%.2f, use_historical=%s",
-            current_range_km,
-            current_tank_level,
-            tank_capacity,
-            avg_daily_km,
-            avg_consumption_rate,
-            use_historical
-        )
+        # Check if this is a startup scenario where no vehicle data is available yet
+        # This is expected during HA restart before sensors restore state or vehicle entities have data
+        is_startup_scenario = (current_range_km is None and current_tank_level is None)
+        
+        if is_startup_scenario:
+            # Log at DEBUG level - this is expected during startup
+            _LOGGER.debug(
+                "Cannot calculate days_until_refuel during startup: both current_range_km and current_tank_level are None. "
+                "This is expected until vehicle sensors restore state or provide data. "
+                "tank_capacity=%s, avg_daily_km=%.2f, avg_consumption_rate=%.2f, use_historical=%s",
+                tank_capacity,
+                avg_daily_km,
+                avg_consumption_rate,
+                use_historical
+            )
+        else:
+            # Log at WARNING level - we have some vehicle data but calculation still failed
+            _LOGGER.warning(
+                "ALL METHODS FAILED: days_until_refuel is None. "
+                "current_range_km=%s, current_tank_level=%s, tank_capacity=%s, "
+                "avg_daily_km=%.2f, avg_consumption_rate=%.2f, use_historical=%s",
+                current_range_km,
+                current_tank_level,
+                tank_capacity,
+                avg_daily_km,
+                avg_consumption_rate,
+                use_historical
+            )
         
         # Safety fallback: Last resort calculation to ensure we return a value when we have the data
-        # This catches edge cases where conditions might be met but calculation didn't happen
-        # (e.g., type mismatches, unexpected None values, etc.)
-        if use_historical and avg_daily_km > 0 and avg_consumption_rate > 0:
+        # Skip this during startup scenario to avoid more log noise
+        if not is_startup_scenario and use_historical and avg_daily_km > 0 and avg_consumption_rate > 0:
             # Try explicit type conversion and validation before calculation
             try:
                 # Method A: Calculate from tank_level if all components are present
