@@ -193,7 +193,8 @@ async def async_setup_entry(
         TankLevelSensor(coordinator, config_entry, vehicle_name),
         RangeSensor(coordinator, config_entry, vehicle_name),
         NearestStationSensor(coordinator, config_entry, vehicle_name),
-        ApiDebugSensor(coordinator, config_entry, vehicle_name),
+        FuelPriceApiDebugSensor(coordinator, config_entry, vehicle_name),
+        CarDataDebugSensor(coordinator, config_entry, vehicle_name),
         ConsumptionPredictionSensor(coordinator, config_entry, vehicle_name),
         ConsumptionHistorySensor(coordinator, config_entry, vehicle_name),
         ConsumptionForecastSensor(coordinator, config_entry, vehicle_name),
@@ -2264,8 +2265,8 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         return attributes
 
 
-class ApiDebugSensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing API debug information."""
+class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing fuel price API debug information."""
 
     _attr_icon = "mdi:api"
     _attr_has_entity_name = True
@@ -2288,8 +2289,8 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
-        self._attr_name = "API Debug"
-        self._attr_unique_id = f"{config_entry.entry_id}_api_debug"
+        self._attr_name = "Fuel Price API Debug"
+        self._attr_unique_id = f"{config_entry.entry_id}_fuel_price_api_debug"
         
         # Device info for grouping
         self._attr_device_info = {
@@ -2357,6 +2358,211 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
                 filtered_debug[key] = value
         
         return filtered_debug
+
+
+class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing vehicle data debug information.
+    
+    This sensor tracks vehicle data retrieval status and provides insights into:
+    - When odometer, tank level, range, and position data was last retrieved
+    - Quality of data points (good vs error counts)
+    - Whether sufficient data exists for various calculations
+    """
+
+    _attr_icon = "mdi:car-info"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._attr_name = "Car Data Debug"
+        self._attr_unique_id = f"{config_entry.entry_id}_car_data_debug"
+        self._config_entry = config_entry
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the overall data status."""
+        if self.coordinator.data is None:
+            return "No Data"
+        
+        vehicle_data = self.coordinator.data.get("vehicle_data", {})
+        
+        # Count how many data types are available
+        data_available = 0
+        for key in ["odometer_km", "tank_level", "range_km", "latitude"]:
+            if vehicle_data.get(key) is not None:
+                data_available += 1
+        
+        if data_available == 0:
+            return "No Vehicle Data"
+        elif data_available < 3:
+            return "Partial Data"
+        else:
+            return "Data Available"
+
+    async def _get_storage_statistics(self) -> dict[str, Any]:
+        """Get statistics from storage about data points."""
+        data = await storage.load_data(self.hass, self._config_entry)
+        
+        # Count odometer observations
+        odometer_history = data.get("odometer_history", [])
+        odometer_good = len(odometer_history)
+        
+        # Count tank level observations from refueling events
+        tank_history = data.get("tank_history", [])
+        tank_good = sum(1 for event in tank_history if event.get("liters_refueled") is not None)
+        
+        # Count range observations (not directly stored, use current value availability)
+        # Count position observations from trips
+        trips = data.get("trips", [])
+        position_good = sum(1 for trip in trips if trip.get("start_location") is not None)
+        
+        # Get refueling count
+        refueling_count = len(tank_history)
+        
+        # Get trip count
+        trip_count = len(trips)
+        
+        return {
+            "odometer_good": odometer_good,
+            "odometer_error": 0,  # We don't track errors separately for now
+            "tank_good": tank_good,
+            "tank_error": 0,
+            "range_good": 0,  # Range is not stored historically
+            "range_error": 0,
+            "position_good": position_good,
+            "position_error": 0,
+            "refueling_count": refueling_count,
+            "trip_count": trip_count,
+        }
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return vehicle data debug information as attributes."""
+        if self.coordinator.data is None:
+            return {"status": "No coordinator data"}
+        
+        vehicle_data = self.coordinator.data.get("vehicle_data", {})
+        consumption_prediction = self.coordinator.data.get("consumption_prediction", {})
+        
+        from homeassistant.util import dt as dt_util
+        from datetime import datetime
+        
+        attributes = {}
+        
+        # Get current timestamp for display
+        current_time = dt_util.now()
+        
+        # Last retrieved data with timestamps
+        if vehicle_data.get("odometer_km") is not None:
+            attributes["odometer_last_value"] = vehicle_data["odometer_km"]
+            attributes["odometer_last_timestamp"] = current_time.isoformat()
+        else:
+            attributes["odometer_last_value"] = None
+            attributes["odometer_last_timestamp"] = None
+        
+        if vehicle_data.get("tank_level") is not None:
+            attributes["tank_level_last_value"] = vehicle_data["tank_level"]
+            attributes["tank_level_last_timestamp"] = current_time.isoformat()
+            attributes["tank_level_unit"] = vehicle_data.get("tank_level_unit", "unknown")
+        else:
+            attributes["tank_level_last_value"] = None
+            attributes["tank_level_last_timestamp"] = None
+            attributes["tank_level_unit"] = None
+        
+        if vehicle_data.get("range_km") is not None:
+            attributes["range_last_value"] = vehicle_data["range_km"]
+            attributes["range_last_timestamp"] = current_time.isoformat()
+        else:
+            attributes["range_last_value"] = None
+            attributes["range_last_timestamp"] = None
+        
+        if vehicle_data.get("latitude") is not None and vehicle_data.get("longitude") is not None:
+            attributes["position_last_value"] = f"{vehicle_data['latitude']}/{vehicle_data['longitude']}"
+            attributes["position_last_timestamp"] = current_time.isoformat()
+        else:
+            attributes["position_last_value"] = None
+            attributes["position_last_timestamp"] = None
+        
+        # Get storage statistics asynchronously - we'll need to schedule this
+        # For now, provide counts from consumption_prediction metadata
+        data_points_used = consumption_prediction.get("data_points_used", 0)
+        data_points_required = consumption_prediction.get("data_points_required", 5)
+        
+        attributes["odometer_good_count"] = data_points_used
+        attributes["odometer_error_count"] = 0
+        attributes["tank_good_count"] = data_points_used
+        attributes["tank_error_count"] = 0
+        attributes["range_good_count"] = 1 if vehicle_data.get("range_km") is not None else 0
+        attributes["range_error_count"] = 0
+        attributes["position_good_count"] = 1 if vehicle_data.get("latitude") is not None else 0
+        attributes["position_error_count"] = 0
+        
+        # Calculation sufficiency status
+        # Check if enough data for each sensor type
+        
+        # Trip log: needs position data
+        trip_log_sufficient = vehicle_data.get("latitude") is not None
+        attributes["trip_log_data_count"] = 1 if trip_log_sufficient else 0
+        attributes["trip_log_sufficient"] = trip_log_sufficient
+        
+        # Refueling log: always available (stored events)
+        attributes["refueling_log_data_count"] = data_points_used
+        attributes["refueling_log_sufficient"] = True
+        
+        # Average consumption history: needs refueling data
+        attributes["average_consumption_history_data_count"] = data_points_used
+        attributes["average_consumption_history_sufficient"] = data_points_used >= 2
+        
+        # Days until refuel: needs range or tank level + consumption data
+        has_vehicle_data = vehicle_data.get("range_km") is not None or vehicle_data.get("tank_level") is not None
+        days_until_refuel_sufficient = has_vehicle_data and data_points_used >= data_points_required
+        attributes["days_until_refuel_data_count"] = data_points_used
+        attributes["days_until_refuel_sufficient"] = days_until_refuel_sufficient
+        
+        # Tank level sensor: needs tank level data
+        tank_level_sufficient = vehicle_data.get("tank_level") is not None
+        attributes["tank_level_data_count"] = 1 if tank_level_sufficient else 0
+        attributes["tank_level_sufficient"] = tank_level_sufficient
+        
+        # Add data source from consumption prediction
+        data_source = consumption_prediction.get("data_source", "unknown")
+        attributes["consumption_data_source"] = data_source
+        
+        # Add recommendations
+        recommendations = []
+        if not has_vehicle_data:
+            recommendations.append("Configure vehicle entities (tank level or range sensor)")
+        if data_points_used < data_points_required:
+            recommendations.append(f"Need {data_points_required - data_points_used} more refueling events for predictions")
+        if vehicle_data.get("latitude") is None:
+            recommendations.append("Configure position entity for trip tracking")
+        
+        if recommendations:
+            attributes["recommendations"] = "; ".join(recommendations)
+        else:
+            attributes["recommendations"] = "All data sources configured properly"
+        
+        return attributes
 
 
 class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):

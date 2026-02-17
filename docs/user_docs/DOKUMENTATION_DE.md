@@ -209,6 +209,8 @@ Nach der Installation werden folgende Entities erstellt:
 - `sensor.{name}_refueling_log` - Tankvorgang-Protokoll
 - `sensor.{name}_trip_log` - Fahrtenbuch
 - `sensor.{name}_current_trip` - Aktuelle Fahrt
+- `sensor.{name}_fuel_price_api_debug` - Debug-Informationen zur Tankstellen-API
+- `sensor.{name}_car_data_debug` - Debug-Informationen zu Fahrzeugdaten
 
 **Schalter:**
 - `switch.{name}_manual_refresh` - Manuelle Datenaktualisierung
@@ -1354,7 +1356,69 @@ logger:
     custom_components.hafwcma: debug
 ```
 
-### 9.3 Diagnose-Export (Geplant)
+### 9.3 Debug-Sensoren verwenden
+
+haFWCMA bietet zwei spezielle Debug-Sensoren zur Diagnose von Problemen:
+
+#### sensor.{name}_fuel_price_api_debug
+
+Dieser Sensor zeigt Informationen über die Tankstellen-API-Anfragen:
+
+**Attribute:**
+- `api_response_status` - Status der letzten API-Anfrage (success/error)
+- `timestamp` - Zeitstempel der letzten Anfrage
+- `location_source` - Quelle der verwendeten Position (vehicle/fallback)
+- `stations_found` - Anzahl gefundener Tankstellen
+- `stations_with_price_and_open` - Anzahl geöffneter Tankstellen mit Preis
+- `stations_closed` - Anzahl geschlossener Tankstellen
+- `stations_no_price` - Anzahl Tankstellen ohne Preis
+- `api_request_summary` - Zusammenfassung der API-Anfrage
+- `api_response_summary` - Zusammenfassung der API-Antwort
+- `error` - Fehlermeldung (falls vorhanden)
+
+**Verwendung:**
+- Prüfen, ob die API korrekt antwortet
+- Diagnose von "keine Tankstelle gefunden" Problemen
+- Überprüfung der verwendeten Position (Fahrzeug vs. konfiguriert)
+
+#### sensor.{name}_car_data_debug
+
+Dieser Sensor zeigt den Status der Fahrzeugdaten-Erfassung:
+
+**Attribute:**
+- `odometer_last_value` / `odometer_last_timestamp` - Letzter Kilometerstand
+- `tank_level_last_value` / `tank_level_last_timestamp` - Letzter Tankfüllstand
+- `range_last_value` / `range_last_timestamp` - Letzte Reichweite
+- `position_last_value` / `position_last_timestamp` - Letzte GPS-Position
+- `odometer_good_count` / `odometer_error_count` - Anzahl gültige/fehlerhafte Daten
+- `tank_good_count` / `tank_error_count` - Anzahl gültige/fehlerhafte Daten
+- `range_good_count` / `range_error_count` - Anzahl gültige/fehlerhafte Daten
+- `position_good_count` / `position_error_count` - Anzahl gültige/fehlerhafte Daten
+- `trip_log_data_count` / `trip_log_sufficient` - Daten für Fahrtenbuch vorhanden?
+- `refueling_log_data_count` / `refueling_log_sufficient` - Daten für Tankbuch vorhanden?
+- `average_consumption_history_data_count` / `average_consumption_history_sufficient` - Daten für Verbrauchshistorie vorhanden?
+- `days_until_refuel_data_count` / `days_until_refuel_sufficient` - Daten für Reichweitenvorhersage vorhanden?
+- `tank_level_data_count` / `tank_level_sufficient` - Tankfüllstand-Sensor vorhanden?
+- `consumption_data_source` - Quelle der Verbrauchsberechnung (historical_data/ml_enhanced/fallback_values/no_vehicle_data)
+- `recommendations` - Empfehlungen zur Behebung fehlender Daten
+
+**Verwendung:**
+- Diagnose von "unknown" oder "unavailable" Sensor-Werten
+- Prüfen, ob Fahrzeugdaten korrekt empfangen werden
+- Identifizieren fehlender Konfigurationen (z.B. nicht konfigurierte Entities)
+- Verstehen, warum Berechnungen nicht funktionieren (z.B. "Days Until Refuel" = unknown)
+
+**Beispiel-Szenario:**
+Wenn `sensor.{name}_days_until_refuel` den Wert "unknown" zeigt:
+1. Öffnen Sie `sensor.{name}_car_data_debug`
+2. Prüfen Sie `consumption_data_source`:
+   - `no_vehicle_data` → Tank-Level oder Range-Sensor fehlt
+   - `fallback_values` → Zu wenig Tankdaten (< 5 Tankvorgänge)
+3. Prüfen Sie `days_until_refuel_sufficient`:
+   - `false` → Schauen Sie `days_until_refuel_data_count` für benötigte Anzahl
+4. Lesen Sie `recommendations` für konkrete Lösungsvorschläge
+
+### 9.4 Diagnose-Export (Geplant)
 
 **Zukünftig**: One-Click Diagnose-Daten Export
 Siehe TODO.md → "Diagnostic Data Export Feature"
