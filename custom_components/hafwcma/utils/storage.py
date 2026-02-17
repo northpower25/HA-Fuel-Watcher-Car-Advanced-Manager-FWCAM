@@ -385,6 +385,8 @@ async def add_refuel_event(
         # Data quality indicators for filtering and manual correction
         "data_quality": event_data.get("data_quality", "manual"),  # manual, auto_detected, historical_import
         "confidence": event_data.get("confidence", 1.0),  # 0.0-1.0, higher is better
+        "excluded_from_calculation": event_data.get("excluded_from_calculation", False),  # Exclude test/invalid events
+        "exclusion_reason": event_data.get("exclusion_reason"),  # Why event was excluded (optional)
         # Telegram response tracking for bidirectional communication
         "telegram_notification_sent": event_data.get("telegram_notification_sent", False),
         "telegram_notification_timestamp": event_data.get("telegram_notification_timestamp"),
@@ -503,6 +505,7 @@ async def update_refueling_record(
                 "timestamp", "odometer_km", "station_name", "station_address",
                 "liters_refueled", "price_per_liter", "total_cost",
                 "latitude", "longitude", "fuel_type", "data_quality", "confidence",
+                "excluded_from_calculation", "exclusion_reason",
                 # Telegram response tracking fields
                 "telegram_notification_sent", "telegram_notification_timestamp",
                 "telegram_response_received", "telegram_response_timestamp",
@@ -768,6 +771,215 @@ async def set_last_error(hass: HomeAssistant, entry: ConfigEntry, error: str) ->
 # Consumption History Calculations
 # ---------------------------------------------------------------------------
 
+async def validate_refueling_event(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    event: dict[str, Any],
+    vehicle_odometer: float | None = None,
+) -> tuple[bool, str | None]:
+    """Validate a refueling event for logical consistency.
+    
+    Checks if a refueling event is valid based on:
+    - Odometer value vs other events
+    - Timestamp vs other events
+    - Reasonable fuel amounts
+    - Data quality indicators
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        event: Refueling event to validate
+        vehicle_odometer: Current vehicle odometer (optional)
+        
+    Returns:
+        Tuple of (is_valid, reason_if_invalid)
+    """
+    from homeassistant.util import dt as dt_util
+    
+    event_id = event.get("id")
+    odometer = event.get("odometer_km")
+    timestamp_str = event.get("timestamp")
+    liters = event.get("liters_refueled")
+    station_name = event.get("station_name", "")
+    
+    # Parse timestamp
+    try:
+        if isinstance(timestamp_str, str):
+            event_time = dt_util.parse_datetime(timestamp_str)
+        elif isinstance(timestamp_str, datetime):
+            event_time = timestamp_str
+        else:
+            return False, "Invalid timestamp format"
+            
+        if not event_time:
+            return False, "Could not parse timestamp"
+    except Exception as e:
+        return False, f"Timestamp parsing error: {e}"
+    
+    # Check if event is from the future
+    now = dt_util.now()
+    if event_time > now:
+        time_diff = (event_time - now).total_seconds() / 3600  # hours
+        if time_diff > 1:  # Allow 1 hour tolerance for clock skew
+            return False, f"Event is {time_diff:.1f} hours in the future"
+    
+    # Check for test indicators in station name
+    test_indicators = ["test", "api test", "demo", "example", "xxxx", "1111", "9999"]
+    station_lower = station_name.lower()
+    for indicator in test_indicators:
+        if indicator in station_lower:
+            return False, f"Station name contains test indicator: '{indicator}'"
+    
+    # Check for unrealistic fuel amounts
+    if liters is not None:
+        if liters <= 0:
+            return False, "Fuel amount must be positive"
+        if liters > 200:  # More than 200L is extremely unusual
+            return False, f"Fuel amount {liters}L exceeds realistic maximum (200L)"
+    
+    # Check odometer value if available
+    if odometer is not None:
+        if odometer <= 0:
+            return False, "Odometer must be positive"
+        
+        # Check against current vehicle odometer if provided
+        if vehicle_odometer is not None and odometer > vehicle_odometer + 1000:
+            diff = odometer - vehicle_odometer
+            return False, f"Odometer {odometer} km is {diff} km higher than current vehicle odometer"
+        
+        # Check against other events for logical ordering
+        data = await load_data(hass, entry)
+        refueling_log = data.get("refueling_log", [])
+        
+        for other_event in refueling_log:
+            other_id = other_event.get("id")
+            if other_id == event_id:
+                continue  # Skip self
+            
+            if other_event.get("excluded_from_calculation", False):
+                continue  # Skip already excluded events
+            
+            other_odometer = other_event.get("odometer_km")
+            other_timestamp_str = other_event.get("timestamp")
+            
+            if other_odometer is None or other_timestamp_str is None:
+                continue
+            
+            try:
+                if isinstance(other_timestamp_str, str):
+                    other_time = dt_util.parse_datetime(other_timestamp_str)
+                elif isinstance(other_timestamp_str, datetime):
+                    other_time = other_timestamp_str
+                else:
+                    continue
+                    
+                if not other_time:
+                    continue
+                    
+                # Ensure timezone-aware for comparison
+                if event_time.tzinfo is None:
+                    event_time = dt_util.as_local(event_time)
+                if other_time.tzinfo is None:
+                    other_time = dt_util.as_local(other_time)
+                
+                # Check for odometer going backwards in time
+                if event_time > other_time and odometer < other_odometer:
+                    km_diff = other_odometer - odometer
+                    time_diff_hours = (event_time - other_time).total_seconds() / 3600
+                    return False, f"Odometer went backwards by {km_diff} km vs event #{other_id} ({time_diff_hours:.1f}h ago)"
+                
+                # Check for unrealistic odometer jump
+                if event_time > other_time:
+                    km_diff = odometer - other_odometer
+                    time_diff_hours = (event_time - other_time).total_seconds() / 3600
+                    if time_diff_hours > 0:
+                        km_per_hour = km_diff / time_diff_hours
+                        # More than 200 km/h average is unrealistic for normal driving
+                        if km_per_hour > 200:
+                            return False, f"Unrealistic speed: {km_per_hour:.0f} km/h average vs event #{other_id}"
+                        # More than 5000 km in a single day is suspicious
+                        if time_diff_hours < 24 and km_diff > 5000:
+                            return False, f"Unrealistic distance: {km_diff} km in {time_diff_hours:.1f}h vs event #{other_id}"
+                            
+            except Exception:
+                continue
+    
+    return True, None
+
+
+async def auto_validate_refueling_events(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    """Automatically validate all refueling events and mark suspicious ones.
+    
+    Scans all refueling events and marks those that fail validation as excluded
+    from calculation.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Dictionary with validation results:
+        {
+            "total_events": int,
+            "validated": int,
+            "newly_excluded": int,
+            "already_excluded": int,
+            "excluded_events": [list of excluded event IDs],
+        }
+    """
+    data = await load_data(hass, entry)
+    refueling_log = data.get("refueling_log", [])
+    
+    total_events = len(refueling_log)
+    newly_excluded = 0
+    already_excluded = 0
+    excluded_event_ids = []
+    
+    for event in refueling_log:
+        event_id = event.get("id")
+        
+        # Skip if already excluded
+        if event.get("excluded_from_calculation", False):
+            already_excluded += 1
+            excluded_event_ids.append(event_id)
+            continue
+        
+        # Validate event
+        is_valid, reason = await validate_refueling_event(hass, entry, event)
+        
+        if not is_valid:
+            # Mark event as excluded
+            event["excluded_from_calculation"] = True
+            event["exclusion_reason"] = f"Auto-validation: {reason}"
+            newly_excluded += 1
+            excluded_event_ids.append(event_id)
+            _LOGGER.warning(
+                "Refueling event #%s automatically excluded from calculations: %s",
+                event_id, reason
+            )
+    
+    if newly_excluded > 0:
+        await save_data(hass, entry, data)
+    
+    validated = total_events - already_excluded
+    
+    _LOGGER.info(
+        "Auto-validation complete: %d events validated, %d newly excluded, %d already excluded",
+        validated, newly_excluded, already_excluded
+    )
+    
+    return {
+        "total_events": total_events,
+        "validated": validated,
+        "newly_excluded": newly_excluded,
+        "already_excluded": already_excluded,
+        "excluded_events": excluded_event_ids,
+    }
+
+
 async def calculate_consumption_history(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -815,7 +1027,18 @@ async def calculate_consumption_history(
     
     # Filter events within period
     relevant_events = []
+    excluded_count = 0
     for event in refueling_log:
+        # Skip events explicitly excluded from calculation (e.g., test events)
+        if event.get("excluded_from_calculation", False):
+            excluded_count += 1
+            _LOGGER.debug(
+                "Event id=%s: EXCLUDED from calculation (reason: %s)",
+                event.get("id"),
+                event.get("exclusion_reason", "manually excluded")
+            )
+            continue
+        
         timestamp_value = event.get("timestamp", "")
         event_time = None
         
@@ -906,8 +1129,8 @@ async def calculate_consumption_history(
             continue
     
     _LOGGER.debug(
-        "calculate_consumption_history(%d days): found %d/%d events in period",
-        days, len(relevant_events), len(refueling_log)
+        "calculate_consumption_history(%d days): found %d/%d events in period (%d excluded from calculation)",
+        days, len(relevant_events), len(refueling_log), excluded_count
     )
     
     if len(relevant_events) < 2:

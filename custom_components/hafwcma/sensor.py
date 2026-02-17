@@ -2886,7 +2886,12 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
         
         # Get the last 10 events for display
         recent_events = []
+        excluded_count = 0
         for event in sorted_log[:10]:
+            is_excluded = event.get("excluded_from_calculation", False)
+            if is_excluded:
+                excluded_count += 1
+            
             event_info = {
                 "id": event.get("id"),
                 "timestamp": event.get("timestamp"),
@@ -2899,6 +2904,8 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
                 "fuel_type": event.get("fuel_type"),
                 "data_quality": event.get("data_quality", "manual"),
                 "confidence": event.get("confidence", 1.0),
+                "excluded_from_calculation": is_excluded,
+                "exclusion_reason": event.get("exclusion_reason") if is_excluded else None,
                 "telegram_response_received": event.get("telegram_response_received", False),
                 "telegram_response_timestamp": event.get("telegram_response_timestamp"),
                 "telegram_response_type": event.get("telegram_response_type"),
@@ -2918,12 +2925,17 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
                 "station": last_event.get("station_name"),
             }
         
+        # Count total excluded events in the entire log
+        total_excluded = sum(1 for e in refueling_log if e.get("excluded_from_calculation", False))
+        
         attrs = {
             "config_entry_id": self._config_entry.entry_id,
             "total_events": len(refueling_log),
+            "total_excluded": total_excluded,
+            "total_active": len(refueling_log) - total_excluded,
             "last_refueling": last_refueling,
             "recent_events": recent_events,
-            "status": f"{len(refueling_log)} refueling events recorded",
+            "status": f"{len(refueling_log)} refueling events recorded ({total_excluded} excluded from calculations)",
         }
         
         # Add retrieval metadata from coordinator data
