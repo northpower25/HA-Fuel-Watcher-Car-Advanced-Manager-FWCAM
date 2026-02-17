@@ -57,7 +57,7 @@ Eine vollständige, produktionsreife Lösung für die intelligente Erfassung von
 3. ✅ Telegram Bot konfiguriert (Token und Chat-ID in haFWCMA eingetragen)
 4. ✅ Home Assistant `telegram_bot` Integration eingerichtet
 
-Wenn Telegram noch nicht konfiguriert ist, siehe: [TELEGRAM_SETUP_DE.md](docs/TELEGRAM_SETUP_DE.md)
+Wenn Telegram noch nicht konfiguriert ist, siehe: [TELEGRAM_SETUP_DE.md](TELEGRAM_SETUP_DE.md)
 
 ### Installation
 
@@ -113,24 +113,24 @@ Wenn Telegram noch nicht konfiguriert ist, siehe: [TELEGRAM_SETUP_DE.md](docs/TE
 
 ### Hauptdokumente
 
-1. **[TELEGRAM_REFUELING_BOT_DE.md](docs/TELEGRAM_REFUELING_BOT_DE.md)** - Vollständiger deutscher Leitfaden
+1. **[TELEGRAM_REFUELING_BOT_DE.md](../dev_docs/TELEGRAM_REFUELING_BOT_DE.md)** - Vollständiger deutscher Leitfaden
    - Detaillierte Funktionsbeschreibung
    - Setup-Anleitung
    - Verwendung und Beispiele
    - OCR/STT Implementierungsoptionen
    - Datenschutz und Debugging
 
-2. **[TELEGRAM_REFUELING_BOT.md](docs/TELEGRAM_REFUELING_BOT.md)** - English Guide
+2. **[TELEGRAM_REFUELING_BOT.md](../dev_docs/TELEGRAM_REFUELING_BOT.md)** - English Guide
    - Complete English documentation
    - All essential information
 
-3. **[TELEGRAM_REFUELING_BOT_EXAMPLES.md](docs/TELEGRAM_REFUELING_BOT_EXAMPLES.md)** - Automation-Beispiele
+3. **[TELEGRAM_REFUELING_BOT_EXAMPLES.md](TELEGRAM_REFUELING_BOT_EXAMPLES.md)** - Automation-Beispiele
    - Real-World-Automationen
    - Dashboard-Konfigurationen
    - Node-RED Flows
    - Troubleshooting
 
-4. **[TELEGRAM_REFUELING_BOT_CONCEPT.md](docs/TELEGRAM_REFUELING_CONCEPT.md)** - Technisches Konzept
+4. **[TELEGRAM_REFUELING_BOT_CONCEPT.md](../TELEGRAM_REFUELING_CONCEPT.md)** - Technisches Konzept
    - Architektur-Übersicht
    - Datenfluss-Diagramme
    - Implementierungsbeispiele
@@ -467,7 +467,7 @@ automation:
           message: "🔔 Bitte ergänzen Sie die Tankvorgang-Daten"
 ```
 
-Mehr Beispiele in [TELEGRAM_REFUELING_BOT_EXAMPLES.md](docs/TELEGRAM_REFUELING_BOT_EXAMPLES.md)
+Mehr Beispiele in [TELEGRAM_REFUELING_BOT_EXAMPLES.md](TELEGRAM_REFUELING_BOT_EXAMPLES.md)
 
 ## ❓ Häufige Fragen
 

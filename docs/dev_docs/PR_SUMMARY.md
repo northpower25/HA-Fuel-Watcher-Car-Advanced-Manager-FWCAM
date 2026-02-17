@@ -247,9 +247,9 @@ Users upgrading will see:
 ## 📖 Key Documentation Links
 
 **For Users:**
-- [Installation Guide (EN)](docs/REFUELING_LOG_GUIDE.md)
-- [Installation Guide (DE)](docs/REFUELING_LOG_GUIDE_DE.md)
-- [Visual Guide](docs/FWCAM_CARD_VISUAL_GUIDE.md)
+- [Installation Guide (EN)](../user_docs/REFUELING_LOG_GUIDE.md)
+- [Installation Guide (DE)](../user_docs/REFUELING_LOG_GUIDE_DE.md)
+- [Visual Guide](../user_docs/FWCAM_CARD_VISUAL_GUIDE.md)
 - [Card README](www/fwcam-card/README.md)
 
 **For Developers:**

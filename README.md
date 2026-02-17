@@ -11,7 +11,7 @@ A comprehensive Home Assistant integration for monitoring fuel prices, managing 
 
 **Install the integration via HACS and get the frontend card automatically!**
 
-**→ [Complete HACS Installation Guide](HACS_INSTALLATION.md)** | **[German Guide](HACS_INSTALLATION_DE.md)**
+**→ [Complete HACS Installation Guide](docs/user_docs/HACS_INSTALLATION.md)** | **[German Guide](docs/user_docs/HACS_INSTALLATION_DE.md)**
 
 The integration includes:
 1. **Backend Integration** - All monitoring and prediction features
@@ -37,7 +37,7 @@ type: custom:fwcam-card
 entity: sensor.my_car_refueling_log
 ```
 
-📖 [Full Installation Guide](docs/REFUELING_LOG_GUIDE.md) | 🎨 [Visual Guide](docs/FWCAM_CARD_VISUAL_GUIDE.md)
+📖 [Full Installation Guide](docs/user_docs/REFUELING_LOG_GUIDE.md) | 🎨 [Visual Guide](docs/user_docs/FWCAM_CARD_VISUAL_GUIDE.md)
 
 ---
 
@@ -88,7 +88,7 @@ entity: sensor.my_car_refueling_log
 - **NEW: Telegram commands** for status queries and future refueling logging
 - **Conflict-free implementation** - no more "getUpdates" errors
 
-📖 **[Complete Telegram Setup Guide](docs/TELEGRAM_SETUP.md)** | **[German Guide](docs/TELEGRAM_SETUP_DE.md)**
+📖 **[Complete Telegram Setup Guide](docs/user_docs/TELEGRAM_SETUP.md)** | **[German Guide](docs/user_docs/TELEGRAM_SETUP_DE.md)**
 
 ### 🎯 Home Assistant Integration
 - Config Flow UI for easy setup
@@ -111,7 +111,7 @@ entity: sensor.my_car_refueling_log
 - 🛣️ **Trip Completion** - Edit and categorize trips
 - 🔍 **Fuel Price Query** - Get current prices on demand
 
-📖 **[Blueprint Documentation](BLUEPRINTS_DE.md)** | **[Browse Blueprints](blueprints/)**
+📖 **[Blueprint Documentation (DE)](docs/user_docs/BLUEPRINTS_DE.md)** | **[Blueprint Documentation (EN)](docs/user_docs/BLUEPRINTS_EN.md)** | **[Browse Blueprints](blueprints/)**
 
 **Quick Import:** Click the blueprint links in the documentation to import directly into Home Assistant!
 
@@ -133,7 +133,7 @@ entity: sensor.my_car_refueling_log
 10. Restart Home Assistant
 11. The frontend card is automatically available after restart!
 
-**→ [Detailed Installation Guide](HACS_INSTALLATION.md)** | **[German Guide](HACS_INSTALLATION_DE.md)**
+**→ [Detailed Installation Guide](docs/user_docs/HACS_INSTALLATION.md)** | **[German Guide](docs/user_docs/HACS_INSTALLATION_DE.md)**
 
 ### Manual Installation
 
@@ -160,7 +160,7 @@ entity: sensor.my_car_refueling_log
    - **Step 4**: (Optional) Configure Telegram notifications
    - **Step 5**: (Optional) Configure prediction engine thresholds
 
-For detailed information about vehicle entity integration, see [Vehicle Entity Integration Guide](docs/VEHICLE_ENTITIES.md).
+For detailed information about vehicle entity integration, see [Vehicle Entity Integration Guide](docs/user_docs/VEHICLE_ENTITIES.md).
 
 ### Configuration Options
 
@@ -213,7 +213,7 @@ The integration creates the following sensors for each configured vehicle:
 - **Consumption Min Data Points Number**: Configure minimum historical data points required for reliable predictions (2-50, default: 5)
 - **Consumption Prediction Interval Number**: Configure how often consumption predictions are recalculated (0.5-24 hours, default: 6)
 
-For detailed information about update frequencies, configuration options, and warnings about API limits and system load, see [Data Update Frequencies Guide](docs/DATA_UPDATE_FREQUENCIES.md).
+For detailed information about update frequencies, configuration options, and warnings about API limits and system load, see [Data Update Frequencies Guide](docs/user_docs/DATA_UPDATE_FREQUENCIES.md).
 
 ### Attributes
 
@@ -325,7 +325,7 @@ For detailed information about displaying and managing the refueling log, includ
 - Filtering by quality and confidence
 - Manual editing and correction workflows
 
-See the [Refueling Log Guide](docs/REFUELING_LOG_GUIDE.md) (also available in [German](docs/REFUELING_LOG_GUIDE_DE.md)).
+See the [Refueling Log Guide](docs/user_docs/REFUELING_LOG_GUIDE.md) (also available in [German](docs/user_docs/REFUELING_LOG_GUIDE_DE.md)).
 
 #### Nearest Station Sensor
 - `station_address`: Full address
@@ -483,7 +483,7 @@ Each refueling event includes quality indicators to help prioritize manual revie
   - `auto_detected`: Automatically detected during normal operation (high quality)
   - `historical_import`: Detected from historical data import (may need review if confidence < 0.7)
 
-Use these indicators to filter events that need attention and ensure data accuracy. See the [Refueling Log Guide](docs/REFUELING_LOG_GUIDE.md) for detailed filtering examples.
+Use these indicators to filter events that need attention and ensure data accuracy. See the [Refueling Log Guide](docs/user_docs/REFUELING_LOG_GUIDE.md) for detailed filtering examples.
 
 ### Historical Data Import
 
@@ -568,17 +568,17 @@ To improve clarity and user experience, the following entities have been renamed
     entity_id: switch.my_car_fuel_price_refresh
 ```
 
-For detailed migration information, see [IMPLEMENTATION_SUMMARY_CUSTOM_CARD.md](IMPLEMENTATION_SUMMARY_CUSTOM_CARD.md).
+For detailed migration information, see [IMPLEMENTATION_SUMMARY_CUSTOM_CARD.md](docs/dev_docs/IMPLEMENTATION_SUMMARY_CUSTOM_CARD.md).
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/issues)
-- **Troubleshooting**: [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
-- **Documentation**: [docs/](docs/)
+- **Troubleshooting**: [Troubleshooting Guide](docs/user_docs/TROUBLESHOOTING.md)
+- **Documentation**: [Documentation Index](docs/)
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guidelines](docs/CONTRIBUTING.md) first.
+Contributions are welcome! Please read our [Contributing Guidelines](docs/dev_docs/CONTRIBUTING.md) first.
 
 ## License
 

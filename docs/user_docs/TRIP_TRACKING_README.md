@@ -262,7 +262,7 @@ This documentation and the haFWCMA integration are released under the MIT Licens
 ## 📚 Related Documentation
 
 ### Existing haFWCMA Documentation
-- [Main README](../README.md)
+- [Main README](../../README.md)
 - [Data Storage Guidelines](DATA_STORAGE.md)
 - [Geolocation Concept](GEOLOCATION_CONCEPT.md)
 - [Refueling Log Guide](REFUELING_LOG_GUIDE.md)

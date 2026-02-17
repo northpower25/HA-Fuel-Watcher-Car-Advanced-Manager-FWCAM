@@ -49,7 +49,7 @@ Starten Sie Home Assistant neu, um die neue Integration und ihre Frontend-Karte 
 3. Suchen Sie nach **"Fuel Watcher Car Advanced Manager"**
 4. Folgen Sie dem Konfigurationsassistenten
 
-Für detaillierte Konfigurationsoptionen siehe [INSTALLATION.md](docs/INSTALLATION.md).
+Für detaillierte Konfigurationsoptionen siehe [INSTALLATION.md](INSTALLATION.md).
 
 ### Schritt 5: Browser-Cache leeren
 

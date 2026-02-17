@@ -291,7 +291,7 @@ Planned improvements for vehicle entity integration:
 For issues or questions:
 - **GitHub Issues**: [Report problems](https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/issues)
 - **Discussions**: [Ask questions](https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/discussions)
-- **Documentation**: [Main README](../README.md)
+- **Documentation**: [Main README](../../README.md)
 
 ---
 
