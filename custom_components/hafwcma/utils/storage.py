@@ -31,6 +31,13 @@ _LOGGER = logging.getLogger(__name__)
 STORAGE_VERSION = 1
 STORAGE_KEY_TEMPLATE = f"{DOMAIN}_{{entry_id}}"
 
+# Odometer observation thresholds
+ODOMETER_CHANGE_THRESHOLD_KM = 0.1  # Minimum change to record new observation
+
+# Consumption calculation validation thresholds
+DUPLICATE_EVENT_THRESHOLD_SECONDS = 60  # Time gap to warn about possible duplicates
+MAX_REASONABLE_DISTANCE_KM = 2000  # Max km between refuelings before warning
+
 
 def _get_store(hass: HomeAssistant, entry: ConfigEntry) -> Store:
     """Return a Store instance for this config entry.
@@ -211,6 +218,9 @@ async def add_odometer_observation(
 ) -> None:
     """Add an odometer observation to history.
     
+    Only adds the observation if the odometer value has changed from the last recorded value.
+    This prevents duplicate entries when vehicle integrations send the same odometer reading multiple times.
+    
     Args:
         hass: Home Assistant instance
         entry: Config entry
@@ -218,6 +228,22 @@ async def add_odometer_observation(
         timestamp: ISO format timestamp
     """
     data = await load_data(hass, entry)
+    
+    # Check if this is a duplicate of the last odometer value
+    # Vehicle integrations often send the same odometer value multiple times
+    # We only want to record actual changes to avoid inflated statistics
+    if data["odometer_history"]:
+        last_entry = data["odometer_history"][-1]
+        last_value = last_entry.get("value")
+        
+        # Skip if value hasn't changed (within threshold)
+        if last_value is not None and abs(float(last_value) - float(odometer_km)) < ODOMETER_CHANGE_THRESHOLD_KM:
+            _LOGGER.debug(
+                "Skipping odometer observation: %.1f km (changed by less than %.1f km from last value of %.1f km)",
+                odometer_km, ODOMETER_CHANGE_THRESHOLD_KM, last_value
+            )
+            return
+    
     data["odometer_history"].append({"ts": timestamp, "value": odometer_km})
     
     # Keep only last 1000 entries
@@ -910,6 +936,34 @@ async def calculate_consumption_history(
         days, len(relevant_events)
     )
     
+    # Validate event data for potential issues
+    for i, (event_time, event) in enumerate(relevant_events):
+        event_id = event.get("id")
+        odometer = event.get("odometer_km")
+        
+        # Check for missing odometer
+        if odometer is None:
+            _LOGGER.warning(
+                "Event id=%s (index %d): missing odometer_km - this event will be skipped in km calculations",
+                event_id, i
+            )
+        # Check for suspicious negative or zero odometer
+        elif odometer <= 0:
+            _LOGGER.warning(
+                "Event id=%s (index %d): suspicious odometer_km=%s <= 0",
+                event_id, i, odometer
+            )
+        
+        # Check for duplicate/very close timestamps (within 60 seconds)
+        if i > 0:
+            prev_time = relevant_events[i-1][0]
+            time_diff_seconds = abs((event_time - prev_time).total_seconds())
+            if time_diff_seconds < DUPLICATE_EVENT_THRESHOLD_SECONDS:
+                _LOGGER.warning(
+                    "Events id=%s and id=%s: very close timestamps (%.1f seconds apart) - possible duplicate refueling events",
+                    relevant_events[i-1][1].get("id"), event_id, time_diff_seconds
+                )
+    
     # Calculate total distance and fuel consumed
     # Logic: Fuel from refueling event i is consumed between event i and event i+1
     total_km = 0
@@ -934,6 +988,17 @@ async def calculate_consumption_history(
         if (curr_odometer is not None and next_odometer is not None 
             and liters_refueled is not None):
             km_driven = next_odometer - curr_odometer
+            
+            # Validate km_driven for unreasonable values
+            # Warn if a single segment shows > MAX_REASONABLE_DISTANCE_KM (likely data entry error)
+            if km_driven > MAX_REASONABLE_DISTANCE_KM:
+                _LOGGER.warning(
+                    "Pair [%d->%d]: SUSPICIOUS km_driven=%s km (odometer: %s -> %s). "
+                    "This seems unreasonably high - check for incorrect odometer values in refueling events!",
+                    curr_event.get("id"), next_event.get("id"),
+                    km_driven, curr_odometer, next_odometer
+                )
+            
             # Only count if positive distance and fuel was actually consumed
             if km_driven > 0 and liters_refueled > 0:
                 total_km += km_driven
