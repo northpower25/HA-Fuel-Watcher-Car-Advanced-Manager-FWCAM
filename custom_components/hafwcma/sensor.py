@@ -1820,7 +1820,7 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             if self._restored_value is not None:
                 attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
-        # Continue with coordinator data attributes if available
+        # Add supplementary attributes from coordinator data (recommendations, statistics) if available
         if self.coordinator.data is not None:
             recommendation = self.coordinator.data.get("recommendation", {})
             if recommendation:
