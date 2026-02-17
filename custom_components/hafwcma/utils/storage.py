@@ -1419,10 +1419,10 @@ async def recalculate_trip_statistics(
     # Calculate from all trips
     for trip in trips:
         stats["total_trips"] += 1
-        stats["total_distance_km"] += trip.get("distance_km", 0.0)
-        stats["total_fuel_consumed"] += trip.get("fuel_consumed", 0.0)
-        stats["total_fuel_cost"] += trip.get("fuel_cost", 0.0)
-        stats["total_additional_costs"] += trip.get("additional_costs", 0.0)
+        stats["total_distance_km"] += (trip.get("distance_km") or 0.0)
+        stats["total_fuel_consumed"] += (trip.get("fuel_consumed") or 0.0)
+        stats["total_fuel_cost"] += (trip.get("fuel_cost") or 0.0)
+        stats["total_additional_costs"] += (trip.get("additional_costs") or 0.0)
         
         # Update category counters
         category = trip.get("category", "private")
