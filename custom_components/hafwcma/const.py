@@ -70,13 +70,16 @@ DEFAULT_CONSUMPTION_PREDICTION_INTERVAL: Final = 6.0  # Hours between prediction
 MIN_CONSUMPTION_PREDICTION_INTERVAL: Final = 0.5  # Minimum 30 minutes
 MAX_CONSUMPTION_PREDICTION_INTERVAL: Final = 24.0  # Maximum 24 hours
 
-# Startup delay configuration to prevent timing issues with entity availability
-STARTUP_DELAY_VEHICLE_DATA_SECONDS: Final = 120  # Delay before fetching vehicle data after HA restart (2 minutes)
-STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS: Final = 120  # Delay before running consumption prediction after HA restart (2 minutes)
+# Startup delay configuration (DEPRECATED - no longer used)
+# These constants are kept for backward compatibility but are no longer used
+# The integration now uses event-based startup (homeassistant_started) instead of delays
+STARTUP_DELAY_VEHICLE_DATA_SECONDS: Final = 120  # DEPRECATED: Use event-based waiting
+STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS: Final = 120  # DEPRECATED: Use event-based waiting
 
-# Entity availability wait configuration
-ENTITY_WAIT_MAX_RETRIES: Final = 6  # Maximum attempts to check for entity availability
-ENTITY_WAIT_RETRY_DELAY_SECONDS: Final = 30  # Seconds to wait between entity availability checks
+# Entity availability wait configuration (DEPRECATED - no longer used)
+# The integration now checks availability without blocking retries
+ENTITY_WAIT_MAX_RETRIES: Final = 6  # DEPRECATED: Non-blocking check used instead
+ENTITY_WAIT_RETRY_DELAY_SECONDS: Final = 30  # DEPRECATED: Non-blocking check used instead
 
 # Fuel types
 FUEL_TYPE_E5: Final = "e5"
