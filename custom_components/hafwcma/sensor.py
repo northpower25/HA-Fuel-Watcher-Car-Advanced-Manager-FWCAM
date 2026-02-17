@@ -126,8 +126,8 @@ def check_data_staleness(timestamp: str | datetime | None, data_type: str) -> st
     """Check if data timestamp indicates stale data and return warning message.
     
     Args:
-        timestamp: Datetime string (in any format supported by dt_util.parse_datetime) 
-                  or datetime object to check
+        timestamp: Datetime string (in any format supported by dt_util.parse_datetime),
+                  datetime object (used directly without parsing), or None
         data_type: Description of the data type (e.g., "Vehicle data", "Fuel price data")
         
     Returns:

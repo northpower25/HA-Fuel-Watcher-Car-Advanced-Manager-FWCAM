@@ -159,7 +159,7 @@ To test state restoration:
 ### Future Enhancements
 
 Possible improvements:
-1. Add configurable staleness threshold (currently hardcoded to 1 hour)
+1. Add configurable staleness threshold via integration config (currently defined as DATA_STALENESS_THRESHOLD_HOURS constant = 1 hour)
 2. Add visual indicator in Lovelace card for restored vs. live data
 3. Persist more complex state (e.g., full recommendation objects)
 4. Add metrics for state restoration success rate
