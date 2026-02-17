@@ -2130,7 +2130,7 @@ class RangeSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         return attributes
 
 
-class NearestStationSensor(CoordinatorEntity, SensorEntity):
+class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing cheapest fuel station within radius."""
 
     _attr_icon = "mdi:gas-station"
@@ -2152,6 +2152,8 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._attr_name = "Cheapest Station"
         self._attr_unique_id = f"{config_entry.entry_id}_nearest_station"
+        self._restored_value = None
+        self._restored_attributes = {}
         
         # Device info for grouping
         self._attr_device_info = {
@@ -2161,38 +2163,82 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
             "model": "Fuel Watcher Car Advanced Manager",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        # Restore last state
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            self._restored_value = last_state.state
+            self._restored_attributes = dict(last_state.attributes)
+            _LOGGER.info(
+                "Restored %s with value %s from previous state",
+                self.entity_id,
+                self._restored_value,
+            )
+
     @property
     def native_value(self) -> str | None:
         """Return the name of cheapest station."""
-        if self.coordinator.data is None:
-            return None
-        station = self.coordinator.data.get("nearest_station", {})
-        return station.get("name")
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            station = self.coordinator.data.get("nearest_station", {})
+            value = station.get("name")
+            if value is not None:
+                return value
+        
+        # Fall back to restored value if coordinator data not yet available
+        return self._restored_value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
-        if self.coordinator.data is None:
-            return {}
-        station = self.coordinator.data.get("nearest_station", {})
-        attributes = {
-            ATTR_STATION_ADDRESS: station.get("address"),
-            ATTR_DISTANCE: station.get("distance"),
-            ATTR_PRICE: station.get("price"),
-        }
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            station = self.coordinator.data.get("nearest_station", {})
+            attributes = {
+                ATTR_STATION_ADDRESS: station.get("address"),
+                ATTR_DISTANCE: station.get("distance"),
+                ATTR_PRICE: station.get("price"),
+            }
+            
+            # Add timestamp of last successful station fetch and check staleness
+            last_station_timestamp = self.coordinator.data.get("last_station_timestamp")
+            if last_station_timestamp:
+                attributes["last_update_timestamp"] = last_station_timestamp
+                
+                # Check if data is stale (> 1 hour old)
+                try:
+                    from homeassistant.util import dt as dt_util
+                    if isinstance(last_station_timestamp, str):
+                        last_update = dt_util.parse_datetime(last_station_timestamp)
+                    else:
+                        last_update = last_station_timestamp
+                    
+                    if last_update:
+                        age = dt_util.now() - last_update
+                        if age > timedelta(hours=1):
+                            attributes["data_staleness_warning"] = f"Station data is {age.total_seconds() / 3600:.1f} hours old"
+                except Exception as err:
+                    _LOGGER.debug("Could not calculate data age: %s", err)
+            
+            # Add navigation links if station has coordinates
+            lat = station.get("latitude")
+            lon = station.get("longitude")
+            if lat and lon:
+                attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+                attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
+                attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+            
+            return attributes
         
-        # Add timestamp of last successful station fetch
-        last_station_timestamp = self.coordinator.data.get("last_station_timestamp")
-        if last_station_timestamp:
-            attributes["last_update_timestamp"] = last_station_timestamp
+        # Fall back to restored attributes if coordinator data not yet available
+        attributes = self._restored_attributes.copy() if self._restored_attributes else {}
         
-        # Add navigation links if station has coordinates
-        lat = station.get("latitude")
-        lon = station.get("longitude")
-        if lat and lon:
-            attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
-            attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
-            attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+        # Mark as restored state
+        if self._restored_value is not None:
+            attributes["data_source"] = "restored_from_previous_state"
         
         return attributes
 
