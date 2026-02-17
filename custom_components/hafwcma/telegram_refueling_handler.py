@@ -70,6 +70,16 @@ class TelegramRefuelingHandler:
         self._remove_listeners: list = []
         self._pending_refuelings: dict[int, dict] = {}  # refuel_id -> context data
 
+    async def _trigger_coordinator_refresh(self) -> None:
+        """Trigger coordinator refresh to update sensors with new data.
+        
+        This helper method is called after updating refueling records to ensure
+        that sensor attributes reflect the latest data immediately.
+        """
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+
     async def async_setup(self) -> bool:
         """Set up the Telegram refueling handler.
         
@@ -831,9 +841,7 @@ class TelegramRefuelingHandler:
         )
         
         # Trigger coordinator refresh to update sensors with new data
-        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {}).get("coordinator")
-        if coordinator:
-            await coordinator.async_request_refresh()
+        await self._trigger_coordinator_refresh()
         
         # Fire event for test button to catch
         self.hass.bus.async_fire(
@@ -928,9 +936,7 @@ class TelegramRefuelingHandler:
             )
             
             # Trigger coordinator refresh to update sensors with new data
-            coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {}).get("coordinator")
-            if coordinator:
-                await coordinator.async_request_refresh()
+            await self._trigger_coordinator_refresh()
             
             # Fire event for test button to catch
             self.hass.bus.async_fire(
@@ -1050,9 +1056,7 @@ class TelegramRefuelingHandler:
         )
         
         # Trigger coordinator refresh to update sensors with new data
-        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {}).get("coordinator")
-        if coordinator:
-            await coordinator.async_request_refresh()
+        await self._trigger_coordinator_refresh()
         
         # Fire event for test button to catch
         self.hass.bus.async_fire(
@@ -1124,9 +1128,7 @@ class TelegramRefuelingHandler:
         )
         
         # Trigger coordinator refresh to update sensors with new data
-        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {}).get("coordinator")
-        if coordinator:
-            await coordinator.async_request_refresh()
+        await self._trigger_coordinator_refresh()
         
         # Fire event for test button to catch
         self.hass.bus.async_fire(

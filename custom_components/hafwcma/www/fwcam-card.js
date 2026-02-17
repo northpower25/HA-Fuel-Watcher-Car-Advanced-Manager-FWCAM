@@ -347,8 +347,7 @@ class FWCAMCard extends HTMLElement {
     try {
       const refuelings = await this.fetchAllRefuelings();
       this._allRefuelings = refuelings;
-      // Also update _recentEvents to include the latest data from all refuelings
-      // This ensures edit dialog has fresh data even before full async fetch completes
+      // Also update _recentEvents with the latest data for immediate use by edit dialog
       this._recentEvents = refuelings.slice(0, 10);
       this._allRefuelingsFetched = true;
       console.log(`[FWCAM Card] Fetched ${refuelings.length} refuelings asynchronously`);

@@ -586,10 +586,11 @@ async def get_last_fuel_type(hass: HomeAssistant, entry: ConfigEntry) -> str | N
     data = await load_data(hass, entry)
     refueling_log = data.get("refueling_log", [])
     
-    # Sort refuelings by timestamp (newest first) and find the last non-simulated one with fuel_type
+    # Filter out refuelings without timestamps and sort by timestamp (newest first)
+    refuelings_with_timestamps = [r for r in refueling_log if r.get("timestamp")]
     sorted_log = sorted(
-        refueling_log,
-        key=lambda x: x.get("timestamp", ""),
+        refuelings_with_timestamps,
+        key=lambda x: x.get("timestamp"),
         reverse=True
     )
     
