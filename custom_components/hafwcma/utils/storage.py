@@ -38,6 +38,13 @@ ODOMETER_CHANGE_THRESHOLD_KM = 0.1  # Minimum change to record new observation
 DUPLICATE_EVENT_THRESHOLD_SECONDS = 60  # Time gap to warn about possible duplicates
 MAX_REASONABLE_DISTANCE_KM = 2000  # Max km between refuelings before warning
 
+# Refueling event validation thresholds
+CLOCK_SKEW_TOLERANCE_HOURS = 1  # Allow events up to 1 hour in future for clock skew
+MAX_REALISTIC_FUEL_AMOUNT_L = 200  # Maximum realistic fuel amount in liters
+MAX_REALISTIC_SPEED_KMH = 200  # Maximum realistic average speed between events
+MAX_DISTANCE_PER_DAY_KM = 5000  # Maximum realistic distance in a single day
+VEHICLE_ODOMETER_TOLERANCE_KM = 1000  # Tolerance for odometer vs current vehicle value
+
 
 def _get_store(hass: HomeAssistant, entry: ConfigEntry) -> Store:
     """Return a Store instance for this config entry.
@@ -385,6 +392,8 @@ async def add_refuel_event(
         # Data quality indicators for filtering and manual correction
         "data_quality": event_data.get("data_quality", "manual"),  # manual, auto_detected, historical_import
         "confidence": event_data.get("confidence", 1.0),  # 0.0-1.0, higher is better
+        "excluded_from_calculation": event_data.get("excluded_from_calculation", False),  # Exclude test/invalid events
+        "exclusion_reason": event_data.get("exclusion_reason"),  # Why event was excluded (optional)
         # Telegram response tracking for bidirectional communication
         "telegram_notification_sent": event_data.get("telegram_notification_sent", False),
         "telegram_notification_timestamp": event_data.get("telegram_notification_timestamp"),
@@ -503,6 +512,7 @@ async def update_refueling_record(
                 "timestamp", "odometer_km", "station_name", "station_address",
                 "liters_refueled", "price_per_liter", "total_cost",
                 "latitude", "longitude", "fuel_type", "data_quality", "confidence",
+                "excluded_from_calculation", "exclusion_reason",
                 # Telegram response tracking fields
                 "telegram_notification_sent", "telegram_notification_timestamp",
                 "telegram_response_received", "telegram_response_timestamp",
@@ -768,6 +778,215 @@ async def set_last_error(hass: HomeAssistant, entry: ConfigEntry, error: str) ->
 # Consumption History Calculations
 # ---------------------------------------------------------------------------
 
+async def validate_refueling_event(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    event: dict[str, Any],
+    vehicle_odometer: float | None = None,
+) -> tuple[bool, str | None]:
+    """Validate a refueling event for logical consistency.
+    
+    Checks if a refueling event is valid based on:
+    - Odometer value vs other events
+    - Timestamp vs other events
+    - Reasonable fuel amounts
+    - Data quality indicators
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        event: Refueling event to validate
+        vehicle_odometer: Current vehicle odometer (optional)
+        
+    Returns:
+        Tuple of (is_valid, reason_if_invalid)
+    """
+    from homeassistant.util import dt as dt_util
+    
+    event_id = event.get("id")
+    odometer = event.get("odometer_km")
+    timestamp_str = event.get("timestamp")
+    liters = event.get("liters_refueled")
+    station_name = event.get("station_name", "")
+    
+    # Parse timestamp
+    try:
+        if isinstance(timestamp_str, str):
+            event_time = dt_util.parse_datetime(timestamp_str)
+        elif isinstance(timestamp_str, datetime):
+            event_time = timestamp_str
+        else:
+            return False, "Invalid timestamp format"
+            
+        if not event_time:
+            return False, "Could not parse timestamp"
+    except Exception as e:
+        return False, f"Timestamp parsing error: {e}"
+    
+    # Check if event is from the future
+    now = dt_util.now()
+    if event_time > now:
+        time_diff = (event_time - now).total_seconds() / 3600  # hours
+        if time_diff > CLOCK_SKEW_TOLERANCE_HOURS:
+            return False, f"Event is {time_diff:.1f} hours in the future"
+    
+    # Check for test indicators in station name
+    test_indicators = ["test", "api test", "demo", "example", "xxxx", "1111", "9999"]
+    station_lower = station_name.lower()
+    for indicator in test_indicators:
+        if indicator in station_lower:
+            return False, f"Station name contains test indicator: '{indicator}'"
+    
+    # Check for unrealistic fuel amounts
+    if liters is not None:
+        if liters <= 0:
+            return False, "Fuel amount must be positive"
+        if liters > MAX_REALISTIC_FUEL_AMOUNT_L:
+            return False, f"Fuel amount {liters}L exceeds realistic maximum ({MAX_REALISTIC_FUEL_AMOUNT_L}L)"
+    
+    # Check odometer value if available
+    if odometer is not None:
+        if odometer <= 0:
+            return False, "Odometer must be positive"
+        
+        # Check against current vehicle odometer if provided
+        if vehicle_odometer is not None and odometer > vehicle_odometer + VEHICLE_ODOMETER_TOLERANCE_KM:
+            diff = odometer - vehicle_odometer
+            return False, f"Odometer {odometer} km is {diff} km higher than current vehicle odometer"
+        
+        # Check against other events for logical ordering
+        data = await load_data(hass, entry)
+        refueling_log = data.get("refueling_log", [])
+        
+        for other_event in refueling_log:
+            other_id = other_event.get("id")
+            if other_id == event_id:
+                continue  # Skip self
+            
+            if other_event.get("excluded_from_calculation", False):
+                continue  # Skip already excluded events
+            
+            other_odometer = other_event.get("odometer_km")
+            other_timestamp_str = other_event.get("timestamp")
+            
+            if other_odometer is None or other_timestamp_str is None:
+                continue
+            
+            try:
+                if isinstance(other_timestamp_str, str):
+                    other_time = dt_util.parse_datetime(other_timestamp_str)
+                elif isinstance(other_timestamp_str, datetime):
+                    other_time = other_timestamp_str
+                else:
+                    continue
+                    
+                if not other_time:
+                    continue
+                    
+                # Ensure timezone-aware for comparison
+                if event_time.tzinfo is None:
+                    event_time = dt_util.as_local(event_time)
+                if other_time.tzinfo is None:
+                    other_time = dt_util.as_local(other_time)
+                
+                # Check for odometer going backwards in time
+                if event_time > other_time and odometer < other_odometer:
+                    km_diff = other_odometer - odometer
+                    time_diff_hours = (event_time - other_time).total_seconds() / 3600
+                    return False, f"Odometer went backwards by {km_diff} km vs event #{other_id} ({time_diff_hours:.1f}h ago)"
+                
+                # Check for unrealistic odometer jump
+                if event_time > other_time:
+                    km_diff = odometer - other_odometer
+                    time_diff_hours = (event_time - other_time).total_seconds() / 3600
+                    if time_diff_hours > 0:
+                        km_per_hour = km_diff / time_diff_hours
+                        # Check for unrealistic average speed
+                        if km_per_hour > MAX_REALISTIC_SPEED_KMH:
+                            return False, f"Unrealistic speed: {km_per_hour:.0f} km/h average vs event #{other_id}"
+                        # Check for unrealistic distance in short time
+                        if time_diff_hours < 24 and km_diff > MAX_DISTANCE_PER_DAY_KM:
+                            return False, f"Unrealistic distance: {km_diff} km in {time_diff_hours:.1f}h vs event #{other_id}"
+                            
+            except Exception:
+                continue
+    
+    return True, None
+
+
+async def auto_validate_refueling_events(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    """Automatically validate all refueling events and mark suspicious ones.
+    
+    Scans all refueling events and marks those that fail validation as excluded
+    from calculation.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Dictionary with validation results:
+        {
+            "total_events": int,
+            "validated": int,
+            "newly_excluded": int,
+            "already_excluded": int,
+            "excluded_events": [list of excluded event IDs],
+        }
+    """
+    data = await load_data(hass, entry)
+    refueling_log = data.get("refueling_log", [])
+    
+    total_events = len(refueling_log)
+    newly_excluded = 0
+    already_excluded = 0
+    excluded_event_ids = []
+    
+    for event in refueling_log:
+        event_id = event.get("id")
+        
+        # Skip if already excluded
+        if event.get("excluded_from_calculation", False):
+            already_excluded += 1
+            excluded_event_ids.append(event_id)
+            continue
+        
+        # Validate event
+        is_valid, reason = await validate_refueling_event(hass, entry, event)
+        
+        if not is_valid:
+            # Mark event as excluded
+            event["excluded_from_calculation"] = True
+            event["exclusion_reason"] = f"Auto-validation: {reason}"
+            newly_excluded += 1
+            excluded_event_ids.append(event_id)
+            _LOGGER.warning(
+                "Refueling event #%s automatically excluded from calculations: %s",
+                event_id, reason
+            )
+    
+    if newly_excluded > 0:
+        await save_data(hass, entry, data)
+    
+    validated = total_events - already_excluded
+    
+    _LOGGER.info(
+        "Auto-validation complete: %d events validated, %d newly excluded, %d already excluded",
+        validated, newly_excluded, already_excluded
+    )
+    
+    return {
+        "total_events": total_events,
+        "validated": validated,
+        "newly_excluded": newly_excluded,
+        "already_excluded": already_excluded,
+        "excluded_events": excluded_event_ids,
+    }
+
+
 async def calculate_consumption_history(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -815,7 +1034,18 @@ async def calculate_consumption_history(
     
     # Filter events within period
     relevant_events = []
+    excluded_count = 0
     for event in refueling_log:
+        # Skip events explicitly excluded from calculation (e.g., test events)
+        if event.get("excluded_from_calculation", False):
+            excluded_count += 1
+            _LOGGER.debug(
+                "Event id=%s: EXCLUDED from calculation (reason: %s)",
+                event.get("id"),
+                event.get("exclusion_reason", "manually excluded")
+            )
+            continue
+        
         timestamp_value = event.get("timestamp", "")
         event_time = None
         
@@ -906,8 +1136,8 @@ async def calculate_consumption_history(
             continue
     
     _LOGGER.debug(
-        "calculate_consumption_history(%d days): found %d/%d events in period",
-        days, len(relevant_events), len(refueling_log)
+        "calculate_consumption_history(%d days): found %d/%d events in period (%d excluded from calculation)",
+        days, len(relevant_events), len(refueling_log), excluded_count
     )
     
     if len(relevant_events) < 2:
@@ -1029,6 +1259,29 @@ async def calculate_consumption_history(
         "calculate_consumption_history(%d days): RESULT total_km=%s, total_liters=%s, avg_consumption=%s L/100km",
         days, total_km, total_liters, avg_consumption
     )
+    
+    # Validate results for suspicious data patterns
+    # This helps detect data quality issues that need user attention
+    if total_km > 0 and days > 0:
+        avg_km_per_day = total_km / days
+        # Warn if average exceeds 1000 km/day (unrealistic for normal usage)
+        if avg_km_per_day > 1000:
+            _LOGGER.warning(
+                "calculate_consumption_history(%d days): SUSPICIOUS DATA - Average %.1f km/day (total: %d km). "
+                "This suggests refueling events may have incorrect timestamps or odometer values. "
+                "Refuel count: %d. Check your refueling log for data quality issues.",
+                days, avg_km_per_day, total_km, len(relevant_events)
+            )
+            # Log the event details to help diagnose
+            _LOGGER.warning("Refueling events in this period:")
+            for i, (event_time, event) in enumerate(relevant_events):
+                _LOGGER.warning(
+                    "  Event %d: timestamp=%s, odometer=%s km, liters=%s",
+                    i + 1,
+                    event_time.isoformat(),
+                    event.get("odometer_km"),
+                    event.get("liters_refueled")
+                )
     
     # Calculate total cost from refueling events in this period
     total_cost = 0.0

@@ -56,6 +56,7 @@ async def async_setup_entry(
         ImportHistoricalDataButton(coordinator, config_entry, vehicle_name, hass),
         ImportHistoricalTripDataButton(coordinator, config_entry, vehicle_name, hass),
         RecalculateTripStatisticsButton(coordinator, config_entry, vehicle_name, hass),
+        ValidateRefuelingEventsButton(coordinator, config_entry, vehicle_name, hass),
         RefreshVehicleDataButton(coordinator, config_entry, vehicle_name, hass),
         FuelPriceRefreshButton(coordinator, config_entry, vehicle_name),
         ConsumptionPredictionButton(coordinator, config_entry, vehicle_name),
@@ -524,6 +525,93 @@ class RecalculateTripStatisticsButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with recalculation results."""
+        return self._last_result
+
+
+class ValidateRefuelingEventsButton(ButtonEntity):
+    """Button to validate refueling events and exclude suspicious ones from calculations."""
+
+    _attr_icon = "mdi:check-circle-outline"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the button.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+            hass: Home Assistant instance
+        """
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = "Validate Refueling Events"
+        self._attr_unique_id = f"{config_entry.entry_id}_validate_refueling_events"
+        self._last_result: dict[str, Any] = {}
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    async def async_press(self) -> None:
+        """Handle button press - validate all refueling events."""
+        _LOGGER.info("Manual refueling events validation triggered")
+        
+        try:
+            from .utils.storage import auto_validate_refueling_events
+            
+            # Run auto-validation
+            result = await auto_validate_refueling_events(self._hass, self._config_entry)
+            
+            self._last_result = {
+                "success": True,
+                "timestamp": dt_util.now().isoformat(),
+                "total_events": result["total_events"],
+                "validated": result["validated"],
+                "newly_excluded": result["newly_excluded"],
+                "already_excluded": result["already_excluded"],
+                "excluded_event_ids": result["excluded_events"],
+            }
+            
+            _LOGGER.info(
+                "Refueling events validation completed: %d total, %d validated, %d newly excluded, %d already excluded",
+                result["total_events"],
+                result["validated"],
+                result["newly_excluded"],
+                result["already_excluded"],
+            )
+            
+            # Force consumption prediction update to recalculate with validated data
+            if self._coordinator:
+                self._coordinator.force_consumption_prediction_update()
+                
+        except Exception as err:
+            self._last_result = {
+                "success": False,
+                "timestamp": dt_util.now().isoformat(),
+                "error": str(err),
+                "error_type": type(err).__name__,
+            }
+            _LOGGER.error("Error validating refueling events: %s", err, exc_info=True)
+        
+        # Trigger coordinator update to refresh sensors with validated data
+        if self._coordinator:
+            await self._coordinator.async_request_refresh()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with validation results."""
         return self._last_result
 
 
