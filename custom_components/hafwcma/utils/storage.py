@@ -211,6 +211,9 @@ async def add_odometer_observation(
 ) -> None:
     """Add an odometer observation to history.
     
+    Only adds the observation if the odometer value has changed from the last recorded value.
+    This prevents duplicate entries when vehicle integrations send the same odometer reading multiple times.
+    
     Args:
         hass: Home Assistant instance
         entry: Config entry
@@ -218,6 +221,22 @@ async def add_odometer_observation(
         timestamp: ISO format timestamp
     """
     data = await load_data(hass, entry)
+    
+    # Check if this is a duplicate of the last odometer value
+    # Vehicle integrations often send the same odometer value multiple times
+    # We only want to record actual changes to avoid inflated statistics
+    if data["odometer_history"]:
+        last_entry = data["odometer_history"][-1]
+        last_value = last_entry.get("value")
+        
+        # Skip if value hasn't changed
+        if last_value is not None and abs(float(last_value) - float(odometer_km)) < 0.1:
+            _LOGGER.debug(
+                "Skipping duplicate odometer observation: %.1f km (same as last value)",
+                odometer_km
+            )
+            return
+    
     data["odometer_history"].append({"ts": timestamp, "value": odometer_km})
     
     # Keep only last 1000 entries
@@ -910,6 +929,34 @@ async def calculate_consumption_history(
         days, len(relevant_events)
     )
     
+    # Validate event data for potential issues
+    for i, (event_time, event) in enumerate(relevant_events):
+        event_id = event.get("id")
+        odometer = event.get("odometer_km")
+        
+        # Check for missing odometer
+        if odometer is None:
+            _LOGGER.warning(
+                "Event id=%s (index %d): missing odometer_km - this event will be skipped in km calculations",
+                event_id, i
+            )
+        # Check for suspicious negative or zero odometer
+        elif odometer <= 0:
+            _LOGGER.warning(
+                "Event id=%s (index %d): suspicious odometer_km=%s <= 0",
+                event_id, i, odometer
+            )
+        
+        # Check for duplicate/very close timestamps (within 60 seconds)
+        if i > 0:
+            prev_time = relevant_events[i-1][0]
+            time_diff_seconds = abs((event_time - prev_time).total_seconds())
+            if time_diff_seconds < 60:
+                _LOGGER.warning(
+                    "Events id=%s and id=%s: very close timestamps (%.1f seconds apart) - possible duplicate refueling events",
+                    relevant_events[i-1][1].get("id"), event_id, time_diff_seconds
+                )
+    
     # Calculate total distance and fuel consumed
     # Logic: Fuel from refueling event i is consumed between event i and event i+1
     total_km = 0
@@ -934,6 +981,17 @@ async def calculate_consumption_history(
         if (curr_odometer is not None and next_odometer is not None 
             and liters_refueled is not None):
             km_driven = next_odometer - curr_odometer
+            
+            # Validate km_driven for unreasonable values
+            # Warn if a single segment shows > 2000 km (likely data entry error)
+            if km_driven > 2000:
+                _LOGGER.warning(
+                    "Pair [%d->%d]: SUSPICIOUS km_driven=%s km (odometer: %s -> %s). "
+                    "This seems unreasonably high - check for incorrect odometer values in refueling events!",
+                    curr_event.get("id"), next_event.get("id"),
+                    km_driven, curr_odometer, next_odometer
+                )
+            
             # Only count if positive distance and fuel was actually consumed
             if km_driven > 0 and liters_refueled > 0:
                 total_km += km_driven
