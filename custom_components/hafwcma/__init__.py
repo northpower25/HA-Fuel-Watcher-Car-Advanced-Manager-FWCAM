@@ -742,7 +742,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         functionality. This is useful for testing the bidirectional data
         collection workflow without actually refueling.
         """
-        from .utils.storage import add_refuel_event
+        from .utils.storage import add_refuel_event, get_last_fuel_type
         from datetime import datetime
         import random
         
@@ -754,6 +754,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             _LOGGER.error("Config entry %s not found", entry_id)
             return
         
+        # Get last used fuel type, or default to None to test fuel type suggestion
+        last_fuel_type = await get_last_fuel_type(hass, entry)
+        
         # Create a simulated refueling with some data missing
         timestamp = datetime.now().isoformat()
         
@@ -762,13 +765,13 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             event_data = {
                 "timestamp": timestamp,
                 "liters_refueled": round(random.uniform(30.0, 55.0), 2),
-                "fuel_type": "e10",
                 "data_quality": "simulated",
                 "confidence": 0.8,
-                # Intentionally omit: odometer_km, price_per_liter, total_cost, station_name, station_address
+                # Intentionally omit: fuel_type, odometer_km, price_per_liter, total_cost, station_name, station_address
+                # This allows testing of the last fuel type suggestion feature
             }
         else:
-            # Create with complete data
+            # Create with complete data using last fuel type or default to e10
             liters = round(random.uniform(30.0, 55.0), 2)
             price = round(random.uniform(1.50, 1.90), 3)
             event_data = {
@@ -779,7 +782,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 "total_cost": round(liters * price, 2),
                 "station_name": random.choice(["Shell", "Aral", "Esso", "Total"]),
                 "station_address": "Teststraße 123, 12345 Teststadt",
-                "fuel_type": "e10",
+                "fuel_type": last_fuel_type or "e10",
                 "data_quality": "simulated",
                 "confidence": 1.0,
             }
