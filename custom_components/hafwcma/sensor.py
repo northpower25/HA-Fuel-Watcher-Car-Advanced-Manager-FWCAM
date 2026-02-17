@@ -126,7 +126,8 @@ def check_data_staleness(timestamp: str | datetime | None, data_type: str) -> st
     """Check if data timestamp indicates stale data and return warning message.
     
     Args:
-        timestamp: ISO timestamp string or datetime object to check
+        timestamp: Datetime string (in any format supported by dt_util.parse_datetime) 
+                  or datetime object to check
         data_type: Description of the data type (e.g., "Vehicle data", "Fuel price data")
         
     Returns:
@@ -146,7 +147,7 @@ def check_data_staleness(timestamp: str | datetime | None, data_type: str) -> st
             if age > timedelta(hours=DATA_STALENESS_THRESHOLD_HOURS):
                 hours_old = age.total_seconds() / 3600
                 return f"{data_type} is {hours_old:.1f} hours old"
-    except Exception as err:
+    except (ValueError, TypeError, AttributeError) as err:
         _LOGGER.debug("Could not calculate data age for %s: %s", data_type, err)
     
     return None
