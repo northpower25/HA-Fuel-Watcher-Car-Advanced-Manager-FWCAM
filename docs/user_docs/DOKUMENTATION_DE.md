@@ -1397,7 +1397,7 @@ Dieser Sensor zeigt den Status der Fahrzeugdaten-Erfassung:
 - `trip_log_data_count` / `trip_log_sufficient` - Daten für Fahrtenbuch vorhanden?
 - `refueling_log_data_count` / `refueling_log_sufficient` - Daten für Tankbuch vorhanden?
 - `average_consumption_history_data_count` / `average_consumption_history_sufficient` - Daten für Verbrauchshistorie vorhanden?
-- `days_until_refuel_data_count` / `days_until_refuel_sufficient` - Daten für Tankvorhersage vorhanden?
+- `days_until_refuel_data_count` / `days_until_refuel_sufficient` - Daten für Reichweitenvorhersage vorhanden?
 - `tank_level_data_count` / `tank_level_sufficient` - Tankfüllstand-Sensor vorhanden?
 - `consumption_data_source` - Quelle der Verbrauchsberechnung (historical_data/ml_enhanced/fallback_values/no_vehicle_data)
 - `recommendations` - Empfehlungen zur Behebung fehlender Daten

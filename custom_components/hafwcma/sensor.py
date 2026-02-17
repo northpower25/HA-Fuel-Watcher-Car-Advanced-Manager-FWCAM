@@ -2421,7 +2421,7 @@ class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
 
     async def _get_storage_statistics(self) -> dict[str, Any]:
         """Get statistics from storage about data points."""
-        from ..utils import storage as storage_utils
+        from .utils import storage as storage_utils
         
         data = await storage_utils.load_data(self.hass, self._config_entry)
         
@@ -2521,31 +2521,30 @@ class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
         
         # Calculation sufficiency status
         # Check if enough data for each sensor type
-        vehicle_name = self._config_entry.data.get("vehicle_name", "unknown")
         
         # Trip log: needs position data
         trip_log_sufficient = vehicle_data.get("latitude") is not None
-        attributes[f"trip_log_data_count"] = 1 if trip_log_sufficient else 0
-        attributes[f"trip_log_sufficient"] = trip_log_sufficient
+        attributes["trip_log_data_count"] = 1 if trip_log_sufficient else 0
+        attributes["trip_log_sufficient"] = trip_log_sufficient
         
         # Refueling log: always available (stored events)
-        attributes[f"refueling_log_data_count"] = data_points_used
-        attributes[f"refueling_log_sufficient"] = True
+        attributes["refueling_log_data_count"] = data_points_used
+        attributes["refueling_log_sufficient"] = True
         
         # Average consumption history: needs refueling data
-        attributes[f"average_consumption_history_data_count"] = data_points_used
-        attributes[f"average_consumption_history_sufficient"] = data_points_used >= 2
+        attributes["average_consumption_history_data_count"] = data_points_used
+        attributes["average_consumption_history_sufficient"] = data_points_used >= 2
         
         # Days until refuel: needs range or tank level + consumption data
         has_vehicle_data = vehicle_data.get("range_km") is not None or vehicle_data.get("tank_level") is not None
         days_until_refuel_sufficient = has_vehicle_data and data_points_used >= data_points_required
-        attributes[f"days_until_refuel_data_count"] = data_points_used
-        attributes[f"days_until_refuel_sufficient"] = days_until_refuel_sufficient
+        attributes["days_until_refuel_data_count"] = data_points_used
+        attributes["days_until_refuel_sufficient"] = days_until_refuel_sufficient
         
         # Tank level sensor: needs tank level data
         tank_level_sufficient = vehicle_data.get("tank_level") is not None
-        attributes[f"tank_level_data_count"] = 1 if tank_level_sufficient else 0
-        attributes[f"tank_level_sufficient"] = tank_level_sufficient
+        attributes["tank_level_data_count"] = 1 if tank_level_sufficient else 0
+        attributes["tank_level_sufficient"] = tank_level_sufficient
         
         # Add data source from consumption prediction
         data_source = consumption_prediction.get("data_source", "unknown")
