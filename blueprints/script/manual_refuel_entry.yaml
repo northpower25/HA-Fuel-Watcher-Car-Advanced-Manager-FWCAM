@@ -1,0 +1,112 @@
+blueprint:
+  name: FWCAM - Manueller Tankvorgang-Eintrag
+  description: >
+    Script zum manuellen Hinzufügen eines Tankvorgangs mit allen Details.
+    
+    Nutzt den haFWCMA Service um einen vollständigen Tankvorgang zu protokollieren.
+  domain: script
+  author: northpower25
+  homeassistant:
+    min_version: "2023.9.0"
+  source_url: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/blueprints/script/manual_refuel_entry.yaml
+  
+  input:
+    config_entry_id:
+      name: Config Entry ID
+      description: Die Config Entry ID Ihrer haFWCMA Integration (siehe Developer Tools)
+      selector:
+        text: {}
+        
+    liters:
+      name: Liter getankt
+      description: Menge des getankten Kraftstoffs
+      selector:
+        number:
+          min: 1
+          max: 200
+          step: 0.1
+          unit_of_measurement: "L"
+          
+    price_per_liter:
+      name: Preis pro Liter
+      description: Kraftstoffpreis pro Liter (optional)
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.001
+          unit_of_measurement: "€/L"
+          
+    odometer:
+      name: Kilometerstand
+      description: Aktueller Kilometerstand (optional)
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 1
+          unit_of_measurement: "km"
+          
+    station_name:
+      name: Tankstellen-Name
+      description: Name der Tankstelle (optional)
+      default: ""
+      selector:
+        text: {}
+        
+    fuel_type:
+      name: Kraftstofftyp
+      description: Art des Kraftstoffs (optional)
+      default: "diesel"
+      selector:
+        select:
+          options:
+            - diesel
+            - e5
+            - e10
+            - super_plus
+
+variables:
+  entry_id: !input config_entry_id
+  refuel_liters: !input liters
+  price: !input price_per_liter
+  odo: !input odometer
+  station: !input station_name
+  fuel: !input fuel_type
+
+sequence:
+  - action: hafwcma.add_refuel_event
+    data:
+      config_entry_id: "{{ entry_id }}"
+      timestamp: "{{ now().isoformat() }}"
+      liters_refueled: "{{ refuel_liters }}"
+      price_per_liter: >
+        {% if price > 0 %}{{ price }}{% endif %}
+      odometer_km: >
+        {% if odo > 0 %}{{ odo }}{% endif %}
+      station_name: >
+        {% if station|length > 0 %}{{ station }}{% endif %}
+      fuel_type: "{{ fuel }}"
+      data_quality: "manual"
+      confidence: 1.0
+      
+  - action: persistent_notification.create
+    data:
+      title: "✅ Tankvorgang gespeichert"
+      message: >
+        Tankvorgang erfolgreich hinzugefügt:
+        
+        • {{ refuel_liters }}L {{ fuel }}
+        {% if price > 0 %}
+        • {{ price }}€/L (Gesamt: {{ (refuel_liters * price) | round(2) }}€)
+        {% endif %}
+        {% if odo > 0 %}
+        • Kilometerstand: {{ odo }}km
+        {% endif %}
+        {% if station|length > 0 %}
+        • Tankstelle: {{ station }}
+        {% endif %}
+
+mode: single

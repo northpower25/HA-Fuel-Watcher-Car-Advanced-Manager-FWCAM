@@ -1,0 +1,127 @@
+blueprint:
+  name: FWCAM - Niedriger Tankstand Alarm
+  description: >
+    Sendet eine Benachrichtigung wenn der Tankstand unter einen definierten Schwellwert fällt.
+    
+    Diese Automation nutzt die haFWCMA Integration um rechtzeitig vor einem leeren Tank zu warnen.
+  domain: automation
+  author: northpower25
+  homeassistant:
+    min_version: "2023.9.0"
+  source_url: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/blueprints/automation/low_fuel_alert.yaml
+  
+  input:
+    refueling_recommendation_sensor:
+      name: Tankempfehlungs-Sensor
+      description: Der Sensor der die Tankempfehlung von haFWCMA enthält
+      selector:
+        entity:
+          filter:
+            - integration: hafwcma
+              domain: sensor
+              
+    urgency_level:
+      name: Dringlichkeitsstufe
+      description: Ab welcher Dringlichkeitsstufe soll alarmiert werden?
+      default: high
+      selector:
+        select:
+          options:
+            - label: Kritisch (unter 10%)
+              value: critical
+            - label: Hoch (unter 20%)
+              value: high
+            - label: Mittel (unter 35%)
+              value: medium
+            
+    notify_service:
+      name: Benachrichtigungsdienst
+      description: Der zu verwendende Benachrichtigungsdienst (z.B. notify.mobile_app_iphone)
+      selector:
+        action: {}
+        
+    cooldown_hours:
+      name: Cooldown Zeit (Stunden)
+      description: Wartezeit zwischen Benachrichtigungen um Spam zu vermeiden
+      default: 6
+      selector:
+        number:
+          min: 1
+          max: 24
+          step: 1
+          unit_of_measurement: "h"
+
+variables:
+  sensor: !input refueling_recommendation_sensor
+  level: !input urgency_level
+  cooldown: !input cooldown_hours
+
+trigger:
+  - platform: state
+    entity_id: !input refueling_recommendation_sensor
+    to: !input urgency_level
+    
+condition:
+  - condition: template
+    value_template: >
+      {% set last_triggered = state_attr(this.entity_id, 'last_triggered') %}
+      {{ last_triggered is none or 
+         (now() - last_triggered).total_seconds() > (cooldown | int * 3600) }}
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ states(sensor) == 'critical' }}"
+        sequence:
+          - action: !input notify_service
+            data:
+              title: "🚨 KRITISCH: Tank fast leer!"
+              message: >
+                {{ state_attr(sensor, 'vehicle_name') | default('Ihr Fahrzeug') }} hat nur noch
+                {{ state_attr(sensor, 'tank_level_liters') | round(1) }}L 
+                ({{ state_attr(sensor, 'tank_level_percent') | round(0) }}%).
+                
+                Reichweite: ca. {{ state_attr(sensor, 'estimated_range_km') | round(0) }}km
+                
+                ⛽ Bitte SOFORT tanken!
+              data:
+                tag: fwcam_fuel_alert
+                group: fwcam
+                importance: high
+                
+      - conditions:
+          - condition: template
+            value_template: "{{ states(sensor) == 'high' }}"
+        sequence:
+          - action: !input notify_service
+            data:
+              title: "⚠️ Tankstand niedrig"
+              message: >
+                {{ state_attr(sensor, 'vehicle_name') | default('Ihr Fahrzeug') }} sollte bald getankt werden.
+                
+                Aktuell: {{ state_attr(sensor, 'tank_level_liters') | round(1) }}L 
+                ({{ state_attr(sensor, 'tank_level_percent') | round(0) }}%)
+                Reichweite: ca. {{ state_attr(sensor, 'estimated_range_km') | round(0) }}km
+                
+                {{ state_attr(sensor, 'recommended_action') | default('Tanken Sie heute.') }}
+              data:
+                tag: fwcam_fuel_alert
+                group: fwcam
+                
+    default:
+      - action: !input notify_service
+        data:
+          title: "💡 Tankempfehlung"
+          message: >
+            {{ state_attr(sensor, 'vehicle_name') | default('Ihr Fahrzeug') }}: 
+            {{ state_attr(sensor, 'recommended_action') | default('Tanken empfohlen in 1-2 Tagen.') }}
+            
+            Tank: {{ state_attr(sensor, 'tank_level_percent') | round(0) }}%
+            Reichweite: {{ state_attr(sensor, 'estimated_range_km') | round(0) }}km
+          data:
+            tag: fwcam_fuel_alert
+            group: fwcam
+
+mode: single
+max_exceeded: silent

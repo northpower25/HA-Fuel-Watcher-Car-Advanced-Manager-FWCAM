@@ -96,6 +96,26 @@ entity: sensor.my_car_refueling_log
 - Multiple sensor entities
 - Event-based automations
 - HACS compatible
+- **🆕 Ready-to-use Blueprints** for automations and scripts
+
+### 🎨 Blueprints & Automations
+
+**Pre-built blueprints available for easy setup:**
+
+- 🔔 **Low Fuel Alert** - Get notified when tank is low
+- 💰 **Price Drop Notification** - Alert when fuel price drops
+- ⏰ **Smart Refueling Reminder** - Daily reminder based on patterns
+- 🚗 **Automatic Trip Logging** - Log trips with notifications
+- 📍 **Geolocation Proximity** - Alert near cheap stations (planned)
+- ✍️ **Manual Refuel Entry** - Script for quick logging
+- 🛣️ **Trip Completion** - Edit and categorize trips
+- 🔍 **Fuel Price Query** - Get current prices on demand
+
+📖 **[Blueprint Documentation](BLUEPRINTS_DE.md)** | **[Browse Blueprints](blueprints/)**
+
+**Quick Import:** Click the blueprint links in the documentation to import directly into Home Assistant!
+
+---
 
 ## Installation
 

@@ -1,0 +1,93 @@
+blueprint:
+  name: FWCAM - Fahrtabschluss-Handler
+  description: >
+    Script zum Bearbeiten und Kategorisieren einer beendeten Fahrt.
+    
+    Nutzt den haFWCMA Service um Fahrtdetails nachträglich zu aktualisieren.
+  domain: script
+  author: northpower25
+  homeassistant:
+    min_version: "2023.9.0"
+  source_url: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/blueprints/script/trip_completion.yaml
+  
+  input:
+    config_entry_id:
+      name: Config Entry ID
+      description: Die Config Entry ID Ihrer haFWCMA Integration
+      selector:
+        text: {}
+        
+    trip_id:
+      name: Trip ID
+      description: Die ID der zu bearbeitenden Fahrt (siehe Trip Log)
+      selector:
+        text: {}
+        
+    purpose:
+      name: Fahrtenzweck
+      description: Zweck der Fahrt
+      default: "private"
+      selector:
+        select:
+          options:
+            - label: Privat
+              value: private
+            - label: Arbeit (Pendeln)
+              value: work
+            - label: Geschäftlich
+              value: business
+            - label: Sonstiges
+              value: other
+              
+    notes:
+      name: Notizen
+      description: Zusätzliche Notizen zur Fahrt (optional)
+      default: ""
+      selector:
+        text:
+          multiline: true
+          
+    additional_costs:
+      name: Zusatzkosten
+      description: Parkgebühren, Maut, etc. (optional)
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.50
+          unit_of_measurement: "€"
+
+variables:
+  entry_id: !input config_entry_id
+  t_id: !input trip_id
+  t_purpose: !input purpose
+  t_notes: !input notes
+  extra_costs: !input additional_costs
+
+sequence:
+  - action: hafwcma.edit_trip
+    data:
+      config_entry_id: "{{ entry_id }}"
+      trip_id: "{{ t_id }}"
+      purpose: "{{ t_purpose }}"
+      notes: >
+        {% if t_notes|length > 0 %}{{ t_notes }}{% endif %}
+      additional_costs: >
+        {% if extra_costs > 0 %}{{ extra_costs }}{% endif %}
+        
+  - action: persistent_notification.create
+    data:
+      title: "✅ Fahrt aktualisiert"
+      message: >
+        Fahrt {{ t_id }} wurde aktualisiert:
+        
+        • Zweck: {{ t_purpose }}
+        {% if extra_costs > 0 %}
+        • Zusatzkosten: {{ extra_costs }}€
+        {% endif %}
+        {% if t_notes|length > 0 %}
+        • Notizen: {{ t_notes }}
+        {% endif %}
+
+mode: single

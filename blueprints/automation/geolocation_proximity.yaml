@@ -1,0 +1,76 @@
+blueprint:
+  name: FWCAM - Geolocation Näherungsalarm (Geplant)
+  description: >
+    Benachrichtigt Sie wenn Sie sich in der Nähe einer günstigen Tankstelle befinden.
+    
+    HINWEIS: Diese Funktion ist aktuell in Planung und noch nicht implementiert.
+    Siehe docs/GEOLOCATION_CONCEPT.md für Details.
+  domain: automation
+  author: northpower25
+  homeassistant:
+    min_version: "2023.9.0"
+  source_url: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/blueprints/automation/geolocation_proximity.yaml
+  
+  input:
+    # Platzhalter für zukünftige Implementation
+    proximity_sensor:
+      name: Näherungs-Sensor (Zukünftig)
+      description: Der Sensor der günstige Tankstellen in der Nähe erkennt
+      selector:
+        entity:
+          filter:
+            - integration: hafwcma
+              domain: binary_sensor
+              
+    notify_service:
+      name: Benachrichtigungsdienst
+      description: Der zu verwendende Benachrichtigungsdienst
+      selector:
+        action: {}
+        
+    max_distance:
+      name: Maximale Entfernung
+      description: Maximale Entfernung zur Tankstelle für Alarm (km)
+      default: 2
+      selector:
+        number:
+          min: 0.5
+          max: 10
+          step: 0.5
+          unit_of_measurement: "km"
+          
+    min_savings:
+      name: Mindest-Ersparnis
+      description: Minimale Ersparnis für Benachrichtigung (EUR)
+      default: 2.0
+      selector:
+        number:
+          min: 0.5
+          max: 10
+          step: 0.5
+          unit_of_measurement: "€"
+
+trigger:
+  - platform: state
+    entity_id: !input proximity_sensor
+    to: "on"
+
+condition:
+  # Zukünftige Bedingungen für Geolocation-Feature
+  - condition: template
+    value_template: "{{ false }}"  # Aktuell deaktiviert
+
+action:
+  - action: !input notify_service
+    data:
+      title: "⛽ Günstige Tankstelle in der Nähe!"
+      message: >
+        HINWEIS: Diese Funktion ist noch nicht verfügbar.
+        
+        Das Geolocation-Feature befindet sich in Planung.
+        Siehe TODO.md für Updates.
+      data:
+        tag: fwcam_geolocation
+        group: fwcam
+
+mode: single

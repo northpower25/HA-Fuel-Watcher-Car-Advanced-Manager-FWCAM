@@ -1,0 +1,116 @@
+blueprint:
+  name: FWCAM - Tankpreis Preisrückgang Benachrichtigung
+  description: >
+    Sendet eine Benachrichtigung wenn der Kraftstoffpreis unter einen definierten Schwellwert fällt.
+    
+    Nutzt die haFWCMA Preisüberwachung um günstige Tankgelegenheiten zu erkennen.
+  domain: automation
+  author: northpower25
+  homeassistant:
+    min_version: "2023.9.0"
+  source_url: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/blueprints/automation/price_drop_notification.yaml
+  
+  input:
+    fuel_price_sensor:
+      name: Kraftstoffpreis-Sensor
+      description: Der Sensor der den aktuellen Kraftstoffpreis enthält
+      selector:
+        entity:
+          filter:
+            - integration: hafwcma
+              domain: sensor
+              
+    price_threshold:
+      name: Preisschwelle
+      description: Benachrichtigen wenn Preis unter diesen Wert fällt (EUR/Liter)
+      default: 1.50
+      selector:
+        number:
+          min: 0.50
+          max: 3.00
+          step: 0.01
+          unit_of_measurement: "€/L"
+          
+    notify_service:
+      name: Benachrichtigungsdienst
+      description: Der zu verwendende Benachrichtigungsdienst
+      selector:
+        action: {}
+        
+    include_station_info:
+      name: Tankstellen-Info einbeziehen
+      description: Zeigt die günstigste Tankstelle in der Benachrichtigung
+      default: true
+      selector:
+        boolean: {}
+        
+    cooldown_hours:
+      name: Cooldown Zeit (Stunden)
+      description: Mindestwartezeit zwischen Benachrichtigungen
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 24
+          step: 1
+          unit_of_measurement: "h"
+
+variables:
+  price_sensor: !input fuel_price_sensor
+  threshold: !input price_threshold
+  include_stations: !input include_station_info
+  cooldown: !input cooldown_hours
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input fuel_price_sensor
+    below: !input price_threshold
+
+condition:
+  - condition: template
+    value_template: >
+      {% set last_triggered = state_attr(this.entity_id, 'last_triggered') %}
+      {{ last_triggered is none or 
+         (now() - last_triggered).total_seconds() > (cooldown | int * 3600) }}
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ include_stations }}"
+        sequence:
+          - action: !input notify_service
+            data:
+              title: "💰 Günstiger Kraftstoffpreis!"
+              message: >
+                Der Preis ist unter {{ threshold }}€/L gefallen!
+                
+                Aktuell: {{ states(price_sensor) }}€/L
+                Trend: {{ state_attr(price_sensor, 'trend') | default('unbekannt') }}
+                
+                {% set cheapest = 'sensor.' + price_sensor.split('.')[1].replace('_fuel_price', '_cheapest_station') %}
+                {% if states(cheapest) not in ['unknown', 'unavailable'] %}
+                🏆 Günstigste Tankstelle:
+                {{ states(cheapest) }}
+                Entfernung: {{ state_attr(cheapest, 'distance') | round(1) }}km
+                Preis: {{ state_attr(cheapest, 'prices')[state_attr(price_sensor, 'fuel_type')] }}€/L
+                {% endif %}
+              data:
+                tag: fwcam_price_alert
+                group: fwcam
+                
+    default:
+      - action: !input notify_service
+        data:
+          title: "💰 Günstiger Kraftstoffpreis!"
+          message: >
+            Der Preis ist unter {{ threshold }}€/L gefallen!
+            
+            Aktuell: {{ states(price_sensor) }}€/L
+            Trend: {{ state_attr(price_sensor, 'trend') | default('unbekannt') }}
+          data:
+            tag: fwcam_price_alert
+            group: fwcam
+
+mode: single
+max_exceeded: silent

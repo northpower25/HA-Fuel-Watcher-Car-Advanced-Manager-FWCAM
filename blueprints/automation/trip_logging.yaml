@@ -1,0 +1,134 @@
+blueprint:
+  name: FWCAM - Automatische Fahrtprotokollierung
+  description: >
+    Protokolliert automatisch Fahrten und aktualisiert Zweck und Notizen basierend auf erkannten Mustern.
+    
+    Diese Automation nutzt das Trip Tracking Feature von haFWCMA für automatische Fahrtenbuch-Einträge.
+  domain: automation
+  author: northpower25
+  homeassistant:
+    min_version: "2023.9.0"
+  source_url: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/blueprints/automation/trip_logging.yaml
+  
+  input:
+    on_trip_sensor:
+      name: Auf-Fahrt Sensor
+      description: Der binäre Sensor der anzeigt ob eine Fahrt aktiv ist
+      selector:
+        entity:
+          filter:
+            - integration: hafwcma
+              domain: binary_sensor
+              
+    current_trip_sensor:
+      name: Aktuelle-Fahrt Sensor
+      description: Der Sensor mit Details zur aktuellen Fahrt
+      selector:
+        entity:
+          filter:
+            - integration: hafwcma
+              domain: sensor
+              
+    notify_service:
+      name: Benachrichtigungsdienst (Optional)
+      description: Benachrichtigung bei Fahrtende (leer lassen zum Deaktivieren)
+      default: {}
+      selector:
+        action: {}
+        
+    auto_categorize:
+      name: Automatische Kategorisierung
+      description: Fahrtenzweck automatisch basierend auf Mustern zuweisen
+      default: true
+      selector:
+        boolean: {}
+        
+    notify_on_trip_end:
+      name: Bei Fahrtende benachrichtigen
+      description: Benachrichtigung mit Fahrtdetails nach Fahrtende
+      default: false
+      selector:
+        boolean: {}
+
+variables:
+  trip_sensor: !input on_trip_sensor
+  current_trip: !input current_trip_sensor
+  auto_cat: !input auto_categorize
+  notify_end: !input notify_on_trip_end
+
+trigger:
+  # Fahrt beendet
+  - platform: state
+    entity_id: !input on_trip_sensor
+    from: "on"
+    to: "off"
+    id: trip_ended
+    
+  # Fahrt gestartet  
+  - platform: state
+    entity_id: !input on_trip_sensor
+    from: "off"
+    to: "on"
+    id: trip_started
+
+condition: []
+
+action:
+  - choose:
+      # Fahrt beendet
+      - conditions:
+          - condition: trigger
+            id: trip_ended
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ notify_end and notify_service is defined }}"
+            then:
+              - action: !input notify_service
+                data:
+                  title: "🏁 Fahrt beendet"
+                  message: >
+                    {% set distance = state_attr(current_trip, 'distance_km') | default(0) | round(1) %}
+                    {% set duration = state_attr(current_trip, 'duration_minutes') | default(0) | round(0) %}
+                    {% set consumption = state_attr(current_trip, 'fuel_consumption_l_per_100km') | default(0) | round(1) %}
+                    {% set cost = state_attr(current_trip, 'fuel_cost') | default(0) | round(2) %}
+                    {% set purpose = state_attr(current_trip, 'purpose') | default('unbekannt') %}
+                    
+                    Fahrt: {{ distance }}km in {{ duration }}min
+                    Zweck: {{ purpose }}
+                    Verbrauch: {{ consumption }}L/100km
+                    Kosten: {{ cost }}€
+                    
+                    {% if state_attr(current_trip, 'pattern_matched') %}
+                    📍 Muster erkannt: {{ state_attr(current_trip, 'pattern_name') }}
+                    {% endif %}
+                  data:
+                    tag: fwcam_trip_log
+                    group: fwcam
+                    
+      # Fahrt gestartet
+      - conditions:
+          - condition: trigger
+            id: trip_started
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ notify_service is defined }}"
+            then:
+              - action: !input notify_service
+                data:
+                  title: "🚗 Fahrt gestartet"
+                  message: >
+                    {% set start_location = state_attr(current_trip, 'start_address') | default('Unbekannt') %}
+                    
+                    Startort: {{ start_location }}
+                    
+                    {% if state_attr(current_trip, 'predicted_pattern') %}
+                    💡 Wahrscheinlich: {{ state_attr(current_trip, 'predicted_pattern') }}
+                    {% endif %}
+                  data:
+                    tag: fwcam_trip_started
+                    group: fwcam
+
+mode: queued
+max: 10

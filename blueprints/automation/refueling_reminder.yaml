@@ -1,0 +1,122 @@
+blueprint:
+  name: FWCAM - Intelligente Tankerinnerung
+  description: >
+    Erinnert Sie basierend auf Ihren Fahrmustern und Preisvorhersagen zum idealen Zeitpunkt ans Tanken.
+    
+    Diese Automation kombiniert Tankstand, Fahrmuster und Preisentwicklung für optimale Tankempfehlungen.
+  domain: automation
+  author: northpower25
+  homeassistant:
+    min_version: "2023.9.0"
+  source_url: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/blueprints/automation/refueling_reminder.yaml
+  
+  input:
+    refueling_recommendation_sensor:
+      name: Tankempfehlungs-Sensor
+      description: Der haFWCMA Tankempfehlungs-Sensor
+      selector:
+        entity:
+          filter:
+            - integration: hafwcma
+              domain: sensor
+              
+    fuel_price_sensor:
+      name: Kraftstoffpreis-Sensor
+      description: Der haFWCMA Kraftstoffpreis-Sensor
+      selector:
+        entity:
+          filter:
+            - integration: hafwcma
+              domain: sensor
+              
+    reminder_time:
+      name: Erinnerungszeit
+      description: Tageszeit für die Tankerinnerung
+      default: "18:00:00"
+      selector:
+        time: {}
+        
+    notify_service:
+      name: Benachrichtigungsdienst
+      description: Der zu verwendende Benachrichtigungsdienst
+      selector:
+        action: {}
+        
+    min_urgency:
+      name: Minimale Dringlichkeit
+      description: Erinnern nur bei dieser oder höherer Dringlichkeit
+      default: medium
+      selector:
+        select:
+          options:
+            - label: Mittel oder höher
+              value: medium
+            - label: Hoch oder höher
+              value: high
+            - label: Nur kritisch
+              value: critical
+
+variables:
+  recommendation_sensor: !input refueling_recommendation_sensor
+  price_sensor: !input fuel_price_sensor
+  min_urgency_level: !input min_urgency
+
+trigger:
+  - platform: time
+    at: !input reminder_time
+
+condition:
+  - condition: template
+    value_template: >
+      {% set urgency = states(recommendation_sensor) %}
+      {% set min_level = min_urgency_level %}
+      {% set urgency_map = {'low': 0, 'medium': 1, 'high': 2, 'critical': 3} %}
+      {{ urgency_map.get(urgency, 0) >= urgency_map.get(min_level, 1) }}
+
+action:
+  - action: !input notify_service
+    data:
+      title: "⛽ Tankerinnerung"
+      message: >
+        {% set urgency = states(recommendation_sensor) %}
+        {% set tank_percent = state_attr(recommendation_sensor, 'tank_level_percent') | default(0) | round(0) %}
+        {% set range_km = state_attr(recommendation_sensor, 'estimated_range_km') | default(0) | round(0) %}
+        {% set days = state_attr(recommendation_sensor, 'estimated_days_until_empty') | default(0) | round(1) %}
+        {% set price = states(price_sensor) %}
+        {% set trend = state_attr(price_sensor, 'trend') | default('unbekannt') %}
+        {% set price_status = state_attr(recommendation_sensor, 'current_price_status') | default('neutral') %}
+        
+        {% if urgency == 'critical' %}
+        🚨 DRINGEND: Tank fast leer!
+        {% elif urgency == 'high' %}
+        ⚠️ Bitte heute noch tanken!
+        {% else %}
+        💡 Tanken in den nächsten Tagen empfohlen
+        {% endif %}
+        
+        📊 Status:
+        • Tank: {{ tank_percent }}%
+        • Reichweite: ca. {{ range_km }}km
+        • Tage bis leer: {{ days }}
+        
+        💰 Preis-Info:
+        • Aktuell: {{ price }}€/L
+        • Trend: {{ trend }}
+        {% if price_status == 'favorable' %}
+        • ✅ Günstiger Preis - jetzt tanken!
+        {% elif price_status == 'high' %}
+        • ⏳ Hoher Preis - wenn möglich warten
+        {% endif %}
+        
+        {{ state_attr(recommendation_sensor, 'recommended_action') | default('Tanken Sie bald.') }}
+      data:
+        tag: fwcam_refuel_reminder
+        group: fwcam
+        importance: >
+          {% if states(recommendation_sensor) in ['critical', 'high'] %}
+          high
+          {% else %}
+          default
+          {% endif %}
+
+mode: single

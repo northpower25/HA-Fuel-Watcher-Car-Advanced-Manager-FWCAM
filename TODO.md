@@ -468,7 +468,16 @@ hafwcma_diagnostics_20260214_142500.zip
 - [ ] **FUTURE: Add bulk import/export of refueling data**
 
 ### Automations
-- [ ] Create blueprint automations for common scenarios
+- [x] **NEW: Create blueprint automations for common scenarios** (blueprints/automation/)
+  - [x] Low fuel alert
+  - [x] Price drop notification
+  - [x] Smart refueling reminder
+  - [x] Trip logging automation
+  - [x] Geolocation proximity (placeholder for future feature)
+- [x] **NEW: Create script blueprints** (blueprints/script/)
+  - [x] Manual refuel entry
+  - [x] Trip completion handler
+  - [x] Fuel price query
 - [ ] Add automation suggestions based on usage patterns
 - [ ] Implement smart scheduling for notifications
 
@@ -507,13 +516,28 @@ hafwcma_diagnostics_20260214_142500.zip
 
 ## Documentation
 
-- [ ] Create detailed API documentation
-- [ ] Add troubleshooting guide
+- [x] **NEW: Comprehensive German Documentation** (DOKUMENTATION_DE.md)
+  - [x] Grundlagen (Fundamentals)
+  - [x] Setup und Konfiguration
+  - [x] Fahrzeug-Integrationen
+  - [x] Tankpreis-API Anbindung
+  - [x] Telegram-Integration
+  - [x] Funktionsübersicht (Trip, Refueling, Price, Statistics)
+  - [x] Erweiterte Funktionen
+  - [x] Fehlerbehebung
+- [x] **NEW: Blueprint Library** (blueprints/)
+  - [x] 5 Automation Blueprints (alerts, notifications, logging)
+  - [x] 3 Script Blueprints (manual entry, queries)
+  - [x] Complete Blueprint Documentation (BLUEPRINTS_DE.md)
+  - [x] Import-ready URLs for Home Assistant
+- [x] Create detailed API documentation (docs/API.md exists)
+- [x] Add troubleshooting guide (docs/TROUBLESHOOTING.md, TELEGRAM_TROUBLESHOOTING_DE.md)
 - [ ] Write FAQ section
 - [ ] Create video tutorials
-- [ ] Add code examples for advanced usage
-- [ ] Document all configuration options
+- [x] Add code examples for advanced usage (in blueprints and docs)
+- [x] Document all configuration options (DOKUMENTATION_DE.md)
 - [ ] Create developer guide for contributions
+- [ ] Create English version of DOKUMENTATION_DE.md
 
 ## Community
 

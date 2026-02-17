@@ -1,0 +1,116 @@
+blueprint:
+  name: FWCAM - Tankpreis-Abfrage
+  description: >
+    Script zum Abrufen aktueller Tankstellenpreise und Senden einer Zusammenfassung.
+    
+    Liest die haFWCMA Sensoren aus und erstellt eine formatierte Preisübersicht.
+  domain: script
+  author: northpower25
+  homeassistant:
+    min_version: "2023.9.0"
+  source_url: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/blueprints/script/fuel_price_query.yaml
+  
+  input:
+    fuel_price_sensor:
+      name: Kraftstoffpreis-Sensor
+      description: Der haFWCMA Kraftstoffpreis-Sensor
+      selector:
+        entity:
+          filter:
+            - integration: hafwcma
+              domain: sensor
+              
+    nearest_station_sensor:
+      name: Nächste-Tankstelle Sensor
+      description: Der haFWCMA Sensor für die nächste Tankstelle
+      selector:
+        entity:
+          filter:
+            - integration: hafwcma
+              domain: sensor
+              
+    cheapest_station_sensor:
+      name: Günstigste-Tankstelle Sensor
+      description: Der haFWCMA Sensor für die günstigste Tankstelle
+      selector:
+        entity:
+          filter:
+            - integration: hafwcma
+              domain: sensor
+              
+    notify_service:
+      name: Benachrichtigungsdienst
+      description: Dienst für Preisübersicht (leer = persistent notification)
+      default: {}
+      selector:
+        action: {}
+        
+    include_navigation:
+      name: Navigation-Links einbeziehen
+      description: Google Maps Links in Nachricht einbeziehen
+      default: true
+      selector:
+        boolean: {}
+
+variables:
+  price_sensor: !input fuel_price_sensor
+  nearest: !input nearest_station_sensor
+  cheapest: !input cheapest_station_sensor
+  include_nav: !input include_navigation
+
+sequence:
+  - if:
+      - condition: template
+        value_template: "{{ notify_service is defined and notify_service|length > 0 }}"
+    then:
+      - action: !input notify_service
+        data:
+          title: "⛽ Aktuelle Tankstellenpreise"
+          message: >
+            {% set price = states(price_sensor) %}
+            {% set trend = state_attr(price_sensor, 'trend') | default('unbekannt') %}
+            {% set fuel_type = state_attr(price_sensor, 'fuel_type') | default('diesel') %}
+            
+            💰 Aktueller Preis: {{ price }}€/L ({{ fuel_type }})
+            📈 Trend: {{ trend }}
+            
+            📍 Nächste Tankstelle:
+            {{ states(nearest) }}
+            Entfernung: {{ state_attr(nearest, 'distance') | round(1) }}km
+            Preis: {{ state_attr(nearest, 'prices')[fuel_type] | default(price) }}€/L
+            {% if include_nav %}
+            🗺️ {{ state_attr(nearest, 'navigation_links')['google_maps'] }}
+            {% endif %}
+            
+            💎 Günstigste Tankstelle:
+            {{ states(cheapest) }}
+            Entfernung: {{ state_attr(cheapest, 'distance') | round(1) }}km
+            Preis: {{ state_attr(cheapest, 'prices')[fuel_type] | default(price) }}€/L
+            {% if state_attr(cheapest, 'savings_vs_nearest') %}
+            💰 Ersparnis: {{ state_attr(cheapest, 'savings_vs_nearest') }}€/L
+            ({{ state_attr(cheapest, 'extra_distance') | round(1) }}km Mehrweg)
+            {% endif %}
+            {% if include_nav %}
+            🗺️ {{ state_attr(cheapest, 'navigation_links')['google_maps'] }}
+            {% endif %}
+          data:
+            tag: fwcam_price_query
+            group: fwcam
+    else:
+      - action: persistent_notification.create
+        data:
+          title: "⛽ Aktuelle Tankstellenpreise"
+          message: >
+            {% set price = states(price_sensor) %}
+            {% set trend = state_attr(price_sensor, 'trend') | default('unbekannt') %}
+            {% set fuel_type = state_attr(price_sensor, 'fuel_type') | default('diesel') %}
+            
+            💰 Aktueller Preis: {{ price }}€/L ({{ fuel_type }})
+            📈 Trend: {{ trend }}
+            
+            📍 Nächste: {{ states(nearest) }} ({{ state_attr(nearest, 'distance') | round(1) }}km)
+            💎 Günstigste: {{ states(cheapest) }} ({{ state_attr(cheapest, 'distance') | round(1) }}km)
+            
+            Ersparnis: {{ state_attr(cheapest, 'savings_vs_nearest') | default(0) }}€/L
+
+mode: single
