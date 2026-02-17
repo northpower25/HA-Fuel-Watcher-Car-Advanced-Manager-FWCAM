@@ -23,6 +23,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_AVG_CONSUMPTION_RATE,
@@ -116,6 +117,39 @@ MAX_TANK_PERCENTAGE = 100.0
 # Constants for historical import defaults
 DEFAULT_HISTORICAL_IMPORT_TIMESTAMP = None
 DEFAULT_HISTORICAL_IMPORT_TYPE = "none"
+
+# State restoration and data staleness constants
+DATA_STALENESS_THRESHOLD_HOURS = 1  # Hours before showing staleness warning
+
+
+def check_data_staleness(timestamp: str | datetime | None, data_type: str) -> str | None:
+    """Check if data timestamp indicates stale data and return warning message.
+    
+    Args:
+        timestamp: ISO timestamp string or datetime object to check
+        data_type: Description of the data type (e.g., "Vehicle data", "Fuel price data")
+        
+    Returns:
+        Warning message if data is stale (older than threshold), None otherwise
+    """
+    if not timestamp:
+        return None
+        
+    try:
+        if isinstance(timestamp, str):
+            last_update = dt_util.parse_datetime(timestamp)
+        else:
+            last_update = timestamp
+        
+        if last_update:
+            age = dt_util.now() - last_update
+            if age > timedelta(hours=DATA_STALENESS_THRESHOLD_HOURS):
+                hours_old = age.total_seconds() / 3600
+                return f"{data_type} is {hours_old:.1f} hours old"
+    except Exception as err:
+        _LOGGER.debug("Could not calculate data age for %s: %s", data_type, err)
+    
+    return None
 
 
 async def async_setup_entry(
@@ -1769,19 +1803,9 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 attributes["last_update_timestamp"] = last_price_timestamp
                 
                 # Check if data is stale (> 1 hour old)
-                try:
-                    from homeassistant.util import dt as dt_util
-                    if isinstance(last_price_timestamp, str):
-                        last_update = dt_util.parse_datetime(last_price_timestamp)
-                    else:
-                        last_update = last_price_timestamp
-                    
-                    if last_update:
-                        age = dt_util.now() - last_update
-                        if age > timedelta(hours=1):
-                            attributes["data_staleness_warning"] = f"Fuel price data is {age.total_seconds() / 3600:.1f} hours old"
-                except Exception as err:
-                    _LOGGER.debug("Could not calculate data age: %s", err)
+                staleness_warning = check_data_staleness(last_price_timestamp, "Fuel price data")
+                if staleness_warning:
+                    attributes["data_staleness_warning"] = staleness_warning
         else:
             # Fall back to restored attributes if coordinator data not yet available
             attributes = self._restored_attributes.copy() if self._restored_attributes else {}
@@ -1989,20 +2013,12 @@ class TankLevelSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 attributes["last_vehicle_data_refresh_type"] = last_vehicle_data_refresh.get("type")
                 
                 # Check if data is stale (> 1 hour old)
-                try:
-                    from homeassistant.util import dt as dt_util
-                    timestamp = last_vehicle_data_refresh.get("timestamp")
-                    if isinstance(timestamp, str):
-                        last_update = dt_util.parse_datetime(timestamp)
-                    else:
-                        last_update = timestamp
-                    
-                    if last_update:
-                        age = dt_util.now() - last_update
-                        if age > timedelta(hours=1):
-                            attributes["data_staleness_warning"] = f"Vehicle data is {age.total_seconds() / 3600:.1f} hours old"
-                except Exception as err:
-                    _LOGGER.debug("Could not calculate data age: %s", err)
+                staleness_warning = check_data_staleness(
+                    last_vehicle_data_refresh.get("timestamp"),
+                    "Vehicle data"
+                )
+                if staleness_warning:
+                    attributes["data_staleness_warning"] = staleness_warning
             
             return attributes
         
@@ -2103,20 +2119,12 @@ class RangeSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 attributes["last_vehicle_data_refresh_type"] = last_vehicle_data_refresh.get("type")
                 
                 # Check if data is stale (> 1 hour old)
-                try:
-                    from homeassistant.util import dt as dt_util
-                    timestamp = last_vehicle_data_refresh.get("timestamp")
-                    if isinstance(timestamp, str):
-                        last_update = dt_util.parse_datetime(timestamp)
-                    else:
-                        last_update = timestamp
-                    
-                    if last_update:
-                        age = dt_util.now() - last_update
-                        if age > timedelta(hours=1):
-                            attributes["data_staleness_warning"] = f"Vehicle data is {age.total_seconds() / 3600:.1f} hours old"
-                except Exception as err:
-                    _LOGGER.debug("Could not calculate data age: %s", err)
+                staleness_warning = check_data_staleness(
+                    last_vehicle_data_refresh.get("timestamp"),
+                    "Vehicle data"
+                )
+                if staleness_warning:
+                    attributes["data_staleness_warning"] = staleness_warning
             
             return attributes
         
@@ -2209,19 +2217,9 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 attributes["last_update_timestamp"] = last_station_timestamp
                 
                 # Check if data is stale (> 1 hour old)
-                try:
-                    from homeassistant.util import dt as dt_util
-                    if isinstance(last_station_timestamp, str):
-                        last_update = dt_util.parse_datetime(last_station_timestamp)
-                    else:
-                        last_update = last_station_timestamp
-                    
-                    if last_update:
-                        age = dt_util.now() - last_update
-                        if age > timedelta(hours=1):
-                            attributes["data_staleness_warning"] = f"Station data is {age.total_seconds() / 3600:.1f} hours old"
-                except Exception as err:
-                    _LOGGER.debug("Could not calculate data age: %s", err)
+                staleness_warning = check_data_staleness(last_station_timestamp, "Station data")
+                if staleness_warning:
+                    attributes["data_staleness_warning"] = staleness_warning
             
             # Add navigation links if station has coordinates
             lat = station.get("latitude")
