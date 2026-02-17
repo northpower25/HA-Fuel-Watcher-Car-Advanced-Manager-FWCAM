@@ -347,6 +347,8 @@ class FWCAMCard extends HTMLElement {
     try {
       const refuelings = await this.fetchAllRefuelings();
       this._allRefuelings = refuelings;
+      // Also update _recentEvents with the latest data for immediate use by edit dialog
+      this._recentEvents = refuelings.slice(0, 10);
       this._allRefuelingsFetched = true;
       console.log(`[FWCAM Card] Fetched ${refuelings.length} refuelings asynchronously`);
       // Re-render to show all refuelings
@@ -2086,8 +2088,15 @@ class FWCAMCard extends HTMLElement {
     const dialogTitle = this.shadowRoot.getElementById('dialog-title');
     const form = this.shadowRoot.getElementById('refuel-form');
     
-    // Find event in stored events
-    const event = this._recentEvents ? this._recentEvents.find(e => e.id === parseInt(eventId)) : null;
+    // Find event in stored events - prefer _allRefuelings for most up-to-date data
+    // (includes telegram-updated values), fallback to _recentEvents
+    let event = null;
+    if (this._allRefuelings && this._allRefuelings.length > 0) {
+      event = this._allRefuelings.find(e => e.id === parseInt(eventId));
+    }
+    if (!event && this._recentEvents) {
+      event = this._recentEvents.find(e => e.id === parseInt(eventId));
+    }
     
     if (!event) {
       alert(`Event with ID ${eventId} not found`);
