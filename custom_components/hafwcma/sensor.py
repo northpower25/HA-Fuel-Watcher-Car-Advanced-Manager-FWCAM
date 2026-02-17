@@ -17,11 +17,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CURRENCY_EURO, UnitOfLength
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
     UpdateFailed,
 )
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_AVG_CONSUMPTION_RATE,
@@ -115,6 +117,44 @@ MAX_TANK_PERCENTAGE = 100.0
 # Constants for historical import defaults
 DEFAULT_HISTORICAL_IMPORT_TIMESTAMP = None
 DEFAULT_HISTORICAL_IMPORT_TYPE = "none"
+
+# State restoration and data staleness constants
+DATA_STALENESS_THRESHOLD_HOURS = 1  # Hours before showing staleness warning
+STATE_RESTORED_DATA_SOURCE = "restored_from_previous_state"  # Data source marker for restored state
+
+
+def check_data_staleness(timestamp: str | datetime | None, data_type: str) -> str | None:
+    """Check if data timestamp indicates stale data and return warning message.
+    
+    The function accepts timestamps in any format that Home Assistant's dt_util.parse_datetime
+    can handle, including ISO 8601 formats (e.g., '2024-01-15T10:30:00+00:00'), or datetime objects.
+    
+    Args:
+        timestamp: Datetime string (ISO 8601 or other standard formats),
+                  datetime object (used directly without parsing), or None
+        data_type: Description of the data type (e.g., "Vehicle data", "Fuel price data")
+        
+    Returns:
+        Warning message if data is stale (older than threshold), None otherwise
+    """
+    if not timestamp:
+        return None
+        
+    try:
+        if isinstance(timestamp, str):
+            last_update = dt_util.parse_datetime(timestamp)
+        else:
+            last_update = timestamp
+        
+        if last_update:
+            age = dt_util.now() - last_update
+            if age > timedelta(hours=DATA_STALENESS_THRESHOLD_HOURS):
+                hours_old = age.total_seconds() / 3600
+                return f"{data_type} is {hours_old:.1f} hours old"
+    except (ValueError, TypeError, AttributeError) as err:
+        _LOGGER.debug("Could not calculate data age for %s: %s", data_type, err)
+    
+    return None
 
 
 async def async_setup_entry(
@@ -1641,7 +1681,7 @@ def format_weekday_pattern(
     return formatted_pattern if formatted_pattern else None
 
 
-class FuelPriceSensor(CoordinatorEntity, SensorEntity):
+class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing current fuel price at nearest station."""
 
     _attr_device_class = SensorDeviceClass.MONETARY
@@ -1665,6 +1705,9 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = "Fuel Price"
         self._attr_unique_id = f"{config_entry.entry_id}_fuel_price"
         self._config_entry = config_entry
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
         
         # Device info for grouping
         self._attr_device_info = {
@@ -1674,174 +1717,215 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
             "model": "Fuel Watcher Car Advanced Manager",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        # Restore last state
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            try:
+                self._restored_value = float(last_state.state)
+                self._restored_attributes = dict(last_state.attributes)
+                _LOGGER.info(
+                    "Restored %s with value %s from previous state",
+                    self.entity_id,
+                    self._restored_value,
+                )
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Could not restore %s state: %s",
+                    self.entity_id,
+                    err,
+                )
+
     @property
     def native_value(self) -> float | None:
         """Return the current fuel price."""
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get("fuel_price")
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            value = self.coordinator.data.get("fuel_price")
+            if value is not None:
+                return value
+        
+        # Fall back to restored value if coordinator data not yet available
+        return self._restored_value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
-        if self.coordinator.data is None:
-            return {}
-        station = self.coordinator.data.get("nearest_station", {})
-        recommendation = self.coordinator.data.get("recommendation", {})
-        radius_comparison = self.coordinator.data.get("radius_comparison")
-        
-        # Determine which station to display as primary
-        # If we have a comparison and a clear recommendation, show the recommended station
-        display_station = station  # Default to nearest by price
-        
-        if radius_comparison and radius_comparison.get("has_comparison"):
-            comparison_rec = radius_comparison.get("recommendation", "")
-            savings = radius_comparison.get("savings", 0)
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            station = self.coordinator.data.get("nearest_station", {})
+            recommendation = self.coordinator.data.get("recommendation", {})
+            radius_comparison = self.coordinator.data.get("radius_comparison")
             
-            # If the farther station actually saves money (positive savings),
-            # or if the recommendation suggests it's better, show the 20km station
-            # Otherwise (negative savings or similar cost), show the 10km station
-            if "20km" in comparison_rec or savings > STATION_RECOMMENDATION_MIN_SAVINGS:
-                station_20km = radius_comparison.get("station_20km", {})
-                if station_20km:
-                    # Build station data from 20km comparison data
-                    # Note: Station address is not available in comparison data as it only
-                    # contains essential fields (name, distance, price) for cost calculation.
-                    # The address would require an additional lookup from the full station list.
-                    display_station = {
-                        "name": station_20km.get("name"),
-                        "distance": station_20km.get("distance_km"),
-                    }
-            else:
-                # Show 10km station as recommended
-                station_10km = radius_comparison.get("station_10km", {})
-                if station_10km:
-                    display_station = {
-                        "name": station_10km.get("name"),
-                        "distance": station_10km.get("distance_km"),
-                    }
-        
-        attributes = {
-            ATTR_STATION_NAME: display_station.get("name"),
-            ATTR_STATION_ADDRESS: display_station.get("address"),
-            ATTR_DISTANCE: display_station.get("distance"),
-            ATTR_FORECAST_TREND: self.coordinator.data.get("forecast_trend"),
-        }
-        
-        # Add location source information
-        location_source = self.coordinator.data.get("location_source")
-        if location_source:
-            attributes["location_source"] = location_source
-        
-        # Add timestamp of last successful price fetch
-        last_price_timestamp = self.coordinator.data.get("last_price_timestamp")
-        if last_price_timestamp:
-            attributes["last_update_timestamp"] = last_price_timestamp
-        
-        # Add prediction attributes if available
-        if recommendation:
-            attributes[ATTR_SHOULD_REFUEL] = recommendation.get("should_refuel", False)
-            attributes[ATTR_URGENCY] = recommendation.get("urgency", "low")
-            attributes[ATTR_RECOMMENDATION] = recommendation.get("recommendation", "")
-            attributes[ATTR_PRICE_DELTA] = recommendation.get("price_delta")
-            attributes[ATTR_PRICE_DELTA_PERCENT] = recommendation.get("price_delta_percent")
+            # Determine which station to display as primary
+            # If we have a comparison and a clear recommendation, show the recommended station
+            display_station = station  # Default to nearest by price
             
-            # Add cooldown information if present
-            if recommendation.get("in_cooldown"):
-                attributes["in_cooldown"] = True
-                attributes["cooldown_remaining_minutes"] = recommendation.get("cooldown_remaining_minutes")
-        
-        # Add radius comparison if available
-        radius_comparison = self.coordinator.data.get("radius_comparison")
-        if radius_comparison and radius_comparison.get("has_comparison"):
-            attributes["station_comparison"] = {
-                "10km": radius_comparison.get("station_10km"),
-                "20km": radius_comparison.get("station_20km"),
-                "savings": radius_comparison.get("savings"),
-                "savings_percent": radius_comparison.get("savings_percent"),
-                "comparison_recommendation": radius_comparison.get("recommendation"),
-                "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
-            }
-
-            # Add explicit cost savings attribute as requested in PR #121
-            # This shows the total EUR savings when going to the farther (20km) station
-            # Positive value = save money by driving farther
-            # Negative value = lose money by driving farther (better to stay close)
-            savings_value = radius_comparison.get("savings")
-            if savings_value is not None:
-                if savings_value >= 0:
-                    attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving farther)"
+            if radius_comparison and radius_comparison.get("has_comparison"):
+                comparison_rec = radius_comparison.get("recommendation", "")
+                savings = radius_comparison.get("savings", 0)
+                
+                # If the farther station actually saves money (positive savings),
+                # or if the recommendation suggests it's better, show the 20km station
+                # Otherwise (negative savings or similar cost), show the 10km station
+                if "20km" in comparison_rec or savings > STATION_RECOMMENDATION_MIN_SAVINGS:
+                    station_20km = radius_comparison.get("station_20km", {})
+                    if station_20km:
+                        # Build station data from 20km comparison data
+                        # Note: Station address is not available in comparison data as it only
+                        # contains essential fields (name, distance, price) for cost calculation.
+                        # The address would require an additional lookup from the full station list.
+                        display_station = {
+                            "name": station_20km.get("name"),
+                            "distance": station_20km.get("distance_km"),
+                        }
                 else:
-                    attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (cost more by driving farther)"
-            else:
-                attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
-        elif radius_comparison:
-            # radius_comparison exists but has_comparison is False - show reason
-            reason = radius_comparison.get("reason", "Unknown")
-            if reason == "No stations available":
-                attributes["costsaving_far_vs_near_station"] = "Waiting for station data"
-            elif reason == "Tank is full":
-                attributes["costsaving_far_vs_near_station"] = "Tank is full - no savings calculation"
-            elif reason in ["No different stations to compare", "Only 20km station available"]:
-                attributes["costsaving_far_vs_near_station"] = "Not applicable - only one station available"
-            else:
-                attributes["costsaving_far_vs_near_station"] = f"Not available ({reason})"
+                    # Show 10km station as recommended
+                    station_10km = radius_comparison.get("station_10km", {})
+                    if station_10km:
+                        display_station = {
+                            "name": station_10km.get("name"),
+                            "distance": station_10km.get("distance_km"),
+                        }
+            
+            attributes = {
+                ATTR_STATION_NAME: display_station.get("name"),
+                ATTR_STATION_ADDRESS: display_station.get("address"),
+                ATTR_DISTANCE: display_station.get("distance"),
+                ATTR_FORECAST_TREND: self.coordinator.data.get("forecast_trend"),
+            }
+            
+            # Add location source information
+            location_source = self.coordinator.data.get("location_source")
+            if location_source:
+                attributes["location_source"] = location_source
+            
+            # Add timestamp of last successful price fetch and check staleness
+            last_price_timestamp = self.coordinator.data.get("last_price_timestamp")
+            if last_price_timestamp:
+                attributes["last_update_timestamp"] = last_price_timestamp
+                
+                # Check if data is stale (> 1 hour old)
+                staleness_warning = check_data_staleness(last_price_timestamp, "Fuel price data")
+                if staleness_warning:
+                    attributes["data_staleness_warning"] = staleness_warning
         else:
-            # No radius_comparison data at all
-            attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
+            # Fall back to restored attributes if coordinator data not yet available
+            attributes = self._restored_attributes.copy() if self._restored_attributes else {}
+            
+            # Mark as restored state
+            if self._restored_value is not None:
+                attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
-        # Add price statistics if available (history price pattern)
-        price_statistics = self.coordinator.data.get("price_statistics")
-        if price_statistics:
-            # Add weekday patterns
-            weekday_patterns = price_statistics.get("weekday_patterns")
-            if weekday_patterns:
-                attributes["history_price_pattern"] = weekday_patterns
+        # Add supplementary attributes from coordinator data (recommendations, statistics) if available
+        if self.coordinator.data is not None:
+            recommendation = self.coordinator.data.get("recommendation", {})
+            if recommendation:
+                attributes[ATTR_SHOULD_REFUEL] = recommendation.get("should_refuel", False)
+                attributes[ATTR_URGENCY] = recommendation.get("urgency", "low")
+                attributes[ATTR_RECOMMENDATION] = recommendation.get("recommendation", "")
+                attributes[ATTR_PRICE_DELTA] = recommendation.get("price_delta")
+                attributes[ATTR_PRICE_DELTA_PERCENT] = recommendation.get("price_delta_percent")
+                
+                # Add cooldown information if present
+                if recommendation.get("in_cooldown"):
+                    attributes["in_cooldown"] = True
+                    attributes["cooldown_remaining_minutes"] = recommendation.get("cooldown_remaining_minutes")
             
-            # Add period statistics
-            last_week = price_statistics.get("last_week")
-            if last_week:
-                attributes["last_week_price"] = last_week.get("avg_price")
-                attributes["last_week_trend"] = last_week.get("trend", "Waiting for more data")
-                attributes["last_week_top_stations"] = last_week.get("top_stations", [])
+            # Add radius comparison if available
+            radius_comparison = self.coordinator.data.get("radius_comparison")
+            if radius_comparison and radius_comparison.get("has_comparison"):
+                attributes["station_comparison"] = {
+                    "10km": radius_comparison.get("station_10km"),
+                    "20km": radius_comparison.get("station_20km"),
+                    "savings": radius_comparison.get("savings"),
+                    "savings_percent": radius_comparison.get("savings_percent"),
+                    "comparison_recommendation": radius_comparison.get("recommendation"),
+                    "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+                }
+
+                # Add explicit cost savings attribute as requested in PR #121
+                # This shows the total EUR savings when going to the farther (20km) station
+                # Positive value = save money by driving farther
+                # Negative value = lose money by driving farther (better to stay close)
+                savings_value = radius_comparison.get("savings")
+                if savings_value is not None:
+                    if savings_value >= 0:
+                        attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving farther)"
+                    else:
+                        attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (cost more by driving farther)"
+                else:
+                    attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
+            elif radius_comparison:
+                # radius_comparison exists but has_comparison is False - show reason
+                reason = radius_comparison.get("reason", "Unknown")
+                if reason == "No stations available":
+                    attributes["costsaving_far_vs_near_station"] = "Waiting for station data"
+                elif reason == "Tank is full":
+                    attributes["costsaving_far_vs_near_station"] = "Tank is full - no savings calculation"
+                elif reason in ["No different stations to compare", "Only 20km station available"]:
+                    attributes["costsaving_far_vs_near_station"] = "Not applicable - only one station available"
+                else:
+                    attributes["costsaving_far_vs_near_station"] = f"Not available ({reason})"
             else:
-                attributes["last_week_trend"] = "Waiting for more data"
-                attributes["last_week_top_stations"] = [
-                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                ]
+                # No radius_comparison data at all
+                attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
             
-            last_14_days = price_statistics.get("last_14_days")
-            if last_14_days:
-                attributes["last_14_days_price"] = last_14_days.get("avg_price")
-                attributes["last_14_days_trend"] = last_14_days.get("trend", "Waiting for more data")
-                attributes["last_14_days_top_stations"] = last_14_days.get("top_stations", [])
-            else:
-                attributes["last_14_days_trend"] = "Waiting for more data"
-                attributes["last_14_days_top_stations"] = [
-                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                ]
-            
-            last_month = price_statistics.get("last_month")
-            if last_month:
-                attributes["last_month_price"] = last_month.get("avg_price")
-                attributes["last_month_trend"] = last_month.get("trend", "Waiting for more data")
-                attributes["last_month_top_stations"] = last_month.get("top_stations", [])
-            else:
-                attributes["last_month_trend"] = "Waiting for more data"
-                attributes["last_month_top_stations"] = [
-                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                    {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                ]
+            # Add price statistics if available (history price pattern)
+            price_statistics = self.coordinator.data.get("price_statistics")
+            if price_statistics:
+                # Add weekday patterns
+                weekday_patterns = price_statistics.get("weekday_patterns")
+                if weekday_patterns:
+                    attributes["history_price_pattern"] = weekday_patterns
+                
+                # Add period statistics
+                last_week = price_statistics.get("last_week")
+                if last_week:
+                    attributes["last_week_price"] = last_week.get("avg_price")
+                    attributes["last_week_trend"] = last_week.get("trend", "Waiting for more data")
+                    attributes["last_week_top_stations"] = last_week.get("top_stations", [])
+                else:
+                    attributes["last_week_trend"] = "Waiting for more data"
+                    attributes["last_week_top_stations"] = [
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    ]
+                
+                last_14_days = price_statistics.get("last_14_days")
+                if last_14_days:
+                    attributes["last_14_days_price"] = last_14_days.get("avg_price")
+                    attributes["last_14_days_trend"] = last_14_days.get("trend", "Waiting for more data")
+                    attributes["last_14_days_top_stations"] = last_14_days.get("top_stations", [])
+                else:
+                    attributes["last_14_days_trend"] = "Waiting for more data"
+                    attributes["last_14_days_top_stations"] = [
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    ]
+                
+                last_month = price_statistics.get("last_month")
+                if last_month:
+                    attributes["last_month_price"] = last_month.get("avg_price")
+                    attributes["last_month_trend"] = last_month.get("trend", "Waiting for more data")
+                    attributes["last_month_top_stations"] = last_month.get("top_stations", [])
+                else:
+                    attributes["last_month_trend"] = "Waiting for more data"
+                    attributes["last_month_top_stations"] = [
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    ]
         
         return attributes
 
 
-class TankLevelSensor(CoordinatorEntity, SensorEntity):
+class TankLevelSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing current tank level."""
 
     _attr_native_unit_of_measurement = "%"
@@ -1866,6 +1950,9 @@ class TankLevelSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = "Tank Level"
         self._attr_unique_id = f"{config_entry.entry_id}_tank_level"
         self._config_entry = config_entry
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
         
         # Device info for grouping
         self._attr_device_info = {
@@ -1875,40 +1962,84 @@ class TankLevelSensor(CoordinatorEntity, SensorEntity):
             "model": "Fuel Watcher Car Advanced Manager",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        # Restore last state
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            try:
+                self._restored_value = float(last_state.state)
+                self._restored_attributes = dict(last_state.attributes)
+                _LOGGER.info(
+                    "Restored %s with value %s from previous state",
+                    self.entity_id,
+                    self._restored_value,
+                )
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Could not restore %s state: %s",
+                    self.entity_id,
+                    err,
+                )
+
     @property
     def native_value(self) -> float | None:
         """Return the current tank level as percentage."""
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get("tank_percentage")
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            value = self.coordinator.data.get("tank_percentage")
+            if value is not None:
+                return value
+        
+        # Fall back to restored value if coordinator data not yet available
+        return self._restored_value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
-        if self.coordinator.data is None:
-            return {}
-        tank_level_liters = self.coordinator.data.get("tank_level")
-        attributes = {}
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            tank_level_liters = self.coordinator.data.get("tank_level")
+            attributes = {}
+            
+            if tank_level_liters is not None:
+                attributes["liters"] = tank_level_liters
+            
+            # Include tank capacity from config for use in Lovelace card validation
+            options = self._config_entry.options
+            config = self._config_entry.data
+            tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
+            attributes["tank_capacity"] = tank_capacity
+            
+            # Add last vehicle data refresh timestamp and check staleness
+            last_vehicle_data_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
+            if last_vehicle_data_refresh:
+                attributes["last_vehicle_data_refresh"] = last_vehicle_data_refresh.get("timestamp")
+                attributes["last_vehicle_data_refresh_type"] = last_vehicle_data_refresh.get("type")
+                
+                # Check if data is stale (> 1 hour old)
+                staleness_warning = check_data_staleness(
+                    last_vehicle_data_refresh.get("timestamp"),
+                    "Vehicle data"
+                )
+                if staleness_warning:
+                    attributes["data_staleness_warning"] = staleness_warning
+            
+            return attributes
         
-        if tank_level_liters is not None:
-            attributes["liters"] = tank_level_liters
+        # Fall back to restored attributes if coordinator data not yet available
+        attributes = self._restored_attributes.copy() if self._restored_attributes else {}
         
-        # Include tank capacity from config for use in Lovelace card validation
-        options = self._config_entry.options
-        config = self._config_entry.data
-        tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
-        attributes["tank_capacity"] = tank_capacity
-        
-        # Add last vehicle data refresh timestamp
-        last_vehicle_data_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
-        if last_vehicle_data_refresh:
-            attributes["last_vehicle_data_refresh"] = last_vehicle_data_refresh.get("timestamp")
-            attributes["last_vehicle_data_refresh_type"] = last_vehicle_data_refresh.get("type")
+        # Mark as restored state
+        if self._restored_value is not None:
+            attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
         return attributes
 
 
-class RangeSensor(CoordinatorEntity, SensorEntity):
+class RangeSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing estimated range."""
 
     _attr_device_class = SensorDeviceClass.DISTANCE
@@ -1933,6 +2064,9 @@ class RangeSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._attr_name = "Range"
         self._attr_unique_id = f"{config_entry.entry_id}_range"
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
         
         # Device info for grouping
         self._attr_device_info = {
@@ -1942,33 +2076,77 @@ class RangeSensor(CoordinatorEntity, SensorEntity):
             "model": "Fuel Watcher Car Advanced Manager",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        # Restore last state
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            try:
+                self._restored_value = float(last_state.state)
+                self._restored_attributes = dict(last_state.attributes)
+                _LOGGER.info(
+                    "Restored %s with value %s from previous state",
+                    self.entity_id,
+                    self._restored_value,
+                )
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Could not restore %s state: %s",
+                    self.entity_id,
+                    err,
+                )
+
     @property
     def native_value(self) -> float | None:
         """Return the estimated range."""
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get("range")
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            value = self.coordinator.data.get("range")
+            if value is not None:
+                return value
+        
+        # Fall back to restored value if coordinator data not yet available
+        return self._restored_value
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
-        if self.coordinator.data is None:
-            return {}
-        days_left = self.coordinator.data.get("days_left")
-        attributes = {}
-        if days_left is not None:
-            attributes[ATTR_DAYS_LEFT] = days_left
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            days_left = self.coordinator.data.get("days_left")
+            attributes = {}
+            if days_left is not None:
+                attributes[ATTR_DAYS_LEFT] = days_left
+            
+            # Add last vehicle data refresh timestamp and check staleness
+            last_vehicle_data_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
+            if last_vehicle_data_refresh:
+                attributes["last_vehicle_data_refresh"] = last_vehicle_data_refresh.get("timestamp")
+                attributes["last_vehicle_data_refresh_type"] = last_vehicle_data_refresh.get("type")
+                
+                # Check if data is stale (> 1 hour old)
+                staleness_warning = check_data_staleness(
+                    last_vehicle_data_refresh.get("timestamp"),
+                    "Vehicle data"
+                )
+                if staleness_warning:
+                    attributes["data_staleness_warning"] = staleness_warning
+            
+            return attributes
         
-        # Add last vehicle data refresh timestamp
-        last_vehicle_data_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
-        if last_vehicle_data_refresh:
-            attributes["last_vehicle_data_refresh"] = last_vehicle_data_refresh.get("timestamp")
-            attributes["last_vehicle_data_refresh_type"] = last_vehicle_data_refresh.get("type")
+        # Fall back to restored attributes if coordinator data not yet available
+        attributes = self._restored_attributes.copy() if self._restored_attributes else {}
+        
+        # Mark as restored state
+        if self._restored_value is not None:
+            attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
         return attributes
 
 
-class NearestStationSensor(CoordinatorEntity, SensorEntity):
+class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing cheapest fuel station within radius."""
 
     _attr_icon = "mdi:gas-station"
@@ -1990,6 +2168,9 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._attr_name = "Cheapest Station"
         self._attr_unique_id = f"{config_entry.entry_id}_nearest_station"
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
         
         # Device info for grouping
         self._attr_device_info = {
@@ -1999,38 +2180,72 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
             "model": "Fuel Watcher Car Advanced Manager",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        # Restore last state
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            self._restored_value = last_state.state
+            self._restored_attributes = dict(last_state.attributes)
+            _LOGGER.info(
+                "Restored %s with value %s from previous state",
+                self.entity_id,
+                self._restored_value,
+            )
+
     @property
     def native_value(self) -> str | None:
         """Return the name of cheapest station."""
-        if self.coordinator.data is None:
-            return None
-        station = self.coordinator.data.get("nearest_station", {})
-        return station.get("name")
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            station = self.coordinator.data.get("nearest_station", {})
+            value = station.get("name")
+            if value is not None:
+                return value
+        
+        # Fall back to restored value if coordinator data not yet available
+        return self._restored_value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
-        if self.coordinator.data is None:
-            return {}
-        station = self.coordinator.data.get("nearest_station", {})
-        attributes = {
-            ATTR_STATION_ADDRESS: station.get("address"),
-            ATTR_DISTANCE: station.get("distance"),
-            ATTR_PRICE: station.get("price"),
-        }
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            station = self.coordinator.data.get("nearest_station", {})
+            attributes = {
+                ATTR_STATION_ADDRESS: station.get("address"),
+                ATTR_DISTANCE: station.get("distance"),
+                ATTR_PRICE: station.get("price"),
+            }
+            
+            # Add timestamp of last successful station fetch and check staleness
+            last_station_timestamp = self.coordinator.data.get("last_station_timestamp")
+            if last_station_timestamp:
+                attributes["last_update_timestamp"] = last_station_timestamp
+                
+                # Check if data is stale (> 1 hour old)
+                staleness_warning = check_data_staleness(last_station_timestamp, "Station data")
+                if staleness_warning:
+                    attributes["data_staleness_warning"] = staleness_warning
+            
+            # Add navigation links if station has coordinates
+            lat = station.get("latitude")
+            lon = station.get("longitude")
+            if lat and lon:
+                attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+                attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
+                attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+            
+            return attributes
         
-        # Add timestamp of last successful station fetch
-        last_station_timestamp = self.coordinator.data.get("last_station_timestamp")
-        if last_station_timestamp:
-            attributes["last_update_timestamp"] = last_station_timestamp
+        # Fall back to restored attributes if coordinator data not yet available
+        attributes = self._restored_attributes.copy() if self._restored_attributes else {}
         
-        # Add navigation links if station has coordinates
-        lat = station.get("latitude")
-        lon = station.get("longitude")
-        if lat and lon:
-            attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
-            attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
-            attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+        # Mark as restored state
+        if self._restored_value is not None:
+            attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
         return attributes
 
