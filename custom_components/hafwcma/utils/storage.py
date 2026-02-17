@@ -69,6 +69,7 @@ async def load_data(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
             "last_price_timestamp": None,  # str timestamp of last price
             "last_station": None,  # dict with last station data
             "last_station_timestamp": None,  # str timestamp of last station
+            "last_fuel_type": None,  # str with last used fuel type
             "last_decision": None,  # dict with decision data
             "last_api": None,  # dict with last API response
             "last_telegram": None,  # dict with last telegram message
@@ -376,6 +377,11 @@ async def add_refuel_event(
     # Also add to legacy tank_history for backward compatibility
     data["tank_history"].append(event_data)
     
+    # Track last fuel type if provided
+    fuel_type = event_data.get("fuel_type")
+    if fuel_type:
+        data["last_fuel_type"] = fuel_type
+    
     # Keep only last 100 refueling events
     if len(data["tank_history"]) > 100:
         data["tank_history"] = data["tank_history"][-100:]
@@ -476,6 +482,10 @@ async def update_refueling_record(
                 if field in updates:
                     record[field] = updates[field]
             
+            # Track last fuel type if updated
+            if "fuel_type" in updates and updates["fuel_type"]:
+                data["last_fuel_type"] = updates["fuel_type"]
+            
             await save_data(hass, entry, data)
             return True
     
@@ -513,6 +523,20 @@ async def delete_refueling_record(
         return True
     
     return False
+
+
+async def get_last_fuel_type(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
+    """Get last used fuel type for this entry.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Last fuel type or None
+    """
+    data = await load_data(hass, entry)
+    return data.get("last_fuel_type")
 
 
 # ---------------------------------------------------------------------------
