@@ -199,7 +199,8 @@ The integration creates the following sensors for each configured vehicle:
 - **Refueling Log**: Complete history of all refueling events with quality indicators (see [Refueling Log Guide](docs/REFUELING_LOG_GUIDE.md))
 - **Average Consumption History**: Historical average consumption with attributes for today, last week, last 14 days, and last month
 - **Average Consumption Forecast**: Forecasted average consumption with attributes for tomorrow, next week, next 14 days, and next month (currently uses the same prediction for all periods; future enhancements will add time-specific forecasting)
-- **API Debug**: API request/response debug information for troubleshooting
+- **Fuel Price API Debug**: API request/response debug information for fuel price queries
+- **Car Data Debug**: Vehicle data collection status and diagnostic information
 
 ### Controls
 
