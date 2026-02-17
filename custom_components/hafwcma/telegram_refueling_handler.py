@@ -685,8 +685,7 @@ class TelegramRefuelingHandler:
                 recognized_items.append(f"🔢 {newly_recognized['odometer_km']:.1f} km")
             if newly_recognized.get("price_per_liter"):
                 recognized_items.append(f"💰 {newly_recognized['price_per_liter']:.3f} €/L")
-            if newly_recognized.get("total_cost"):
-                recognized_items.append(f"💵 {newly_recognized['total_cost']:.2f} €")
+            # NOTE: total_cost is NOT included here - it's always calculated, not recognized
             if newly_recognized.get("station_name"):
                 recognized_items.append(f"🏪 {html.escape(str(newly_recognized['station_name']))}")
             if newly_recognized.get("fuel_type"):
@@ -700,6 +699,24 @@ class TelegramRefuelingHandler:
             message_parts.append("<i>Daten aktualisiert!</i>\n")
         else:
             message_parts.append("<i>Neuer Tankvorgang erkannt!</i>\n")
+        
+        # Determine what was auto-detected (for initial notifications only)
+        auto_detected_items = []
+        if not is_update:
+            # Track which fields were auto-detected from vehicle/API
+            if refuel_data.get("liters_refueled"):
+                auto_detected_items.append("Menge (Fahrzeug)")
+            if refuel_data.get("odometer_km"):
+                auto_detected_items.append("KM-Stand (Fahrzeug)")
+            if refuel_data.get("station_name"):
+                # Check if it was matched by location
+                if refuel_data.get("latitude") and refuel_data.get("longitude"):
+                    auto_detected_items.append("Tankstelle (GPS)")
+            if refuel_data.get("price_per_liter"):
+                auto_detected_items.append("Preis (API)")
+            
+            if auto_detected_items:
+                message_parts.append(f"<i>✓ Auto-erkannt: {', '.join(auto_detected_items)}</i>\n")
         
         # Show detected data
         timestamp = refuel_data.get("timestamp", "Unbekannt")
@@ -733,11 +750,18 @@ class TelegramRefuelingHandler:
         else:
             missing_fields.append("Preis pro Liter")
         
-        total_cost = refuel_data.get("total_cost")
-        if total_cost:
-            message_parts.append(f"💵 Gesamtkosten: {total_cost:.2f} €")
-        else:
-            missing_fields.append("Gesamtkosten")
+        # ALWAYS calculate total_cost from liters × price (never query user for it)
+        # Display it if we have both values, otherwise show that it will be calculated
+        liters = refuel_data.get("liters_refueled")
+        if liters and price_per_liter:
+            calculated_total = liters * price_per_liter
+            message_parts.append(f"💵 Gesamtkosten: {calculated_total:.2f} € <i>(berechnet)</i>")
+        elif liters or price_per_liter:
+            # We have one but not the other - show what we'd calculate
+            if liters:
+                message_parts.append(f"💵 Gesamtkosten: <i>(wird berechnet wenn Preis bekannt)</i>")
+            else:
+                message_parts.append(f"💵 Gesamtkosten: <i>(wird berechnet wenn Menge bekannt)</i>")
         
         station_name = refuel_data.get("station_name")
         if station_name:
@@ -833,6 +857,19 @@ class TelegramRefuelingHandler:
         if parsed_data:
             updates.update(parsed_data)
         
+        # Get current record to access all fields
+        current_record = await get_refueling_record(self.hass, self.config_entry, refuel_id)
+        
+        # ALWAYS ensure total_cost is calculated from liters × price if both are available
+        # This ensures consistency even if user provides total_cost in text
+        liters = updates.get("liters_refueled") or (current_record or {}).get("liters_refueled")
+        price = updates.get("price_per_liter") or (current_record or {}).get("price_per_liter")
+        
+        if liters and price:
+            calculated_total = round(liters * price, 2)
+            updates["total_cost"] = calculated_total
+            _LOGGER.debug("Calculated total_cost: %.2f (from %.2f L × %.3f €/L)", calculated_total, liters, price)
+        
         await update_refueling_record(
             self.hass,
             self.config_entry,
@@ -863,7 +900,7 @@ class TelegramRefuelingHandler:
                 # These would need to come from the refueling record or geocoding
             )
         
-        # Get updated refueling data
+        # Get updated refueling data (re-fetch after update)
         refuel_data = await get_refueling_record(
             self.hass,
             self.config_entry,
@@ -1168,6 +1205,11 @@ class TelegramRefuelingHandler:
         if not text:
             return parsed
         
+        # IMPORTANT: Remove all #[number] patterns from text before parsing
+        # These are refueling transaction ID references, NOT data values
+        # Examples: #123, Tankvorgang #456, Refuel #789
+        text_clean = re.sub(r'#\d+', '', text)
+        
         # Extract liters (various formats)
         # Examples: "45.5 L", "45,5 Liter", "45.5L", "45.5 liters", "20 L", "20l"
         liter_patterns = [
@@ -1175,7 +1217,7 @@ class TelegramRefuelingHandler:
             r"(\d+)\s*(?:L|l|Liter|liter)(?!\s*/)",        # Integer with L/Liter (not €/L)
         ]
         for pattern in liter_patterns:
-            match = re.search(pattern, text)
+            match = re.search(pattern, text_clean)
             if match:
                 try:
                     value = float(match.group(1).replace(",", "."))
@@ -1192,7 +1234,7 @@ class TelegramRefuelingHandler:
             r"Preis[:\s]+(\d+[.,]\d+)",  # After "Preis:"
         ]
         for pattern in price_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, text_clean, re.IGNORECASE)
             if match:
                 try:
                     value = float(match.group(1).replace(",", "."))
@@ -1206,7 +1248,7 @@ class TelegramRefuelingHandler:
         # Only if no explicit price/liter was found and value is between 1.0 and 3.0
         if "price_per_liter" not in parsed:
             standalone_price_pattern = r"\b([12][.,]\d{1,3})\b"
-            matches = re.findall(standalone_price_pattern, text)
+            matches = re.findall(standalone_price_pattern, text_clean)
             for match in matches:
                 try:
                     value = float(match.replace(",", "."))
@@ -1218,16 +1260,17 @@ class TelegramRefuelingHandler:
                 except:
                     pass
         
-        # Extract total cost
+        # Extract total cost - ONLY from explicit user input
+        # NOTE: Per requirements, total_cost should be calculated, not queried
+        # However, we still parse it if provided, as it can help calculate price_per_liter
         # Examples: "71.96 €", "71,96 EUR", "Total: 71.96", "20eur", "20 €", "20 EUR"
-        # Numbers 20-99 without L/Liter suffix are likely total costs
         cost_patterns = [
             r"(?:Gesamt|Total|Summe)[:\s]+(\d+[.,]\d+)",  # With keyword
             r"(\d+[.,]\d+)\s*(?:€|EUR|euro|eur)(?!\s*/)",  # Decimal with currency (not €/L)
             r"(\d+)\s*(?:€|EUR|euro|eur)(?!\s*/)",         # Integer with currency (not €/L)
         ]
         for pattern in cost_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, text_clean, re.IGNORECASE)
             if match:
                 try:
                     value = float(match.group(1).replace(",", "."))
@@ -1242,7 +1285,7 @@ class TelegramRefuelingHandler:
         if "total_cost" not in parsed:
             # Match decimal numbers 10.xx - 99.xx or integers 20-99
             standalone_cost_pattern = r"\b((?:[1-9]\d)[.,]?\d{0,2})\b"
-            matches = re.findall(standalone_cost_pattern, text)
+            matches = re.findall(standalone_cost_pattern, text_clean)
             for match in matches:
                 # Skip if this number is already used for price_per_liter
                 if "price_per_liter" in parsed:
@@ -1271,7 +1314,7 @@ class TelegramRefuelingHandler:
             r"(\d{4,7})\s*km",  # 4-7 digits followed by km (with/without space)
         ]
         for pattern in odometer_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, text_clean, re.IGNORECASE)
             if match:
                 try:
                     value = float(match.group(1).replace(".", "").replace(",", "."))
@@ -1296,12 +1339,12 @@ class TelegramRefuelingHandler:
         for brand in station_brands:
             # Case-insensitive search for brand name
             brand_pattern = re.compile(rf"\b({re.escape(brand)})\b", re.IGNORECASE)
-            brand_match = brand_pattern.search(text)
+            brand_match = brand_pattern.search(text_clean)
             
             if brand_match:
                 # Extract everything after the brand name
                 start_pos = brand_match.end()
-                remaining_text = text[start_pos:].strip()
+                remaining_text = text_clean[start_pos:].strip()
                 
                 # Try to extract structured location info using verbose regex
                 # Pattern: [PLZ] CITY [STREET] [HOUSENR]
@@ -1361,7 +1404,7 @@ class TelegramRefuelingHandler:
         
         # Check for station keyword if no brand was found
         if "station_name" not in parsed:
-            station_match = re.search(r"(?:Station|Tankstelle)[:\s]+([A-Za-zäöüÄÖÜß\s]+)", text, re.IGNORECASE)
+            station_match = re.search(r"(?:Station|Tankstelle)[:\s]+([A-Za-zäöüÄÖÜß\s]+)", text_clean, re.IGNORECASE)
             if station_match:
                 parsed["station_name"] = station_match.group(1).strip()
         
@@ -1376,7 +1419,7 @@ class TelegramRefuelingHandler:
             (r"\b(super\s*plus|super\+)\b", "e5"),  # German market convention
         ]
         for pattern, fuel_type in fuel_type_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
+            if re.search(pattern, text_clean, re.IGNORECASE):
                 parsed["fuel_type"] = fuel_type
                 _LOGGER.debug("Extracted fuel type: %s", fuel_type)
                 break
