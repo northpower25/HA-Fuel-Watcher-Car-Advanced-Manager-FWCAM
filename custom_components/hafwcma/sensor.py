@@ -2421,9 +2421,7 @@ class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
 
     async def _get_storage_statistics(self) -> dict[str, Any]:
         """Get statistics from storage about data points."""
-        from .utils import storage as storage_utils
-        
-        data = await storage_utils.load_data(self.hass, self._config_entry)
+        data = await storage.load_data(self.hass, self._config_entry)
         
         # Count odometer observations
         odometer_history = data.get("odometer_history", [])
