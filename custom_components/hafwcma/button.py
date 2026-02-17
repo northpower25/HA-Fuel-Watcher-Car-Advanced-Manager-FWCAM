@@ -504,11 +504,10 @@ class RecalculateTripStatisticsButton(ButtonEntity):
                 stats["total_distance_km"],
             )
             
-            # Force consumption prediction update by resetting the last prediction timestamp
+            # Force consumption prediction update by calling coordinator's public method
             # This ensures the next coordinator update will recalculate consumption predictions
             if self._coordinator:
-                self._coordinator._last_consumption_prediction = None
-                _LOGGER.info("Forced consumption prediction update on next coordinator refresh")
+                self._coordinator.force_consumption_prediction_update()
                 
         except Exception as err:
             self._last_result = {
