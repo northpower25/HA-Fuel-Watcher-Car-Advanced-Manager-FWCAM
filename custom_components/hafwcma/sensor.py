@@ -171,7 +171,7 @@ async def async_setup_entry(
         """Perform first data refresh after HA is fully started."""
         _LOGGER.info("Home Assistant started - performing first data refresh for %s", vehicle_name)
         try:
-            await coordinator.async_config_entry_first_refresh()
+            await coordinator.async_refresh()
         except Exception as err:
             _LOGGER.error("Error during first refresh for %s: %s", vehicle_name, err, exc_info=True)
     
@@ -1677,11 +1677,15 @@ class FuelPriceSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the current fuel price."""
+        if self.coordinator.data is None:
+            return None
         return self.coordinator.data.get("fuel_price")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
+        if self.coordinator.data is None:
+            return {}
         station = self.coordinator.data.get("nearest_station", {})
         recommendation = self.coordinator.data.get("recommendation", {})
         radius_comparison = self.coordinator.data.get("radius_comparison")
@@ -1874,11 +1878,15 @@ class TankLevelSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the current tank level as percentage."""
+        if self.coordinator.data is None:
+            return None
         return self.coordinator.data.get("tank_percentage")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
+        if self.coordinator.data is None:
+            return {}
         tank_level_liters = self.coordinator.data.get("tank_level")
         attributes = {}
         
@@ -1937,11 +1945,15 @@ class RangeSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the estimated range."""
+        if self.coordinator.data is None:
+            return None
         return self.coordinator.data.get("range")
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
+        if self.coordinator.data is None:
+            return {}
         days_left = self.coordinator.data.get("days_left")
         attributes = {}
         if days_left is not None:
@@ -1990,12 +2002,16 @@ class NearestStationSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         """Return the name of cheapest station."""
+        if self.coordinator.data is None:
+            return None
         station = self.coordinator.data.get("nearest_station", {})
         return station.get("name")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
+        if self.coordinator.data is None:
+            return {}
         station = self.coordinator.data.get("nearest_station", {})
         attributes = {
             ATTR_STATION_ADDRESS: station.get("address"),
@@ -2057,6 +2073,8 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         """Return the API status."""
+        if self.coordinator.data is None:
+            return None
         api_debug = self.coordinator.data.get("api_debug", {})
         if not api_debug:
             return "Unknown"
@@ -2067,6 +2085,8 @@ class ApiDebugSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return API debug information as attributes (summarized to avoid size issues)."""
+        if self.coordinator.data is None:
+            return {}
         api_debug = self.coordinator.data.get("api_debug", {})
         if not api_debug:
             return {"status": "No API request made yet"}
@@ -2149,6 +2169,8 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the days until refueling is needed."""
+        if self.coordinator.data is None:
+            return self._last_known_value
         prediction = self.coordinator.data.get("consumption_prediction")
         if prediction:
             days = prediction.get("days_until_refuel")
@@ -2161,6 +2183,8 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional prediction attributes."""
+        if self.coordinator.data is None:
+            return {}
         prediction = self.coordinator.data.get("consumption_prediction")
         if not prediction:
             return {
@@ -2297,6 +2321,8 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         3. Last week (if available)
         4. Today (as fallback)
         """
+        if self.coordinator.data is None:
+            return None
         history = self.coordinator.data.get("consumption_history")
         if not history:
             _LOGGER.debug("ConsumptionHistorySensor: No consumption_history data available")
@@ -2325,6 +2351,8 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return consumption statistics for different time periods."""
+        if self.coordinator.data is None:
+            return {}
         history = self.coordinator.data.get("consumption_history")
         consumption_prediction = self.coordinator.data.get("consumption_prediction")
         
@@ -2440,6 +2468,8 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the forecasted consumption for tomorrow."""
+        if self.coordinator.data is None:
+            return None
         forecast = self.coordinator.data.get("consumption_forecast")
         if forecast and forecast.get("tomorrow"):
             return forecast["tomorrow"].get("avg_consumption_l_per_100km")
@@ -2448,6 +2478,8 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return forecasted consumption for different time periods."""
+        if self.coordinator.data is None:
+            return {}
         forecast = self.coordinator.data.get("consumption_forecast")
         consumption_prediction = self.coordinator.data.get("consumption_prediction")
         
@@ -2568,6 +2600,8 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> int:
         """Return the total number of refueling events."""
+        if self.coordinator.data is None:
+            return 0
         refueling_log = self.coordinator.data.get("refueling_log")
         return len(refueling_log) if refueling_log else 0
     
@@ -2578,6 +2612,8 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
         Returns the last 10 refueling events with all details to allow
         users to review and verify detected refuelings.
         """
+        if self.coordinator.data is None:
+            return {}
         refueling_log = self.coordinator.data.get("refueling_log")
         
         if not refueling_log:
