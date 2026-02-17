@@ -476,7 +476,12 @@ async def update_refueling_record(
             allowed_fields = [
                 "timestamp", "odometer_km", "station_name", "station_address",
                 "liters_refueled", "price_per_liter", "total_cost",
-                "latitude", "longitude", "fuel_type", "data_quality", "confidence"
+                "latitude", "longitude", "fuel_type", "data_quality", "confidence",
+                # Telegram response tracking fields
+                "telegram_notification_sent", "telegram_notification_timestamp",
+                "telegram_response_received", "telegram_response_timestamp",
+                "telegram_response_type", "telegram_response_raw", "telegram_response_parsed",
+                "telegram_photo_file_id", "telegram_voice_file_id", "telegram_message_id"
             ]
             for field in allowed_fields:
                 if field in updates:
