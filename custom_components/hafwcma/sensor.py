@@ -2600,6 +2600,15 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             attributes["today_liters"] = today.get("total_liters", 0)
             attributes["today_refuel_count"] = today.get("refuel_count", 0)
             attributes["today_cost"] = today.get("total_cost", 0.0)
+            
+            # Add data quality warning if daily km seems unrealistic
+            total_km = today.get("total_km", 0)
+            if total_km > 1000:  # More than 1000 km in one day is suspicious
+                attributes["data_quality_warning"] = (
+                    f"Today shows {total_km} km driven, which is unusually high. "
+                    "This may indicate incorrect timestamps or odometer values in your refueling events. "
+                    "Check your refueling log or use the recalculation button to fix data issues."
+                )
         
         # Last week
         if history.get("last_week"):
@@ -2609,6 +2618,22 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             attributes["last_week_liters"] = week.get("total_liters", 0)
             attributes["last_week_refuel_count"] = week.get("refuel_count", 0)
             attributes["last_week_cost"] = week.get("total_cost", 0.0)
+            
+            # Detect if weekly data is suspiciously similar to daily data
+            if history.get("today"):
+                today_km = history["today"].get("total_km", 0)
+                week_km = week.get("total_km", 0)
+                # If they're exactly the same or very close (within 1%), it's suspicious
+                if today_km > 0 and week_km > 0 and abs(week_km - today_km) / today_km < 0.01:
+                    if "data_quality_warning" not in attributes:
+                        attributes["data_quality_warning"] = ""
+                    else:
+                        attributes["data_quality_warning"] += " "
+                    attributes["data_quality_warning"] += (
+                        f"Last week and today show nearly identical km ({week_km} vs {today_km}). "
+                        "This suggests all refueling events may have the same or very recent timestamps. "
+                        "Check if historical data was imported correctly or if refueling events need to be updated."
+                    )
         
         # Last 14 days
         if history.get("last_14_days"):

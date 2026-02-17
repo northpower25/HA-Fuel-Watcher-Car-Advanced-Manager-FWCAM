@@ -1030,6 +1030,29 @@ async def calculate_consumption_history(
         days, total_km, total_liters, avg_consumption
     )
     
+    # Validate results for suspicious data patterns
+    # This helps detect data quality issues that need user attention
+    if total_km > 0 and days > 0:
+        avg_km_per_day = total_km / days
+        # Warn if average exceeds 1000 km/day (unrealistic for normal usage)
+        if avg_km_per_day > 1000:
+            _LOGGER.warning(
+                "calculate_consumption_history(%d days): SUSPICIOUS DATA - Average %.1f km/day (total: %d km). "
+                "This suggests refueling events may have incorrect timestamps or odometer values. "
+                "Refuel count: %d. Check your refueling log for data quality issues.",
+                days, avg_km_per_day, total_km, len(relevant_events)
+            )
+            # Log the event details to help diagnose
+            _LOGGER.warning("Refueling events in this period:")
+            for i, (event_time, event) in enumerate(relevant_events):
+                _LOGGER.warning(
+                    "  Event %d: timestamp=%s, odometer=%s km, liters=%s",
+                    i + 1,
+                    event_time.isoformat(),
+                    event.get("odometer_km"),
+                    event.get("liters_refueled")
+                )
+    
     # Calculate total cost from refueling events in this period
     total_cost = 0.0
     for event_time, event in relevant_events:
