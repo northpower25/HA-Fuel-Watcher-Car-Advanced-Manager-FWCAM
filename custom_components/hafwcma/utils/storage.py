@@ -236,11 +236,11 @@ async def add_odometer_observation(
         last_entry = data["odometer_history"][-1]
         last_value = last_entry.get("value")
         
-        # Skip if value hasn't changed
+        # Skip if value hasn't changed (within threshold)
         if last_value is not None and abs(float(last_value) - float(odometer_km)) < ODOMETER_CHANGE_THRESHOLD_KM:
             _LOGGER.debug(
-                "Skipping duplicate odometer observation: %.1f km (same as last value)",
-                odometer_km
+                "Skipping odometer observation: %.1f km (changed by less than %.1f km from last value of %.1f km)",
+                odometer_km, ODOMETER_CHANGE_THRESHOLD_KM, last_value
             )
             return
     

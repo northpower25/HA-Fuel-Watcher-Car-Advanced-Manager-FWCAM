@@ -31,7 +31,7 @@ if data["odometer_history"]:
     last_entry = data["odometer_history"][-1]
     last_value = last_entry.get("value")
     
-    # Skip if value hasn't changed (tolerance: 0.1 km)
+    # Skip if value hasn't changed (tolerance: ODOMETER_CHANGE_THRESHOLD_KM = 0.1 km)
     if last_value is not None and abs(float(last_value) - float(odometer_km)) < 0.1:
         _LOGGER.debug(
             "Skipping duplicate odometer observation: %.1f km (same as last value)",
