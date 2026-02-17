@@ -265,7 +265,7 @@ class TestProviderConnectionButton(ButtonEntity):
 
 
 class ImportHistoricalDataButton(ButtonEntity):
-    """Button to import historical vehicle data from recorder."""
+    """Button to import historical vehicle data (odometer & refueling) from recorder."""
 
     _attr_icon = "mdi:database-import"
     _attr_has_entity_name = True
@@ -288,7 +288,7 @@ class ImportHistoricalDataButton(ButtonEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = "Import Historical Data"
+        self._attr_name = "Import Historical Vehicle Data"
         self._attr_unique_id = f"{config_entry.entry_id}_import_historical_data"
         self._last_result: dict[str, Any] = {}
         
@@ -301,8 +301,8 @@ class ImportHistoricalDataButton(ButtonEntity):
         }
 
     async def async_press(self) -> None:
-        """Handle button press - import historical data."""
-        _LOGGER.info("Manual historical data import triggered")
+        """Handle button press - import historical vehicle data (odometer & refueling events)."""
+        _LOGGER.info("Manual historical vehicle data import triggered (odometer & refueling)")
         
         try:
             from .utils.historical_data_import import import_historical_vehicle_data
@@ -320,12 +320,12 @@ class ImportHistoricalDataButton(ButtonEntity):
             
             if result["imported"]:
                 _LOGGER.info(
-                    "Historical import successful: %d odometer points, %d refuel events",
+                    "Historical vehicle data import successful: %d odometer points, %d refuel events",
                     result["odometer_points_imported"],
                     result["refuel_events_detected"],
                 )
             else:
-                _LOGGER.warning("Historical import skipped: %s", result["reason"])
+                _LOGGER.warning("Historical vehicle data import skipped: %s", result["reason"])
                 
         except Exception as err:
             self._last_result = {
@@ -334,7 +334,7 @@ class ImportHistoricalDataButton(ButtonEntity):
                 "error_type": type(err).__name__,
                 "error_details": str(err),
             }
-            _LOGGER.error("Error importing historical data: %s", err, exc_info=True)
+            _LOGGER.error("Error importing historical vehicle data: %s", err, exc_info=True)
         
         # Trigger coordinator update to recalculate predictions with new data
         if self._coordinator:
@@ -347,7 +347,7 @@ class ImportHistoricalDataButton(ButtonEntity):
 
 
 class ImportHistoricalTripDataButton(ButtonEntity):
-    """Button to import historical trip data from recorder."""
+    """Button to import historical trip data (GPS-based trips) from recorder."""
 
     _attr_icon = "mdi:database-import-outline"
     _attr_has_entity_name = True
@@ -383,8 +383,8 @@ class ImportHistoricalTripDataButton(ButtonEntity):
         }
 
     async def async_press(self) -> None:
-        """Handle button press - import historical trip data."""
-        _LOGGER.info("Manual historical trip data import triggered")
+        """Handle button press - import historical trip data (GPS-based trips)."""
+        _LOGGER.info("Manual historical trip data import triggered (GPS-based trips)")
         
         try:
             from .utils.historical_data_import import import_historical_trip_data
@@ -417,11 +417,11 @@ class ImportHistoricalTripDataButton(ButtonEntity):
             
             if result["imported"]:
                 _LOGGER.info(
-                    "Historical trip import successful: %d trips detected",
+                    "Historical trip data import successful: %d trips detected",
                     result["trips_detected"],
                 )
             else:
-                _LOGGER.warning("Historical trip import skipped: %s", result["reason"])
+                _LOGGER.warning("Historical trip data import skipped: %s", result["reason"])
                 
         except Exception as err:
             self._last_result = {
@@ -479,7 +479,7 @@ class RecalculateTripStatisticsButton(ButtonEntity):
         }
 
     async def async_press(self) -> None:
-        """Handle button press - recalculate trip statistics."""
+        """Handle button press - recalculate trip statistics and force consumption prediction update."""
         _LOGGER.info("Manual trip statistics recalculation triggered")
         
         try:
@@ -503,6 +503,12 @@ class RecalculateTripStatisticsButton(ButtonEntity):
                 stats["total_trips"],
                 stats["total_distance_km"],
             )
+            
+            # Force consumption prediction update by resetting the last prediction timestamp
+            # This ensures the next coordinator update will recalculate consumption predictions
+            if self._coordinator:
+                self._coordinator._last_consumption_prediction = None
+                _LOGGER.info("Forced consumption prediction update on next coordinator refresh")
                 
         except Exception as err:
             self._last_result = {
@@ -512,7 +518,7 @@ class RecalculateTripStatisticsButton(ButtonEntity):
             }
             _LOGGER.error("Error recalculating trip statistics: %s", err, exc_info=True)
         
-        # Trigger coordinator update to refresh sensors
+        # Trigger coordinator update to refresh sensors and recalculate consumption predictions
         if self._coordinator:
             await self._coordinator.async_request_refresh()
 
