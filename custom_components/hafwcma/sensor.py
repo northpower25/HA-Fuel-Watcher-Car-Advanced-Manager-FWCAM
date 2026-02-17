@@ -348,6 +348,16 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         # Request a refresh with the new interval
         await self.async_request_refresh()
 
+    def force_consumption_prediction_update(self) -> None:
+        """Force consumption prediction to be recalculated on next coordinator update.
+        
+        This resets the prediction interval timer, causing predictions to be
+        recalculated immediately on the next coordinator update cycle.
+        Used by the recalculate button to force fresh predictions.
+        """
+        _LOGGER.info("Forcing consumption prediction update on next coordinator refresh")
+        self._last_consumption_prediction = None
+
     async def async_update_config(self, config_entry: ConfigEntry) -> None:
         """Update coordinator configuration from config entry.
         
