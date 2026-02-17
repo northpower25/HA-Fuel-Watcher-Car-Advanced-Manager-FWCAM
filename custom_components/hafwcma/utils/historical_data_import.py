@@ -1122,13 +1122,14 @@ async def _get_current_price(
                     continue
                 
                 # Ensure timezone-aware for comparison
-                if price_time.tzinfo is None:
-                    price_time = dt_util.as_local(price_time)
+                price_time_aware = price_time
+                if price_time_aware.tzinfo is None:
+                    price_time_aware = dt_util.as_local(price_time_aware)
                 timestamp_aware = timestamp
                 if timestamp_aware.tzinfo is None:
                     timestamp_aware = dt_util.as_local(timestamp_aware)
                 
-                time_diff = abs((price_time - timestamp_aware).total_seconds())
+                time_diff = abs((price_time_aware - timestamp_aware).total_seconds())
                 
                 # Use price if within configured time window
                 if time_diff < min_time_diff and time_diff < max_price_age_seconds:
@@ -1521,13 +1522,15 @@ async def _import_trip_history(
                     continue
                 
                 # Ensure timezone-aware for comparisons
-                if prev_time.tzinfo is None:
-                    prev_time = dt_util.as_local(prev_time)
-                if curr_time.tzinfo is None:
-                    curr_time = dt_util.as_local(curr_time)
+                prev_time_aware = prev_time
+                if prev_time_aware.tzinfo is None:
+                    prev_time_aware = dt_util.as_local(prev_time_aware)
+                curr_time_aware = curr_time
+                if curr_time_aware.tzinfo is None:
+                    curr_time_aware = dt_util.as_local(curr_time_aware)
                 
                 # Calculate duration
-                duration_seconds = (curr_time - prev_time).total_seconds()
+                duration_seconds = (curr_time_aware - prev_time_aware).total_seconds()
                 duration_minutes = duration_seconds / 60
                 
                 # Check if this is a valid trip
@@ -1540,15 +1543,15 @@ async def _import_trip_history(
                         # Check for duplicates
                         is_duplicate = False
                         for existing_ts in existing_timestamps:
-                            time_diff_minutes = abs((prev_time - existing_ts).total_seconds()) / 60
+                            time_diff_minutes = abs((prev_time_aware - existing_ts).total_seconds()) / 60
                             if time_diff_minutes < TRIP_MERGE_TIME_WINDOW_MINUTES:
                                 is_duplicate = True
                                 break
                         
                         if not is_duplicate:
                             # Get tank levels for fuel consumption
-                            fuel_level_start = _find_closest_tank_level(tank_level_states, prev_time)
-                            fuel_level_end = _find_closest_tank_level(tank_level_states, curr_time)
+                            fuel_level_start = _find_closest_tank_level(tank_level_states, prev_time_aware)
+                            fuel_level_end = _find_closest_tank_level(tank_level_states, curr_time_aware)
                             
                             # Calculate fuel consumed
                             fuel_consumed = None
@@ -1558,8 +1561,8 @@ async def _import_trip_history(
                             # Get GPS coordinates
                             # For start: prefer location just before the trip started
                             # For end: prefer location just after the trip ended
-                            start_lat, start_lon = _find_closest_location(location_states, prev_time, prefer_after=False)
-                            end_lat, end_lon = _find_closest_location(location_states, curr_time, prefer_after=True)
+                            start_lat, start_lon = _find_closest_location(location_states, prev_time_aware, prefer_after=False)
+                            end_lat, end_lon = _find_closest_location(location_states, curr_time_aware, prefer_after=True)
                             
                             # Check if locations are distinct
                             has_distinct_locations = False
@@ -1573,8 +1576,8 @@ async def _import_trip_history(
                             
                             # Create trip data
                             trip_data = {
-                                "timestamp_start": prev_time.isoformat(),
-                                "timestamp_end": curr_time.isoformat(),
+                                "timestamp_start": prev_time_aware.isoformat(),
+                                "timestamp_end": curr_time_aware.isoformat(),
                                 "distance_km": round(distance_km, 2),
                                 "odometer_start": round(prev_odometer, 1),
                                 "odometer_end": round(curr_odometer, 1),
@@ -1595,7 +1598,7 @@ async def _import_trip_history(
                             }
                             
                             pending_trips.append(trip_data)
-                            existing_timestamps.add(prev_time)
+                            existing_timestamps.add(prev_time_aware)
                             
                             # Log warning if start and end locations are the same
                             if start_lat == end_lat and start_lon == end_lon and start_lat is not None:
@@ -1829,13 +1832,14 @@ def _find_closest_tank_level(
         try:
             state_time = state.last_changed
             # Ensure timezone-aware for comparison
-            if state_time.tzinfo is None:
-                state_time = dt_util.as_local(state_time)
+            state_time_aware = state_time
+            if state_time_aware.tzinfo is None:
+                state_time_aware = dt_util.as_local(state_time_aware)
             target_time_aware = target_time
             if target_time_aware.tzinfo is None:
                 target_time_aware = dt_util.as_local(target_time_aware)
             
-            time_diff_seconds = abs((target_time_aware - state_time).total_seconds())
+            time_diff_seconds = abs((target_time_aware - state_time_aware).total_seconds())
             
             if time_diff_seconds < min_diff_seconds:
                 min_diff_seconds = time_diff_seconds
@@ -1907,13 +1911,14 @@ def _find_closest_location(
         try:
             state_time = state.last_changed
             # Ensure timezone-aware for comparison
-            if state_time.tzinfo is None:
-                state_time = dt_util.as_local(state_time)
+            state_time_aware = state_time
+            if state_time_aware.tzinfo is None:
+                state_time_aware = dt_util.as_local(state_time_aware)
             target_time_aware = target_time
             if target_time_aware.tzinfo is None:
                 target_time_aware = dt_util.as_local(target_time_aware)
             
-            time_diff_seconds = (target_time_aware - state_time).total_seconds()
+            time_diff_seconds = (target_time_aware - state_time_aware).total_seconds()
             abs_time_diff_seconds = abs(time_diff_seconds)
             
             # Determine if we should update the closest state
