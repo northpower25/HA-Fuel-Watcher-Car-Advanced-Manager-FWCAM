@@ -1664,7 +1664,11 @@ def add_prediction_metadata_to_attributes(
     
     # Add last prediction time
     if consumption_prediction.get("last_prediction_time"):
-        attributes["last_prediction"] = consumption_prediction["last_prediction_time"].isoformat()
+        last_pred_time = consumption_prediction["last_prediction_time"]
+        if isinstance(last_pred_time, str):
+            attributes["last_prediction"] = last_pred_time
+        else:
+            attributes["last_prediction"] = last_pred_time.isoformat()
 
 
 def format_weekday_pattern(
@@ -2445,11 +2449,19 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
         
         # Add last prediction time
         if prediction.get("last_prediction_time"):
-            attributes[ATTR_LAST_PREDICTION] = prediction["last_prediction_time"].isoformat()
+            last_pred_time = prediction["last_prediction_time"]
+            if isinstance(last_pred_time, str):
+                attributes[ATTR_LAST_PREDICTION] = last_pred_time
+            else:
+                attributes[ATTR_LAST_PREDICTION] = last_pred_time.isoformat()
         
         # Add predicted refuel date
         if prediction.get("predicted_refuel_date"):
-            attributes[ATTR_PREDICTED_REFUEL_DATE] = prediction["predicted_refuel_date"].isoformat()
+            pred_refuel_date = prediction["predicted_refuel_date"]
+            if isinstance(pred_refuel_date, str):
+                attributes[ATTR_PREDICTED_REFUEL_DATE] = pred_refuel_date
+            else:
+                attributes[ATTR_PREDICTED_REFUEL_DATE] = pred_refuel_date.isoformat()
         
         # Add weekday pattern if available
         weekday_pattern = prediction.get("weekday_pattern")

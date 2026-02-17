@@ -415,7 +415,7 @@ async def predict_days_until_refuel(
             "confidence": 0.0,
             "avg_daily_km": fallback_daily_km,
             "avg_consumption_rate": fallback_consumption_rate,
-            "last_prediction_time": now.isoformat(),
+            "last_prediction_time": now,
             "data_points_used": 0,
             "ml_prediction": None,
             "weekday_pattern": None,
@@ -714,10 +714,25 @@ async def store_prediction_result(
         data["prediction_history"] = []
     
     # Store prediction with serializable values
+    # Handle both datetime objects and strings for timestamp fields
+    last_prediction_time = prediction["last_prediction_time"]
+    if isinstance(last_prediction_time, str):
+        timestamp = last_prediction_time
+    else:
+        timestamp = last_prediction_time.isoformat()
+    
+    predicted_refuel_date = prediction["predicted_refuel_date"]
+    if predicted_refuel_date is None:
+        refuel_date_str = None
+    elif isinstance(predicted_refuel_date, str):
+        refuel_date_str = predicted_refuel_date
+    else:
+        refuel_date_str = predicted_refuel_date.isoformat()
+    
     prediction_record = {
-        "timestamp": prediction["last_prediction_time"].isoformat(),
+        "timestamp": timestamp,
         "days_until_refuel": prediction["days_until_refuel"],
-        "predicted_refuel_date": prediction["predicted_refuel_date"].isoformat() if prediction["predicted_refuel_date"] else None,
+        "predicted_refuel_date": refuel_date_str,
         "data_source": prediction["data_source"],
         "confidence": prediction["confidence"],
         "avg_daily_km": prediction["avg_daily_km"],
