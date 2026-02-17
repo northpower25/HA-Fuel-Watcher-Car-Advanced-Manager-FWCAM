@@ -120,13 +120,17 @@ DEFAULT_HISTORICAL_IMPORT_TYPE = "none"
 
 # State restoration and data staleness constants
 DATA_STALENESS_THRESHOLD_HOURS = 1  # Hours before showing staleness warning
+STATE_RESTORED_DATA_SOURCE = "restored_from_previous_state"  # Data source marker for restored state
 
 
 def check_data_staleness(timestamp: str | datetime | None, data_type: str) -> str | None:
     """Check if data timestamp indicates stale data and return warning message.
     
+    The function accepts timestamps in any format that Home Assistant's dt_util.parse_datetime
+    can handle, including ISO 8601 formats (e.g., '2024-01-15T10:30:00+00:00'), or datetime objects.
+    
     Args:
-        timestamp: Datetime string (in any format supported by dt_util.parse_datetime),
+        timestamp: Datetime string (ISO 8601 or other standard formats),
                   datetime object (used directly without parsing), or None
         data_type: Description of the data type (e.g., "Vehicle data", "Fuel price data")
         
@@ -1701,8 +1705,9 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         self._attr_name = "Fuel Price"
         self._attr_unique_id = f"{config_entry.entry_id}_fuel_price"
         self._config_entry = config_entry
-        self._restored_value = None
-        self._restored_attributes = {}
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
         
         # Device info for grouping
         self._attr_device_info = {
@@ -1813,7 +1818,7 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             
             # Mark as restored state
             if self._restored_value is not None:
-                attributes["data_source"] = "restored_from_previous_state"
+                attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
         # Continue with coordinator data attributes if available
         if self.coordinator.data is not None:
@@ -1945,8 +1950,9 @@ class TankLevelSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         self._attr_name = "Tank Level"
         self._attr_unique_id = f"{config_entry.entry_id}_tank_level"
         self._config_entry = config_entry
-        self._restored_value = None
-        self._restored_attributes = {}
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
         
         # Device info for grouping
         self._attr_device_info = {
@@ -2028,7 +2034,7 @@ class TankLevelSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         
         # Mark as restored state
         if self._restored_value is not None:
-            attributes["data_source"] = "restored_from_previous_state"
+            attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
         return attributes
 
@@ -2058,8 +2064,9 @@ class RangeSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         super().__init__(coordinator)
         self._attr_name = "Range"
         self._attr_unique_id = f"{config_entry.entry_id}_range"
-        self._restored_value = None
-        self._restored_attributes = {}
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
         
         # Device info for grouping
         self._attr_device_info = {
@@ -2134,7 +2141,7 @@ class RangeSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         
         # Mark as restored state
         if self._restored_value is not None:
-            attributes["data_source"] = "restored_from_previous_state"
+            attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
         return attributes
 
@@ -2161,8 +2168,9 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         super().__init__(coordinator)
         self._attr_name = "Cheapest Station"
         self._attr_unique_id = f"{config_entry.entry_id}_nearest_station"
-        self._restored_value = None
-        self._restored_attributes = {}
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
         
         # Device info for grouping
         self._attr_device_info = {
@@ -2237,7 +2245,7 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         
         # Mark as restored state
         if self._restored_value is not None:
-            attributes["data_source"] = "restored_from_previous_state"
+            attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
         return attributes
 
