@@ -1747,13 +1747,15 @@ class FWCAMCard extends HTMLElement {
                 <div class="form-row">
                   <label for="trip-start-latitude">
                     Latitude
-                    <input type="number" id="trip-start-latitude" name="start_latitude" 
-                           step="0.000001" min="-90" max="90" placeholder="Optional">
+                    <input type="text" id="trip-start-latitude" name="start_latitude" 
+                           inputmode="decimal" placeholder="Optional" 
+                           title="Enter latitude (e.g., 50.000000 or 50,000000)">
                   </label>
                   <label for="trip-start-longitude">
                     Longitude
-                    <input type="number" id="trip-start-longitude" name="start_longitude" 
-                           step="0.000001" min="-180" max="180" placeholder="Optional">
+                    <input type="text" id="trip-start-longitude" name="start_longitude" 
+                           inputmode="decimal" placeholder="Optional" 
+                           title="Enter longitude (e.g., 10.000000 or 10,000000)">
                   </label>
                 </div>
                 <div class="form-row" style="margin-top: 8px;">
@@ -1791,13 +1793,15 @@ class FWCAMCard extends HTMLElement {
                 <div class="form-row">
                   <label for="trip-end-latitude">
                     Latitude
-                    <input type="number" id="trip-end-latitude" name="end_latitude" 
-                           step="0.000001" min="-90" max="90" placeholder="Optional">
+                    <input type="text" id="trip-end-latitude" name="end_latitude" 
+                           inputmode="decimal" placeholder="Optional" 
+                           title="Enter latitude (e.g., 51.000000 or 51,000000)">
                   </label>
                   <label for="trip-end-longitude">
                     Longitude
-                    <input type="number" id="trip-end-longitude" name="end_longitude" 
-                           step="0.000001" min="-180" max="180" placeholder="Optional">
+                    <input type="text" id="trip-end-longitude" name="end_longitude" 
+                           inputmode="decimal" placeholder="Optional" 
+                           title="Enter longitude (e.g., 11.000000 or 11,000000)">
                   </label>
                 </div>
                 <div class="form-row" style="margin-top: 8px;">
@@ -1974,6 +1978,7 @@ class FWCAMCard extends HTMLElement {
                     <option value="manual">Manual</option>
                     <option value="auto_detected">Auto Detected</option>
                     <option value="historical_import">Historical Import</option>
+                    <option value="ai_processed">AI Processed</option>
                   </select>
                 </label>
                 <label for="confidence">
@@ -1981,6 +1986,33 @@ class FWCAMCard extends HTMLElement {
                   <input type="number" id="confidence" name="confidence" 
                          min="0" max="1" step="0.1" value="1.0">
                 </label>
+              </div>
+
+              <!-- Telegram Response Section (shown only if available) -->
+              <div id="telegram-response-section" class="form-section" style="display: none;">
+                <h3 style="margin-top: 20px; margin-bottom: 10px; border-top: 2px solid var(--primary-color); padding-top: 15px;">
+                  📱 Telegram Response
+                </h3>
+                <div class="form-row">
+                  <label for="telegram_response_raw" style="flex: 1;">
+                    User Message
+                    <textarea id="telegram_response_raw" name="telegram_response_raw" 
+                              rows="4" readonly 
+                              style="background-color: var(--disabled-color, #f5f5f5); resize: vertical;"></textarea>
+                  </label>
+                  <label for="telegram_response_parsed_display" style="flex: 1; margin-left: 10px;">
+                    AI Recognized Data
+                    <textarea id="telegram_response_parsed_display" 
+                              rows="4" readonly 
+                              style="background-color: var(--disabled-color, #f5f5f5); resize: vertical;"></textarea>
+                  </label>
+                </div>
+                <div class="form-row">
+                  <small style="color: var(--secondary-text-color); font-style: italic;">
+                    Response Type: <span id="telegram_response_type">-</span> | 
+                    Received: <span id="telegram_response_timestamp">-</span>
+                  </small>
+                </div>
               </div>
 
               <div class="dialog-footer">
@@ -2088,6 +2120,43 @@ class FWCAMCard extends HTMLElement {
     this.shadowRoot.getElementById('fuel_type').value = event.fuel_type || '';
     this.shadowRoot.getElementById('data_quality').value = event.data_quality || 'manual';
     this.shadowRoot.getElementById('confidence').value = event.confidence !== undefined ? event.confidence : 1.0;
+    
+    // Populate Telegram response fields if available
+    const telegramSection = this.shadowRoot.getElementById('telegram-response-section');
+    if (event.telegram_response_received && event.telegram_response_raw) {
+      telegramSection.style.display = 'block';
+      
+      // Set raw message
+      this.shadowRoot.getElementById('telegram_response_raw').value = event.telegram_response_raw || '';
+      
+      // Format parsed data for display
+      let parsedDisplay = '';
+      if (event.telegram_response_parsed && typeof event.telegram_response_parsed === 'object') {
+        parsedDisplay = JSON.stringify(event.telegram_response_parsed, null, 2);
+      } else if (event.telegram_response_parsed) {
+        parsedDisplay = String(event.telegram_response_parsed);
+      } else {
+        parsedDisplay = 'No structured data parsed';
+      }
+      this.shadowRoot.getElementById('telegram_response_parsed_display').value = parsedDisplay;
+      
+      // Set metadata
+      this.shadowRoot.getElementById('telegram_response_type').textContent = 
+        event.telegram_response_type || 'unknown';
+      
+      if (event.telegram_response_timestamp) {
+        try {
+          const responseDate = new Date(event.telegram_response_timestamp);
+          this.shadowRoot.getElementById('telegram_response_timestamp').textContent = 
+            responseDate.toLocaleString();
+        } catch (e) {
+          this.shadowRoot.getElementById('telegram_response_timestamp').textContent = 
+            event.telegram_response_timestamp;
+        }
+      }
+    } else {
+      telegramSection.style.display = 'none';
+    }
     
     // Setup auto-calculation for total cost
     this._setupCostCalculation();
@@ -2938,10 +3007,18 @@ class FWCAMCard extends HTMLElement {
     const nameField = this.shadowRoot.getElementById(isStart ? 'trip-start-name' : 'trip-end-name');
     const addressField = this.shadowRoot.getElementById(isStart ? 'trip-start-address' : 'trip-end-address');
     
-    // Normalize decimal separator: replace comma with dot for proper parsing
+    // Get raw values and normalize decimal separator
     // This handles locale-specific input (e.g., German: 50,000000 -> 50.000000)
-    const lat = parseFloat((latField?.value || '').replace(',', '.'));
-    const lon = parseFloat((lonField?.value || '').replace(',', '.'));
+    const latRaw = latField?.value || '';
+    const lonRaw = lonField?.value || '';
+    const lat = parseFloat(latRaw.replace(',', '.'));
+    const lon = parseFloat(lonRaw.replace(',', '.'));
+    
+    console.log('[FWCAM Card] Reverse geocoding:', { 
+      raw: `${latRaw}, ${lonRaw}`, 
+      parsed: `${lat}, ${lon}`,
+      isStart 
+    });
     
     // Validate coordinates
     if (isNaN(lat) || isNaN(lon)) {
@@ -2976,7 +3053,9 @@ class FWCAMCard extends HTMLElement {
           longitude: lon,
           use_cache: true
         },
-        {return_response: true}
+        {},     // target
+        true,   // notifyOnError
+        true    // returnResponse
       );
       
       if (result && result.response) {

@@ -748,9 +748,19 @@ class TelegramRefuelingHandler:
         # Show missing fields or completion status
         if missing_fields:
             message_parts.append(f"\n❓ <b>Noch fehlend:</b> {', '.join(missing_fields)}")
-            message_parts.append(
-                f"\n💡 <b>Tipp:</b> Einfach weitere Daten senden (z.B. '155000 km, Shell')"
-            )
+            
+            # Get last fuel type for suggestion
+            from .utils.storage import get_last_fuel_type
+            last_fuel_type = await get_last_fuel_type(self.hass, self.config_entry)
+            
+            if last_fuel_type and "Kraftstoffart" in missing_fields:
+                message_parts.append(
+                    f"\n💡 <b>Tipp:</b> Letzte Kraftstoffart war '{last_fuel_type}' (z.B. weitere Daten senden wie '155000 km, {last_fuel_type}, Shell')"
+                )
+            else:
+                message_parts.append(
+                    f"\n💡 <b>Tipp:</b> Einfach weitere Daten senden (z.B. '155000 km, Shell')"
+                )
         else:
             message_parts.append(f"\n✅ <b>Alle Daten vollständig!</b>")
         
