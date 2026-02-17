@@ -38,6 +38,13 @@ ODOMETER_CHANGE_THRESHOLD_KM = 0.1  # Minimum change to record new observation
 DUPLICATE_EVENT_THRESHOLD_SECONDS = 60  # Time gap to warn about possible duplicates
 MAX_REASONABLE_DISTANCE_KM = 2000  # Max km between refuelings before warning
 
+# Refueling event validation thresholds
+CLOCK_SKEW_TOLERANCE_HOURS = 1  # Allow events up to 1 hour in future for clock skew
+MAX_REALISTIC_FUEL_AMOUNT_L = 200  # Maximum realistic fuel amount in liters
+MAX_REALISTIC_SPEED_KMH = 200  # Maximum realistic average speed between events
+MAX_DISTANCE_PER_DAY_KM = 5000  # Maximum realistic distance in a single day
+VEHICLE_ODOMETER_TOLERANCE_KM = 1000  # Tolerance for odometer vs current vehicle value
+
 
 def _get_store(hass: HomeAssistant, entry: ConfigEntry) -> Store:
     """Return a Store instance for this config entry.
@@ -820,7 +827,7 @@ async def validate_refueling_event(
     now = dt_util.now()
     if event_time > now:
         time_diff = (event_time - now).total_seconds() / 3600  # hours
-        if time_diff > 1:  # Allow 1 hour tolerance for clock skew
+        if time_diff > CLOCK_SKEW_TOLERANCE_HOURS:
             return False, f"Event is {time_diff:.1f} hours in the future"
     
     # Check for test indicators in station name
@@ -834,8 +841,8 @@ async def validate_refueling_event(
     if liters is not None:
         if liters <= 0:
             return False, "Fuel amount must be positive"
-        if liters > 200:  # More than 200L is extremely unusual
-            return False, f"Fuel amount {liters}L exceeds realistic maximum (200L)"
+        if liters > MAX_REALISTIC_FUEL_AMOUNT_L:
+            return False, f"Fuel amount {liters}L exceeds realistic maximum ({MAX_REALISTIC_FUEL_AMOUNT_L}L)"
     
     # Check odometer value if available
     if odometer is not None:
@@ -843,7 +850,7 @@ async def validate_refueling_event(
             return False, "Odometer must be positive"
         
         # Check against current vehicle odometer if provided
-        if vehicle_odometer is not None and odometer > vehicle_odometer + 1000:
+        if vehicle_odometer is not None and odometer > vehicle_odometer + VEHICLE_ODOMETER_TOLERANCE_KM:
             diff = odometer - vehicle_odometer
             return False, f"Odometer {odometer} km is {diff} km higher than current vehicle odometer"
         
@@ -894,11 +901,11 @@ async def validate_refueling_event(
                     time_diff_hours = (event_time - other_time).total_seconds() / 3600
                     if time_diff_hours > 0:
                         km_per_hour = km_diff / time_diff_hours
-                        # More than 200 km/h average is unrealistic for normal driving
-                        if km_per_hour > 200:
+                        # Check for unrealistic average speed
+                        if km_per_hour > MAX_REALISTIC_SPEED_KMH:
                             return False, f"Unrealistic speed: {km_per_hour:.0f} km/h average vs event #{other_id}"
-                        # More than 5000 km in a single day is suspicious
-                        if time_diff_hours < 24 and km_diff > 5000:
+                        # Check for unrealistic distance in short time
+                        if time_diff_hours < 24 and km_diff > MAX_DISTANCE_PER_DAY_KM:
                             return False, f"Unrealistic distance: {km_diff} km in {time_diff_hours:.1f}h vs event #{other_id}"
                             
             except Exception:
