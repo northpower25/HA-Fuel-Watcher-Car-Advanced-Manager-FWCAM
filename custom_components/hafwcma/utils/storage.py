@@ -412,9 +412,10 @@ async def add_refuel_event(
     # Also add to legacy tank_history for backward compatibility
     data["tank_history"].append(event_data)
     
-    # Track last fuel type if provided
+    # Track last fuel type if provided (skip simulated refuelings)
     fuel_type = event_data.get("fuel_type")
-    if fuel_type:
+    data_quality = event_data.get("data_quality")
+    if fuel_type and data_quality != "simulated":
         data["last_fuel_type"] = fuel_type
     
     # Keep only last 100 refueling events
@@ -523,9 +524,12 @@ async def update_refueling_record(
                 if field in updates:
                     record[field] = updates[field]
             
-            # Track last fuel type if updated
+            # Track last fuel type if updated (skip simulated refuelings)
             if "fuel_type" in updates and updates["fuel_type"]:
-                data["last_fuel_type"] = updates["fuel_type"]
+                # Only track if this is not a simulated refueling
+                data_quality = record.get("data_quality", updates.get("data_quality"))
+                if data_quality != "simulated":
+                    data["last_fuel_type"] = updates["fuel_type"]
             
             await save_data(hass, entry, data)
             return True
@@ -569,14 +573,36 @@ async def delete_refueling_record(
 async def get_last_fuel_type(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
     """Get last used fuel type for this entry.
     
+    Returns the fuel type from the most recent non-simulated refueling event.
+    This ensures that test/simulated refuelings don't affect the fuel type suggestion.
+    
     Args:
         hass: Home Assistant instance
         entry: Config entry
         
     Returns:
-        Last fuel type or None
+        Last fuel type from a real (non-simulated) refueling, or None
     """
     data = await load_data(hass, entry)
+    refueling_log = data.get("refueling_log", [])
+    
+    # Sort refuelings by timestamp (newest first) and find the last non-simulated one with fuel_type
+    sorted_log = sorted(
+        refueling_log,
+        key=lambda x: x.get("timestamp", ""),
+        reverse=True
+    )
+    
+    for refuel in sorted_log:
+        # Skip simulated refuelings
+        if refuel.get("data_quality") == "simulated":
+            continue
+        # Return fuel type if it exists
+        fuel_type = refuel.get("fuel_type")
+        if fuel_type:
+            return fuel_type
+    
+    # Fallback to stored last_fuel_type if no real refuelings found
     return data.get("last_fuel_type")
 
 
