@@ -2626,6 +2626,11 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
                 "fuel_type": event.get("fuel_type"),
                 "data_quality": event.get("data_quality", "manual"),
                 "confidence": event.get("confidence", 1.0),
+                "telegram_response_received": event.get("telegram_response_received", False),
+                "telegram_response_timestamp": event.get("telegram_response_timestamp"),
+                "telegram_response_type": event.get("telegram_response_type"),
+                "telegram_response_raw": event.get("telegram_response_raw"),
+                "telegram_response_parsed": event.get("telegram_response_parsed"),
             }
             recent_events.append(event_info)
         
