@@ -378,8 +378,9 @@ async def add_refuel_event(
     data["tank_history"].append(event_data)
     
     # Track last fuel type if provided
-    if event_data.get("fuel_type"):
-        data["last_fuel_type"] = event_data.get("fuel_type")
+    fuel_type = event_data.get("fuel_type")
+    if fuel_type:
+        data["last_fuel_type"] = fuel_type
     
     # Keep only last 100 refueling events
     if len(data["tank_history"]) > 100:
