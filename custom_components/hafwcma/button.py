@@ -525,7 +525,7 @@ class RecalculateTripStatisticsButton(ButtonEntity):
 class RefreshVehicleDataButton(ButtonEntity):
     """Button to manually refresh vehicle data from source entities."""
 
-    _attr_icon = "mdi:car-sync"
+    _attr_icon = "mdi:car-info"
     _attr_has_entity_name = True
 
     def __init__(
