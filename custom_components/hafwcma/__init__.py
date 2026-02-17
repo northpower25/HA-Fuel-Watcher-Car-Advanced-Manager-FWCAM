@@ -39,9 +39,6 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.B
 CARD_FILENAME = "fwcam-card.js"
 CARD_VERSION = "1.0.0"  # Update this when the card changes
 
-# Historical data import configuration
-HISTORICAL_IMPORT_STARTUP_DELAY_SECONDS = 10  # Delay before starting background import
-
 # Service schemas
 SERVICE_ADD_REFUEL_EVENT = "add_refuel_event"
 SERVICE_UPDATE_REFUEL_EVENT = "update_refuel_event"
@@ -954,9 +951,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Setup options update listener - use update handler instead of reload
     entry.async_on_unload(entry.add_update_listener(async_update_options))
     
-    # Import historical data in the background (non-blocking)
-    # This runs asynchronously after setup is complete
-    hass.async_create_task(_import_historical_data_background(hass, entry))
+    # Import historical data after HA is fully started (non-blocking)
+    # Use homeassistant_started event to ensure all dependencies are available
+    async def _start_import_when_ready(event):
+        """Start historical data import after HA is fully started."""
+        await _import_historical_data_background(hass, entry)
+    
+    hass.bus.async_listen_once("homeassistant_started", _start_import_when_ready)
     
     return True
 
@@ -983,10 +984,6 @@ async def _import_historical_data_background(
         from .utils.geocoding import rebuild_cache_from_trips
         
         _LOGGER.info("Starting background historical data import")
-        
-        # Wait to ensure coordinator is fully initialized
-        import asyncio
-        await asyncio.sleep(HISTORICAL_IMPORT_STARTUP_DELAY_SECONDS)
         
         # Import historical vehicle data (90 days lookback by default)
         result = await import_historical_vehicle_data(

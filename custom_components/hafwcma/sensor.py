@@ -124,6 +124,11 @@ async def async_setup_entry(
 ) -> None:
     """Set up haFWCMA sensors from a config entry.
     
+    This function follows Home Assistant best practices:
+    - Returns immediately without blocking HA startup
+    - Sensors start in unavailable state
+    - First data refresh happens after HA is fully started
+    
     Args:
         hass: Home Assistant instance
         config_entry: Config entry for this integration
@@ -140,8 +145,6 @@ async def async_setup_entry(
     if config_entry.entry_id not in hass.data[DOMAIN]:
         hass.data[DOMAIN][config_entry.entry_id] = {}
     hass.data[DOMAIN][config_entry.entry_id]["coordinator"] = coordinator
-    
-    await coordinator.async_config_entry_first_refresh()
 
     vehicle_name = config_entry.data.get(CONF_VEHICLE_NAME, "Vehicle")
 
@@ -160,7 +163,23 @@ async def async_setup_entry(
         CurrentTripSensor(coordinator, config_entry, vehicle_name),
     ]
 
+    # Add entities immediately - they will start in unavailable state
     async_add_entities(sensors)
+    
+    # Schedule first refresh after HA is fully started to avoid blocking startup
+    async def _first_refresh_when_started(event):
+        """Perform first data refresh after HA is fully started."""
+        _LOGGER.info("Home Assistant started - performing first data refresh for %s", vehicle_name)
+        try:
+            await coordinator.async_config_entry_first_refresh()
+        except Exception as err:
+            _LOGGER.error("Error during first refresh for %s: %s", vehicle_name, err, exc_info=True)
+    
+    # Listen for HA startup completion event
+    hass.bus.async_listen_once("homeassistant_started", _first_refresh_when_started)
+    
+    _LOGGER.info("haFWCMA sensors registered successfully - first refresh will occur after HA startup")
+
 
 
 class HaFWCMACoordinator(DataUpdateCoordinator):
@@ -212,14 +231,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         )  # Track proximity alerts
         self._position_tracker = PositionTracker()  # Track position changes for recommendation cooldown
         
-        # Startup delay and caching to prevent timing issues
-        from homeassistant.util import dt as dt_util
-        self._startup_time = dt_util.now()
+        # Entity availability and caching
         self._cached_vehicle_data = {}  # Cache last known vehicle data
         self._cached_consumption_prediction = None  # Cache last known prediction
         self._entities_available = False  # Track if vehicle entities are available
         self._first_successful_fetch = False  # Track if we've had a successful vehicle data fetch
-        self._post_startup_refresh_done = False  # Track if we've triggered refresh after startup delay
         
         _LOGGER.info(
             "Coordinator initialized with randomized update interval: %.1f minutes (base: %d, jitter: ±%.1f)",
@@ -241,18 +257,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             if hasattr(self._provider, 'last_api_response'):
                 self._api_debug_info["last_api_response"] = self._provider.last_api_response
 
-    def _is_within_startup_delay(self, delay_seconds: int) -> bool:
-        """Check if we're still within the startup delay period.
-        
-        Args:
-            delay_seconds: Number of seconds to delay after startup
-            
-        Returns:
-            True if within startup delay period, False otherwise
-        """
-        from homeassistant.util import dt as dt_util
-        elapsed = (dt_util.now() - self._startup_time).total_seconds()
-        return elapsed < delay_seconds
 
     def _get_randomized_interval(self, base_minutes: int) -> timedelta:
         """Calculate a randomized update interval to avoid simultaneous API calls.
@@ -327,12 +331,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         
         _LOGGER.info("Coordinator configuration updated successfully")
 
-    async def _wait_for_vehicle_entities(self) -> None:
-        """Wait for vehicle entities to become available during startup.
+    async def _check_vehicle_entities_available(self) -> None:
+        """Check if vehicle entities are available without blocking.
         
-        This method checks if the configured vehicle entities exist and retries
-        with a delay if they don't. This is necessary because vehicle integrations
-        may load after this integration during Home Assistant startup.
+        This method checks if the configured vehicle entities exist.
+        It does not wait or retry - just checks once and updates the flag.
         """
         if self._entities_available:
             # Already checked and found entities
@@ -347,14 +350,26 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         range_entity = options.get(CONF_RANGE_ENTITY) or config.get(CONF_RANGE_ENTITY)
         position_entity = options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY)
         
-        entity_ids = [odometer_entity, tank_level_entity, range_entity, position_entity]
+        # Filter out None/empty entity IDs
+        entity_ids = [e for e in [odometer_entity, tank_level_entity, range_entity, position_entity] if e]
         
-        _LOGGER.info("Waiting for vehicle entities to become available...")
-        self._entities_available = await async_wait_for_entities(
-            self.hass,
-            entity_ids,
-            # Use default values from const.py
-        )
+        if not entity_ids:
+            _LOGGER.debug("No vehicle entities configured")
+            self._entities_available = True  # No entities to wait for
+            return
+        
+        # Check if at least one entity exists
+        found_any = False
+        for entity_id in entity_ids:
+            if self.hass.states.get(entity_id) is not None:
+                found_any = True
+                break
+        
+        if found_any:
+            _LOGGER.info("Vehicle entities are now available")
+            self._entities_available = True
+        else:
+            _LOGGER.debug("Vehicle entities not yet available - sensors will remain unavailable until entities exist")
 
     async def _update_consumption_prediction(
         self,
@@ -380,7 +395,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             DEFAULT_CONSUMPTION_MIN_DATA_POINTS,
             DEFAULT_CONSUMPTION_PREDICTION_INTERVAL,
             DEFAULT_FALLBACK_DAILY_KM,
-            STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS,
         )
         from .utils.statistics_engine import get_average_consumption_rate
         
@@ -389,15 +403,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             _LOGGER.debug(
                 "Skipping consumption prediction - waiting for first successful vehicle data fetch"
             )
-            return self._cached_consumption_prediction
-        
-        # Check if we're within startup delay period
-        if self._is_within_startup_delay(STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS):
-            _LOGGER.debug(
-                "Skipping consumption prediction during startup delay (%.1f seconds remaining)",
-                STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS - (dt_util.now() - self._startup_time).total_seconds()
-            )
-            # Return cached prediction if available
             return self._cached_consumption_prediction
         
         # Get configuration
@@ -673,53 +678,60 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         odometer = None
         
         try:
-            # Wait for vehicle entities to become available on first update
-            if not self._first_successful_fetch:
-                await self._wait_for_vehicle_entities()
+            # Check if vehicle entities are available (non-blocking)
+            await self._check_vehicle_entities_available()
             
-            # Check if we're within startup delay period
-            from homeassistant.util import dt as dt_util
-            from .const import STARTUP_DELAY_VEHICLE_DATA_SECONDS, STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS
-            within_startup_delay = self._is_within_startup_delay(STARTUP_DELAY_VEHICLE_DATA_SECONDS)
+            # Fetch vehicle data from configured entities
+            # Use silent mode if entities aren't available yet to avoid spam
+            silent_mode = not self._entities_available
             
-            # Use silent mode during startup delay to suppress "not found" warnings
-            # Silent mode is only used if:
-            # 1. We're within the STARTUP_DELAY_VEHICLE_DATA_SECONDS period, AND
-            # 2. Entities were not found available during the wait check
-            # After startup period or if entities become available, warnings will be logged normally
-            # This allows time for vehicle integrations to load without false warnings
-            silent_mode = within_startup_delay and not self._entities_available
+            vehicle_data = await async_get_vehicle_data(
+                self.hass,
+                odometer_entity,
+                tank_level_entity,
+                range_entity,
+                position_entity,
+                silent=silent_mode,
+            )
             
-            if within_startup_delay and self._cached_vehicle_data:
-                # Use cached data during startup delay
-                vehicle_data = self._cached_vehicle_data.copy()
-                _LOGGER.debug(
-                    "Using cached vehicle data during startup delay (%.1f seconds remaining)",
-                    STARTUP_DELAY_VEHICLE_DATA_SECONDS - (dt_util.now() - self._startup_time).total_seconds()
-                )
-            else:
-                # Fetch vehicle data from configured entities
-                vehicle_data = await async_get_vehicle_data(
-                    self.hass,
-                    odometer_entity,
-                    tank_level_entity,
-                    range_entity,
-                    position_entity,
-                    silent=silent_mode,
-                )
-                
-                # Mark first successful fetch if we got any actual data
-                # async_get_vehicle_data always returns a dict, check if any value is not None
-                if any(v is not None for v in vehicle_data.values()):
-                    if not self._first_successful_fetch:
-                        _LOGGER.info("First successful vehicle data fetch completed")
-                        self._first_successful_fetch = True
-                
-                # Cache the data (defensive check, vehicle_data is always a dict but may be empty)
-                if vehicle_data:
-                    self._cached_vehicle_data = vehicle_data.copy()
+            # Mark first successful fetch if we got any actual data
+            # async_get_vehicle_data always returns a dict, check if any value is not None
+            if any(v is not None for v in vehicle_data.values()):
+                if not self._first_successful_fetch:
+                    _LOGGER.info("First successful vehicle data fetch completed")
+                    self._first_successful_fetch = True
+            
+            # Cache the data (defensive check, vehicle_data is always a dict but may be empty)
+            if vehicle_data:
+                self._cached_vehicle_data = vehicle_data.copy()
             
             _LOGGER.debug("Vehicle data: %s", vehicle_data)
+            
+            # Calculate tank percentage early for use in geolocation features
+            # This needs to be done before proximity alert processing in the geolocation features section
+            tank_percentage = None
+            tank_level = vehicle_data.get("tank_level")
+            tank_level_unit = vehicle_data.get("tank_level_unit")
+            # Use explicit None checks to handle edge case where tank_capacity could be 0
+            tank_capacity = options.get(CONF_TANK_CAPACITY)
+            if tank_capacity is None:
+                tank_capacity = config.get(CONF_TANK_CAPACITY)
+            if tank_capacity is None:
+                tank_capacity = DEFAULT_TANK_CAPACITY
+            
+            if tank_level is not None:
+                # Check if tank level is already a percentage or in liters
+                if tank_level_unit and tank_level_unit.lower() in ("%", "percent", "percentage"):
+                    # Tank level is already a percentage, use it directly
+                    tank_percentage = tank_level
+                else:
+                    # Tank level is in liters, convert to percentage if we have tank capacity
+                    if tank_capacity and tank_capacity > 0:
+                        tank_percentage = (tank_level / tank_capacity) * 100
+                
+                # Clamp tank percentage to valid range (0-100%)
+                if tank_percentage is not None:
+                    tank_percentage = max(MIN_TANK_PERCENTAGE, min(MAX_TANK_PERCENTAGE, tank_percentage))
             
             # Track vehicle data changes and detect events
             tracking_result = self.vehicle_tracker.update(vehicle_data)
@@ -1343,31 +1355,20 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Error handling trip tracking: %s", err)
         
         # Build data structure
-        # Calculate tank percentage and liters from vehicle data
-        tank_percentage = None
+        # Calculate tank_level_liters from vehicle data
+        # Note: tank_percentage was already calculated earlier (after line 722) for use in geolocation
         tank_level_liters = None
-        tank_level = vehicle_data.get("tank_level")
-        tank_level_unit = vehicle_data.get("tank_level_unit")
-        tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, 50.0)
         
         if tank_level is not None:
             # Check if tank level is already a percentage or in liters
             if tank_level_unit and tank_level_unit.lower() in ("%", "percent", "percentage"):
-                # Tank level is already a percentage, use it directly
-                tank_percentage = tank_level
+                # Tank level is already a percentage
                 # Calculate liters from percentage if we have tank capacity
                 if tank_capacity and tank_capacity > 0:
                     tank_level_liters = (tank_level / 100.0) * tank_capacity
             else:
                 # Tank level is in liters, use it directly
                 tank_level_liters = tank_level
-                # Convert to percentage if we have tank capacity
-                if tank_capacity and tank_capacity > 0:
-                    tank_percentage = (tank_level / tank_capacity) * 100
-            
-            # Clamp tank percentage to valid range (0-100%)
-            if tank_percentage is not None:
-                tank_percentage = max(MIN_TANK_PERCENTAGE, min(MAX_TANK_PERCENTAGE, tank_percentage))
         
         # Get price trend and statistics
         price_trend = None
@@ -1564,20 +1565,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
         )
         self.update_interval = self._get_randomized_interval(current_base_interval)
-
-        # Trigger immediate refresh after startup delay if we haven't already and conditions are met
-        # This ensures prediction runs as soon as possible after startup instead of waiting for next update cycle
-        if not self._post_startup_refresh_done:
-            # Check if we've passed the startup delay and have successful vehicle data fetch
-            if (self._first_successful_fetch and 
-                not self._is_within_startup_delay(STARTUP_DELAY_CONSUMPTION_PREDICTION_SECONDS)):
-                _LOGGER.info(
-                    "Startup delay passed and vehicle data fetched - scheduling immediate refresh for prediction"
-                )
-                self._post_startup_refresh_done = True
-                # Schedule immediate refresh in the background (after this method returns)
-                # Use call_soon to avoid blocking the current update
-                self.hass.loop.call_soon(lambda: self.hass.async_create_task(self.async_refresh()))
 
         return data
     
