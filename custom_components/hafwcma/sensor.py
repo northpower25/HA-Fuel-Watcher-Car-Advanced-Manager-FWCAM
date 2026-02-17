@@ -169,11 +169,11 @@ async def async_setup_entry(
     # Schedule first refresh after HA is fully started to avoid blocking startup
     async def _first_refresh_when_started(event):
         """Perform first data refresh after HA is fully started."""
-        _LOGGER.info("Home Assistant started - performing first data refresh")
+        _LOGGER.info("Home Assistant started - performing first data refresh for %s", vehicle_name)
         try:
             await coordinator.async_config_entry_first_refresh()
         except Exception as err:
-            _LOGGER.error("Error during first refresh: %s", err, exc_info=True)
+            _LOGGER.error("Error during first refresh for %s: %s", vehicle_name, err, exc_info=True)
     
     # Listen for HA startup completion event
     hass.bus.async_listen_once("homeassistant_started", _first_refresh_when_started)
@@ -708,11 +708,16 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Vehicle data: %s", vehicle_data)
             
             # Calculate tank percentage early for use in geolocation features
-            # This needs to be done before geolocation processing (line ~970)
+            # This needs to be done before proximity alert processing in the geolocation features section
             tank_percentage = None
             tank_level = vehicle_data.get("tank_level")
             tank_level_unit = vehicle_data.get("tank_level_unit")
-            tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
+            # Use explicit None checks to handle edge case where tank_capacity could be 0
+            tank_capacity = options.get(CONF_TANK_CAPACITY)
+            if tank_capacity is None:
+                tank_capacity = config.get(CONF_TANK_CAPACITY)
+            if tank_capacity is None:
+                tank_capacity = DEFAULT_TANK_CAPACITY
             
             if tank_level is not None:
                 # Check if tank level is already a percentage or in liters
