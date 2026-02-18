@@ -379,7 +379,7 @@ async def compare_stations_by_radius(
     return {
         "has_comparison": False,
         "reason": reason,
-        "cheapest_20km": cheapest_20km,
+        "cheapest_far": cheapest_far,
     }
 
 
