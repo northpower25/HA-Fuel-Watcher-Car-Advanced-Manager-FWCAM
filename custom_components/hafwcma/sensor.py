@@ -2488,7 +2488,7 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
             cheap_stations_radius = options.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
             cheap_near_stations_radius = options.get(CONF_CHEAP_NEAR_STATIONS_RADIUS, DEFAULT_CHEAP_NEAR_STATIONS_RADIUS)
             
-            if stations_list and search_radius_km:
+            if stations_list:
                 # Helper function to get valid prices from station list
                 def get_lowest_price(stations):
                     """Extract lowest valid price from station list."""
@@ -2497,7 +2497,7 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
                 
                 # Stations within configured full search radius (cheap_stations_radius)
                 filtered_debug["count_stations_cheap_stations_radius_range"] = len(stations_list)
-                filtered_debug["configured_cheap_stations_radius_km"] = search_radius_km
+                filtered_debug["configured_cheap_stations_radius_km"] = cheap_stations_radius
                 filtered_debug["lowest_price_cheap_stations_radius_range"] = get_lowest_price(stations_list)
                 
                 # Stations within configured near radius (cheap_near_stations_radius)
