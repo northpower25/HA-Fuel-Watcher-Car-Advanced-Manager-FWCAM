@@ -3312,8 +3312,16 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed refueling events as attributes.
         
-        Returns the last 10 refueling events with all details to allow
-        users to review and verify detected refuelings.
+        Returns the last 5 refueling events with all details for debugging.
+        Use get_all_refuelings service to access complete history.
+        
+        Attributes are ordered according to FWCAM standard structure:
+        1. Core metadata (data_source)
+        2. Update timestamps
+        3. Last event summary
+        4. Counters
+        5. Config & documentation
+        6. Mass data (limited to 5 events for debugging only)
         """
         if self.coordinator.data is None:
             return {}
@@ -3321,15 +3329,15 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
         
         if not refueling_log:
             return {
-                "config_entry_id": self._config_entry.entry_id,
+                "data_source": "storage",
+                "status": "No refueling events recorded",
                 "total_events": 0,
                 "last_refueling": None,
+                "config_entry_id": self._config_entry.entry_id,
                 "recent_events": [],
-                "status": "No refueling events recorded",
             }
         
         # Filter out events without timestamps and sort by timestamp (newest first)
-        # Use a sentinel value that sorts to the beginning (will be at end after reverse)
         events_with_timestamps = [e for e in refueling_log if e.get("timestamp")]
         sorted_log = sorted(
             events_with_timestamps,
@@ -3337,13 +3345,65 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
             reverse=True
         )
         
-        # Get the last 10 events for display
+        # Get the most recent refueling (summary only, not full event)
+        last_refueling = None
+        if sorted_log:
+            last_event = sorted_log[0]
+            last_refueling = {
+                "timestamp": last_event.get("timestamp"),
+                "liters": last_event.get("liters_refueled"),
+                "cost": last_event.get("total_cost"),
+                "station": last_event.get("station_name"),
+            }
+        
+        # Count total excluded events in the entire log
+        total_excluded = sum(1 for e in refueling_log if e.get("excluded_from_calculation", False))
+        
+        # Build attributes in standard order
+        # 1. Core metadata
+        attrs = {
+            "data_source": "storage",
+        }
+        
+        # 2. Update timestamps
+        last_historical_import = self.coordinator.data.get("last_historical_import")
+        if last_historical_import:
+            attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp")
+            attrs["last_historical_import_type"] = last_historical_import.get("type")
+        
+        last_vehicle_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
+        if last_vehicle_refresh:
+            attrs["last_vehicle_data_refresh_timestamp"] = last_vehicle_refresh.get("timestamp")
+            attrs["last_vehicle_data_refresh_type"] = last_vehicle_refresh.get("type")
+        
+        # 3. Last event summary
+        attrs["last_refueling"] = last_refueling
+        
+        # 4. Counters
+        attrs.update({
+            "total_events": len(refueling_log),
+            "total_excluded": total_excluded,
+            "total_active": len(refueling_log) - total_excluded,
+        })
+        
+        # 5. Status
+        attrs["status"] = f"{len(refueling_log)} refueling events recorded ({total_excluded} excluded from calculations)"
+        
+        # 6. Configuration & documentation metadata
+        attrs["config_entry_id"] = self._config_entry.entry_id
+        
+        metadata = get_entity_metadata("refueling_log_sensor")
+        if metadata:
+            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        # 7. Mass data (LIMITED to 5 events for debugging only)
+        # NOTE: Components should use get_all_refuelings service for complete history
         recent_events = []
-        excluded_count = 0
-        for event in sorted_log[:10]:
+        for event in sorted_log[:5]:  # Reduced from 10 to 5
             is_excluded = event.get("excluded_from_calculation", False)
-            if is_excluded:
-                excluded_count += 1
             
             event_info = {
                 "id": event.get("id"),
@@ -3367,48 +3427,7 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
             }
             recent_events.append(event_info)
         
-        # Get the most recent refueling
-        last_refueling = None
-        if sorted_log:
-            last_event = sorted_log[0]
-            last_refueling = {
-                "timestamp": last_event.get("timestamp"),
-                "liters": last_event.get("liters_refueled"),
-                "cost": last_event.get("total_cost"),
-                "station": last_event.get("station_name"),
-            }
-        
-        # Count total excluded events in the entire log
-        total_excluded = sum(1 for e in refueling_log if e.get("excluded_from_calculation", False))
-        
-        attrs = {
-            "config_entry_id": self._config_entry.entry_id,
-            "total_events": len(refueling_log),
-            "total_excluded": total_excluded,
-            "total_active": len(refueling_log) - total_excluded,
-            "last_refueling": last_refueling,
-            "recent_events": recent_events,
-            "status": f"{len(refueling_log)} refueling events recorded ({total_excluded} excluded from calculations)",
-        }
-        
-        # Add retrieval metadata from coordinator data
-        last_historical_import = self.coordinator.data.get("last_historical_import")
-        if last_historical_import:
-            attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp")
-            attrs["last_historical_import_type"] = last_historical_import.get("type")
-        
-        last_vehicle_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
-        if last_vehicle_refresh:
-            attrs["last_vehicle_data_refresh_timestamp"] = last_vehicle_refresh.get("timestamp")
-            attrs["last_vehicle_data_refresh_type"] = last_vehicle_refresh.get("type")
-        
-        # Add standardized entity metadata for inline documentation
-        metadata = get_entity_metadata("refueling_log_sensor")
-        if metadata:
-            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
-            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
-            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
-            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        attrs["recent_events"] = recent_events
         
         return attrs
 
@@ -3464,13 +3483,24 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional state attributes."""
+        """Return additional state attributes.
+        
+        Returns top 5 cheapest stations for debugging.
+        Use geolocation features or services for complete station list.
+        
+        Attributes are ordered according to FWCAM standard structure:
+        1. Core metadata (data_source, location info)
+        2. Configuration (radius, max stations)
+        3. Config & documentation
+        4. Mass data (limited to 5 stations)
+        """
         if not self.coordinator.data:
             return {}
         
         nearby_data = self.coordinator.data.get("nearby_cheap_stations")
         if not nearby_data:
             return {
+                "data_source": "api",
                 "stations": [],
                 "search_radius_km": None,
                 "vehicle_latitude": None,
@@ -3479,26 +3509,37 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
                 "location_source": None,
             }
         
+        # Build attributes in standard order
+        # 1. Core metadata
         attributes = {
-            "stations": nearby_data.get("stations", []),
-            "search_radius_km": nearby_data.get("search_radius_km"),
-            "vehicle_latitude": nearby_data.get("vehicle_latitude"),
-            "vehicle_longitude": nearby_data.get("vehicle_longitude"),
-            "max_stations": nearby_data.get("max_stations"),
+            "data_source": "api",
+            "location_source": self.coordinator.data.get("location_source"),
         }
         
-        # Add location source information
-        location_source = self.coordinator.data.get("location_source")
-        if location_source:
-            attributes["location_source"] = location_source
+        # 2. Configuration
+        attributes.update({
+            "search_radius_km": nearby_data.get("search_radius_km"),
+            "max_stations": nearby_data.get("max_stations"),
+            "vehicle_latitude": nearby_data.get("vehicle_latitude"),
+            "vehicle_longitude": nearby_data.get("vehicle_longitude"),
+        })
         
-        # Add standardized entity metadata for inline documentation
+        # 3. Configuration & documentation metadata
+        attributes["config_entry_id"] = self._config_entry.entry_id
+        
         metadata = get_entity_metadata("nearby_cheap_stations_sensor")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
             attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
             attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
             attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        # 4. Mass data (LIMITED to 5 stations)
+        # Get top 5 cheapest stations only for debugging
+        all_stations = nearby_data.get("stations", [])
+        # Sort by price (cheapest first) and take top 5
+        sorted_stations = sorted(all_stations, key=lambda x: x.get("price", float('inf')))[:5]
+        attributes["stations"] = sorted_stations
         
         return attributes
     
@@ -3546,9 +3587,22 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return trip statistics and recent trips."""
+        """Return trip statistics and recent trips.
+        
+        Returns the last 5 trips for debugging only.
+        Use get_all_trips service to access complete history.
+        
+        Attributes are ordered according to FWCAM standard structure:
+        1. Core metadata (data_source, trip tracking enabled)
+        2. Update timestamps
+        3. Counters (trip counts, totals)
+        4. Config & documentation
+        5. Mass data (limited to 5 trips for debugging only)
+        """
         if not self.coordinator.data:
             return {
+                "data_source": "storage",
+                "trip_tracking_enabled": False,
                 "last_historical_import_timestamp": DEFAULT_HISTORICAL_IMPORT_TIMESTAMP,
                 "last_historical_import_type": DEFAULT_HISTORICAL_IMPORT_TYPE,
             }
@@ -3559,24 +3613,14 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
         # Sort all trips by end time (newest first)
         sorted_trips = sorted(trips, key=lambda x: x.get("timestamp_end", ""), reverse=True)
         
-        # Get last 10 trips to avoid exceeding 16KB attribute limit
-        recent_trips = sorted_trips[:10]
-        
+        # Build attributes in standard order
+        # 1. Core metadata
         attrs = {
-            "config_entry_id": self._config_entry.entry_id,
-            "total_trips": stats.get("total_trips", 0),
-            "total_distance_km": round(stats.get("total_distance_km", 0.0), 2),
-            "total_fuel_consumed": round(stats.get("total_fuel_consumed", 0.0), 2),
-            "total_fuel_cost": round(stats.get("total_fuel_cost", 0.0), 2),
-            "total_additional_costs": round(stats.get("total_additional_costs", 0.0), 2),
-            "business_trips": stats.get("business_trips", 0),
-            "private_trips": stats.get("private_trips", 0),
-            "commute_trips": stats.get("commute_trips", 0),
-            "recent_trips": recent_trips,
+            "data_source": "storage",
             "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
         }
         
-        # Add historical import metadata from coordinator data
+        # 2. Update timestamps
         last_historical_import = self.coordinator.data.get("last_historical_import")
         if last_historical_import:
             attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp", DEFAULT_HISTORICAL_IMPORT_TIMESTAMP)
@@ -3597,13 +3641,31 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
             attrs["last_vehicle_data_refresh_timestamp"] = last_vehicle_refresh.get("timestamp")
             attrs["last_vehicle_data_refresh_type"] = last_vehicle_refresh.get("type")
         
-        # Add standardized entity metadata for inline documentation
+        # 3. Counters and statistics
+        attrs.update({
+            "total_trips": stats.get("total_trips", 0),
+            "business_trips": stats.get("business_trips", 0),
+            "private_trips": stats.get("private_trips", 0),
+            "commute_trips": stats.get("commute_trips", 0),
+            "total_distance_km": round(stats.get("total_distance_km", 0.0), 2),
+            "total_fuel_consumed": round(stats.get("total_fuel_consumed", 0.0), 2),
+            "total_fuel_cost": round(stats.get("total_fuel_cost", 0.0), 2),
+            "total_additional_costs": round(stats.get("total_additional_costs", 0.0), 2),
+        })
+        
+        # 4. Configuration & documentation metadata
+        attrs["config_entry_id"] = self._config_entry.entry_id
+        
         metadata = get_entity_metadata("trip_log_sensor")
         if metadata:
             attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
             attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
             attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
             attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        # 5. Mass data (LIMITED to 5 trips for debugging only)
+        # NOTE: Components should use get_all_trips service for complete history
+        attrs["recent_trips"] = sorted_trips[:5]  # Reduced from 10 to 5
         
         return attrs
     
