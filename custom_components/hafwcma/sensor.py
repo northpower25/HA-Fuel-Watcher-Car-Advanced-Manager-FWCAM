@@ -2832,13 +2832,23 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional prediction attributes."""
+        """Return additional prediction attributes.
+        
+        Attributes are ordered according to FWCAM standard structure:
+        1. Core metadata (state_class, data_source, confidence)
+        2. Update timestamps (last_prediction)
+        3. AI/ML patterns (weekday_driving_pattern)
+        4. Recommendations (forecast_recommendation, forecast details)
+        5. Counters (data_points_used, data_points_percentage)
+        6. Statistics (avg_daily_km, avg_consumption_rate)
+        7. Config & documentation
+        """
         if self.coordinator.data is None:
             return {}
         prediction = self.coordinator.data.get("consumption_prediction")
         if not prediction:
             return {
-                ATTR_DATA_SOURCE: "no_data",
+                "data_source": "no_data",
                 "status": "Waiting for initial prediction",
             }
         
@@ -2850,41 +2860,31 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
         )
         
+        # Build attributes in standard order
+        # 1. Core metadata
         attributes = {
-            ATTR_DATA_SOURCE: prediction.get("data_source", "unknown"),
-            ATTR_CONFIDENCE: prediction.get("confidence", 0.0),
-            ATTR_AVG_DAILY_KM: prediction.get("avg_daily_km", 0.0),
-            ATTR_AVG_CONSUMPTION_RATE: prediction.get("avg_consumption_rate", 0.0),
-            ATTR_DATA_POINTS_USED: prediction.get("data_points_used", 0),
+            "state_class": "measurement",
+            "data_source": prediction.get("data_source", "unknown"),
+            "confidence": prediction.get("confidence", 0.0),
         }
         
-        # Calculate and add data points percentage
-        data_points_used = prediction.get("data_points_used", 0)
-        if min_data_points > 0:
-            data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
-            attributes["data_points_percentage"] = round(data_points_percentage, 1)
-            attributes["data_points_required"] = min_data_points
-        else:
-            attributes["data_points_percentage"] = 0.0
-            attributes["data_points_required"] = min_data_points
-        
-        # Add last prediction time
+        # 2. Update timestamps
         if prediction.get("last_prediction_time"):
             last_pred_time = prediction["last_prediction_time"]
             if isinstance(last_pred_time, str):
-                attributes[ATTR_LAST_PREDICTION] = last_pred_time
+                attributes["last_prediction"] = last_pred_time
             else:
-                attributes[ATTR_LAST_PREDICTION] = last_pred_time.isoformat()
+                attributes["last_prediction"] = last_pred_time.isoformat()
         
-        # Add predicted refuel date
+        # Also add predicted refuel date here as it's a key timestamp
         if prediction.get("predicted_refuel_date"):
             pred_refuel_date = prediction["predicted_refuel_date"]
             if isinstance(pred_refuel_date, str):
-                attributes[ATTR_PREDICTED_REFUEL_DATE] = pred_refuel_date
+                attributes["predicted_refuel_date"] = pred_refuel_date
             else:
-                attributes[ATTR_PREDICTED_REFUEL_DATE] = pred_refuel_date.isoformat()
+                attributes["predicted_refuel_date"] = pred_refuel_date.isoformat()
         
-        # Add weekday pattern if available
+        # 3. AI/ML patterns - weekday driving pattern
         weekday_pattern = prediction.get("weekday_pattern")
         if weekday_pattern:
             # Convert weekday numbers to names for better readability
@@ -2897,15 +2897,13 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             if formatted_pattern:
                 attributes["weekday_driving_pattern (km)"] = formatted_pattern
         
-        # Add forecast recommendation if available
-        # This is computed in the coordinator based on predicted refuel date and historical prices
+        # 4. Recommendations - forecast recommendation
         if prediction.get("forecast_recommendation"):
             forecast = prediction["forecast_recommendation"]
-            attributes["forecast_trend"] = forecast.get("forecast_trend", "stable")
+            attributes["forecast_recommendation"] = forecast.get("recommendation", "Not enough data for price forecast") or "Not enough data for price forecast"
             attributes["forecast_should_refuel"] = forecast.get("should_refuel", False)
             attributes["forecast_urgency"] = forecast.get("urgency", "low")
-            recommendation_text = forecast.get("recommendation", "")
-            attributes["forecast_recommendation"] = recommendation_text if recommendation_text else "Not enough data for price forecast"
+            attributes["forecast_trend"] = forecast.get("forecast_trend", "stable")
             
             # Add detailed forecast data
             if forecast.get("has_forecast"):
@@ -2918,7 +2916,26 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             # No forecast recommendation data available
             attributes["forecast_recommendation"] = "Waiting for consumption prediction and price history data"
         
-        # Add standardized entity metadata for inline documentation
+        # 5. Counters
+        data_points_used = prediction.get("data_points_used", 0)
+        attributes["data_points_used"] = data_points_used
+        
+        # Calculate and add data points percentage
+        if min_data_points > 0:
+            data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
+            attributes["data_points_percentage"] = round(data_points_percentage, 1)
+            attributes["data_points_required"] = min_data_points
+        else:
+            attributes["data_points_percentage"] = 0.0
+            attributes["data_points_required"] = min_data_points
+        
+        # 6. Statistics
+        attributes["avg_daily_km"] = prediction.get("avg_daily_km", 0.0)
+        attributes["avg_consumption_rate"] = prediction.get("avg_consumption_rate", 0.0)
+        
+        # 7. Configuration & documentation metadata
+        attributes["config_entry_id"] = self._config_entry.entry_id
+        
         metadata = get_entity_metadata("consumption_prediction_sensor")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
