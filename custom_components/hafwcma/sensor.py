@@ -1859,9 +1859,10 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 
                 if comparison_type == "nearest_vs_cheapest":
                     # Alternative comparison: nearest station vs cheapest station
+                    # Use the descriptive keys for clarity
                     attributes["station_comparison"] = {
-                        "nearest": radius_comparison.get("station_10km"),  # Re-labeled from 10km
-                        "cheapest": radius_comparison.get("station_20km"),  # Re-labeled from 20km
+                        "nearest": radius_comparison.get("nearest_station"),
+                        "cheapest": radius_comparison.get("cheapest_station"),
                         "savings": radius_comparison.get("savings"),
                         "savings_percent": radius_comparison.get("savings_percent"),
                         "comparison_recommendation": radius_comparison.get("recommendation"),

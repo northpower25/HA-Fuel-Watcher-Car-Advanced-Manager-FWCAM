@@ -303,30 +303,39 @@ async def compare_stations_by_radius(
             savings = total_cost_near - total_cost_cheap
             savings_percent = (savings / total_cost_near * 100) if total_cost_near > 0 else 0
             
+            # Prepare station data structures
+            nearest_data = {
+                "name": nearest_station.get("name"),
+                "distance_km": round(distance_near, 1),
+                "price": round(price_near, 3),
+                "round_trip_km": round(round_trip_near, 1),
+                "fuel_consumed": round(fuel_consumed_near, 2),
+                "cost_fuel": round(cost_fuel_near, 2),
+                "cost_trip": round(cost_trip_near, 2),
+                "total_cost": round(total_cost_near, 2),
+            }
+            
+            cheapest_data = {
+                "name": cheapest_overall.get("name"),
+                "distance_km": round(distance_cheap, 1),
+                "price": round(price_cheap, 3),
+                "round_trip_km": round(round_trip_cheap, 1),
+                "fuel_consumed": round(fuel_consumed_cheap, 2),
+                "cost_fuel": round(cost_fuel_cheap, 2),
+                "cost_trip": round(cost_trip_cheap, 2),
+                "total_cost": round(total_cost_cheap, 2),
+            }
+            
             return {
                 "has_comparison": True,
                 "fuel_to_purchase": round(fuel_to_purchase, 1),
                 "avg_consumption": round(avg_consumption, 1),
-                "station_10km": {  # Using "station_10km" key for consistency (actually nearest)
-                    "name": nearest_station.get("name"),
-                    "distance_km": round(distance_near, 1),
-                    "price": round(price_near, 3),
-                    "round_trip_km": round(round_trip_near, 1),
-                    "fuel_consumed": round(fuel_consumed_near, 2),
-                    "cost_fuel": round(cost_fuel_near, 2),
-                    "cost_trip": round(cost_trip_near, 2),
-                    "total_cost": round(total_cost_near, 2),
-                },
-                "station_20km": {  # Using "station_20km" key for consistency (actually cheapest)
-                    "name": cheapest_overall.get("name"),
-                    "distance_km": round(distance_cheap, 1),
-                    "price": round(price_cheap, 3),
-                    "round_trip_km": round(round_trip_cheap, 1),
-                    "fuel_consumed": round(fuel_consumed_cheap, 2),
-                    "cost_fuel": round(cost_fuel_cheap, 2),
-                    "cost_trip": round(cost_trip_cheap, 2),
-                    "total_cost": round(total_cost_cheap, 2),
-                },
+                # Use descriptive keys for clarity
+                "nearest_station": nearest_data,
+                "cheapest_station": cheapest_data,
+                # Keep old keys for backward compatibility
+                "station_10km": nearest_data,
+                "station_20km": cheapest_data,
                 "savings": round(savings, 2),
                 "savings_percent": round(savings_percent, 1),
                 "recommendation": _format_savings_recommendation(
