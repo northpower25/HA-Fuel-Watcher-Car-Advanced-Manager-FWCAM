@@ -139,8 +139,10 @@ async def compare_stations_by_radius(
     current_tank_level: float,
     tank_capacity: float,
     avg_consumption: float,
+    near_radius: float = 10.0,
+    far_radius: float = None,
 ) -> Dict[str, Any]:
-    """Compare cheapest stations within 10km and 20km radius.
+    """Compare cheapest stations within near and far radius.
     
     Calculates true savings considering:
     - Distance to station and back
@@ -157,6 +159,8 @@ async def compare_stations_by_radius(
         tank_capacity: Maximum tank capacity in liters
         avg_consumption: Average consumption in L/100km (values <= 0 will be replaced
                         with DEFAULT_AVG_CONSUMPTION)
+        near_radius: Radius for "near" stations comparison in km (default: 10.0)
+        far_radius: Radius for "far" stations comparison in km (default: uses all stations in list)
         
     Returns:
         Dictionary with comparison results and savings calculation
@@ -182,94 +186,112 @@ async def compare_stations_by_radius(
         }
     
     # Separate stations by radius
-    stations_10km = []
-    stations_20km = []
+    stations_near = []
+    stations_far = []
     
     for station in stations_list:
         distance = station.get("distance_km", 0)
-        if distance <= 10:
-            stations_10km.append(station)
-        if distance <= 20:
-            stations_20km.append(station)
+        if distance <= near_radius:
+            stations_near.append(station)
+        # If far_radius is specified, filter by it; otherwise use all stations
+        if far_radius is None or distance <= far_radius:
+            stations_far.append(station)
     
     # Find cheapest in each radius
-    cheapest_10km = None
-    cheapest_20km = None
+    cheapest_near = None
+    cheapest_far = None
     
-    if stations_10km:
-        cheapest_10km = min(stations_10km, key=lambda s: s.get("price", float('inf')))
+    if stations_near:
+        cheapest_near = min(stations_near, key=lambda s: s.get("price", float('inf')))
     
-    if stations_20km:
-        cheapest_20km = min(stations_20km, key=lambda s: s.get("price", float('inf')))
+    if stations_far:
+        cheapest_far = min(stations_far, key=lambda s: s.get("price", float('inf')))
     
-    # If no stations in 20km or same as 10km, no comparison needed
-    if not cheapest_20km or (cheapest_10km and cheapest_10km.get("id") == cheapest_20km.get("id")):
+    # If no far stations or same as near, no comparison needed
+    if not cheapest_far or (cheapest_near and cheapest_near.get("id") == cheapest_far.get("id")):
         return {
             "has_comparison": False,
             "reason": "No different stations to compare",
-            "cheapest_10km": cheapest_10km,
+            "cheapest_near": cheapest_near,
+            "near_radius_km": near_radius,
         }
     
     # Calculate costs and savings
-    if cheapest_10km:
-        # Cost at 10km station
-        distance_10km = cheapest_10km.get("distance_km", 0)
-        round_trip_10km = distance_10km * 2
-        fuel_consumed_10km = (round_trip_10km * avg_consumption) / 100.0
-        price_10km = cheapest_10km.get("price", 0)
+    if cheapest_near:
+        # Cost at near station
+        distance_near = cheapest_near.get("distance_km", 0)
+        round_trip_near = distance_near * 2
+        fuel_consumed_near = (round_trip_near * avg_consumption) / 100.0
+        price_near = cheapest_near.get("price", 0)
         
-        cost_fuel_10km = fuel_to_purchase * price_10km
-        cost_trip_10km = fuel_consumed_10km * price_10km
-        total_cost_10km = cost_fuel_10km + cost_trip_10km
+        cost_fuel_near = fuel_to_purchase * price_near
+        cost_trip_near = fuel_consumed_near * price_near
+        total_cost_near = cost_fuel_near + cost_trip_near
         
-        # Cost at 20km station
-        distance_20km = cheapest_20km.get("distance_km", 0)
-        round_trip_20km = distance_20km * 2
-        fuel_consumed_20km = (round_trip_20km * avg_consumption) / 100.0
-        price_20km = cheapest_20km.get("price", 0)
+        # Cost at far station
+        distance_far = cheapest_far.get("distance_km", 0)
+        round_trip_far = distance_far * 2
+        fuel_consumed_far = (round_trip_far * avg_consumption) / 100.0
+        price_far = cheapest_far.get("price", 0)
         
-        cost_fuel_20km = fuel_to_purchase * price_20km
-        cost_trip_20km = fuel_consumed_20km * price_20km
-        total_cost_20km = cost_fuel_20km + cost_trip_20km
+        cost_fuel_far = fuel_to_purchase * price_far
+        cost_trip_far = fuel_consumed_far * price_far
+        total_cost_far = cost_fuel_far + cost_trip_far
         
-        # Calculate savings (can be negative if 20km is more expensive overall)
-        savings = total_cost_10km - total_cost_20km
-        savings_percent = (savings / total_cost_10km * 100) if total_cost_10km > 0 else 0
+        # Calculate savings (can be negative if far is more expensive overall)
+        savings = total_cost_near - total_cost_far
+        savings_percent = (savings / total_cost_near * 100) if total_cost_near > 0 else 0
+        
+        # Prepare station data structures for near station
+        near_data = {
+            "name": cheapest_near.get("name"),
+            "distance_km": round(distance_near, 1),
+            "price": round(price_near, 3),
+            "round_trip_km": round(round_trip_near, 1),
+            "fuel_consumed": round(fuel_consumed_near, 2),
+            "cost_fuel": round(cost_fuel_near, 2),
+            "cost_trip": round(cost_trip_near, 2),
+            "total_cost": round(total_cost_near, 2),
+        }
+        
+        # Prepare station data structures for far station
+        far_data = {
+            "name": cheapest_far.get("name"),
+            "distance_km": round(distance_far, 1),
+            "price": round(price_far, 3),
+            "round_trip_km": round(round_trip_far, 1),
+            "fuel_consumed": round(fuel_consumed_far, 2),
+            "cost_fuel": round(cost_fuel_far, 2),
+            "cost_trip": round(cost_trip_far, 2),
+            "total_cost": round(total_cost_far, 2),
+        }
         
         return {
             "has_comparison": True,
             "fuel_to_purchase": round(fuel_to_purchase, 1),
             "avg_consumption": round(avg_consumption, 1),
-            "station_10km": {
-                "name": cheapest_10km.get("name"),
-                "distance_km": round(distance_10km, 1),
-                "price": round(price_10km, 3),
-                "round_trip_km": round(round_trip_10km, 1),
-                "fuel_consumed": round(fuel_consumed_10km, 2),
-                "cost_fuel": round(cost_fuel_10km, 2),
-                "cost_trip": round(cost_trip_10km, 2),
-                "total_cost": round(total_cost_10km, 2),
-            },
-            "station_20km": {
-                "name": cheapest_20km.get("name"),
-                "distance_km": round(distance_20km, 1),
-                "price": round(price_20km, 3),
-                "round_trip_km": round(round_trip_20km, 1),
-                "fuel_consumed": round(fuel_consumed_20km, 2),
-                "cost_fuel": round(cost_fuel_20km, 2),
-                "cost_trip": round(cost_trip_20km, 2),
-                "total_cost": round(total_cost_20km, 2),
-            },
+            "near_radius_km": near_radius,
+            "far_radius_km": far_radius if far_radius else "all",
+            # Use descriptive keys for clarity
+            "station_near": near_data,
+            "station_far": far_data,
+            # Keep old keys for backward compatibility with existing code
+            "station_10km": near_data,
+            "station_20km": far_data,
+            # Also provide as nearest/cheapest for consistency with previous enhancement
+            "nearest_station": near_data,
+            "cheapest_station": far_data,
             "savings": round(savings, 2),
             "savings_percent": round(savings_percent, 1),
             "recommendation": _format_savings_recommendation(
-                savings, cheapest_10km, cheapest_20km, distance_10km, distance_20km
+                savings, cheapest_near, cheapest_far, distance_near, distance_far
             ),
+            "comparison_type": "near_vs_far_radius",  # New comparison type
         }
     
-    # No stations within 10km but there are stations available (could be 10-20km or beyond)
+    # No stations within near radius but there are stations available
     # Compare nearest station vs cheapest station for cost analysis
-    if not cheapest_10km and len(stations_list) >= 2:
+    if not cheapest_near and len(stations_list) >= 2:
         # Find the nearest station - O(n) complexity
         nearest_station = min(stations_list, key=lambda s: s.get("distance_km", float('inf')))
         
