@@ -2,7 +2,9 @@
 
 This document provides detailed information about all entities in the Fuel Watcher Car Advanced Manager (FWCAM) integration, including their update behavior, data sources, and manual triggers.
 
-**For detailed update frequency information, see**: [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES_DE.md)
+**For detailed update frequency information, see**: 
+- [Data Update Frequencies (English)](./user_docs/DATA_UPDATE_FREQUENCIES.md)
+- [Datenaktualisierungsfrequenzen (Deutsch)](./user_docs/DATA_UPDATE_FREQUENCIES.md)
 
 ## Table of Contents
 
@@ -82,7 +84,7 @@ This document provides detailed information about all entities in the Fuel Watch
 - **Manual Triggers**:
   - `button.[vehicle_name]_fuel_price_refresh`: Immediate API query
   - `button.[vehicle_name]_test_api_connection`: Test connection with debug output
-- **Configuration**: See [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES_DE.md) for detailed interval configuration
+- **Configuration**: See [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES.md) for detailed interval configuration
 
 **See Also**: [Fuel Price Documentation](./FUEL_PRICE_MONITORING.md)
 
@@ -305,7 +307,7 @@ This document provides detailed information about all entities in the Fuel Watch
   - Minimum data points configurable via `number.[vehicle_name]_consumption_min_data_points` (default: 5)
   - Until minimum reached, uses fallback values with lower confidence
   - Recommended: Use `button.[vehicle_name]_import_historical_data` for immediate predictions after setup
-- **Configuration**: See [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES_DE.md)
+- **Configuration**: See [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES.md)
 
 **See Also**: [Consumption Prediction Documentation](./dev_docs/REFUELING_PREDICTION_IMPROVEMENT.md)
 
@@ -1295,7 +1297,7 @@ All entities can be manually updated via button entities or coordinator refresh.
 - **Consumption Prediction Interval**: `number.[vehicle_name]_consumption_prediction_interval` (0.5-24 hours, default: 6)
 - **Minimum Data Points**: `number.[vehicle_name]_consumption_min_data_points` (2-50 points, default: 5)
 
-For detailed update frequency documentation, see: [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES_DE.md)
+For detailed update frequency documentation, see: [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES.md)
 
 ### Data Storage
 
