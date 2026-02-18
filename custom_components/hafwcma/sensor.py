@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import aiohttp
+import heapq
 import logging
 import random
 import sys
@@ -1844,9 +1845,9 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             # Fall back to restored attributes if coordinator data not yet available
             attributes = self._restored_attributes.copy() if self._restored_attributes else {}
             
-            # Mark as restored state
+            # Mark as restored state using constant
             if self._restored_value is not None:
-                attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
+                attributes[ATTR_DATA_SOURCE] = STATE_RESTORED_DATA_SOURCE
         
         # Add supplementary attributes from coordinator data if available
         if self.coordinator.data is not None:
@@ -3558,9 +3559,11 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
         # 4. Mass data (LIMITED to 5 stations)
         # Get top 5 cheapest stations only for debugging
         all_stations = nearby_data.get("stations", [])
-        # Sort by price (cheapest first) and take top 5
-        sorted_stations = sorted(all_stations, key=lambda x: x.get("price", float('inf')))[:5]
-        attributes["stations"] = sorted_stations
+        # Use heapq for efficient top-N selection without full sort
+        if len(all_stations) <= 5:
+            attributes["stations"] = sorted(all_stations, key=lambda x: x.get("price", float('inf')))
+        else:
+            attributes["stations"] = heapq.nsmallest(5, all_stations, key=lambda x: x.get("price", float('inf')))
         
         return attributes
     

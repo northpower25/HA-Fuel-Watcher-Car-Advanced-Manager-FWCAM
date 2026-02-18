@@ -4,7 +4,7 @@ This document defines the standardized structure for entity attributes in the FW
 
 ## Home Assistant Official Guidelines
 
-According to Home Assistant developer documentation:
+According to Home Assistant developer documentation (as of 2025/2026):
 - **Attribute naming**: Use lowercase snake_case
 - **Attributes vs Entities**: Use attributes for supplementary/metadata information. Create separate entities for values that should be monitored or automated independently.
 - **Performance**: Entity property getters must not perform I/O - return values from memory only
