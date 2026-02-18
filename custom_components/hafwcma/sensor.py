@@ -815,7 +815,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 await recalculate_trip_statistics(self.hass, self.config_entry)
                 
                 _LOGGER.info(
-                    "Saved %d recovered trip(s) to storage. They will be included in the next coordinator update.",
+                    "Saved %d recovered trip(s) to storage. Will be reflected in current update cycle.",
                     len(missed_trips)
                 )
             else:
