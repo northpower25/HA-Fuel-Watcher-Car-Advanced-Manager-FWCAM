@@ -59,7 +59,7 @@ async def async_setup_entry(
 
     buttons = [
         TestProviderConnectionButton(coordinator, config_entry, vehicle_name, hass),
-        ImportHistoricalDataButton(coordinator, config_entry, vehicle_name, hass),
+        ImportHistoricalCarDataButton(coordinator, config_entry, vehicle_name, hass),
         ImportHistoricalTripDataButton(coordinator, config_entry, vehicle_name, hass),
         RecalculateTripStatisticsButton(coordinator, config_entry, vehicle_name, hass),
         ValidateRefuelingEventsButton(coordinator, config_entry, vehicle_name, hass),
@@ -281,7 +281,7 @@ class TestProviderConnectionButton(ButtonEntity):
         return attributes
 
 
-class ImportHistoricalDataButton(ButtonEntity):
+class ImportHistoricalCarDataButton(ButtonEntity):
     """Button to import historical vehicle data (odometer & refueling) from recorder."""
 
     _attr_icon = "mdi:database-import"
@@ -305,8 +305,8 @@ class ImportHistoricalDataButton(ButtonEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = "Import Historical Vehicle Data"
-        self._attr_unique_id = f"{config_entry.entry_id}_import_historical_data"
+        self._attr_name = "Import Historical Car Data"
+        self._attr_unique_id = f"{config_entry.entry_id}_import_historical_car_data"
         self._last_result: dict[str, Any] = {}
         
         # Device info for grouping
@@ -363,7 +363,7 @@ class ImportHistoricalDataButton(ButtonEntity):
         attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
         
         # Add standardized entity metadata for inline documentation
-        metadata = get_entity_metadata("import_historical_data_button")
+        metadata = get_entity_metadata("import_historical_car_data_button")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
             attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
