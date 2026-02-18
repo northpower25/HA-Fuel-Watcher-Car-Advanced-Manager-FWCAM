@@ -1915,9 +1915,11 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         far_radius_label = radius_comparison.get("far_radius_label", "farther station")
                         
                         # Format near radius safely
-                        near_radius_str = "near station"
-                        if isinstance(near_radius, (int, float)):
-                            near_radius_str = f"{near_radius}km radius"
+                        near_radius_str = (
+                            f"{near_radius}km radius"
+                            if isinstance(near_radius, (int, float))
+                            else "near station"
+                        )
                         
                         if savings_value >= 0:
                             attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving to {far_radius_label})"
