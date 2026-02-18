@@ -267,9 +267,9 @@ async def compare_stations_by_radius(
             ),
         }
     
-    # No stations within 10km but there are stations in 10-20km range
+    # No stations within 10km but there are stations available (could be 10-20km or beyond)
     # Compare nearest station vs cheapest station for cost analysis
-    if cheapest_20km and len(stations_list) >= 2:
+    if not cheapest_10km and len(stations_list) >= 2:
         # Sort all stations by distance to find the nearest one
         sorted_by_distance = sorted(stations_list, key=lambda s: s.get("distance_km", float('inf')))
         nearest_station = sorted_by_distance[0]
