@@ -267,10 +267,10 @@ async def compare_stations_by_radius(
             ),
         }
     
-    # Only 20km station available
+    # Only 20km station available (no stations within 10km)
     return {
         "has_comparison": False,
-        "reason": "Only 20km station available",
+        "reason": "No stations within 10km",
         "cheapest_20km": cheapest_20km,
     }
 
