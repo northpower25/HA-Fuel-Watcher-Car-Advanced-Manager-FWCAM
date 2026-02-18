@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import aiohttp
+import heapq
 import logging
 import random
 import sys
@@ -1778,7 +1779,7 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional attributes."""
+        """Return additional attributes following FWCAM standardized ordering."""
         # If coordinator has fresh data, use it
         if self.coordinator.data is not None:
             station = self.coordinator.data.get("nearest_station", {})
@@ -1816,19 +1817,22 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                             "distance": station_10km.get("distance_km"),
                         }
             
+            # 1. Core metadata
             attributes = {
                 ATTR_STATION_NAME: display_station.get("name"),
                 ATTR_STATION_ADDRESS: display_station.get("address"),
                 ATTR_DISTANCE: display_station.get("distance"),
-                ATTR_FORECAST_TREND: self.coordinator.data.get("forecast_trend"),
             }
+            
+            # Add data source (API-based)
+            attributes[ATTR_DATA_SOURCE] = "api"
             
             # Add location source information
             location_source = self.coordinator.data.get("location_source")
             if location_source:
                 attributes["location_source"] = location_source
             
-            # Add timestamp of last successful price fetch and check staleness
+            # 2. Update timestamps
             last_price_timestamp = self.coordinator.data.get("last_price_timestamp")
             if last_price_timestamp:
                 attributes["last_update_timestamp"] = last_price_timestamp
@@ -1841,12 +1845,22 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             # Fall back to restored attributes if coordinator data not yet available
             attributes = self._restored_attributes.copy() if self._restored_attributes else {}
             
-            # Mark as restored state
+            # Mark as restored state using constant
             if self._restored_value is not None:
-                attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
+                attributes[ATTR_DATA_SOURCE] = STATE_RESTORED_DATA_SOURCE
         
-        # Add supplementary attributes from coordinator data (recommendations, statistics) if available
+        # Add supplementary attributes from coordinator data if available
         if self.coordinator.data is not None:
+            # 3. AI/ML patterns (history price pattern - weekday patterns)
+            price_statistics = self.coordinator.data.get("price_statistics")
+            if price_statistics:
+                weekday_patterns = price_statistics.get("weekday_patterns")
+                if weekday_patterns:
+                    attributes["history_price_pattern"] = weekday_patterns
+            
+            # 4. Last event summary - NOT applicable for this sensor
+            
+            # 5. Recommendations
             recommendation = self.coordinator.data.get("recommendation", {})
             if recommendation:
                 attributes[ATTR_SHOULD_REFUEL] = recommendation.get("should_refuel", False)
@@ -1854,70 +1868,15 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 attributes[ATTR_RECOMMENDATION] = recommendation.get("recommendation", "")
                 attributes[ATTR_PRICE_DELTA] = recommendation.get("price_delta")
                 attributes[ATTR_PRICE_DELTA_PERCENT] = recommendation.get("price_delta_percent")
-                
-                # Add cooldown information if present
-                if recommendation.get("in_cooldown"):
-                    attributes["in_cooldown"] = True
-                    attributes["cooldown_remaining_minutes"] = recommendation.get("cooldown_remaining_minutes")
             
-            # Add radius comparison if available
+            # Add cost savings comparison (part of recommendations)
             radius_comparison = self.coordinator.data.get("radius_comparison")
             if radius_comparison and radius_comparison.get("has_comparison"):
-                # Check comparison type
                 comparison_type = radius_comparison.get("comparison_type", "10km_vs_20km")
-                
-                if comparison_type == "near_vs_far_radius":
-                    # New configurable near vs far radius comparison
-                    near_radius = radius_comparison.get("near_radius_km")
-                    far_radius = radius_comparison.get("far_radius_km")
-                    near_radius_label = radius_comparison.get("near_radius_label", "near")
-                    far_radius_label = radius_comparison.get("far_radius_label", "farther")
-                    attributes["station_comparison"] = {
-                        "near": radius_comparison.get("station_near"),
-                        "far": radius_comparison.get("station_far"),
-                        "near_radius_km": near_radius,
-                        "far_radius_km": far_radius,
-                        "near_radius_label": near_radius_label,
-                        "far_radius_label": far_radius_label,
-                        "savings": radius_comparison.get("savings"),
-                        "savings_percent": radius_comparison.get("savings_percent"),
-                        "comparison_recommendation": radius_comparison.get("recommendation"),
-                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
-                        "comparison_type": "near_vs_far_radius",
-                    }
-                elif comparison_type == "nearest_vs_cheapest":
-                    # Alternative comparison: nearest station vs cheapest station
-                    # Use the descriptive keys for clarity
-                    attributes["station_comparison"] = {
-                        "nearest": radius_comparison.get("nearest_station"),
-                        "cheapest": radius_comparison.get("cheapest_station"),
-                        "savings": radius_comparison.get("savings"),
-                        "savings_percent": radius_comparison.get("savings_percent"),
-                        "comparison_recommendation": radius_comparison.get("recommendation"),
-                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
-                        "comparison_type": "nearest_vs_cheapest",
-                    }
-                else:
-                    # Standard comparison: 10km vs 20km (backward compatibility)
-                    attributes["station_comparison"] = {
-                        "10km": radius_comparison.get("station_10km"),
-                        "20km": radius_comparison.get("station_20km"),
-                        "savings": radius_comparison.get("savings"),
-                        "savings_percent": radius_comparison.get("savings_percent"),
-                        "comparison_recommendation": radius_comparison.get("recommendation"),
-                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
-                        "comparison_type": "10km_vs_20km",
-                    }
-
-                # Add explicit cost savings attribute
-                # This shows the total EUR savings when going to the farther/cheapest station
-                # Positive value = save money by driving farther/to cheaper station
-                # Negative value = lose money by driving farther (better to stay close)
                 savings_value = radius_comparison.get("savings")
+                
                 if savings_value is not None:
                     if comparison_type == "near_vs_far_radius":
-                        # For configurable near vs far radius comparison
-                        # Use pre-formatted labels for consistency
                         near_radius_label = radius_comparison.get("near_radius_label", "near station")
                         far_radius_label = radius_comparison.get("far_radius_label", "farther station")
                         
@@ -1926,13 +1885,11 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         else:
                             attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (costs more, stay within {near_radius_label})"
                     elif comparison_type == "nearest_vs_cheapest":
-                        # For nearest vs cheapest comparison
                         if savings_value >= 0:
                             attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving to cheapest)"
                         else:
                             attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (costs more to drive to cheapest, stay near)"
                     else:
-                        # For 10km vs 20km comparison (backward compatibility)
                         if savings_value >= 0:
                             attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving farther)"
                         else:
@@ -1940,7 +1897,6 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 else:
                     attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
             elif radius_comparison:
-                # radius_comparison exists but has_comparison is False - show reason
                 reason = radius_comparison.get("reason", "Unknown")
                 if reason == "No stations available":
                     attributes["costsaving_far_vs_near_station"] = "Waiting for station data"
@@ -1955,18 +1911,20 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 else:
                     attributes["costsaving_far_vs_near_station"] = f"Not available ({reason})"
             else:
-                # No radius_comparison data at all
                 attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
             
-            # Add price statistics if available (history price pattern)
-            price_statistics = self.coordinator.data.get("price_statistics")
+            # Add cooldown information if present (part of recommendations)
+            if recommendation and recommendation.get("in_cooldown"):
+                attributes["in_cooldown"] = True
+                attributes["cooldown_remaining_minutes"] = recommendation.get("cooldown_remaining_minutes")
+            
+            # 6. Counters - NOT applicable for this sensor
+            
+            # 7. Time-based statistics
+            attributes[ATTR_FORECAST_TREND] = self.coordinator.data.get("forecast_trend")
+            
+            # Add period statistics
             if price_statistics:
-                # Add weekday patterns
-                weekday_patterns = price_statistics.get("weekday_patterns")
-                if weekday_patterns:
-                    attributes["history_price_pattern"] = weekday_patterns
-                
-                # Add period statistics
                 last_week = price_statistics.get("last_week")
                 if last_week:
                     attributes["last_week_price"] = last_week.get("avg_price")
@@ -2006,13 +1964,60 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                     ]
         
-        # Add standardized entity metadata for inline documentation
+        # 8. Configuration & documentation
+        attributes["config_entry_id"] = self._config_entry.entry_id
+        
         metadata = get_entity_metadata("fuel_price_sensor")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
             attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
             attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
             attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        # 9. Mass data - station_comparison object (keep as is, but move to end)
+        if self.coordinator.data is not None:
+            radius_comparison = self.coordinator.data.get("radius_comparison")
+            if radius_comparison and radius_comparison.get("has_comparison"):
+                comparison_type = radius_comparison.get("comparison_type", "10km_vs_20km")
+                
+                if comparison_type == "near_vs_far_radius":
+                    near_radius = radius_comparison.get("near_radius_km")
+                    far_radius = radius_comparison.get("far_radius_km")
+                    near_radius_label = radius_comparison.get("near_radius_label", "near")
+                    far_radius_label = radius_comparison.get("far_radius_label", "farther")
+                    attributes["station_comparison"] = {
+                        "near": radius_comparison.get("station_near"),
+                        "far": radius_comparison.get("station_far"),
+                        "near_radius_km": near_radius,
+                        "far_radius_km": far_radius,
+                        "near_radius_label": near_radius_label,
+                        "far_radius_label": far_radius_label,
+                        "savings": radius_comparison.get("savings"),
+                        "savings_percent": radius_comparison.get("savings_percent"),
+                        "comparison_recommendation": radius_comparison.get("recommendation"),
+                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+                        "comparison_type": "near_vs_far_radius",
+                    }
+                elif comparison_type == "nearest_vs_cheapest":
+                    attributes["station_comparison"] = {
+                        "nearest": radius_comparison.get("nearest_station"),
+                        "cheapest": radius_comparison.get("cheapest_station"),
+                        "savings": radius_comparison.get("savings"),
+                        "savings_percent": radius_comparison.get("savings_percent"),
+                        "comparison_recommendation": radius_comparison.get("recommendation"),
+                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+                        "comparison_type": "nearest_vs_cheapest",
+                    }
+                else:
+                    attributes["station_comparison"] = {
+                        "10km": radius_comparison.get("station_10km"),
+                        "20km": radius_comparison.get("station_20km"),
+                        "savings": radius_comparison.get("savings"),
+                        "savings_percent": radius_comparison.get("savings_percent"),
+                        "comparison_recommendation": radius_comparison.get("recommendation"),
+                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+                        "comparison_type": "10km_vs_20km",
+                    }
         
         return attributes
 
@@ -2828,13 +2833,23 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional prediction attributes."""
+        """Return additional prediction attributes.
+        
+        Attributes are ordered according to FWCAM standard structure:
+        1. Core metadata (state_class, data_source, confidence)
+        2. Update timestamps (last_prediction)
+        3. AI/ML patterns (weekday_driving_pattern)
+        4. Recommendations (forecast_recommendation, forecast details)
+        5. Counters (data_points_used, data_points_percentage)
+        6. Statistics (avg_daily_km, avg_consumption_rate)
+        7. Config & documentation
+        """
         if self.coordinator.data is None:
             return {}
         prediction = self.coordinator.data.get("consumption_prediction")
         if not prediction:
             return {
-                ATTR_DATA_SOURCE: "no_data",
+                "data_source": "no_data",
                 "status": "Waiting for initial prediction",
             }
         
@@ -2846,41 +2861,31 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
         )
         
+        # Build attributes in standard order
+        # 1. Core metadata
         attributes = {
-            ATTR_DATA_SOURCE: prediction.get("data_source", "unknown"),
-            ATTR_CONFIDENCE: prediction.get("confidence", 0.0),
-            ATTR_AVG_DAILY_KM: prediction.get("avg_daily_km", 0.0),
-            ATTR_AVG_CONSUMPTION_RATE: prediction.get("avg_consumption_rate", 0.0),
-            ATTR_DATA_POINTS_USED: prediction.get("data_points_used", 0),
+            "state_class": "measurement",
+            "data_source": prediction.get("data_source", "unknown"),
+            "confidence": prediction.get("confidence", 0.0),
         }
         
-        # Calculate and add data points percentage
-        data_points_used = prediction.get("data_points_used", 0)
-        if min_data_points > 0:
-            data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
-            attributes["data_points_percentage"] = round(data_points_percentage, 1)
-            attributes["data_points_required"] = min_data_points
-        else:
-            attributes["data_points_percentage"] = 0.0
-            attributes["data_points_required"] = min_data_points
-        
-        # Add last prediction time
+        # 2. Update timestamps
         if prediction.get("last_prediction_time"):
             last_pred_time = prediction["last_prediction_time"]
             if isinstance(last_pred_time, str):
-                attributes[ATTR_LAST_PREDICTION] = last_pred_time
+                attributes["last_prediction"] = last_pred_time
             else:
-                attributes[ATTR_LAST_PREDICTION] = last_pred_time.isoformat()
+                attributes["last_prediction"] = last_pred_time.isoformat()
         
-        # Add predicted refuel date
+        # Also add predicted refuel date here as it's a key timestamp
         if prediction.get("predicted_refuel_date"):
             pred_refuel_date = prediction["predicted_refuel_date"]
             if isinstance(pred_refuel_date, str):
-                attributes[ATTR_PREDICTED_REFUEL_DATE] = pred_refuel_date
+                attributes["predicted_refuel_date"] = pred_refuel_date
             else:
-                attributes[ATTR_PREDICTED_REFUEL_DATE] = pred_refuel_date.isoformat()
+                attributes["predicted_refuel_date"] = pred_refuel_date.isoformat()
         
-        # Add weekday pattern if available
+        # 3. AI/ML patterns - weekday driving pattern
         weekday_pattern = prediction.get("weekday_pattern")
         if weekday_pattern:
             # Convert weekday numbers to names for better readability
@@ -2893,15 +2898,13 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             if formatted_pattern:
                 attributes["weekday_driving_pattern (km)"] = formatted_pattern
         
-        # Add forecast recommendation if available
-        # This is computed in the coordinator based on predicted refuel date and historical prices
+        # 4. Recommendations - forecast recommendation
         if prediction.get("forecast_recommendation"):
             forecast = prediction["forecast_recommendation"]
-            attributes["forecast_trend"] = forecast.get("forecast_trend", "stable")
+            attributes["forecast_recommendation"] = forecast.get("recommendation", "Not enough data for price forecast") or "Not enough data for price forecast"
             attributes["forecast_should_refuel"] = forecast.get("should_refuel", False)
             attributes["forecast_urgency"] = forecast.get("urgency", "low")
-            recommendation_text = forecast.get("recommendation", "")
-            attributes["forecast_recommendation"] = recommendation_text if recommendation_text else "Not enough data for price forecast"
+            attributes["forecast_trend"] = forecast.get("forecast_trend", "stable")
             
             # Add detailed forecast data
             if forecast.get("has_forecast"):
@@ -2914,7 +2917,26 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             # No forecast recommendation data available
             attributes["forecast_recommendation"] = "Waiting for consumption prediction and price history data"
         
-        # Add standardized entity metadata for inline documentation
+        # 5. Counters
+        data_points_used = prediction.get("data_points_used", 0)
+        attributes["data_points_used"] = data_points_used
+        
+        # Calculate and add data points percentage
+        if min_data_points > 0:
+            data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
+            attributes["data_points_percentage"] = round(data_points_percentage, 1)
+            attributes["data_points_required"] = min_data_points
+        else:
+            attributes["data_points_percentage"] = 0.0
+            attributes["data_points_required"] = min_data_points
+        
+        # 6. Statistics
+        attributes["avg_daily_km"] = prediction.get("avg_daily_km", 0.0)
+        attributes["avg_consumption_rate"] = prediction.get("avg_consumption_rate", 0.0)
+        
+        # 7. Configuration & documentation metadata
+        attributes["config_entry_id"] = self._config_entry.entry_id
+        
         metadata = get_entity_metadata("consumption_prediction_sensor")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
@@ -3312,8 +3334,16 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed refueling events as attributes.
         
-        Returns the last 10 refueling events with all details to allow
-        users to review and verify detected refuelings.
+        Returns the last 5 refueling events with all details for debugging.
+        Use get_all_refuelings service to access complete history.
+        
+        Attributes are ordered according to FWCAM standard structure:
+        1. Core metadata (data_source)
+        2. Update timestamps
+        3. Last event summary
+        4. Counters
+        5. Config & documentation
+        6. Mass data (limited to 5 events for debugging only)
         """
         if self.coordinator.data is None:
             return {}
@@ -3321,15 +3351,15 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
         
         if not refueling_log:
             return {
-                "config_entry_id": self._config_entry.entry_id,
+                "data_source": "storage",
+                "status": "No refueling events recorded",
                 "total_events": 0,
                 "last_refueling": None,
+                "config_entry_id": self._config_entry.entry_id,
                 "recent_events": [],
-                "status": "No refueling events recorded",
             }
         
         # Filter out events without timestamps and sort by timestamp (newest first)
-        # Use a sentinel value that sorts to the beginning (will be at end after reverse)
         events_with_timestamps = [e for e in refueling_log if e.get("timestamp")]
         sorted_log = sorted(
             events_with_timestamps,
@@ -3337,13 +3367,65 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
             reverse=True
         )
         
-        # Get the last 10 events for display
+        # Get the most recent refueling (summary only, not full event)
+        last_refueling = None
+        if sorted_log:
+            last_event = sorted_log[0]
+            last_refueling = {
+                "timestamp": last_event.get("timestamp"),
+                "liters": last_event.get("liters_refueled"),
+                "cost": last_event.get("total_cost"),
+                "station": last_event.get("station_name"),
+            }
+        
+        # Count total excluded events in the entire log
+        total_excluded = sum(1 for e in refueling_log if e.get("excluded_from_calculation", False))
+        
+        # Build attributes in standard order
+        # 1. Core metadata
+        attrs = {
+            "data_source": "storage",
+        }
+        
+        # 2. Update timestamps
+        last_historical_import = self.coordinator.data.get("last_historical_import")
+        if last_historical_import:
+            attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp")
+            attrs["last_historical_import_type"] = last_historical_import.get("type")
+        
+        last_vehicle_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
+        if last_vehicle_refresh:
+            attrs["last_vehicle_data_refresh_timestamp"] = last_vehicle_refresh.get("timestamp")
+            attrs["last_vehicle_data_refresh_type"] = last_vehicle_refresh.get("type")
+        
+        # 3. Last event summary
+        attrs["last_refueling"] = last_refueling
+        
+        # 4. Counters
+        attrs.update({
+            "total_events": len(refueling_log),
+            "total_excluded": total_excluded,
+            "total_active": len(refueling_log) - total_excluded,
+        })
+        
+        # 5. Status
+        attrs["status"] = f"{len(refueling_log)} refueling events recorded ({total_excluded} excluded from calculations)"
+        
+        # 6. Configuration & documentation metadata
+        attrs["config_entry_id"] = self._config_entry.entry_id
+        
+        metadata = get_entity_metadata("refueling_log_sensor")
+        if metadata:
+            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        # 7. Mass data (LIMITED to 5 events for debugging only)
+        # NOTE: Components should use get_all_refuelings service for complete history
         recent_events = []
-        excluded_count = 0
-        for event in sorted_log[:10]:
+        for event in sorted_log[:5]:  # Reduced from 10 to 5
             is_excluded = event.get("excluded_from_calculation", False)
-            if is_excluded:
-                excluded_count += 1
             
             event_info = {
                 "id": event.get("id"),
@@ -3367,48 +3449,7 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
             }
             recent_events.append(event_info)
         
-        # Get the most recent refueling
-        last_refueling = None
-        if sorted_log:
-            last_event = sorted_log[0]
-            last_refueling = {
-                "timestamp": last_event.get("timestamp"),
-                "liters": last_event.get("liters_refueled"),
-                "cost": last_event.get("total_cost"),
-                "station": last_event.get("station_name"),
-            }
-        
-        # Count total excluded events in the entire log
-        total_excluded = sum(1 for e in refueling_log if e.get("excluded_from_calculation", False))
-        
-        attrs = {
-            "config_entry_id": self._config_entry.entry_id,
-            "total_events": len(refueling_log),
-            "total_excluded": total_excluded,
-            "total_active": len(refueling_log) - total_excluded,
-            "last_refueling": last_refueling,
-            "recent_events": recent_events,
-            "status": f"{len(refueling_log)} refueling events recorded ({total_excluded} excluded from calculations)",
-        }
-        
-        # Add retrieval metadata from coordinator data
-        last_historical_import = self.coordinator.data.get("last_historical_import")
-        if last_historical_import:
-            attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp")
-            attrs["last_historical_import_type"] = last_historical_import.get("type")
-        
-        last_vehicle_refresh = self.coordinator.data.get("last_vehicle_data_refresh")
-        if last_vehicle_refresh:
-            attrs["last_vehicle_data_refresh_timestamp"] = last_vehicle_refresh.get("timestamp")
-            attrs["last_vehicle_data_refresh_type"] = last_vehicle_refresh.get("type")
-        
-        # Add standardized entity metadata for inline documentation
-        metadata = get_entity_metadata("refueling_log_sensor")
-        if metadata:
-            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
-            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
-            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
-            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        attrs["recent_events"] = recent_events
         
         return attrs
 
@@ -3464,13 +3505,24 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional state attributes."""
+        """Return additional state attributes.
+        
+        Returns top 5 cheapest stations for debugging.
+        Use geolocation features or services for complete station list.
+        
+        Attributes are ordered according to FWCAM standard structure:
+        1. Core metadata (data_source, location info)
+        2. Configuration (radius, max stations)
+        3. Config & documentation
+        4. Mass data (limited to 5 stations)
+        """
         if not self.coordinator.data:
             return {}
         
         nearby_data = self.coordinator.data.get("nearby_cheap_stations")
         if not nearby_data:
             return {
+                "data_source": "api",
                 "stations": [],
                 "search_radius_km": None,
                 "vehicle_latitude": None,
@@ -3479,26 +3531,39 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
                 "location_source": None,
             }
         
+        # Build attributes in standard order
+        # 1. Core metadata
         attributes = {
-            "stations": nearby_data.get("stations", []),
-            "search_radius_km": nearby_data.get("search_radius_km"),
-            "vehicle_latitude": nearby_data.get("vehicle_latitude"),
-            "vehicle_longitude": nearby_data.get("vehicle_longitude"),
-            "max_stations": nearby_data.get("max_stations"),
+            "data_source": "api",
+            "location_source": self.coordinator.data.get("location_source"),
         }
         
-        # Add location source information
-        location_source = self.coordinator.data.get("location_source")
-        if location_source:
-            attributes["location_source"] = location_source
+        # 2. Configuration
+        attributes.update({
+            "search_radius_km": nearby_data.get("search_radius_km"),
+            "max_stations": nearby_data.get("max_stations"),
+            "vehicle_latitude": nearby_data.get("vehicle_latitude"),
+            "vehicle_longitude": nearby_data.get("vehicle_longitude"),
+        })
         
-        # Add standardized entity metadata for inline documentation
+        # 3. Configuration & documentation metadata
+        attributes["config_entry_id"] = self._config_entry.entry_id
+        
         metadata = get_entity_metadata("nearby_cheap_stations_sensor")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
             attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
             attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
             attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        # 4. Mass data (LIMITED to 5 stations)
+        # Get top 5 cheapest stations only for debugging
+        all_stations = nearby_data.get("stations", [])
+        # Use heapq for efficient top-N selection without full sort
+        if len(all_stations) <= 5:
+            attributes["stations"] = sorted(all_stations, key=lambda x: x.get("price", float('inf')))
+        else:
+            attributes["stations"] = heapq.nsmallest(5, all_stations, key=lambda x: x.get("price", float('inf')))
         
         return attributes
     
@@ -3546,9 +3611,22 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return trip statistics and recent trips."""
+        """Return trip statistics and recent trips.
+        
+        Returns the last 5 trips for debugging only.
+        Use get_all_trips service to access complete history.
+        
+        Attributes are ordered according to FWCAM standard structure:
+        1. Core metadata (data_source, trip tracking enabled)
+        2. Update timestamps
+        3. Counters (trip counts, totals)
+        4. Config & documentation
+        5. Mass data (limited to 5 trips for debugging only)
+        """
         if not self.coordinator.data:
             return {
+                "data_source": "storage",
+                "trip_tracking_enabled": False,
                 "last_historical_import_timestamp": DEFAULT_HISTORICAL_IMPORT_TIMESTAMP,
                 "last_historical_import_type": DEFAULT_HISTORICAL_IMPORT_TYPE,
             }
@@ -3559,24 +3637,14 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
         # Sort all trips by end time (newest first)
         sorted_trips = sorted(trips, key=lambda x: x.get("timestamp_end", ""), reverse=True)
         
-        # Get last 10 trips to avoid exceeding 16KB attribute limit
-        recent_trips = sorted_trips[:10]
-        
+        # Build attributes in standard order
+        # 1. Core metadata
         attrs = {
-            "config_entry_id": self._config_entry.entry_id,
-            "total_trips": stats.get("total_trips", 0),
-            "total_distance_km": round(stats.get("total_distance_km", 0.0), 2),
-            "total_fuel_consumed": round(stats.get("total_fuel_consumed", 0.0), 2),
-            "total_fuel_cost": round(stats.get("total_fuel_cost", 0.0), 2),
-            "total_additional_costs": round(stats.get("total_additional_costs", 0.0), 2),
-            "business_trips": stats.get("business_trips", 0),
-            "private_trips": stats.get("private_trips", 0),
-            "commute_trips": stats.get("commute_trips", 0),
-            "recent_trips": recent_trips,
+            "data_source": "storage",
             "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
         }
         
-        # Add historical import metadata from coordinator data
+        # 2. Update timestamps
         last_historical_import = self.coordinator.data.get("last_historical_import")
         if last_historical_import:
             attrs["last_historical_import_timestamp"] = last_historical_import.get("timestamp", DEFAULT_HISTORICAL_IMPORT_TIMESTAMP)
@@ -3597,13 +3665,31 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
             attrs["last_vehicle_data_refresh_timestamp"] = last_vehicle_refresh.get("timestamp")
             attrs["last_vehicle_data_refresh_type"] = last_vehicle_refresh.get("type")
         
-        # Add standardized entity metadata for inline documentation
+        # 3. Counters and statistics
+        attrs.update({
+            "total_trips": stats.get("total_trips", 0),
+            "business_trips": stats.get("business_trips", 0),
+            "private_trips": stats.get("private_trips", 0),
+            "commute_trips": stats.get("commute_trips", 0),
+            "total_distance_km": round(stats.get("total_distance_km", 0.0), 2),
+            "total_fuel_consumed": round(stats.get("total_fuel_consumed", 0.0), 2),
+            "total_fuel_cost": round(stats.get("total_fuel_cost", 0.0), 2),
+            "total_additional_costs": round(stats.get("total_additional_costs", 0.0), 2),
+        })
+        
+        # 4. Configuration & documentation metadata
+        attrs["config_entry_id"] = self._config_entry.entry_id
+        
         metadata = get_entity_metadata("trip_log_sensor")
         if metadata:
             attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
             attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
             attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
             attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        # 5. Mass data (LIMITED to 5 trips for debugging only)
+        # NOTE: Components should use get_all_trips service for complete history
+        attrs["recent_trips"] = sorted_trips[:5]  # Reduced from 10 to 5
         
         return attrs
     

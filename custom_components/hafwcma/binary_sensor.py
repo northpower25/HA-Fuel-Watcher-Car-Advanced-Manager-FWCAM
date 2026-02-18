@@ -121,21 +121,37 @@ class ProximityAlertSensor(CoordinatorEntity, BinarySensorEntity):
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional state attributes."""
+        """Return additional state attributes.
+        
+        Attributes are ordered according to FWCAM standard structure:
+        1. Core metadata (data_source)
+        2. Station information (when near)
+        3. Alert configuration
+        4. Config & documentation
+        """
         if not self.coordinator.data:
             return {
-                ATTR_STATION_NAME: "Keine günstige Tankstelle in der unmittelbaren Umgebung",
+                "data_source": "geolocation",
+                "station_name": "Keine günstige Tankstelle in der unmittelbaren Umgebung",
             }
         
         proximity_data = self.coordinator.data.get("proximity_alert")
         if not proximity_data or not proximity_data.get("is_near"):
             return {
-                ATTR_STATION_NAME: "Keine günstige Tankstelle in der unmittelbaren Umgebung",
+                "data_source": "geolocation",
+                "station_name": "Keine günstige Tankstelle in der unmittelbaren Umgebung",
             }
         
         station = proximity_data.get("station", {})
         
+        # Build attributes in standard order
+        # 1. Core metadata
         attributes = {
+            "data_source": "geolocation",
+        }
+        
+        # 2. Station information (current alert)
+        attributes.update({
             ATTR_STATION_NAME: station.get("name"),
             ATTR_STATION_ADDRESS: station.get("address"),
             ATTR_DISTANCE: station.get("distance_km"),
@@ -143,12 +159,18 @@ class ProximityAlertSensor(CoordinatorEntity, BinarySensorEntity):
             ATTR_FUEL_TYPE: station.get("fuel_type"),
             ATTR_BRAND: station.get("brand"),
             ATTR_IS_OPEN: station.get("is_open"),
-            ATTR_PROXIMITY_THRESHOLD_KM: proximity_data.get("threshold_km"),
-            ATTR_NAVIGATION_URLS: station.get("navigation_urls", {}),
-            ATTR_ALERT_MESSAGE: proximity_data.get("alert_message"),
-        }
+        })
         
-        # Add standardized entity metadata for inline documentation
+        # 3. Alert configuration and message
+        attributes.update({
+            ATTR_PROXIMITY_THRESHOLD_KM: proximity_data.get("threshold_km"),
+            ATTR_ALERT_MESSAGE: proximity_data.get("alert_message"),
+            ATTR_NAVIGATION_URLS: station.get("navigation_urls", {}),
+        })
+        
+        # 4. Configuration & documentation metadata
+        attributes["config_entry_id"] = self._config_entry.entry_id
+        
         metadata = get_entity_metadata("proximity_alert_binary_sensor")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
@@ -209,9 +231,16 @@ class OnTripSensor(CoordinatorEntity, BinarySensorEntity):
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return trip state attributes."""
+        """Return trip state attributes.
+        
+        Attributes are ordered according to FWCAM standard structure:
+        1. Core metadata (data_source, trip_tracking_enabled)
+        2. Current trip information (if on trip)
+        3. Config & documentation
+        """
         if not self.coordinator.data:
             return {
+                "data_source": "trip_tracking",
                 "trip_tracking_enabled": False,
             }
         
@@ -219,20 +248,25 @@ class OnTripSensor(CoordinatorEntity, BinarySensorEntity):
         trip_config = self.coordinator.data.get("trip_tracking_config", {})
         current_trip = trip_state.get("current_trip", {})
         
-        if not trip_state.get("on_trip", False):
-            attributes = {
-                "trip_tracking_enabled": trip_config.get("enabled", False),
-            }
-        else:
-            attributes = {
-                "trip_tracking_enabled": trip_config.get("enabled", False),
+        # Build attributes in standard order
+        # 1. Core metadata
+        attributes = {
+            "data_source": "trip_tracking",
+            "trip_tracking_enabled": trip_config.get("enabled", False),
+        }
+        
+        # 2. Current trip information (if on trip)
+        if trip_state.get("on_trip", False):
+            attributes.update({
                 "timestamp_start": current_trip.get("timestamp_start"),
                 "distance_km": round(current_trip.get("distance_km", 0), 2),
                 "duration": current_trip.get("duration"),
                 "duration_minutes": round(current_trip.get("duration_minutes", 0), 1),
-            }
+            })
         
-        # Add standardized entity metadata for inline documentation
+        # 3. Configuration & documentation metadata
+        attributes["config_entry_id"] = self._config_entry.entry_id
+        
         metadata = get_entity_metadata("on_trip_binary_sensor")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")

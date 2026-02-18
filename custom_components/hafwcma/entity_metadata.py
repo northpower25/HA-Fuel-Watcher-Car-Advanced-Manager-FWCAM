@@ -1,7 +1,8 @@
 """Entity metadata helper for standardized entity documentation."""
 from __future__ import annotations
 
-from typing import Final
+from collections import OrderedDict
+from typing import Any, Final
 
 # Base URL for entity documentation (GitHub repository)
 ENTITY_DOCS_BASE_URL: Final = "https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/docs/ENTITIES.md"
@@ -31,6 +32,116 @@ def get_entity_metadata(entity_type: str) -> dict[str, str]:
         metadata["documentation_url"] = f"{ENTITY_DOCS_BASE_URL}#{metadata['documentation_url']}"
     
     return metadata
+
+
+def order_entity_attributes(
+    attributes: dict[str, Any],
+    *,
+    core_section: list[str] | None = None,
+    update_section: list[str] | None = None,
+    ai_section: list[str] | None = None,
+    summary_section: list[str] | None = None,
+    recommendation_section: list[str] | None = None,
+    counter_section: list[str] | None = None,
+    stats_section: list[str] | None = None,
+    config_section: list[str] | None = None,
+    mass_data_section: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Order entity attributes according to FWCAM standard structure.
+    
+    This ensures consistent attribute ordering across all entities for better UX.
+    See docs/dev_docs/ENTITY_ATTRIBUTES_GUIDELINES.md for details.
+    
+    Standard ordering:
+    1. Core measurement metadata (state_class, data_source)
+    2. Update timestamps
+    3. AI/ML confidence & patterns
+    4. Last event summaries
+    5. Recommendations
+    6. Counters/accumulators
+    7. Time-based statistics
+    8. Configuration & documentation metadata
+    9. Mass data arrays (limited to 5 items)
+    
+    Args:
+        attributes: Dictionary of all attributes to order
+        core_section: Keys for core metadata section
+        update_section: Keys for update timestamps section
+        ai_section: Keys for AI/ML section
+        summary_section: Keys for last event summaries
+        recommendation_section: Keys for recommendations
+        counter_section: Keys for counters/accumulators
+        stats_section: Keys for statistics
+        config_section: Keys for config/documentation
+        mass_data_section: Keys for mass data arrays
+        
+    Returns:
+        OrderedDict with attributes in standard order
+    """
+    ordered = OrderedDict()
+    
+    # Section 1: Core measurement metadata
+    if core_section:
+        for key in core_section:
+            if key in attributes:
+                ordered[key] = attributes[key]
+    
+    # Section 2: Update timestamps
+    if update_section:
+        for key in update_section:
+            if key in attributes:
+                ordered[key] = attributes[key]
+    
+    # Section 3: AI/ML confidence & patterns
+    if ai_section:
+        for key in ai_section:
+            if key in attributes:
+                ordered[key] = attributes[key]
+    
+    # Section 4: Last event summaries
+    if summary_section:
+        for key in summary_section:
+            if key in attributes:
+                ordered[key] = attributes[key]
+    
+    # Section 5: Recommendations
+    if recommendation_section:
+        for key in recommendation_section:
+            if key in attributes:
+                ordered[key] = attributes[key]
+    
+    # Section 6: Counters
+    if counter_section:
+        for key in counter_section:
+            if key in attributes:
+                ordered[key] = attributes[key]
+    
+    # Section 7: Statistics
+    if stats_section:
+        for key in stats_section:
+            if key in attributes:
+                ordered[key] = attributes[key]
+    
+    # Section 8: Configuration & documentation
+    if config_section:
+        for key in config_section:
+            if key in attributes:
+                ordered[key] = attributes[key]
+    
+    # Section 9: Mass data (always last)
+    if mass_data_section:
+        for key in mass_data_section:
+            if key in attributes:
+                ordered[key] = attributes[key]
+    
+    # Add any remaining attributes that weren't explicitly ordered
+    # (this preserves backward compatibility while encouraging explicit ordering)
+    for key, value in attributes.items():
+        if key not in ordered:
+            ordered[key] = value
+    
+    return ordered
 
 
 # Entity metadata definitions

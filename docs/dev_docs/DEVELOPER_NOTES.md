@@ -190,6 +190,18 @@ When creating a new entity, you must:
 **Example**:
 See `FuelPriceSensor` in `sensor.py` for a complete implementation example.
 
+#### Entity Attributes Structure Requirements
+
+**IMPORTANT**: All entities MUST follow the standardized attribute ordering defined in [ENTITY_ATTRIBUTES_GUIDELINES.md](./ENTITY_ATTRIBUTES_GUIDELINES.md).
+
+**Key Rules**:
+1. **Standard ordering**: Core metadata → Updates → AI/ML → Summaries → Recommendations → Counters → Stats → Config/Docs → Mass data
+2. **Mass data limit**: Maximum 5 items in any array attribute (recent_events, recent_trips, etc.)
+3. **Use database services**: Components should use `get_all_refuelings`, `get_all_trips` services instead of reading mass data from attributes
+4. **Helper function**: Use `order_entity_attributes()` from `entity_metadata.py` for consistent ordering
+
+**See**: [docs/dev_docs/ENTITY_ATTRIBUTES_GUIDELINES.md](./ENTITY_ATTRIBUTES_GUIDELINES.md) for complete guidelines and examples.
+
 #### Code Comments
 
 Add developer notes in your code:
