@@ -1864,13 +1864,15 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 
                 if comparison_type == "near_vs_far_radius":
                     # New configurable near vs far radius comparison
-                    near_radius = radius_comparison.get("near_radius_km", "?")
-                    far_radius = radius_comparison.get("far_radius_km", "?")
+                    near_radius = radius_comparison.get("near_radius_km")
+                    far_radius = radius_comparison.get("far_radius_km")
+                    far_radius_label = radius_comparison.get("far_radius_label", "farther")
                     attributes["station_comparison"] = {
                         "near": radius_comparison.get("station_near"),
                         "far": radius_comparison.get("station_far"),
                         "near_radius_km": near_radius,
                         "far_radius_km": far_radius,
+                        "far_radius_label": far_radius_label,
                         "savings": radius_comparison.get("savings"),
                         "savings_percent": radius_comparison.get("savings_percent"),
                         "comparison_recommendation": radius_comparison.get("recommendation"),
@@ -1909,12 +1911,18 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 if savings_value is not None:
                     if comparison_type == "near_vs_far_radius":
                         # For configurable near vs far radius comparison
-                        near_radius = radius_comparison.get("near_radius_km", "?")
-                        far_radius = radius_comparison.get("far_radius_km", "?")
+                        near_radius = radius_comparison.get("near_radius_km")
+                        far_radius_label = radius_comparison.get("far_radius_label", "farther station")
+                        
+                        # Format near radius safely
+                        near_radius_str = "near station"
+                        if isinstance(near_radius, (int, float)):
+                            near_radius_str = f"{near_radius}km radius"
+                        
                         if savings_value >= 0:
-                            attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving to {far_radius}km radius)"
+                            attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving to {far_radius_label})"
                         else:
-                            attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (costs more, stay within {near_radius}km)"
+                            attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (costs more, stay within {near_radius_str})"
                     elif comparison_type == "nearest_vs_cheapest":
                         # For nearest vs cheapest comparison
                         if savings_value >= 0:

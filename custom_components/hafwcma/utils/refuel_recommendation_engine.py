@@ -271,7 +271,8 @@ async def compare_stations_by_radius(
             "fuel_to_purchase": round(fuel_to_purchase, 1),
             "avg_consumption": round(avg_consumption, 1),
             "near_radius_km": near_radius,
-            "far_radius_km": far_radius if far_radius else "all",
+            "far_radius_km": far_radius if far_radius is not None else None,
+            "far_radius_label": f"{far_radius}km" if far_radius is not None else "all stations",
             # Use descriptive keys for clarity
             "station_near": near_data,
             "station_far": far_data,
