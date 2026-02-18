@@ -11,6 +11,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    ATTR_ENTITY_DATA_SOURCE,
+    ATTR_ENTITY_DEPENDENCIES,
+    ATTR_ENTITY_DOCUMENTATION_URL,
+    ATTR_ENTITY_PURPOSE,
     CONF_CHEAP_STATIONS_COUNT,
     CONF_CHEAP_STATIONS_RADIUS,
     CONF_CHEAP_NEAR_STATIONS_RADIUS,
@@ -44,6 +48,7 @@ from .const import (
     MIN_PROXIMITY_ALERT_DISTANCE,
     MIN_UPDATE_INTERVAL,
 )
+from .entity_metadata import get_entity_metadata
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -146,6 +151,21 @@ class UpdateIntervalNumber(NumberEntity):
             options=new_options,
         )
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with entity metadata."""
+        attributes = {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("api_update_interval_number")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
+
 
 class ConsumptionMinDataPointsNumber(NumberEntity):
     """Number entity for minimum data points required for consumption prediction."""
@@ -210,6 +230,21 @@ class ConsumptionMinDataPointsNumber(NumberEntity):
             self._config_entry,
             options=new_options,
         )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with entity metadata."""
+        attributes = {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("consumption_min_data_points_number")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
 
 
 class ConsumptionPredictionIntervalNumber(NumberEntity):
@@ -277,6 +312,21 @@ class ConsumptionPredictionIntervalNumber(NumberEntity):
             options=new_options,
         )
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with entity metadata."""
+        attributes = {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("consumption_prediction_interval_number")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
+
 
 
 class ProximityAlertDistanceNumber(NumberEntity):
@@ -325,6 +375,21 @@ class ProximityAlertDistanceNumber(NumberEntity):
         new_options[CONF_PROXIMITY_ALERT_DISTANCE] = value
         self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with entity metadata."""
+        attributes = {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("proximity_alert_distance_number")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
+
 
 class CheapStationsCountNumber(NumberEntity):
     """Number entity for number of cheap stations to track."""
@@ -370,6 +435,21 @@ class CheapStationsCountNumber(NumberEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_CHEAP_STATIONS_COUNT] = int(value)
         self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with entity metadata."""
+        attributes = {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("cheap_stations_count_number")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
 
 
 class CheapStationsRadiusNumber(NumberEntity):
@@ -418,6 +498,21 @@ class CheapStationsRadiusNumber(NumberEntity):
         new_options[CONF_CHEAP_STATIONS_RADIUS] = value
         self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with entity metadata."""
+        attributes = {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("cheap_stations_radius_number")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
+
 
 class CheapNearStationsRadiusNumber(NumberEntity):
     """Number entity for cheap near stations search radius (for near vs far comparison)."""
@@ -465,6 +560,21 @@ class CheapNearStationsRadiusNumber(NumberEntity):
         new_options[CONF_CHEAP_NEAR_STATIONS_RADIUS] = value
         self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with entity metadata."""
+        attributes = {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("cheap_near_stations_radius_number")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
+
 
 class MinTankLevelForAlertsNumber(NumberEntity):
     """Number entity for minimum tank level threshold for proximity alerts."""
@@ -511,3 +621,18 @@ class MinTankLevelForAlertsNumber(NumberEntity):
         new_options = dict(self._config_entry.options)
         new_options[CONF_MIN_TANK_LEVEL_FOR_ALERTS] = value
         self._hass.config_entries.async_update_entry(self._config_entry, options=new_options)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with entity metadata."""
+        attributes = {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("min_tank_level_for_alerts_number")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes

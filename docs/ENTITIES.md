@@ -31,7 +31,7 @@ This document provides detailed information about all entities in the Fuel Watch
   - [Trip Tracking Switch](#trip-tracking-switch)
 - [Buttons](#buttons)
   - [Test Provider Connection Button](#test-provider-connection-button)
-  - [Import Historical Data Button](#import-historical-data-button)
+  - [Import Historical Car Data Button](#import-historical-car-data-button)
   - [Import Historical Trip Data Button](#import-historical-trip-data-button)
   - [Recalculate Trip Statistics Button](#recalculate-trip-statistics-button)
   - [Validate Refueling Events Button](#validate-refueling-events-button)
@@ -40,6 +40,15 @@ This document provides detailed information about all entities in the Fuel Watch
   - [Consumption Prediction Button](#consumption-prediction-button)
   - [Telegram Test Button](#telegram-test-button)
   - [Export Vehicle Data Button](#export-vehicle-data-button)
+- [Numbers](#numbers)
+  - [Proximity Alert Distance Number](#proximity-alert-distance-number)
+  - [Min Tank Level For Alerts Number](#min-tank-level-for-alerts-number)
+  - [Cheap Stations Radius Number](#cheap-stations-radius-number)
+  - [Cheap Stations Count Number](#cheap-stations-count-number)
+  - [Cheap Near Stations Radius Number](#cheap-near-stations-radius-number)
+  - [API Update Interval Number](#api-update-interval-number)
+  - [Consumption Prediction Interval Number](#consumption-prediction-interval-number)
+  - [Consumption Min Data Points Number](#consumption-min-data-points-number)
 
 ---
 
@@ -848,9 +857,9 @@ None (simple on/off switch)
 
 ---
 
-### Import Historical Data Button
+### Import Historical Car Data Button
 
-**Entity ID**: `button.[vehicle_name]_import_historical_data`
+**Entity ID**: `button.[vehicle_name]_import_historical_car_data`
 
 **Purpose**: Imports historical fuel price data from the provider API for the past 30 days.
 
@@ -1234,6 +1243,219 @@ None (simple on/off switch)
   - Sharing data with tax software (for business trips)
   - Migration to another system
 - **Effects**: Creates CSV file; no changes to integration data
+
+---
+
+## Numbers
+
+### Proximity Alert Distance Number
+
+**Entity ID**: `number.[vehicle_name]_proximity_alert_distance`
+
+**Purpose**: Configures the distance threshold (km) for triggering proximity alerts when near cheap fuel stations.
+
+**Data Source**:
+- Configuration entry options (persisted)
+
+**Dependencies**:
+- Proximity Alerts Switch (must be enabled)
+- Proximity Alert Sensor (uses this value to determine alert radius)
+
+**Value Range**:
+- Minimum: 0.5 km
+- Maximum: 30 km
+- Step: 0.1 km
+- Default: 5 km
+
+**Update Behavior**:
+- **Change Method**: Manual adjustment via UI or automation
+- **Effect**: Immediately updates proximity alert detection radius
+- **Persistence**: Value stored in config entry options
+
+---
+
+### Min Tank Level For Alerts Number
+
+**Entity ID**: `number.[vehicle_name]_min_tank_level_for_alerts`
+
+**Purpose**: Sets the minimum tank level (%) required to trigger proximity alerts for cheap stations.
+
+**Data Source**:
+- Configuration entry options (persisted)
+
+**Dependencies**:
+- Proximity Alerts Switch (must be enabled)
+- Tank Level Sensor (compared against this threshold)
+
+**Value Range**:
+- Minimum: 0%
+- Maximum: 100%
+- Step: 1%
+- Default: 30%
+
+**Update Behavior**:
+- **Change Method**: Manual adjustment via UI or automation
+- **Effect**: Alerts only trigger when tank level is below this value
+- **Persistence**: Value stored in config entry options
+
+---
+
+### Cheap Stations Radius Number
+
+**Entity ID**: `number.[vehicle_name]_cheap_stations_radius`
+
+**Purpose**: Defines the search radius (km) for finding cheap fuel stations from all station API searches.
+
+**Data Source**:
+- Configuration entry options (persisted)
+
+**Dependencies**:
+- Fuel Price Sensor (uses this radius for station searches)
+- Nearby Cheap Stations Sensor (uses this radius for geolocation features)
+
+**Value Range**:
+- Minimum: 1 km
+- Maximum: 50 km
+- Step: 0.5 km
+- Default: 15 km
+
+**Update Behavior**:
+- **Change Method**: Manual adjustment via UI or automation
+- **Effect**: Immediately affects next fuel price update and station searches
+- **Persistence**: Value stored in config entry options
+- **Note**: This is the main radius parameter used for all station API searches
+
+---
+
+### Cheap Stations Count Number
+
+**Entity ID**: `number.[vehicle_name]_cheap_stations_count`
+
+**Purpose**: Limits the maximum number of cheap stations returned in searches and displayed in attributes.
+
+**Data Source**:
+- Configuration entry options (persisted)
+
+**Dependencies**:
+- Nearby Cheap Stations Sensor (limits number of stations in results)
+
+**Value Range**:
+- Minimum: 1
+- Maximum: 20
+- Step: 1
+- Default: 5
+
+**Update Behavior**:
+- **Change Method**: Manual adjustment via UI or automation
+- **Effect**: Immediately limits number of stations in next update
+- **Persistence**: Value stored in config entry options
+- **Performance**: Lower values reduce API response size and processing time
+
+---
+
+### Cheap Near Stations Radius Number
+
+**Entity ID**: `number.[vehicle_name]_cheap_near_stations_radius`
+
+**Purpose**: Defines the inner radius (km) for near/far station comparison logic in recommendations.
+
+**Data Source**:
+- Configuration entry options (persisted)
+
+**Dependencies**:
+- Nearby Cheap Stations Sensor (uses this for comparison logic only)
+
+**Value Range**:
+- Minimum: 1 km
+- Maximum: 30 km
+- Step: 0.5 km
+- Default: 10 km
+
+**Update Behavior**:
+- **Change Method**: Manual adjustment via UI or automation
+- **Effect**: Changes the definition of "near" vs "far" stations in recommendations
+- **Persistence**: Value stored in config entry options
+- **Note**: This radius is ONLY used for near/far comparison logic, not for API searches
+
+---
+
+### API Update Interval Number
+
+**Entity ID**: `number.[vehicle_name]_api_update_interval`
+
+**Purpose**: Controls the interval (minutes) between fuel price API updates and coordinator data refreshes.
+
+**Data Source**:
+- Configuration entry options (persisted)
+
+**Dependencies**:
+- Data Coordinator (applies this interval to all sensor updates)
+
+**Value Range**:
+- Minimum: 1 minute
+- Maximum: 60 minutes
+- Step: 1 minute
+- Default: 15 minutes
+
+**Update Behavior**:
+- **Change Method**: Manual adjustment via UI or automation
+- **Effect**: Immediately changes coordinator update interval after next update
+- **Persistence**: Value stored in config entry options
+- **Performance**: Lower values increase API calls and HA load; higher values reduce freshness
+- **Recommendation**: Keep at 15 minutes or higher to avoid API rate limits
+
+---
+
+### Consumption Prediction Interval Number
+
+**Entity ID**: `number.[vehicle_name]_consumption_prediction_interval`
+
+**Purpose**: Sets the interval (hours) between automatic consumption prediction recalculations.
+
+**Data Source**:
+- Configuration entry options (persisted)
+
+**Dependencies**:
+- Consumption Prediction Sensor (uses this interval)
+- Consumption Prediction Button (can trigger immediate recalculation)
+
+**Value Range**:
+- Minimum: 0.5 hours
+- Maximum: 24 hours
+- Step: 0.5 hours
+- Default: 6 hours
+
+**Update Behavior**:
+- **Change Method**: Manual adjustment via UI or automation
+- **Effect**: Changes frequency of prediction recalculations
+- **Persistence**: Value stored in config entry options
+- **Performance**: Lower values provide more up-to-date predictions but increase processing
+
+---
+
+### Consumption Min Data Points Number
+
+**Entity ID**: `number.[vehicle_name]_consumption_min_data_points`
+
+**Purpose**: Specifies the minimum number of refueling events required before consumption predictions are calculated.
+
+**Data Source**:
+- Configuration entry options (persisted)
+
+**Dependencies**:
+- Consumption Prediction Sensor (enforces this data quality threshold)
+
+**Value Range**:
+- Minimum: 2
+- Maximum: 50
+- Step: 1
+- Default: 5
+
+**Update Behavior**:
+- **Change Method**: Manual adjustment via UI or automation
+- **Effect**: Determines when predictions become available (data quality threshold)
+- **Persistence**: Value stored in config entry options
+- **Recommendation**: Keep at 5 or higher for reliable predictions; lower values may produce inaccurate results
 
 ---
 

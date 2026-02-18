@@ -265,11 +265,11 @@ ENTITY_METADATA: Final = {
         "purpose_info": "Tests connection to fuel price provider API",
         "documentation_url": "test-provider-connection-button",
     },
-    "import_historical_data_button": {
+    "import_historical_car_data_button": {
         "data_source_info": "Provider API historical data endpoint, storage system",
         "dependencies_info": "Fuel price provider with historical support, storage system",
         "purpose_info": "Imports historical fuel price data (past 30 days)",
-        "documentation_url": "import-historical-data-button",
+        "documentation_url": "import-historical-car-data-button",
     },
     "import_historical_trip_data_button": {
         "data_source_info": "Historical odometer observations, trip detection algorithm",
@@ -318,5 +318,53 @@ ENTITY_METADATA: Final = {
         "dependencies_info": "Storage system, all data sensors",
         "purpose_info": "Exports all vehicle data to CSV file",
         "documentation_url": "export-vehicle-data-button",
+    },
+    "proximity_alert_distance_number": {
+        "data_source_info": "Configuration entry options (persisted)",
+        "dependencies_info": "Proximity Alerts Switch, Proximity Alert Sensor; determines alert trigger radius",
+        "purpose_info": "Distance threshold (km) for proximity alerts to cheap stations",
+        "documentation_url": "proximity-alert-distance-number",
+    },
+    "min_tank_level_for_alerts_number": {
+        "data_source_info": "Configuration entry options (persisted)",
+        "dependencies_info": "Proximity Alerts Switch, Tank Level Sensor; defines minimum tank level",
+        "purpose_info": "Minimum tank level (%) required to trigger proximity alerts",
+        "documentation_url": "min-tank-level-for-alerts-number",
+    },
+    "cheap_stations_radius_number": {
+        "data_source_info": "Configuration entry options (persisted)",
+        "dependencies_info": "Fuel Price Sensor, Nearby Cheap Stations Sensor; main station search radius",
+        "purpose_info": "Search radius (km) for finding cheap fuel stations",
+        "documentation_url": "cheap-stations-radius-number",
+    },
+    "cheap_stations_count_number": {
+        "data_source_info": "Configuration entry options (persisted)",
+        "dependencies_info": "Nearby Cheap Stations Sensor; limits number of stations returned",
+        "purpose_info": "Maximum number of cheap stations to return in searches",
+        "documentation_url": "cheap-stations-count-number",
+    },
+    "cheap_near_stations_radius_number": {
+        "data_source_info": "Configuration entry options (persisted)",
+        "dependencies_info": "Nearby Cheap Stations Sensor; for near/far station comparison logic",
+        "purpose_info": "Inner radius (km) for near/far station comparison",
+        "documentation_url": "cheap-near-stations-radius-number",
+    },
+    "api_update_interval_number": {
+        "data_source_info": "Configuration entry options (persisted)",
+        "dependencies_info": "Data Coordinator; controls all sensor update frequency",
+        "purpose_info": "Interval (minutes) between fuel price API updates",
+        "documentation_url": "api-update-interval-number",
+    },
+    "consumption_prediction_interval_number": {
+        "data_source_info": "Configuration entry options (persisted)",
+        "dependencies_info": "Consumption Prediction Sensor, Consumption Prediction Button; update frequency",
+        "purpose_info": "Interval (hours) between consumption prediction recalculations",
+        "documentation_url": "consumption-prediction-interval-number",
+    },
+    "consumption_min_data_points_number": {
+        "data_source_info": "Configuration entry options (persisted)",
+        "dependencies_info": "Consumption Prediction Sensor; data quality threshold",
+        "purpose_info": "Minimum refueling events required for consumption predictions",
+        "documentation_url": "consumption-min-data-points-number",
     },
 }
