@@ -23,7 +23,8 @@ def get_entity_metadata(entity_type: str) -> dict[str, str]:
     Returns:
         Dictionary with metadata attributes
     """
-    metadata = ENTITY_METADATA.get(entity_type, {})
+    # Create a copy to avoid modifying the original dictionary
+    metadata = ENTITY_METADATA.get(entity_type, {}).copy()
     
     # Add documentation URL anchor
     if "documentation_url" in metadata:
