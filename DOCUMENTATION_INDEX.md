@@ -100,9 +100,11 @@ This file provides an overview of all available documentation for the Fuel Watch
 ### For Developers
 **Technical documentation:**
 1. [DEVELOPER_NOTES.md](DEVELOPER_NOTES.md) - Development guidelines
-2. [docs/API.md](docs/API.md) - API documentation
-3. [docs/DATA_STORAGE.md](docs/DATA_STORAGE.md) - Storage schema
-4. [docs/TRIP_TRACKING_CONCEPT.md](docs/TRIP_TRACKING_CONCEPT.md) - Trip tracking architecture
+2. [docs/dev_docs/ENTITY_ATTRIBUTES_GUIDELINES.md](docs/dev_docs/ENTITY_ATTRIBUTES_GUIDELINES.md) - Entity attribute structure standards
+3. [docs/dev_docs/ATTRIBUTE_STRUCTURE_IMPLEMENTATION_SUMMARY.md](docs/dev_docs/ATTRIBUTE_STRUCTURE_IMPLEMENTATION_SUMMARY.md) - Attribute standardization summary
+4. [docs/API.md](docs/API.md) - API documentation
+5. [docs/DATA_STORAGE.md](docs/DATA_STORAGE.md) - Storage schema
+6. [docs/TRIP_TRACKING_CONCEPT.md](docs/TRIP_TRACKING_CONCEPT.md) - Trip tracking architecture
 
 ### For Troubleshooters
 **Problem-solving resources:**
@@ -152,6 +154,11 @@ This file provides an overview of all available documentation for the Fuel Watch
 - [docs/DATA_STORAGE.md](docs/DATA_STORAGE.md)
 - [docs/DATA_QUALITY_INDICATORS.md](docs/DATA_QUALITY_INDICATORS.md)
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
+
+### Developer Documentation
+- [docs/dev_docs/ENTITY_ATTRIBUTES_GUIDELINES.md](docs/dev_docs/ENTITY_ATTRIBUTES_GUIDELINES.md)
+- [docs/dev_docs/ATTRIBUTE_STRUCTURE_IMPLEMENTATION_SUMMARY.md](docs/dev_docs/ATTRIBUTE_STRUCTURE_IMPLEMENTATION_SUMMARY.md)
+- [docs/dev_docs/DEVELOPER_NOTES.md](docs/dev_docs/DEVELOPER_NOTES.md)
 
 ### Troubleshooting
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
