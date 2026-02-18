@@ -231,7 +231,7 @@ content: |
   ## Tankstellen-Vergleich
   
   **Near Radius:** {{ state_attr('sensor.my_car_cheapest_station', 'station_comparison')['near_radius_km'] }} km
-  **Far Radius:** {{ state_attr('sensor.my_car_cheapest_station', 'station_comparison')['far_radius_km'] }} km
+  **Far Radius:** {{ state_attr('sensor.my_car_cheapest_station', 'station_comparison')['far_radius_label'] | default('Alle Tankstellen') }}
   
   ### Tankstelle Nah
   - {{ state_attr('sensor.my_car_cheapest_station', 'station_comparison')['near']['name'] }}
