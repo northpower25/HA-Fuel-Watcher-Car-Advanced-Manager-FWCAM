@@ -2128,6 +2128,14 @@ class TankLevelSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         if self._restored_value is not None:
             attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("tank_level_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
         return attributes
 
 
@@ -2235,6 +2243,14 @@ class RangeSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         if self._restored_value is not None:
             attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("range_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
         return attributes
 
 
@@ -2338,6 +2354,14 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         # Mark as restored state
         if self._restored_value is not None:
             attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("nearest_station_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return attributes
 
@@ -2527,6 +2551,14 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
                 stations_20km = [s for s in stations_list if s.get("distance_km", float('inf')) <= 20]
                 filtered_debug["count_stations_20km_range"] = len(stations_20km)
                 filtered_debug["lowest_price_20km_range"] = get_lowest_price(stations_20km)
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("fuel_price_api_debug_sensor")
+        if metadata:
+            filtered_debug[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            filtered_debug[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            filtered_debug[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            filtered_debug[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return filtered_debug
 
@@ -2733,6 +2765,14 @@ class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
         else:
             attributes["recommendations"] = "All data sources configured properly"
         
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("car_data_debug_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
         return attributes
 
 
@@ -2873,6 +2913,14 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
         else:
             # No forecast recommendation data available
             attributes["forecast_recommendation"] = "Waiting for consumption prediction and price history data"
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("consumption_prediction_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return attributes
 
@@ -3052,6 +3100,14 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         # Add metadata from consumption_prediction if available
         self._add_prediction_metadata(attributes, consumption_prediction)
         
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("consumption_history_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
         return attributes
 
 
@@ -3193,6 +3249,14 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
         
         # Add metadata from consumption_prediction if available
         self._add_prediction_metadata(attributes, consumption_prediction)
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("consumption_forecast_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return attributes
 
@@ -3338,6 +3402,14 @@ class RefuelingLogSensor(CoordinatorEntity, SensorEntity):
             attrs["last_vehicle_data_refresh_timestamp"] = last_vehicle_refresh.get("timestamp")
             attrs["last_vehicle_data_refresh_type"] = last_vehicle_refresh.get("type")
         
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("refueling_log_sensor")
+        if metadata:
+            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
         return attrs
 
 
@@ -3419,6 +3491,14 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
         location_source = self.coordinator.data.get("location_source")
         if location_source:
             attributes["location_source"] = location_source
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("nearby_cheap_stations_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return attributes
     
@@ -3517,6 +3597,14 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
             attrs["last_vehicle_data_refresh_timestamp"] = last_vehicle_refresh.get("timestamp")
             attrs["last_vehicle_data_refresh_type"] = last_vehicle_refresh.get("type")
         
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("trip_log_sensor")
+        if metadata:
+            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
         return attrs
     
     @property
@@ -3577,24 +3665,34 @@ class CurrentTripSensor(CoordinatorEntity, SensorEntity):
         on_trip = trip_state.get("on_trip", False)
         
         if not on_trip:
-            return {
+            attributes = {
                 "on_trip": False,
                 "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
             }
+        else:
+            current_trip = trip_state.get("current_trip", {})
+            
+            attributes = {
+                "on_trip": True,
+                "timestamp_start": current_trip.get("timestamp_start"),
+                "distance_km": round(current_trip.get("distance_km", 0), 2),
+                "odometer_start": current_trip.get("odometer_start"),
+                "start_latitude": current_trip.get("start_latitude"),
+                "start_longitude": current_trip.get("start_longitude"),
+                "duration": current_trip.get("duration"),
+                "duration_minutes": round(current_trip.get("duration_minutes", 0), 1),
+                "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
+            }
         
-        current_trip = trip_state.get("current_trip", {})
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("current_trip_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
-        return {
-            "on_trip": True,
-            "timestamp_start": current_trip.get("timestamp_start"),
-            "distance_km": round(current_trip.get("distance_km", 0), 2),
-            "odometer_start": current_trip.get("odometer_start"),
-            "start_latitude": current_trip.get("start_latitude"),
-            "start_longitude": current_trip.get("start_longitude"),
-            "duration": current_trip.get("duration"),
-            "duration_minutes": round(current_trip.get("duration_minutes", 0), 1),
-            "trip_tracking_enabled": self.coordinator.data.get("trip_tracking_config", {}).get("enabled", False),
-        }
+        return attributes
     
     @property
     def available(self) -> bool:
