@@ -2448,10 +2448,12 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
             
             if stations_list and search_radius_km:
                 # Stations within configured search radius
-                filtered_debug[f"count_stations_{search_radius_km}km_range"] = len(stations_list)
+                # Use consistent attribute names regardless of actual radius value
+                filtered_debug["count_stations_configured_range"] = len(stations_list)
+                filtered_debug["configured_search_radius_km"] = search_radius_km
                 prices = [s.get("price") for s in stations_list if s.get("price") is not None]
                 if prices:
-                    filtered_debug[f"lowest_price_{search_radius_km}km_range"] = round(min(prices), 3)
+                    filtered_debug["lowest_price_configured_range"] = round(min(prices), 3)
                 
                 # Stations within 10km
                 stations_10km = [s for s in stations_list if s.get("distance_km", float('inf')) <= 10]

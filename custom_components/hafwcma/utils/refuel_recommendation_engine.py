@@ -333,7 +333,9 @@ async def compare_stations_by_radius(
                 # Use descriptive keys for clarity
                 "nearest_station": nearest_data,
                 "cheapest_station": cheapest_data,
-                # Keep old keys for backward compatibility
+                # Keep old keys for backward compatibility with existing code that expects
+                # station_10km/station_20km keys. In this alternative comparison mode,
+                # these keys represent nearest/cheapest rather than actual 10km/20km stations.
                 "station_10km": nearest_data,
                 "station_20km": cheapest_data,
                 "savings": round(savings, 2),
