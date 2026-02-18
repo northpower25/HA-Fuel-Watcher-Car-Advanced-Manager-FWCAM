@@ -767,9 +767,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     len(missed_trips),
                 )
                 
-                # Save missed trips to storage
-                from .utils.storage import save_data
-                
                 # Initialize trips list if not present
                 if "trips" not in data:
                     data["trips"] = []
