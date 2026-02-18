@@ -2449,33 +2449,27 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
             search_radius_km = nearby_cheap_stations_data.get("search_radius_km")
             
             if stations_list and search_radius_km:
+                # Helper function to get valid prices from station list
+                def get_lowest_price(stations):
+                    """Extract lowest valid price from station list."""
+                    prices = [s.get("price") for s in stations if s.get("price") is not None]
+                    return round(min(prices), 3) if prices else None
+                
                 # Stations within configured search radius
                 # Use consistent attribute names regardless of actual radius value
                 filtered_debug["count_stations_configured_range"] = len(stations_list)
                 filtered_debug["configured_search_radius_km"] = search_radius_km
-                prices = [s.get("price") for s in stations_list if s.get("price") is not None]
-                if prices:
-                    filtered_debug["lowest_price_configured_range"] = round(min(prices), 3)
+                filtered_debug["lowest_price_configured_range"] = get_lowest_price(stations_list)
                 
                 # Stations within 10km
                 stations_10km = [s for s in stations_list if s.get("distance_km", float('inf')) <= 10]
                 filtered_debug["count_stations_10km_range"] = len(stations_10km)
-                if stations_10km:
-                    prices_10km = [s.get("price") for s in stations_10km if s.get("price") is not None]
-                    if prices_10km:
-                        filtered_debug["lowest_price_10km_range"] = round(min(prices_10km), 3)
-                else:
-                    filtered_debug["lowest_price_10km_range"] = None
+                filtered_debug["lowest_price_10km_range"] = get_lowest_price(stations_10km)
                 
                 # Stations within 20km
                 stations_20km = [s for s in stations_list if s.get("distance_km", float('inf')) <= 20]
                 filtered_debug["count_stations_20km_range"] = len(stations_20km)
-                if stations_20km:
-                    prices_20km = [s.get("price") for s in stations_20km if s.get("price") is not None]
-                    if prices_20km:
-                        filtered_debug["lowest_price_20km_range"] = round(min(prices_20km), 3)
-                else:
-                    filtered_debug["lowest_price_20km_range"] = None
+                filtered_debug["lowest_price_20km_range"] = get_lowest_price(stations_20km)
         
         return filtered_debug
 

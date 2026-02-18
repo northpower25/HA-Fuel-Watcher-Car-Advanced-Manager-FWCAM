@@ -270,9 +270,8 @@ async def compare_stations_by_radius(
     # No stations within 10km but there are stations available (could be 10-20km or beyond)
     # Compare nearest station vs cheapest station for cost analysis
     if not cheapest_10km and len(stations_list) >= 2:
-        # Sort all stations by distance to find the nearest one
-        sorted_by_distance = sorted(stations_list, key=lambda s: s.get("distance_km", float('inf')))
-        nearest_station = sorted_by_distance[0]
+        # Find the nearest station - O(n) complexity
+        nearest_station = min(stations_list, key=lambda s: s.get("distance_km", float('inf')))
         
         # Find the cheapest station overall
         cheapest_overall = min(stations_list, key=lambda s: s.get("price", float('inf')))
