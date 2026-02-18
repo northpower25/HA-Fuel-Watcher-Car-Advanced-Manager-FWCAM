@@ -346,11 +346,16 @@ async def compare_stations_by_radius(
                 "comparison_type": "nearest_vs_cheapest",  # Indicate alternative comparison
             }
     
-    # Insufficient stations for comparison (either no stations within 10km and only one available,
-    # or all available stations are the same)
+    # Insufficient stations for comparison
+    # This happens when: no stations within 10km AND (only one station available OR nearest=cheapest)
+    if len(stations_list) < 2:
+        reason = "Only one station available"
+    else:
+        reason = "Nearest and cheapest stations are the same"
+    
     return {
         "has_comparison": False,
-        "reason": "Insufficient stations for comparison",
+        "reason": reason,
         "cheapest_20km": cheapest_20km,
     }
 
