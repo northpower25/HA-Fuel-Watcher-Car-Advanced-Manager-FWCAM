@@ -93,6 +93,7 @@ from .providers.tankerkonig import TankerkoenigProvider
 from .utils.vehicle_data import async_get_vehicle_data, async_wait_for_entities
 from .utils.vehicle_tracker import VehicleDataTracker
 from .utils import storage
+from .utils.storage import recalculate_trip_statistics
 from .utils.consumption_prediction import predict_days_until_refuel, store_prediction_result
 from .utils.prediction_engine import evaluate_refuel_strategy, get_prediction_summary
 from .utils.price_engine import compute_price_trend, get_price_statistics
@@ -810,7 +811,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 await storage.save_data(self.hass, self.config_entry, data)
                 
                 # Recalculate trip statistics to include new trips
-                from .utils.storage import recalculate_trip_statistics
                 await recalculate_trip_statistics(self.hass, self.config_entry)
                 
                 # Reload data to update coordinator state
