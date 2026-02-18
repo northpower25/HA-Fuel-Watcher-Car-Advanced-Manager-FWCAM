@@ -1778,7 +1778,7 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional attributes."""
+        """Return additional attributes following FWCAM standardized ordering."""
         # If coordinator has fresh data, use it
         if self.coordinator.data is not None:
             station = self.coordinator.data.get("nearest_station", {})
@@ -1816,19 +1816,22 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                             "distance": station_10km.get("distance_km"),
                         }
             
+            # 1. Core metadata
             attributes = {
                 ATTR_STATION_NAME: display_station.get("name"),
                 ATTR_STATION_ADDRESS: display_station.get("address"),
                 ATTR_DISTANCE: display_station.get("distance"),
-                ATTR_FORECAST_TREND: self.coordinator.data.get("forecast_trend"),
             }
+            
+            # Add data source (API-based)
+            attributes[ATTR_DATA_SOURCE] = "api"
             
             # Add location source information
             location_source = self.coordinator.data.get("location_source")
             if location_source:
                 attributes["location_source"] = location_source
             
-            # Add timestamp of last successful price fetch and check staleness
+            # 2. Update timestamps
             last_price_timestamp = self.coordinator.data.get("last_price_timestamp")
             if last_price_timestamp:
                 attributes["last_update_timestamp"] = last_price_timestamp
@@ -1845,8 +1848,18 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             if self._restored_value is not None:
                 attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
-        # Add supplementary attributes from coordinator data (recommendations, statistics) if available
+        # Add supplementary attributes from coordinator data if available
         if self.coordinator.data is not None:
+            # 3. AI/ML patterns (history price pattern - weekday patterns)
+            price_statistics = self.coordinator.data.get("price_statistics")
+            if price_statistics:
+                weekday_patterns = price_statistics.get("weekday_patterns")
+                if weekday_patterns:
+                    attributes["history_price_pattern"] = weekday_patterns
+            
+            # 4. Last event summary - NOT applicable for this sensor
+            
+            # 5. Recommendations
             recommendation = self.coordinator.data.get("recommendation", {})
             if recommendation:
                 attributes[ATTR_SHOULD_REFUEL] = recommendation.get("should_refuel", False)
@@ -1854,70 +1867,15 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 attributes[ATTR_RECOMMENDATION] = recommendation.get("recommendation", "")
                 attributes[ATTR_PRICE_DELTA] = recommendation.get("price_delta")
                 attributes[ATTR_PRICE_DELTA_PERCENT] = recommendation.get("price_delta_percent")
-                
-                # Add cooldown information if present
-                if recommendation.get("in_cooldown"):
-                    attributes["in_cooldown"] = True
-                    attributes["cooldown_remaining_minutes"] = recommendation.get("cooldown_remaining_minutes")
             
-            # Add radius comparison if available
+            # Add cost savings comparison (part of recommendations)
             radius_comparison = self.coordinator.data.get("radius_comparison")
             if radius_comparison and radius_comparison.get("has_comparison"):
-                # Check comparison type
                 comparison_type = radius_comparison.get("comparison_type", "10km_vs_20km")
-                
-                if comparison_type == "near_vs_far_radius":
-                    # New configurable near vs far radius comparison
-                    near_radius = radius_comparison.get("near_radius_km")
-                    far_radius = radius_comparison.get("far_radius_km")
-                    near_radius_label = radius_comparison.get("near_radius_label", "near")
-                    far_radius_label = radius_comparison.get("far_radius_label", "farther")
-                    attributes["station_comparison"] = {
-                        "near": radius_comparison.get("station_near"),
-                        "far": radius_comparison.get("station_far"),
-                        "near_radius_km": near_radius,
-                        "far_radius_km": far_radius,
-                        "near_radius_label": near_radius_label,
-                        "far_radius_label": far_radius_label,
-                        "savings": radius_comparison.get("savings"),
-                        "savings_percent": radius_comparison.get("savings_percent"),
-                        "comparison_recommendation": radius_comparison.get("recommendation"),
-                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
-                        "comparison_type": "near_vs_far_radius",
-                    }
-                elif comparison_type == "nearest_vs_cheapest":
-                    # Alternative comparison: nearest station vs cheapest station
-                    # Use the descriptive keys for clarity
-                    attributes["station_comparison"] = {
-                        "nearest": radius_comparison.get("nearest_station"),
-                        "cheapest": radius_comparison.get("cheapest_station"),
-                        "savings": radius_comparison.get("savings"),
-                        "savings_percent": radius_comparison.get("savings_percent"),
-                        "comparison_recommendation": radius_comparison.get("recommendation"),
-                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
-                        "comparison_type": "nearest_vs_cheapest",
-                    }
-                else:
-                    # Standard comparison: 10km vs 20km (backward compatibility)
-                    attributes["station_comparison"] = {
-                        "10km": radius_comparison.get("station_10km"),
-                        "20km": radius_comparison.get("station_20km"),
-                        "savings": radius_comparison.get("savings"),
-                        "savings_percent": radius_comparison.get("savings_percent"),
-                        "comparison_recommendation": radius_comparison.get("recommendation"),
-                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
-                        "comparison_type": "10km_vs_20km",
-                    }
-
-                # Add explicit cost savings attribute
-                # This shows the total EUR savings when going to the farther/cheapest station
-                # Positive value = save money by driving farther/to cheaper station
-                # Negative value = lose money by driving farther (better to stay close)
                 savings_value = radius_comparison.get("savings")
+                
                 if savings_value is not None:
                     if comparison_type == "near_vs_far_radius":
-                        # For configurable near vs far radius comparison
-                        # Use pre-formatted labels for consistency
                         near_radius_label = radius_comparison.get("near_radius_label", "near station")
                         far_radius_label = radius_comparison.get("far_radius_label", "farther station")
                         
@@ -1926,13 +1884,11 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         else:
                             attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (costs more, stay within {near_radius_label})"
                     elif comparison_type == "nearest_vs_cheapest":
-                        # For nearest vs cheapest comparison
                         if savings_value >= 0:
                             attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving to cheapest)"
                         else:
                             attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (costs more to drive to cheapest, stay near)"
                     else:
-                        # For 10km vs 20km comparison (backward compatibility)
                         if savings_value >= 0:
                             attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving farther)"
                         else:
@@ -1940,7 +1896,6 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 else:
                     attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
             elif radius_comparison:
-                # radius_comparison exists but has_comparison is False - show reason
                 reason = radius_comparison.get("reason", "Unknown")
                 if reason == "No stations available":
                     attributes["costsaving_far_vs_near_station"] = "Waiting for station data"
@@ -1955,18 +1910,20 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 else:
                     attributes["costsaving_far_vs_near_station"] = f"Not available ({reason})"
             else:
-                # No radius_comparison data at all
                 attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
             
-            # Add price statistics if available (history price pattern)
-            price_statistics = self.coordinator.data.get("price_statistics")
+            # Add cooldown information if present (part of recommendations)
+            if recommendation and recommendation.get("in_cooldown"):
+                attributes["in_cooldown"] = True
+                attributes["cooldown_remaining_minutes"] = recommendation.get("cooldown_remaining_minutes")
+            
+            # 6. Counters - NOT applicable for this sensor
+            
+            # 7. Time-based statistics
+            attributes[ATTR_FORECAST_TREND] = self.coordinator.data.get("forecast_trend")
+            
+            # Add period statistics
             if price_statistics:
-                # Add weekday patterns
-                weekday_patterns = price_statistics.get("weekday_patterns")
-                if weekday_patterns:
-                    attributes["history_price_pattern"] = weekday_patterns
-                
-                # Add period statistics
                 last_week = price_statistics.get("last_week")
                 if last_week:
                     attributes["last_week_price"] = last_week.get("avg_price")
@@ -2006,13 +1963,60 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                     ]
         
-        # Add standardized entity metadata for inline documentation
+        # 8. Configuration & documentation
+        attributes["config_entry_id"] = self._config_entry.entry_id
+        
         metadata = get_entity_metadata("fuel_price_sensor")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
             attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
             attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
             attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        # 9. Mass data - station_comparison object (keep as is, but move to end)
+        if self.coordinator.data is not None:
+            radius_comparison = self.coordinator.data.get("radius_comparison")
+            if radius_comparison and radius_comparison.get("has_comparison"):
+                comparison_type = radius_comparison.get("comparison_type", "10km_vs_20km")
+                
+                if comparison_type == "near_vs_far_radius":
+                    near_radius = radius_comparison.get("near_radius_km")
+                    far_radius = radius_comparison.get("far_radius_km")
+                    near_radius_label = radius_comparison.get("near_radius_label", "near")
+                    far_radius_label = radius_comparison.get("far_radius_label", "farther")
+                    attributes["station_comparison"] = {
+                        "near": radius_comparison.get("station_near"),
+                        "far": radius_comparison.get("station_far"),
+                        "near_radius_km": near_radius,
+                        "far_radius_km": far_radius,
+                        "near_radius_label": near_radius_label,
+                        "far_radius_label": far_radius_label,
+                        "savings": radius_comparison.get("savings"),
+                        "savings_percent": radius_comparison.get("savings_percent"),
+                        "comparison_recommendation": radius_comparison.get("recommendation"),
+                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+                        "comparison_type": "near_vs_far_radius",
+                    }
+                elif comparison_type == "nearest_vs_cheapest":
+                    attributes["station_comparison"] = {
+                        "nearest": radius_comparison.get("nearest_station"),
+                        "cheapest": radius_comparison.get("cheapest_station"),
+                        "savings": radius_comparison.get("savings"),
+                        "savings_percent": radius_comparison.get("savings_percent"),
+                        "comparison_recommendation": radius_comparison.get("recommendation"),
+                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+                        "comparison_type": "nearest_vs_cheapest",
+                    }
+                else:
+                    attributes["station_comparison"] = {
+                        "10km": radius_comparison.get("station_10km"),
+                        "20km": radius_comparison.get("station_20km"),
+                        "savings": radius_comparison.get("savings"),
+                        "savings_percent": radius_comparison.get("savings_percent"),
+                        "comparison_recommendation": radius_comparison.get("recommendation"),
+                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+                        "comparison_type": "10km_vs_20km",
+                    }
         
         return attributes
 
