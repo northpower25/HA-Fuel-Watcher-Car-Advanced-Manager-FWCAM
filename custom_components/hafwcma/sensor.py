@@ -34,6 +34,10 @@ from .const import (
     ATTR_DATA_SOURCE,
     ATTR_DAYS_LEFT,
     ATTR_DISTANCE,
+    ATTR_ENTITY_DATA_SOURCE,
+    ATTR_ENTITY_DEPENDENCIES,
+    ATTR_ENTITY_DOCUMENTATION_URL,
+    ATTR_ENTITY_PURPOSE,
     ATTR_FORECAST_TREND,
     ATTR_LAST_PREDICTION,
     ATTR_PREDICTED_REFUEL_DATE,
@@ -83,6 +87,7 @@ from .const import (
     GEOLOCATION_HYSTERESIS_FACTOR,
     PROVIDER_TANKERKONIG,
 )
+from .entity_metadata import get_entity_metadata
 from .providers.tankerkonig import TankerkoenigProvider
 from .utils.vehicle_data import async_get_vehicle_data, async_wait_for_entities
 from .utils.vehicle_tracker import VehicleDataTracker
@@ -2000,6 +2005,14 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                     ]
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("fuel_price_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return attributes
 
