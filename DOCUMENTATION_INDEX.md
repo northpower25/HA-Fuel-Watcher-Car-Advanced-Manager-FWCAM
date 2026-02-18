@@ -32,6 +32,7 @@ This file provides an overview of all available documentation for the Fuel Watch
 ### Features & Usage
 
 3. **Core Features**
+   - [Entity Documentation](docs/ENTITIES.md)
    - [Refueling Log Guide](docs/REFUELING_LOG_GUIDE.md)
    - [Refueling Log Guide (DE)](docs/REFUELING_LOG_GUIDE_DE.md)
    - [Trip Tracking](docs/TRIP_TRACKING_README.md)
@@ -131,6 +132,7 @@ This file provides an overview of all available documentation for the Fuel Watch
 - [docs/TELEGRAM_SETUP_DE.md](docs/TELEGRAM_SETUP_DE.md)
 
 ### Features
+- [docs/ENTITIES.md](docs/ENTITIES.md)
 - [docs/REFUELING_LOG_GUIDE.md](docs/REFUELING_LOG_GUIDE.md)
 - [docs/REFUELING_LOG_GUIDE_DE.md](docs/REFUELING_LOG_GUIDE_DE.md)
 - [docs/TRIP_TRACKING_README.md](docs/TRIP_TRACKING_README.md)
@@ -202,6 +204,9 @@ This file provides an overview of all available documentation for the Fuel Watch
 
 **...troubleshoot issues?**
 → [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+
+**...understand what each entity does?**
+→ [docs/ENTITIES.md](docs/ENTITIES.md)
 
 ### "What is..."
 

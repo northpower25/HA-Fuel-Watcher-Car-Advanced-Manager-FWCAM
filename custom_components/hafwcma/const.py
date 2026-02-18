@@ -185,6 +185,12 @@ ATTR_IS_OPEN: Final = "is_open"
 ATTR_BRAND: Final = "brand"
 ATTR_FUEL_TYPE: Final = "fuel_type"
 
+# Entity metadata attributes (for inline documentation)
+ATTR_ENTITY_DATA_SOURCE: Final = "data_source_info"
+ATTR_ENTITY_DEPENDENCIES: Final = "dependencies_info"
+ATTR_ENTITY_PURPOSE: Final = "purpose_info"
+ATTR_ENTITY_DOCUMENTATION_URL: Final = "documentation_url"
+
 # Events
 EVENT_FUEL_PRICE_ALERT: Final = f"{DOMAIN}_fuel_price_alert"
 EVENT_TANK_LOW: Final = f"{DOMAIN}_tank_low"

@@ -17,6 +17,10 @@ from .const import (
     ATTR_ALERT_MESSAGE,
     ATTR_BRAND,
     ATTR_DISTANCE,
+    ATTR_ENTITY_DATA_SOURCE,
+    ATTR_ENTITY_DEPENDENCIES,
+    ATTR_ENTITY_DOCUMENTATION_URL,
+    ATTR_ENTITY_PURPOSE,
     ATTR_FUEL_TYPE,
     ATTR_IS_OPEN,
     ATTR_NAVIGATION_URLS,
@@ -27,6 +31,7 @@ from .const import (
     CONF_VEHICLE_NAME,
     DOMAIN,
 )
+from .entity_metadata import get_entity_metadata
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -143,6 +148,14 @@ class ProximityAlertSensor(CoordinatorEntity, BinarySensorEntity):
             ATTR_ALERT_MESSAGE: proximity_data.get("alert_message"),
         }
         
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("proximity_alert_binary_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
         # Filter out None values
         return {k: v for k, v in attributes.items() if v is not None}
     
@@ -207,17 +220,27 @@ class OnTripSensor(CoordinatorEntity, BinarySensorEntity):
         current_trip = trip_state.get("current_trip", {})
         
         if not trip_state.get("on_trip", False):
-            return {
+            attributes = {
                 "trip_tracking_enabled": trip_config.get("enabled", False),
             }
+        else:
+            attributes = {
+                "trip_tracking_enabled": trip_config.get("enabled", False),
+                "timestamp_start": current_trip.get("timestamp_start"),
+                "distance_km": round(current_trip.get("distance_km", 0), 2),
+                "duration": current_trip.get("duration"),
+                "duration_minutes": round(current_trip.get("duration_minutes", 0), 1),
+            }
         
-        return {
-            "trip_tracking_enabled": trip_config.get("enabled", False),
-            "timestamp_start": current_trip.get("timestamp_start"),
-            "distance_km": round(current_trip.get("distance_km", 0), 2),
-            "duration": current_trip.get("duration"),
-            "duration_minutes": round(current_trip.get("duration_minutes", 0), 1),
-        }
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("on_trip_binary_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
     
     @property
     def available(self) -> bool:
@@ -304,6 +327,14 @@ class TelegramBotStatusSensor(BinarySensorEntity):
         refueling_handler = handlers_data.get("telegram_refueling_handler")
         if refueling_handler:
             attrs["pending_refuelings"] = len(refueling_handler._pending_refuelings)
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("telegram_bot_status_binary_sensor")
+        if metadata:
+            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return attrs
     

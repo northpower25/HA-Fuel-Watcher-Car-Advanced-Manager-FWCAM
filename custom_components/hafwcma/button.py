@@ -16,6 +16,10 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    ATTR_ENTITY_DATA_SOURCE,
+    ATTR_ENTITY_DEPENDENCIES,
+    ATTR_ENTITY_DOCUMENTATION_URL,
+    ATTR_ENTITY_PURPOSE,
     CONF_API_KEY,
     CONF_CHEAP_STATIONS_RADIUS,
     CONF_FUEL_TYPE,
@@ -28,6 +32,7 @@ from .const import (
     DOMAIN,
     PROVIDER_TANKERKONIG,
 )
+from .entity_metadata import get_entity_metadata
 from .providers.tankerkonig import TankerkoenigProvider
 
 _LOGGER = logging.getLogger(__name__)
@@ -263,7 +268,17 @@ class TestProviderConnectionButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with test results."""
-        return self._last_result
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("test_provider_connection_button")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
 
 
 class ImportHistoricalDataButton(ButtonEntity):
@@ -345,7 +360,17 @@ class ImportHistoricalDataButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with import results."""
-        return self._last_result
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("import_historical_data_button")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
 
 
 class ImportHistoricalTripDataButton(ButtonEntity):
@@ -441,7 +466,17 @@ class ImportHistoricalTripDataButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with import results."""
-        return self._last_result
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("import_historical_trip_data_button")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
 
 
 class RecalculateTripStatisticsButton(ButtonEntity):
@@ -526,7 +561,17 @@ class RecalculateTripStatisticsButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with recalculation results."""
-        return self._last_result
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("recalculate_trip_statistics_button")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
 
 
 class ValidateRefuelingEventsButton(ButtonEntity):
@@ -613,7 +658,17 @@ class ValidateRefuelingEventsButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with validation results."""
-        return self._last_result
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("validate_refueling_events_button")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
 
 
 class RefreshVehicleDataButton(ButtonEntity):
@@ -688,6 +743,15 @@ class RefreshVehicleDataButton(ButtonEntity):
             attrs["last_refresh_type"] = "manual"
         if self._coordinator and hasattr(self._coordinator, "last_update_success"):
             attrs["last_update_success"] = self._coordinator.last_update_success
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("refresh_vehicle_data_button")
+        if metadata:
+            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
         return attrs
 
 
@@ -749,6 +813,15 @@ class FuelPriceRefreshButton(ButtonEntity):
         
         if self._coordinator and hasattr(self._coordinator, "last_update_success"):
             attrs["last_update_success"] = self._coordinator.last_update_success
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("fuel_price_refresh_button")
+        if metadata:
+            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
         return attrs
 
 
@@ -869,6 +942,15 @@ class ConsumptionPredictionButton(ButtonEntity):
         
         if self._last_prediction_result:
             attrs["last_prediction_result"] = self._last_prediction_result
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("consumption_prediction_button")
+        if metadata:
+            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
         return attrs
 
 
@@ -1163,6 +1245,14 @@ class TelegramTestButton(ButtonEntity):
         
         if self._test_refuel_response_parsed:
             attrs["test_refuel_response_parsed"] = self._test_refuel_response_parsed
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("telegram_test_button")
+        if metadata:
+            attrs[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attrs[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attrs[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attrs[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return attrs
 
@@ -1566,4 +1656,14 @@ class ExportVehicleDataButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with export results."""
-        return self._last_result
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("export_vehicle_data_button")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
