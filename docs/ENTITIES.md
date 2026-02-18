@@ -1,6 +1,8 @@
 # FWCAM Entity Documentation
 
-This document provides detailed information about all entities in the Fuel Watcher Car Advanced Manager (FWCAM) integration.
+This document provides detailed information about all entities in the Fuel Watcher Car Advanced Manager (FWCAM) integration, including their update behavior, data sources, and manual triggers.
+
+**For detailed update frequency information, see**: [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES_DE.md)
 
 ## Table of Contents
 
@@ -68,6 +70,20 @@ This document provides detailed information about all entities in the Fuel Watch
 - `price_delta`: Price difference vs recent average
 - `price_delta_percent`: Price change percentage
 
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Configurable via `number.[vehicle_name]_api_update_interval` 
+  - Default: 15 minutes
+  - Range: 1-60 minutes
+  - Applied jitter: ±2% randomization to prevent simultaneous API calls
+- **External Sources**: 
+  - Fuel price API (e.g., Tankerkönig): Queried at each update interval
+  - Vehicle/HA location: Read from configured entities at each update
+- **Manual Triggers**:
+  - `button.[vehicle_name]_fuel_price_refresh`: Immediate API query
+  - `button.[vehicle_name]_test_api_connection`: Test connection with debug output
+- **Configuration**: See [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES_DE.md) for detailed interval configuration
+
 **See Also**: [Fuel Price Documentation](./FUEL_PRICE_MONITORING.md)
 
 ---
@@ -92,6 +108,18 @@ This document provides detailed information about all entities in the Fuel Watch
 - `last_vehicle_data_refresh`: Timestamp of last vehicle data update
 - `data_staleness_warning`: Warning if data is outdated
 
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Synchronized with coordinator updates
+  - Default: 15 minutes (same as API update interval)
+  - Configurable via `number.[vehicle_name]_api_update_interval`
+- **External Sources**: 
+  - Configured tank level entity: Read at each coordinator update
+  - Range entity: Used for fallback estimation if tank level unavailable
+- **Manual Triggers**:
+  - `button.[vehicle_name]_refresh_vehicle_data`: Immediate refresh of all vehicle data
+- **Configuration**: Follows main coordinator update interval
+
 ---
 
 ### Range Sensor
@@ -113,6 +141,18 @@ This document provides detailed information about all entities in the Fuel Watch
 - `last_vehicle_data_refresh`: Timestamp of last vehicle data update
 - `data_staleness_warning`: Warning if data is outdated
 
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Synchronized with coordinator updates
+  - Default: 15 minutes (same as API update interval)
+  - Configurable via `number.[vehicle_name]_api_update_interval`
+- **External Sources**: 
+  - Configured range entity: Read at each coordinator update
+  - Tank level and consumption data: Used for fallback estimation if range unavailable
+- **Manual Triggers**:
+  - `button.[vehicle_name]_refresh_vehicle_data`: Immediate refresh of all vehicle data
+- **Configuration**: Follows main coordinator update interval
+
 ---
 
 ### Nearest Station Sensor
@@ -133,6 +173,18 @@ This document provides detailed information about all entities in the Fuel Watch
 - `station_address`: Full address of the station
 - `distance`: Distance to station (km)
 - `price`: Current fuel price at this station
+
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Synchronized with Fuel Price Sensor updates
+  - Default: 15 minutes
+  - Configurable via `number.[vehicle_name]_api_update_interval`
+- **External Sources**: 
+  - Same API data as Fuel Price Sensor (no additional API calls)
+  - Vehicle position from configured entity
+- **Manual Triggers**:
+  - `button.[vehicle_name]_fuel_price_refresh`: Triggers update via coordinator
+- **Configuration**: Follows Fuel Price Sensor configuration
 
 ---
 
@@ -158,6 +210,19 @@ This document provides detailed information about all entities in the Fuel Watch
 - `stations_count`: Number of stations returned
 - `error_details`: Error messages if request failed
 
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Synchronized with Fuel Price Sensor updates
+  - Default: 15 minutes
+  - Captures debug data from each API request
+- **External Sources**: 
+  - Debug information captured from provider API calls
+  - No additional API calls (passive monitoring)
+- **Manual Triggers**:
+  - `button.[vehicle_name]_fuel_price_refresh`: Triggers new API call to capture fresh debug data
+  - `button.[vehicle_name]_test_api_connection`: Provides detailed test output
+- **Configuration**: Follows Fuel Price Sensor configuration
+
 ---
 
 ### Car Data Debug Sensor
@@ -181,6 +246,19 @@ This document provides detailed information about all entities in the Fuel Watch
 - `range_entity`: Configured range entity ID
 - `position_entity`: Configured position entity ID
 - Entity state values and timestamps
+
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Synchronized with coordinator updates
+  - Default: 15 minutes
+  - Captures vehicle data from each coordinator refresh
+- **External Sources**: 
+  - All configured vehicle entities (odometer, tank, range, position)
+  - Entity states read from Home Assistant state machine
+  - No external API calls (internal monitoring only)
+- **Manual Triggers**:
+  - `button.[vehicle_name]_refresh_vehicle_data`: Triggers immediate vehicle data fetch
+- **Configuration**: Follows main coordinator update interval
 
 ---
 
@@ -210,6 +288,25 @@ This document provides detailed information about all entities in the Fuel Watch
 - `avg_daily_km`: Average daily kilometers driven
 - `predicted_refuel_date`: Estimated date when refueling will be needed
 
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Separate configurable interval for consumption predictions
+  - Default: 6 hours
+  - Range: 0.5-24 hours
+  - Configurable via `number.[vehicle_name]_consumption_prediction_interval`
+- **External Sources**: 
+  - Historical refueling data from storage (no external API)
+  - Current vehicle data (tank level, range, odometer)
+  - Trip data if trip tracking is enabled
+- **Manual Triggers**:
+  - `button.[vehicle_name]_consumption_prediction`: Forces immediate recalculation
+  - Automatic recalculation after historical data import
+- **Initial Data Requirements**:
+  - Minimum data points configurable via `number.[vehicle_name]_consumption_min_data_points` (default: 5)
+  - Until minimum reached, uses fallback values with lower confidence
+  - Recommended: Use `button.[vehicle_name]_import_historical_data` for immediate predictions after setup
+- **Configuration**: See [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES_DE.md)
+
 **See Also**: [Consumption Prediction Documentation](./dev_docs/REFUELING_PREDICTION_IMPROVEMENT.md)
 
 ---
@@ -235,6 +332,24 @@ This document provides detailed information about all entities in the Fuel Watch
 - `consumption_30_days`: Last 30 days consumption
 - Each period includes: liters, km, L/100km, cost
 
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Recalculated at each coordinator update
+  - Default: 15 minutes (same as API update interval)
+  - Updates whenever new vehicle or refueling data is available
+- **External Sources**: 
+  - Historical refueling events from storage
+  - Odometer readings from vehicle data
+  - No external API calls (uses stored data)
+- **Manual Triggers**:
+  - Updates automatically when new refueling events are added
+  - Recalculated after historical data import
+  - No dedicated manual trigger (follows coordinator updates)
+- **Data Requirements**:
+  - Requires at least 2 refueling events within each time period for calculation
+  - Shows "unavailable" or N/A if insufficient data for a period
+- **Configuration**: Follows main coordinator update interval
+
 ---
 
 ### Consumption Forecast Sensor
@@ -259,6 +374,24 @@ This document provides detailed information about all entities in the Fuel Watch
 - `forecast_90_days`: 90-day forecast (cost, liters)
 - Forecast confidence levels
 
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Synchronized with Consumption Prediction updates
+  - Default: 6 hours (same as consumption prediction interval)
+  - Configurable via `number.[vehicle_name]_consumption_prediction_interval`
+- **External Sources**: 
+  - Consumption History Sensor data
+  - Current fuel prices from Fuel Price Sensor
+  - Consumption Prediction Sensor patterns
+  - No additional external API calls
+- **Manual Triggers**:
+  - `button.[vehicle_name]_consumption_prediction`: Triggers forecast recalculation
+  - Updates automatically when consumption prediction updates
+- **Data Requirements**:
+  - Requires sufficient historical consumption data
+  - Forecast accuracy improves with more historical data points
+- **Configuration**: Follows consumption prediction interval
+
 ---
 
 ### Refueling Log Sensor
@@ -282,6 +415,27 @@ This document provides detailed information about all entities in the Fuel Watch
 - Each event includes: timestamp, liters, price, station, odometer, fuel_type
 - `total_refuelings`: Count of refueling events
 - `last_refueling_date`: Date of most recent refueling
+
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Event-driven updates (no regular polling)
+  - Updates immediately when new refueling events are added
+  - Updates when refueling events are edited or deleted
+  - Syncs with coordinator updates for attribute refresh
+- **External Sources**: 
+  - Storage system (`.storage/hafwcma_{entry_id}.json`)
+  - Telegram bot submissions (if configured)
+  - Manual service calls (`hafwcma.add_refuel_event`, `hafwcma.update_refuel_event`)
+  - No external API queries
+- **Manual Triggers**:
+  - Add event: `hafwcma.add_refuel_event` service
+  - Update event: `hafwcma.update_refuel_event` service  
+  - Delete event: `hafwcma.delete_refuel_event` service
+  - Import historical: `button.[vehicle_name]_import_historical_data`
+- **Initial Data**:
+  - Automatically imports historical refueling data on first setup (up to 90 days)
+  - Import runs once automatically, can be re-run manually with force flag
+- **Configuration**: No configurable intervals (event-driven)
 
 **See Also**: [Refueling Log Guide](./REFUELING_LOG_GUIDE.md)
 
@@ -310,6 +464,23 @@ This document provides detailed information about all entities in the Fuel Watch
 - `vehicle_longitude`: Current vehicle longitude
 - `max_stations`: Maximum number of stations to track
 
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Synchronized with Fuel Price Sensor updates
+  - Default: 15 minutes when position is static
+  - More frequent when vehicle is moving (depends on position entity updates)
+- **External Sources**: 
+  - Same API data as Fuel Price Sensor (no additional API calls)
+  - Vehicle position from configured GPS entity (real-time)
+  - Filters and sorts existing station data by proximity
+- **Manual Triggers**:
+  - `button.[vehicle_name]_fuel_price_refresh`: Refreshes station data
+  - Position entity changes trigger automatic updates
+- **Configuration**: 
+  - Search radius: Configurable via integration options
+  - Station count: Configurable (default based on cheap_stations_count)
+  - Follows Fuel Price Sensor update configuration
+
 **See Also**: [Geolocation Concept](./GEOLOCATION_CONCEPT_EN.md)
 
 ---
@@ -336,6 +507,30 @@ This document provides detailed information about all entities in the Fuel Watch
 - `total_trips`: Count of trips
 - `last_trip_date`: Date of most recent trip
 
+**Update Behavior**:
+- **First Update**: Automatically after Home Assistant startup (when `homeassistant_started` event fires)
+- **Update Interval**: Event-driven updates (no regular polling)
+  - Updates when trip tracking switch is enabled
+  - Updates when trips start or end (based on odometer changes)
+  - Syncs with coordinator updates for attribute refresh
+- **External Sources**: 
+  - Odometer entity: Monitored for changes to detect trips
+  - Storage system for trip persistence
+  - No external API queries
+- **Manual Triggers**:
+  - Add trip: `hafwcma.add_trip` service
+  - Edit trip: `hafwcma.edit_trip` service
+  - Delete trip: `hafwcma.delete_trip` service
+  - Import historical: `button.[vehicle_name]_import_historical_trip_data`
+  - Recalculate: `button.[vehicle_name]_recalculate_trip_statistics`
+- **Activation Requirements**:
+  - Trip Tracking Switch must be enabled
+  - Odometer entity must be configured and available
+- **Initial Data**:
+  - Can import historical trips from odometer data on first setup
+  - Use `button.[vehicle_name]_import_historical_trip_data` for initial import
+- **Configuration**: No configurable intervals (event-driven based on odometer changes)
+
 **See Also**: [Trip Tracking Documentation](./TRIP_TRACKING_README.md)
 
 ---
@@ -361,6 +556,25 @@ This document provides detailed information about all entities in the Fuel Watch
 - `duration`: Trip duration (time elapsed)
 - `timestamp_start`: Trip start timestamp
 - `current_odometer`: Current odometer reading
+
+**Update Behavior**:
+- **First Update**: When a trip starts (triggered by odometer change)
+- **Update Interval**: Real-time updates during active trip
+  - Updates with each coordinator refresh (default: 15 minutes)
+  - Updates when odometer changes
+  - Clears when trip ends
+- **External Sources**: 
+  - Odometer entity: For current reading and distance calculation
+  - Trip tracking system: For trip start/end detection
+  - No external API queries
+- **Manual Triggers**:
+  - No manual triggers (automatic based on trip state)
+  - Trip state controlled by Trip Tracking Switch
+- **Activation Requirements**:
+  - Trip Tracking Switch must be enabled
+  - On Trip Sensor must indicate active trip
+  - Odometer entity must be available
+- **Configuration**: Follows coordinator update interval when trip is active
 
 ---
 
@@ -392,6 +606,31 @@ This document provides detailed information about all entities in the Fuel Watch
 - `navigation_urls`: Links to navigation apps
 - `alert_message`: Human-readable alert text
 
+**Update Behavior**:
+- **First Update**: When proximity alerts are enabled
+- **Update Interval**: Real-time based on position changes
+  - Updates when vehicle position changes
+  - Evaluates proximity at each coordinator update (default: 15 minutes)
+  - Faster updates when vehicle is moving
+- **External Sources**: 
+  - Position entity: GPS coordinates (read from vehicle integration)
+  - Nearby Cheap Stations Sensor: Station list and prices
+  - Tank Level Sensor: Current tank level for alert threshold
+  - No additional external API calls
+- **Manual Triggers**:
+  - No manual triggers (automatic based on position)
+  - Can be enabled/disabled via Proximity Alerts Switch
+- **Activation Requirements**:
+  - Proximity Alerts Switch must be enabled
+  - Position entity must provide valid GPS coordinates
+  - Tank level must be below configured threshold (default: 30%)
+- **Alert Behavior**:
+  - Cooldown period: 15 minutes between alerts for same station
+  - Hysteresis: Requires 10% distance increase to reset alert
+- **Configuration**: 
+  - Alert distance: Configurable via integration options (default: 2 km)
+  - Tank threshold: Configurable (default: 30%)
+
 **See Also**: [Geolocation Concept](./GEOLOCATION_CONCEPT_EN.md)
 
 ---
@@ -419,6 +658,27 @@ This document provides detailed information about all entities in the Fuel Watch
 - `duration`: Trip duration
 - `duration_minutes`: Duration in minutes
 
+**Update Behavior**:
+- **First Update**: When trip tracking is enabled and odometer changes detected
+- **Update Interval**: Event-driven (no regular polling)
+  - Updates immediately when trip starts (odometer increase detected)
+  - Updates immediately when trip ends (odometer stable)
+  - Syncs with coordinator updates during active trip
+- **External Sources**: 
+  - Odometer entity: Monitored for changes to detect movement
+  - Trip tracking system: Internal state management
+  - No external API queries
+- **Manual Triggers**:
+  - No manual triggers (automatic based on odometer changes)
+  - Trip tracking enabled/disabled via Trip Tracking Switch
+- **Activation Requirements**:
+  - Trip Tracking Switch must be enabled
+  - Odometer entity must be available and updating
+- **Trip Detection Logic**:
+  - Trip starts: Odometer increase detected
+  - Trip ends: Odometer stable for configured period
+- **Configuration**: No configurable intervals (event-driven)
+
 ---
 
 ### Telegram Bot Status Sensor
@@ -444,6 +704,25 @@ This document provides detailed information about all entities in the Fuel Watch
 - `refueling_handler_active`: Whether refueling handler is active
 - `pending_refuelings`: Number of pending refueling confirmations
 
+**Update Behavior**:
+- **First Update**: At integration setup
+- **Update Interval**: Event-driven status checks
+  - Updates when Telegram configuration changes
+  - Updates when handler status changes
+  - Periodic health check every 5 minutes
+- **External Sources**: 
+  - Telegram Bot API (connection test)
+  - Home Assistant telegram_bot integration (if using integration method)
+  - Internal handler status monitoring
+- **Manual Triggers**:
+  - `button.[vehicle_name]_telegram_test`: Tests connection and updates status
+  - Status updates automatically when configuration changes
+- **Activation Requirements**:
+  - Telegram token must be configured
+  - Chat ID must be configured
+  - For integration method: HA telegram_bot integration must be available
+- **Configuration**: Telegram method and credentials configured during setup
+
 **See Also**: [Telegram Setup](./TELEGRAM_SETUP.md)
 
 ---
@@ -466,6 +745,19 @@ This document provides detailed information about all entities in the Fuel Watch
 
 **Key Attributes**:
 None (simple on/off switch)
+
+**Update Behavior**:
+- **First Update**: At integration setup (reads saved state)
+- **Update Interval**: Event-driven (no regular updates)
+  - State persisted immediately when toggled
+  - Affects Proximity Alert Sensor behavior
+- **External Sources**: 
+  - Configuration entry options (persistent storage)
+  - No external API queries
+- **Manual Triggers**:
+  - Toggle switch on/off to enable/disable proximity alerts
+  - State change triggers immediate update to Proximity Alert Sensor
+- **Configuration**: State persisted in integration configuration
 
 **See Also**: [Geolocation Concept](./GEOLOCATION_CONCEPT_EN.md)
 
@@ -495,6 +787,24 @@ None (simple on/off switch)
 - `private_trips`: Count of private trips
 - `commute_trips`: Count of commute trips
 
+**Update Behavior**:
+- **First Update**: At integration setup (reads saved state)
+- **Update Interval**: Event-driven (no regular updates)
+  - State persisted immediately when toggled
+  - Statistics update when trips are added/modified
+- **External Sources**: 
+  - Configuration entry options (persistent storage)
+  - Trip log data for statistics
+  - No external API queries
+- **Manual Triggers**:
+  - Toggle switch on/off to enable/disable trip tracking
+  - State change triggers trip tracking activation/deactivation
+- **Effects When Enabled**:
+  - Enables On Trip Sensor
+  - Activates automatic trip detection from odometer changes
+  - Enables Trip Log and Current Trip sensors
+- **Configuration**: State and statistics persisted in integration configuration
+
 **See Also**: [Trip Tracking Documentation](./TRIP_TRACKING_README.md)
 
 ---
@@ -519,6 +829,21 @@ None (simple on/off switch)
 - Response time
 - Error details if test fails
 
+**Update Behavior**:
+- **Trigger**: Manual press only
+- **Operation**: One-time synchronous API test
+  - Sends test request to configured fuel price API
+  - Returns results immediately (typically < 5 seconds)
+  - Updates Fuel Price API Debug Sensor with test results
+- **External Sources**: 
+  - Fuel price provider API (test query)
+  - Uses configured API key, location, radius, and fuel type
+- **When to Use**:
+  - Initial setup to verify API credentials
+  - Troubleshooting API connection issues
+  - Testing after configuration changes
+- **Effects**: No permanent data changes, only temporary test results
+
 ---
 
 ### Import Historical Data Button
@@ -538,6 +863,36 @@ None (simple on/off switch)
 **Result Attributes** (in logs):
 - Number of data points imported
 - Date range of imported data
+
+**Update Behavior**:
+- **Trigger**: Manual press or automatic on first setup
+- **Operation**: One-time asynchronous import (runs in background)
+  - **Automatic**: Runs once on initial integration setup (10 seconds after HA start)
+  - **Manual**: Can be triggered via button press
+  - **Duration**: Typically 10-30 seconds for 90 days of data
+- **External Sources**: 
+  - Home Assistant Recorder database (historical entity states)
+  - Reads odometer and tank level history (up to 90 days)
+  - No external API calls
+- **Import Process**:
+  1. Queries recorder for historical vehicle entity states
+  2. Processes odometer readings chronologically
+  3. Detects refueling events from tank level changes (>5L increase)
+  4. Calculates consumption between refuelings
+  5. Stores processed data in integration storage
+- **When to Use**:
+  - **Initial Setup**: Automatic import provides immediate predictions
+  - **After Entity Changes**: Re-import after changing vehicle entities
+  - **Data Refresh**: Force re-import with `force_reimport=True`
+  - **Missing Data**: If automatic import failed at startup
+- **Effects**: 
+  - Populates Refueling Log Sensor with historical events
+  - Enables immediate consumption predictions
+  - Updates Consumption History Sensor with historical data
+- **Requirements**:
+  - HA Recorder must be enabled
+  - Vehicle entities must have historical data
+  - Configured tank level and odometer entities
 
 ---
 
@@ -559,6 +914,32 @@ None (simple on/off switch)
 - Number of trips detected
 - Date range processed
 
+**Update Behavior**:
+- **Trigger**: Manual press only
+- **Operation**: One-time asynchronous analysis (runs in background)
+  - Analyzes historical odometer data to reconstruct trips
+  - Duration depends on data volume (typically 30-60 seconds)
+- **External Sources**: 
+  - Home Assistant Recorder database (historical odometer states)
+  - No external API calls
+- **Import Process**:
+  1. Queries recorder for historical odometer readings
+  2. Analyzes patterns to detect trip start/end
+  3. Calculates trip distances and durations
+  4. Stores detected trips in trip log
+- **When to Use**:
+  - Initial setup to populate trip history
+  - After enabling trip tracking for the first time
+  - To recover trips from odometer data
+- **Effects**: 
+  - Populates Trip Log Sensor with historical trips
+  - Updates trip statistics
+  - Improves consumption predictions (if trips correlate with refuelings)
+- **Requirements**:
+  - Trip Tracking Switch must be enabled
+  - Odometer entity must have historical data in recorder
+  - Sufficient historical data for pattern detection
+
 ---
 
 ### Recalculate Trip Statistics Button
@@ -577,6 +958,25 @@ None (simple on/off switch)
 **Result Attributes** (in logs):
 - Statistics updated
 - Number of trips processed
+
+**Update Behavior**:
+- **Trigger**: Manual press only
+- **Operation**: Synchronous calculation (immediate)
+  - Recalculates aggregate statistics from trip log
+  - Typically completes in < 1 second
+- **External Sources**: 
+  - Trip log data from storage
+  - Refueling log for trip-refueling correlation
+  - No external API calls
+- **Calculation Process**:
+  - Aggregates total distance, trips by category
+  - Calculates average trip duration and distance
+  - Updates Trip Tracking Switch attributes
+- **When to Use**:
+  - After manual trip data corrections
+  - After importing historical trip data
+  - If statistics appear inconsistent
+- **Effects**: Updates trip statistics in Trip Tracking Switch attributes
 
 ---
 
@@ -599,6 +999,28 @@ None (simple on/off switch)
 - Number of issues detected
 - Events marked for exclusion
 
+**Update Behavior**:
+- **Trigger**: Manual press only
+- **Operation**: Synchronous validation (immediate)
+  - Validates all refueling events in storage
+  - Typically completes in < 2 seconds
+- **External Sources**: 
+  - Refueling log data from storage
+  - No external API calls
+- **Validation Rules**:
+  - Chronological timestamp ordering
+  - Reasonable fuel amounts (0 < liters ≤ tank capacity)
+  - Odometer progression (increasing values)
+  - Price reasonableness (if configured)
+- **When to Use**:
+  - After bulk data import
+  - If suspicious refueling events exist
+  - Periodic data quality checks
+- **Effects**: 
+  - Marks invalid events with data quality flags
+  - Updates Refueling Log Sensor
+  - May affect consumption calculations if events excluded
+
 **See Also**: [Refueling Event Validation](./dev_docs/REFUELING_EVENT_VALIDATION.md)
 
 ---
@@ -620,6 +1042,26 @@ None (simple on/off switch)
 - Updated values for each entity
 - Timestamp of refresh
 
+**Update Behavior**:
+- **Trigger**: Manual press only
+- **Operation**: Synchronous entity state read (immediate)
+  - Reads current state from all configured vehicle entities
+  - Typically completes in < 1 second
+- **External Sources**: 
+  - Odometer, tank level, range, and position entities
+  - Reads from Home Assistant state machine (no new vehicle API calls)
+  - No external API queries
+- **When to Use**:
+  - Immediate update without waiting for next interval
+  - After refueling to detect event sooner
+  - Testing entity configuration
+  - When data appears stale
+- **Effects**: 
+  - Updates all vehicle-data-dependent sensors
+  - Triggers refueling detection if applicable
+  - Updates coordinator cache
+- **Note**: Does not force vehicle integration to query the vehicle; only reads current HA entity states
+
 ---
 
 ### Fuel Price Refresh Button
@@ -637,6 +1079,26 @@ None (simple on/off switch)
 **Result Attributes** (temporary):
 - New price data
 - Number of stations found
+
+**Update Behavior**:
+- **Trigger**: Manual press only
+- **Operation**: Asynchronous API query (runs in background)
+  - Queries fuel price provider API
+  - Typically completes in 2-5 seconds
+- **External Sources**: 
+  - Fuel price provider API (e.g., Tankerkönig)
+  - Uses configured API key, location, radius, fuel type
+- **When to Use**:
+  - Immediate price update without waiting for next interval
+  - Before planning a refueling stop
+  - After receiving a price drop notification
+- **Effects**: 
+  - Updates Fuel Price Sensor
+  - Updates Nearest Station Sensor
+  - Updates Nearby Cheap Stations Sensor
+  - Updates Fuel Price API Debug Sensor
+  - Triggers coordinator data update
+- **Note**: Counts toward API rate limits; avoid excessive manual refreshes
 
 ---
 
@@ -658,6 +1120,28 @@ None (simple on/off switch)
 - New prediction values
 - Confidence level
 
+**Update Behavior**:
+- **Trigger**: Manual press only
+- **Operation**: Synchronous calculation (immediate)
+  - Recalculates consumption prediction from stored data
+  - Typically completes in < 1 second
+- **External Sources**: 
+  - Historical refueling data from storage
+  - Current vehicle data (tank, range, odometer)
+  - Trip data if available
+  - No external API calls
+- **When to Use**:
+  - Force prediction update without waiting for interval
+  - After adding/editing refueling events
+  - After importing historical data
+  - Testing prediction accuracy
+- **Effects**: 
+  - Updates Consumption Prediction Sensor immediately
+  - Updates predicted refuel date
+  - Recalculates confidence level
+  - May trigger Consumption Forecast Sensor update
+- **Note**: Prediction quality depends on available historical data points
+
 ---
 
 ### Telegram Test Button
@@ -676,6 +1160,28 @@ None (simple on/off switch)
 **Result Attributes** (temporary):
 - Test message sent status
 - Response from Telegram API
+
+**Update Behavior**:
+- **Trigger**: Manual press only
+- **Operation**: Asynchronous API test (runs in background)
+  - Sends test message to configured Telegram chat
+  - Typically completes in 1-3 seconds
+- **External Sources**: 
+  - Telegram Bot API (sendMessage endpoint)
+  - Uses configured token and chat ID
+- **When to Use**:
+  - Initial Telegram setup verification
+  - After changing Telegram configuration
+  - Troubleshooting Telegram connectivity
+  - Periodic connection health check
+- **Effects**: 
+  - Sends test message to Telegram chat
+  - Updates Telegram Bot Status Sensor
+  - Logs connection status
+- **Requirements**:
+  - Valid Telegram bot token
+  - Valid chat ID
+  - Network connectivity to Telegram servers
 
 **See Also**: [Telegram Setup](./TELEGRAM_SETUP.md)
 
@@ -702,6 +1208,31 @@ None (simple on/off switch)
 - Number of records exported
 - File format details
 
+**Update Behavior**:
+- **Trigger**: Manual press only
+- **Operation**: Synchronous data export (immediate)
+  - Exports data to CSV file
+  - Typically completes in < 2 seconds
+- **External Sources**: 
+  - Refueling log from storage
+  - Trip log from storage
+  - Consumption statistics from storage
+  - No external API calls
+- **Export Contents**:
+  - Refueling events (timestamp, liters, price, station, odometer)
+  - Trip data (start/end, distance, duration, category)
+  - Consumption statistics (periods, L/100km, costs)
+  - Configuration summary
+- **Export Location**: 
+  - Default: `/config/www/fwcam_export_{vehicle_name}_{timestamp}.csv`
+  - Accessible via Home Assistant frontend
+- **When to Use**:
+  - Backup before major changes
+  - Data analysis in external tools (Excel, etc.)
+  - Sharing data with tax software (for business trips)
+  - Migration to another system
+- **Effects**: Creates CSV file; no changes to integration data
+
 ---
 
 ## Integration Information
@@ -723,12 +1254,48 @@ Entities follow the pattern:
 
 Example: `sensor.my_car_fuel_price`
 
-### Update Intervals
+### Update Intervals Summary
 
-- **Fuel Price Data**: Configurable, default 5 minutes
-- **Vehicle Data**: On-demand when vehicle integration updates
-- **Consumption Prediction**: Configurable, default every 6 hours
-- **Geolocation**: 30 seconds when moving, 5 minutes when stationary
+The integration uses different update strategies for different types of data:
+
+#### Coordinator-Based Updates (Regular Intervals)
+- **Fuel Price & Vehicle Data**: Synchronized updates via main coordinator
+  - Default: 15 minutes
+  - Range: 1-60 minutes
+  - Configurable via: `number.[vehicle_name]_api_update_interval`
+  - Jitter: ±2% randomization to prevent simultaneous API calls
+  - Affects: Fuel Price, Tank Level, Range, Nearest Station, Nearby Cheap Stations, API Debug, Car Data Debug sensors
+
+#### Consumption Prediction Updates (Separate Interval)
+- **Consumption Calculations**: Independent prediction interval
+  - Default: 6 hours
+  - Range: 0.5-24 hours
+  - Configurable via: `number.[vehicle_name]_consumption_prediction_interval`
+  - Affects: Consumption Prediction, Consumption Forecast sensors
+
+#### Real-Time Updates (Event-Driven)
+- **Consumption History**: Recalculated at each coordinator update (15 min default)
+- **Refueling Log**: Event-driven (updates when events added/modified)
+- **Trip Sensors**: Event-driven (updates on odometer changes when trip tracking enabled)
+- **Proximity Alerts**: Position-based (updates when vehicle location changes)
+- **Telegram Status**: Periodic health check every 5 minutes + event-driven
+
+#### Manual Updates Available
+All entities can be manually updated via button entities or coordinator refresh. See individual entity documentation above for specific manual trigger buttons.
+
+#### Initial Updates
+- **First Update**: All sensors perform initial update after Home Assistant startup (when `homeassistant_started` event fires)
+- **Historical Data Import**: Automatic on first setup (can be manually triggered)
+  - Imports up to 90 days of vehicle data from HA Recorder
+  - Detects historical refueling events
+  - Enables immediate consumption predictions
+
+#### Configuration Options
+- **API Update Interval**: `number.[vehicle_name]_api_update_interval` (1-60 minutes, default: 15)
+- **Consumption Prediction Interval**: `number.[vehicle_name]_consumption_prediction_interval` (0.5-24 hours, default: 6)
+- **Minimum Data Points**: `number.[vehicle_name]_consumption_min_data_points` (2-50 points, default: 5)
+
+For detailed update frequency documentation, see: [Data Update Frequencies](./user_docs/DATA_UPDATE_FREQUENCIES_DE.md)
 
 ### Data Storage
 
