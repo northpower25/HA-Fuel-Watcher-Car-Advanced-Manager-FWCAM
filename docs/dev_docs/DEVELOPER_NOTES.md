@@ -128,6 +128,68 @@ Always provide translations for:
 - Service descriptions (in `services.yaml`)
 - UI text in the custom card
 
+#### Entity Documentation Requirements
+
+**IMPORTANT**: All new entities MUST include standardized documentation attributes.
+
+When creating a new entity, you must:
+
+1. **Add metadata to `entity_metadata.py`**:
+   ```python
+   "your_entity_type": {
+       "data_source_info": "Where the data comes from",
+       "dependencies_info": "What this depends on; what depends on this",
+       "purpose_info": "What this entity is for",
+       "documentation_url": "your-entity-anchor-in-entities-md",
+   }
+   ```
+
+2. **Add metadata to entity's `extra_state_attributes` method**:
+   ```python
+   @property
+   def extra_state_attributes(self) -> dict[str, Any]:
+       """Return additional attributes."""
+       attributes = {}
+       
+       # ... your existing attributes ...
+       
+       # Add standardized entity metadata for inline documentation
+       metadata = get_entity_metadata("your_entity_type")
+       if metadata:
+           attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+           attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+           attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+           attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+       
+       return attributes
+   ```
+
+3. **Import required constants and functions**:
+   ```python
+   from .const import (
+       # ... other imports ...
+       ATTR_ENTITY_DATA_SOURCE,
+       ATTR_ENTITY_DEPENDENCIES,
+       ATTR_ENTITY_DOCUMENTATION_URL,
+       ATTR_ENTITY_PURPOSE,
+   )
+   from .entity_metadata import get_entity_metadata
+   ```
+
+4. **Add detailed documentation to `docs/ENTITIES.md`**:
+   - Create a new section with anchor matching your `documentation_url`
+   - Include: Purpose, Data Source, Dependencies, Key Attributes
+   - Add link in the Table of Contents
+
+**Why This Matters**:
+- Users can understand entities directly in Home Assistant UI
+- Developers can quickly see dependencies and data flow
+- Reduces confusion and support requests
+- Provides direct links to detailed documentation
+
+**Example**:
+See `FuelPriceSensor` in `sensor.py` for a complete implementation example.
+
 #### Code Comments
 
 Add developer notes in your code:
@@ -146,6 +208,8 @@ When you add new features, test:
 - [ ] Custom card displays the entity correctly
 - [ ] Custom card can control the entity (if applicable)
 - [ ] Translations are correct in both languages
+- [ ] **Entity metadata is included and displays correctly**
+- [ ] **Documentation is added to docs/ENTITIES.md**
 - [ ] Documentation is updated
 - [ ] No breaking changes to existing functionality
 
