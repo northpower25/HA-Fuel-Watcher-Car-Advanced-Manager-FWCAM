@@ -1656,6 +1656,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         trip_tracking_config = {}
         trips = []
         trip_statistics = {}
+        storage_statistics = {}
         try:
             stored_data = await storage.load_data(self.hass, self.config_entry)
             refueling_log = stored_data.get("refueling_log", [])
@@ -1664,6 +1665,23 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             trip_tracking_config = stored_data.get("trip_tracking_config", {})
             trips = stored_data.get("trips", [])
             trip_statistics = stored_data.get("trip_statistics", {})
+            
+            # Calculate storage statistics for debug sensor
+            odometer_history = stored_data.get("odometer_history", [])
+            tank_history = stored_data.get("tank_history", [])
+            
+            storage_statistics = {
+                "odometer_good": len(odometer_history),
+                "odometer_error": 0,
+                "tank_good": sum(1 for event in tank_history if event.get("liters_refueled") is not None),
+                "tank_error": 0,
+                "range_good": 0,  # Range is not stored historically
+                "range_error": 0,
+                "position_good": sum(1 for trip in trips if trip.get("start_location") is not None),
+                "position_error": 0,
+                "refueling_count": len(tank_history),
+                "trip_count": len(trips),
+            }
         except Exception as err:
             _LOGGER.warning("Error getting refueling log and metadata: %s", err)
         
@@ -1704,6 +1722,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "trip_statistics": trip_statistics,  # Add trip statistics
             "position_change_info": position_change_info,  # Add position change tracking
             "radius_comparison": radius_comparison,  # Add 10km vs 20km comparison
+            "storage_statistics": storage_statistics,  # Add storage statistics for debug sensor
         }
         
         # Apply randomization for next update interval
@@ -2796,15 +2815,15 @@ class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
             attributes["position_last_value"] = None
             attributes["position_last_timestamp"] = None
         
-        # Get storage statistics asynchronously - we'll need to schedule this
-        # For now, provide counts from consumption_prediction metadata
+        # Get storage statistics from coordinator data
+        storage_stats = self.coordinator.data.get("storage_statistics", {})
         data_points_used = consumption_prediction.get("data_points_used", 0)
         data_points_required = consumption_prediction.get("data_points_required", 5)
         
-        attributes["odometer_good_count"] = data_points_used
-        attributes["odometer_error_count"] = 0
-        attributes["tank_good_count"] = data_points_used
-        attributes["tank_error_count"] = 0
+        attributes["odometer_good_count"] = storage_stats.get("odometer_good", 0)
+        attributes["odometer_error_count"] = storage_stats.get("odometer_error", 0)
+        attributes["tank_good_count"] = storage_stats.get("tank_good", 0)
+        attributes["tank_error_count"] = storage_stats.get("tank_error", 0)
         attributes["range_good_count"] = 1 if vehicle_data.get("range_km") is not None else 0
         attributes["range_error_count"] = 0
         attributes["position_good_count"] = 1 if vehicle_data.get("latitude") is not None else 0
