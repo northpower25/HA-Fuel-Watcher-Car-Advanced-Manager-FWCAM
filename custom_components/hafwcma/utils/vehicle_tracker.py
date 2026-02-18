@@ -10,6 +10,17 @@ from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
+# Constants for missed trip detection
+# Confidence score for trips recovered from odometer history after system restart
+# Scale: 0.3 (low) to 1.0 (high), where 0.5 indicates medium confidence
+RECOVERED_TRIP_CONFIDENCE = 0.5
+
+# Time window in minutes for detecting duplicate trips
+DUPLICATE_DETECTION_WINDOW_MINUTES = 5
+
+# Default lookback window in hours for checking missed trips
+DEFAULT_MISSED_TRIP_LOOKBACK_HOURS = 24
+
 
 @dataclass
 class VehicleSnapshot:
@@ -469,7 +480,7 @@ def detect_missed_trips_from_history(
     min_trip_distance_km: float = 0.5,
     min_duration_minutes: float = 1.0,
     max_speed_kmh: float = 300.0,
-    lookback_hours: int = 24,
+    lookback_hours: int = DEFAULT_MISSED_TRIP_LOOKBACK_HOURS,
 ) -> list[dict[str, Any]]:
     """Detect trips from recent odometer history that may have been missed.
     
@@ -550,11 +561,11 @@ def detect_missed_trips_from_history(
                 
                 # Filter unrealistic speeds
                 if avg_speed <= max_speed_kmh:
-                    # Check for duplicates (within 5 minutes of existing trip)
+                    # Check for duplicates (within configured time window)
                     is_duplicate = False
                     for existing_ts in existing_trip_timestamps:
                         time_diff_minutes = abs((prev_time - existing_ts).total_seconds()) / 60
-                        if time_diff_minutes < 5:
+                        if time_diff_minutes < DUPLICATE_DETECTION_WINDOW_MINUTES:
                             is_duplicate = True
                             break
                     
@@ -574,7 +585,7 @@ def detect_missed_trips_from_history(
                             "end_longitude": None,
                             "category": "private",
                             "data_quality": "recovered_from_history",
-                            "confidence": 0.5,  # Medium confidence since recovered
+                            "confidence": RECOVERED_TRIP_CONFIDENCE,
                         }
                         
                         detected_trips.append(trip_data)

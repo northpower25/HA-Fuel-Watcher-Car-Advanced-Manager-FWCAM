@@ -1261,12 +1261,14 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 except Exception:
                                     pass
                         
-                        # Detect missed trips from recent history (last 24 hours)
+                        # Detect missed trips from recent history
+                        # Use configured lookback hours or default to 24
+                        lookback_hours = trip_config.get("missed_trip_lookback_hours", 24)
                         missed_trips = detect_missed_trips_from_history(
                             odometer_history=odometer_history,
                             existing_trip_timestamps=existing_timestamps,
                             min_trip_distance_km=min_distance,
-                            lookback_hours=24,
+                            lookback_hours=lookback_hours,
                         )
                         
                         if missed_trips:
