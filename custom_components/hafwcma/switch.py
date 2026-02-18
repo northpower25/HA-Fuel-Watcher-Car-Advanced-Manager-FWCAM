@@ -11,6 +11,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    ATTR_ENTITY_DATA_SOURCE,
+    ATTR_ENTITY_DEPENDENCIES,
+    ATTR_ENTITY_DOCUMENTATION_URL,
+    ATTR_ENTITY_PURPOSE,
     CONF_PROXIMITY_ALERTS_ENABLED,
     CONF_TELEGRAM_CHAT_ID,
     CONF_TELEGRAM_METHOD,
@@ -21,6 +25,7 @@ from .const import (
     TELEGRAM_METHOD_DIRECT_API,
     TELEGRAM_METHOD_INTEGRATION,
 )
+from .entity_metadata import get_entity_metadata
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,6 +90,21 @@ class ProximityAlertsSwitch(SwitchEntity):
         """Return true if proximity alerts are enabled."""
         options = self._config_entry.options
         return options.get(CONF_PROXIMITY_ALERTS_ENABLED, DEFAULT_PROXIMITY_ALERTS_ENABLED)
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        attributes = {}
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("proximity_alerts_switch")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
     
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on proximity alerts."""
@@ -164,6 +184,14 @@ class TripTrackingSwitch(SwitchEntity):
                 "private_trips": stats.get("private_trips", 0),
                 "commute_trips": stats.get("commute_trips", 0),
             })
+        
+        # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("trip_tracking_switch")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return attributes
     
