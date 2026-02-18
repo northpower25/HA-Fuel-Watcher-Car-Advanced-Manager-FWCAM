@@ -10,6 +10,17 @@ from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
+# Constants for missed trip detection
+# Confidence score for trips recovered from odometer history after system restart
+# Scale: 0.3 (low) to 1.0 (high), where 0.5 indicates medium confidence
+RECOVERED_TRIP_CONFIDENCE = 0.5
+
+# Time window in minutes for detecting duplicate trips
+DUPLICATE_DETECTION_WINDOW_MINUTES = 5
+
+# Default lookback window in hours for checking missed trips
+DEFAULT_MISSED_TRIP_LOOKBACK_HOURS = 24
+
 
 @dataclass
 class VehicleSnapshot:
@@ -461,3 +472,134 @@ class TripTracker:
             "duration": str(duration),
             "duration_minutes": duration.total_seconds() / 60,
         }
+
+
+def detect_missed_trips_from_history(
+    odometer_history: list[dict[str, Any]],
+    existing_trip_timestamps: set[datetime],
+    min_trip_distance_km: float = 0.5,
+    min_duration_minutes: float = 1.0,
+    max_speed_kmh: float = 300.0,
+    lookback_hours: int = DEFAULT_MISSED_TRIP_LOOKBACK_HOURS,
+) -> list[dict[str, Any]]:
+    """Detect trips from recent odometer history that may have been missed.
+    
+    This function is used to detect trips that were missed due to HA restart,
+    integration reload, or gaps in updates. It analyzes recent odometer history
+    to find significant odometer changes that represent trips.
+    
+    Args:
+        odometer_history: List of odometer history points with 'ts' and 'value' keys
+        existing_trip_timestamps: Set of existing trip start timestamps to avoid duplicates
+        min_trip_distance_km: Minimum distance to consider as a trip (default: 0.5 km)
+        min_duration_minutes: Minimum duration to consider as a trip (default: 1 minute)
+        max_speed_kmh: Maximum reasonable speed to filter outliers (default: 300 km/h)
+        lookback_hours: How many hours back to look for missed trips (default: 24)
+        
+    Returns:
+        List of detected trip dictionaries with trip data
+    """
+    detected_trips = []
+    
+    if not odometer_history or len(odometer_history) < 2:
+        return detected_trips
+    
+    # Calculate cutoff time for lookback window
+    now = dt_util.now()
+    cutoff_time = now - timedelta(hours=lookback_hours)
+    
+    # Sort history by timestamp
+    sorted_history = sorted(odometer_history, key=lambda x: x.get("ts", ""))
+    
+    # Analyze consecutive points for trips
+    previous_point = None
+    
+    for current_point in sorted_history:
+        if previous_point is None:
+            previous_point = current_point
+            continue
+        
+        try:
+            # Parse values
+            prev_odometer = previous_point.get("value")
+            curr_odometer = current_point.get("value")
+            
+            if prev_odometer is None or curr_odometer is None:
+                previous_point = current_point
+                continue
+            
+            # Parse timestamps
+            prev_time = dt_util.parse_datetime(previous_point.get("ts"))
+            curr_time = dt_util.parse_datetime(current_point.get("ts"))
+            
+            if not prev_time or not curr_time:
+                previous_point = current_point
+                continue
+            
+            # Ensure timezone-aware
+            if prev_time.tzinfo is None:
+                prev_time = dt_util.as_local(prev_time)
+            if curr_time.tzinfo is None:
+                curr_time = dt_util.as_local(curr_time)
+            
+            # Skip if outside lookback window
+            if prev_time < cutoff_time:
+                previous_point = current_point
+                continue
+            
+            # Calculate trip metrics
+            distance_km = curr_odometer - prev_odometer
+            duration_seconds = (curr_time - prev_time).total_seconds()
+            duration_minutes = duration_seconds / 60
+            
+            # Check if this is a valid trip
+            if distance_km >= min_trip_distance_km and duration_minutes >= min_duration_minutes:
+                # Calculate average speed
+                avg_speed = (distance_km / duration_seconds) * 3600 if duration_seconds > 0 else 0
+                
+                # Filter unrealistic speeds
+                if avg_speed <= max_speed_kmh:
+                    # Check for duplicates (within configured time window)
+                    is_duplicate = False
+                    for existing_ts in existing_trip_timestamps:
+                        time_diff_minutes = abs((prev_time - existing_ts).total_seconds()) / 60
+                        if time_diff_minutes < DUPLICATE_DETECTION_WINDOW_MINUTES:
+                            is_duplicate = True
+                            break
+                    
+                    if not is_duplicate:
+                        trip_data = {
+                            "timestamp_start": prev_time.isoformat(),
+                            "timestamp_end": curr_time.isoformat(),
+                            "distance_km": round(distance_km, 2),
+                            "odometer_start": round(prev_odometer, 1),
+                            "odometer_end": round(curr_odometer, 1),
+                            "duration_minutes": round(duration_minutes, 1),
+                            "fuel_consumed": None,  # Not available from odometer history alone
+                            "consumption_rate": None,
+                            "start_latitude": None,
+                            "start_longitude": None,
+                            "end_latitude": None,
+                            "end_longitude": None,
+                            "category": "private",
+                            "data_quality": "recovered_from_history",
+                            "confidence": RECOVERED_TRIP_CONFIDENCE,
+                        }
+                        
+                        detected_trips.append(trip_data)
+                        existing_trip_timestamps.add(prev_time)
+                        
+                        _LOGGER.info(
+                            "Recovered missed trip from history: %.1f km from %s to %s (%.1f min)",
+                            distance_km,
+                            prev_time.isoformat(),
+                            curr_time.isoformat(),
+                            duration_minutes,
+                        )
+        
+        except Exception as err:
+            _LOGGER.debug("Error analyzing odometer point for missed trips: %s", err)
+        
+        previous_point = current_point
+    
+    return detected_trips

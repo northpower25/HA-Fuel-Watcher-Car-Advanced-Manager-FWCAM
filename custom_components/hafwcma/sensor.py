@@ -1232,7 +1232,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             if trip_config.get("enabled", False):
                 # Initialize trip tracker if not already done
                 if self.trip_tracker is None:
-                    from .utils.vehicle_tracker import TripTracker
+                    from .utils.vehicle_tracker import TripTracker, detect_missed_trips_from_history
                     min_distance = trip_config.get("min_trip_distance_km", 0.5)
                     merge_window = trip_config.get("merge_time_window_seconds", 300)
                     self.trip_tracker = TripTracker(
@@ -1240,6 +1240,91 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         merge_time_window_seconds=merge_window,
                     )
                     _LOGGER.info("Trip tracker initialized")
+                    
+                    # Check for missed trips in recent odometer history
+                    # This handles trips that were missed due to HA restart or integration reload
+                    try:
+                        odometer_history = data.get("odometer_history", [])
+                        existing_trips = data.get("trips", [])
+                        
+                        # Build set of existing trip timestamps
+                        from homeassistant.util import dt as dt_util
+                        existing_timestamps = set()
+                        for trip in existing_trips:
+                            if trip.get("timestamp_start"):
+                                try:
+                                    ts = dt_util.parse_datetime(trip["timestamp_start"])
+                                    if ts:
+                                        if ts.tzinfo is None:
+                                            ts = dt_util.as_local(ts)
+                                        existing_timestamps.add(ts)
+                                except Exception as err:
+                                    _LOGGER.debug(
+                                        "Failed to parse trip timestamp '%s': %s",
+                                        trip.get("timestamp_start"),
+                                        err,
+                                    )
+                        
+                        # Detect missed trips from recent history
+                        # Use configured lookback hours or default to 24
+                        lookback_hours = trip_config.get("missed_trip_lookback_hours", 24)
+                        missed_trips = detect_missed_trips_from_history(
+                            odometer_history=odometer_history,
+                            existing_trip_timestamps=existing_timestamps,
+                            min_trip_distance_km=min_distance,
+                            lookback_hours=lookback_hours,
+                        )
+                        
+                        if missed_trips:
+                            _LOGGER.info(
+                                "Recovered %d missed trip(s) from recent odometer history",
+                                len(missed_trips),
+                            )
+                            
+                            # Save missed trips to storage
+                            from .utils.storage import save_data
+                            
+                            # Initialize trips list if not present
+                            if "trips" not in data:
+                                data["trips"] = []
+                            
+                            # Get next trip ID
+                            next_id = data.get("next_trip_id", 1)
+                            now = dt_util.now().isoformat()
+                            
+                            for trip_data_item in missed_trips:
+                                try:
+                                    # Assign trip ID
+                                    trip_data_item["trip_id"] = next_id
+                                    next_id += 1
+                                    
+                                    # Add timestamps
+                                    trip_data_item.setdefault("created_at", now)
+                                    trip_data_item.setdefault("updated_at", now)
+                                    
+                                    # Add note about recovery
+                                    if "notes" not in trip_data_item:
+                                        trip_data_item["notes"] = "Auto-recovered from odometer history after system restart"
+                                    
+                                    # Add trip to storage
+                                    data["trips"].append(trip_data_item)
+                                    
+                                    _LOGGER.debug(
+                                        "Saved recovered trip #%d: %.1f km",
+                                        trip_data_item["trip_id"],
+                                        trip_data_item.get("distance_km", 0),
+                                    )
+                                except Exception as err:
+                                    _LOGGER.warning("Error saving recovered trip: %s", err)
+                            
+                            # Update next trip ID
+                            data["next_trip_id"] = next_id
+                            
+                            # Save data
+                            await save_data(self.hass, self.config_entry, data)
+                            
+                    except Exception as err:
+                        _LOGGER.warning("Error checking for missed trips: %s", err)
                 
                 # Create snapshot for trip tracking
                 from .utils.vehicle_tracker import VehicleSnapshot
