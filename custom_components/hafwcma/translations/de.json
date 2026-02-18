@@ -209,9 +209,6 @@
       }
     },
     "number": {
-      "station_search_radius": {
-        "name": "Tankstellen Suchradius"
-      },
       "api_update_interval": {
         "name": "API Aktualisierungsintervall"
       },

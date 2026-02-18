@@ -18,6 +18,7 @@ from homeassistant.helpers import entity_registry as er, selector
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
+    CONF_CHEAP_STATIONS_RADIUS,
     CONF_CRITICAL_FUEL_THRESHOLD,
     CONF_FALLBACK_DAILY_KM,
     CONF_FALLBACK_DAILY_KM_MONDAY,
@@ -34,7 +35,6 @@ from .const import (
     CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
     CONF_PRICE_DROP_PERCENT_THRESHOLD,
     CONF_PROVIDER,
-    CONF_RADIUS,
     CONF_RANGE_ENTITY,
     CONF_TANK_CAPACITY,
     CONF_TANK_LEVEL_ENTITY,
@@ -43,12 +43,12 @@ from .const import (
     CONF_TELEGRAM_TOKEN,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
+    DEFAULT_CHEAP_STATIONS_RADIUS,
     DEFAULT_CRITICAL_FUEL_THRESHOLD,
     DEFAULT_FALLBACK_DAILY_KM,
     DEFAULT_LOW_FUEL_THRESHOLD,
     DEFAULT_PRICE_DROP_ABSOLUTE,
     DEFAULT_PRICE_DROP_PERCENT,
-    DEFAULT_RADIUS,
     DEFAULT_TANK_CAPACITY,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
@@ -309,10 +309,10 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         type=selector.TextSelectorType.PASSWORD,
                     )
                 ),
-                vol.Optional(CONF_RADIUS, default=DEFAULT_RADIUS): selector.NumberSelector(
+                vol.Optional(CONF_CHEAP_STATIONS_RADIUS, default=DEFAULT_CHEAP_STATIONS_RADIUS): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1.0,
-                        max=25.0,
+                        max=50.0,
                         step=0.5,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="km",
@@ -376,7 +376,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     api_key=self.data[CONF_API_KEY],
                     latitude=self.hass.config.latitude,
                     longitude=self.hass.config.longitude,
-                    radius=self.data[CONF_RADIUS],
+                    radius=self.data[CONF_CHEAP_STATIONS_RADIUS],
                     fuel_type=self.data[CONF_FUEL_TYPE],
                 )
                 
@@ -989,11 +989,7 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
         if update_interval_value is None or update_interval_value == "":
             update_interval_value = DEFAULT_UPDATE_INTERVAL
             
-        radius_value = current_options.get(CONF_RADIUS)
-        if radius_value is None or radius_value == "":
-            radius_value = current_config.get(CONF_RADIUS)
-        if radius_value is None or radius_value == "":
-            radius_value = DEFAULT_RADIUS
+        # Removed radius_value - now using cheap_stations_radius number entity instead
             
         fuel_type_value = current_options.get(CONF_FUEL_TYPE)
         if not fuel_type_value:
@@ -1121,18 +1117,6 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                         max=MAX_UPDATE_INTERVAL,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="min",
-                    )
-                ),
-                vol.Optional(
-                    CONF_RADIUS,
-                    default=radius_value,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1.0,
-                        max=25.0,
-                        step=0.5,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="km",
                     )
                 ),
                 vol.Optional(

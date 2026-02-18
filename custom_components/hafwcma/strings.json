@@ -203,9 +203,6 @@
       }
     },
     "number": {
-      "station_search_radius": {
-        "name": "Station Search Radius"
-      },
       "api_update_interval": {
         "name": "API Update Interval"
       },

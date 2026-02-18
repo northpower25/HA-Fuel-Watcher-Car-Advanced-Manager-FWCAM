@@ -17,13 +17,14 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_API_KEY,
+    CONF_CHEAP_STATIONS_RADIUS,
     CONF_FUEL_TYPE,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_POSITION_ENTITY,
     CONF_PROVIDER,
-    CONF_RADIUS,
     CONF_VEHICLE_NAME,
+    DEFAULT_CHEAP_STATIONS_RADIUS,
     DOMAIN,
     PROVIDER_TANKERKONIG,
 )
@@ -121,7 +122,7 @@ class TestProviderConnectionButton(ButtonEntity):
         api_key = config.get(CONF_API_KEY)
         latitude = config.get(CONF_LATITUDE)
         longitude = config.get(CONF_LONGITUDE)
-        radius = options.get(CONF_RADIUS) or config.get(CONF_RADIUS, 5.0)
+        radius = options.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
         fuel_type = options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5")
         position_entity = options.get(CONF_POSITION_ENTITY) or config.get(CONF_POSITION_ENTITY)
         
