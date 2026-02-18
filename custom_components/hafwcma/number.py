@@ -18,7 +18,6 @@ from .const import (
     CONF_CONSUMPTION_PREDICTION_INTERVAL,
     CONF_MIN_TANK_LEVEL_FOR_ALERTS,
     CONF_PROXIMITY_ALERT_DISTANCE,
-    CONF_RADIUS,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
     DEFAULT_CHEAP_STATIONS_COUNT,
@@ -28,7 +27,6 @@ from .const import (
     DEFAULT_CONSUMPTION_PREDICTION_INTERVAL,
     DEFAULT_MIN_TANK_LEVEL_FOR_ALERTS,
     DEFAULT_PROXIMITY_ALERT_DISTANCE,
-    DEFAULT_RADIUS,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     MAX_CHEAP_STATIONS_COUNT,
@@ -70,7 +68,6 @@ async def async_setup_entry(
     coordinator = hass.data[DOMAIN][config_entry.entry_id].get("coordinator")
 
     numbers = [
-        SearchRadiusNumber(coordinator, config_entry, vehicle_name, hass),
         UpdateIntervalNumber(coordinator, config_entry, vehicle_name, hass),
         ConsumptionMinDataPointsNumber(coordinator, config_entry, vehicle_name, hass),
         ConsumptionPredictionIntervalNumber(coordinator, config_entry, vehicle_name, hass),
@@ -82,69 +79,6 @@ async def async_setup_entry(
     ]
 
     async_add_entities(numbers)
-
-
-class SearchRadiusNumber(NumberEntity):
-    """Number entity for configurable fuel station search radius."""
-
-    _attr_icon = "mdi:radius"
-    _attr_mode = NumberMode.BOX
-    _attr_native_min_value = 1.0
-    _attr_native_max_value = 25.0
-    _attr_native_step = 0.5
-    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
-    _attr_has_entity_name = True
-
-    def __init__(
-        self,
-        coordinator: Any,
-        config_entry: ConfigEntry,
-        vehicle_name: str,
-        hass: HomeAssistant,
-    ) -> None:
-        """Initialize the number entity.
-        
-        Args:
-            coordinator: Data update coordinator
-            config_entry: Config entry
-            vehicle_name: Name of the vehicle
-            hass: Home Assistant instance
-        """
-        self._coordinator = coordinator
-        self._config_entry = config_entry
-        self._hass = hass
-        self._attr_name = "Station Search Radius"
-        self._attr_unique_id = f"{config_entry.entry_id}_station_search_radius"
-        
-        # Device info for grouping
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, config_entry.entry_id)},
-            "name": vehicle_name,
-            "manufacturer": "haFWCMA",
-            "model": "Fuel Watcher Car Advanced Manager",
-        }
-
-    @property
-    def native_value(self) -> float:
-        """Return the current search radius."""
-        options = self._config_entry.options
-        config = self._config_entry.data
-        return options.get(CONF_RADIUS) or config.get(CONF_RADIUS, DEFAULT_RADIUS)
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Update the search radius."""
-        _LOGGER.info("Updating search radius to %.1f km", value)
-        
-        # Update the config entry options
-        new_options = dict(self._config_entry.options)
-        new_options[CONF_RADIUS] = value
-        
-        # Update entry - this will trigger the update listener (async_update_options)
-        # which will update the coordinator and refresh entities automatically
-        self._hass.config_entries.async_update_entry(
-            self._config_entry,
-            options=new_options,
-        )
 
 
 class UpdateIntervalNumber(NumberEntity):

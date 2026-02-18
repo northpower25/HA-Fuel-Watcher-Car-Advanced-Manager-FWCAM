@@ -182,7 +182,6 @@ class FWCAMCard extends HTMLElement {
       consumption_prediction: `switch.${baseName}_consumption_prediction`,
       trip_tracking: `switch.${baseName}_trip_tracking`,
       // Numbers
-      station_search_radius: `number.${baseName}_station_search_radius`,
       update_interval: `number.${baseName}_update_interval`,
       consumption_min_data_points: `number.${baseName}_consumption_min_data_points`,
       consumption_prediction_interval: `number.${baseName}_consumption_prediction_interval`,
@@ -751,7 +750,6 @@ class FWCAMCard extends HTMLElement {
    * Render settings section
    */
   renderSettings() {
-    const searchRadius = this.getEntityState(this._entities.station_search_radius);
     const updateInterval = this.getEntityState(this._entities.update_interval);
     const minDataPoints = this.getEntityState(this._entities.consumption_min_data_points);
     const predictionInterval = this.getEntityState(this._entities.consumption_prediction_interval);
@@ -760,14 +758,6 @@ class FWCAMCard extends HTMLElement {
       <div class="section">
         <h3>Settings</h3>
         <div class="settings-grid">
-          <div class="setting-item">
-            <label>Station Search Radius (km):</label>
-            <input type="number" 
-                   class="setting-input" 
-                   data-entity="${this._entities.station_search_radius}"
-                   value="${searchRadius ? searchRadius.state : ''}"
-                   min="1" max="25" step="0.5">
-          </div>
           <div class="setting-item">
             <label>API Update Interval (min):</label>
             <input type="number" 

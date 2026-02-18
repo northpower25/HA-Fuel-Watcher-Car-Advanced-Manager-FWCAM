@@ -62,7 +62,6 @@ from .const import (
     CONF_PROVIDER,
     CONF_PROXIMITY_ALERT_DISTANCE,
     CONF_PROXIMITY_ALERTS_ENABLED,
-    CONF_RADIUS,
     CONF_RANGE_ENTITY,
     CONF_TANK_CAPACITY,
     CONF_TANK_LEVEL_ENTITY,
@@ -712,7 +711,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         provider = options.get(CONF_PROVIDER) or config.get(CONF_PROVIDER, PROVIDER_TANKERKONIG)
         api_key = config.get(CONF_API_KEY)
         fuel_type = options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5")
-        radius = options.get(CONF_RADIUS) or config.get(CONF_RADIUS, 5.0)
+        radius = options.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
         
         # Validate critical configuration
         if not api_key:
