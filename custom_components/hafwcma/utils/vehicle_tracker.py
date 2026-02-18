@@ -499,8 +499,6 @@ def detect_missed_trips_from_history(
     Returns:
         List of detected trip dictionaries with trip data
     """
-    from homeassistant.util import dt as dt_util
-    
     detected_trips = []
     
     if not odometer_history or len(odometer_history) < 2:

@@ -1258,8 +1258,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                         if ts.tzinfo is None:
                                             ts = dt_util.as_local(ts)
                                         existing_timestamps.add(ts)
-                                except Exception:
-                                    pass
+                                except Exception as err:
+                                    _LOGGER.debug(
+                                        "Failed to parse trip timestamp '%s': %s",
+                                        trip.get("timestamp_start"),
+                                        err,
+                                    )
                         
                         # Detect missed trips from recent history
                         # Use configured lookback hours or default to 24
@@ -1278,7 +1282,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                             )
                             
                             # Save missed trips to storage
-                            from . import utils as storage
+                            from .utils.storage import save_data
                             
                             # Initialize trips list if not present
                             if "trips" not in data:
@@ -1317,7 +1321,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                             data["next_trip_id"] = next_id
                             
                             # Save data
-                            await storage.save_data(self.hass, self.config_entry, data)
+                            await save_data(self.hass, self.config_entry, data)
                             
                     except Exception as err:
                         _LOGGER.warning("Error checking for missed trips: %s", err)
