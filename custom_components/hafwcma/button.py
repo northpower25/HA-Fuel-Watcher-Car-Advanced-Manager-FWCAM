@@ -268,7 +268,7 @@ class TestProviderConnectionButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with test results."""
-        attributes = self._last_result.copy() if self._last_result else {}
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
         
         # Add standardized entity metadata for inline documentation
         metadata = get_entity_metadata("test_provider_connection_button")
@@ -360,7 +360,7 @@ class ImportHistoricalDataButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with import results."""
-        attributes = self._last_result.copy() if self._last_result else {}
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
         
         # Add standardized entity metadata for inline documentation
         metadata = get_entity_metadata("import_historical_data_button")
@@ -466,7 +466,7 @@ class ImportHistoricalTripDataButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with import results."""
-        attributes = self._last_result.copy() if self._last_result else {}
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
         
         # Add standardized entity metadata for inline documentation
         metadata = get_entity_metadata("import_historical_trip_data_button")
@@ -561,7 +561,7 @@ class RecalculateTripStatisticsButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with recalculation results."""
-        attributes = self._last_result.copy() if self._last_result else {}
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
         
         # Add standardized entity metadata for inline documentation
         metadata = get_entity_metadata("recalculate_trip_statistics_button")
@@ -658,7 +658,7 @@ class ValidateRefuelingEventsButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with validation results."""
-        attributes = self._last_result.copy() if self._last_result else {}
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
         
         # Add standardized entity metadata for inline documentation
         metadata = get_entity_metadata("validate_refueling_events_button")
@@ -1656,7 +1656,7 @@ class ExportVehicleDataButton(ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with export results."""
-        attributes = self._last_result.copy() if self._last_result else {}
+        attributes = self._last_result.copy() if isinstance(self._last_result, dict) else {}
         
         # Add standardized entity metadata for inline documentation
         metadata = get_entity_metadata("export_vehicle_data_button")
