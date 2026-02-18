@@ -8,7 +8,6 @@ DOMAIN: Final = "hafwcma"
 CONF_API_KEY: Final = "api_key"
 CONF_LATITUDE: Final = "latitude"
 CONF_LONGITUDE: Final = "longitude"
-CONF_RADIUS: Final = "radius"
 CONF_FUEL_TYPE: Final = "fuel_type"
 CONF_TANK_CAPACITY: Final = "tank_capacity"
 CONF_VEHICLE_NAME: Final = "vehicle_name"
@@ -43,7 +42,6 @@ CONF_CONSUMPTION_MIN_DATA_POINTS: Final = "consumption_min_data_points"
 CONF_CONSUMPTION_PREDICTION_INTERVAL: Final = "consumption_prediction_interval"
 
 # Defaults
-DEFAULT_RADIUS: Final = 5.0  # km
 DEFAULT_TANK_CAPACITY: Final = 50.0  # liters
 DEFAULT_SCAN_INTERVAL: Final = 300  # seconds (5 minutes)
 DEFAULT_UPDATE_INTERVAL: Final = 5  # minutes
