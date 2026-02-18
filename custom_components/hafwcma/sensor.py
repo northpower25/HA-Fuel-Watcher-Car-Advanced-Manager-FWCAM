@@ -1881,8 +1881,10 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                     attributes["costsaving_far_vs_near_station"] = "Waiting for station data"
                 elif reason == "Tank is full":
                     attributes["costsaving_far_vs_near_station"] = "Tank is full - no savings calculation"
-                elif reason in ["No different stations to compare", "Only 20km station available"]:
+                elif reason == "No different stations to compare":
                     attributes["costsaving_far_vs_near_station"] = "Not applicable - only one station available"
+                elif reason == "No stations within 10km":
+                    attributes["costsaving_far_vs_near_station"] = "Not applicable - no near stations for comparison"
                 else:
                     attributes["costsaving_far_vs_near_station"] = f"Not available ({reason})"
             else:
