@@ -2354,6 +2354,7 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
+        self._config_entry = config_entry
         self._attr_name = "Fuel Price API Debug"
         self._attr_unique_id = f"{config_entry.entry_id}_fuel_price_api_debug"
         
@@ -2482,6 +2483,11 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
             stations_list = nearby_cheap_stations_data.get("stations", [])
             search_radius_km = nearby_cheap_stations_data.get("search_radius_km")
             
+            # Get configured radius values from options
+            options = self._config_entry.options
+            cheap_stations_radius = options.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
+            cheap_near_stations_radius = options.get(CONF_CHEAP_NEAR_STATIONS_RADIUS, DEFAULT_CHEAP_NEAR_STATIONS_RADIUS)
+            
             if stations_list and search_radius_km:
                 # Helper function to get valid prices from station list
                 def get_lowest_price(stations):
@@ -2489,11 +2495,16 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
                     prices = [s.get("price") for s in stations if s.get("price") is not None]
                     return round(min(prices), 3) if prices else None
                 
-                # Stations within configured search radius
-                # Use consistent attribute names regardless of actual radius value
-                filtered_debug["count_stations_configured_range"] = len(stations_list)
-                filtered_debug["configured_search_radius_km"] = search_radius_km
-                filtered_debug["lowest_price_configured_range"] = get_lowest_price(stations_list)
+                # Stations within configured full search radius (cheap_stations_radius)
+                filtered_debug["count_stations_cheap_stations_radius_range"] = len(stations_list)
+                filtered_debug["configured_cheap_stations_radius_km"] = search_radius_km
+                filtered_debug["lowest_price_cheap_stations_radius_range"] = get_lowest_price(stations_list)
+                
+                # Stations within configured near radius (cheap_near_stations_radius)
+                stations_near = [s for s in stations_list if s.get("distance_km", float('inf')) <= cheap_near_stations_radius]
+                filtered_debug["count_stations_cheap_near_stations_radius_range"] = len(stations_near)
+                filtered_debug["configured_cheap_near_stations_radius_km"] = cheap_near_stations_radius
+                filtered_debug["lowest_price_cheap_near_stations_radius_range"] = get_lowest_price(stations_near)
                 
                 # Stations within 10km
                 stations_10km = [s for s in stations_list if s.get("distance_km", float('inf')) <= 10]
