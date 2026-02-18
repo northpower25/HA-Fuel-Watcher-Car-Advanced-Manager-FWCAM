@@ -2329,12 +2329,52 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
         for key, value in api_debug.items():
             # Skip or summarize large fields
             if key == "last_api_response":
-                # Only include summary info about the response
+                # Include detailed summary info about the response
                 if isinstance(value, dict):
-                    filtered_debug["api_response_summary"] = {
+                    response_summary = {
                         "keys": list(value.keys())[:self.MAX_SUMMARY_KEYS],  # First N keys only
                         "size_bytes": sys.getsizeof(value),
                     }
+                    
+                    # Add more details about the response structure
+                    if "status" in value:
+                        response_summary["status"] = value["status"]
+                    if "data" in value:
+                        data = value["data"]
+                        if isinstance(data, dict):
+                            response_summary["data_keys"] = list(data.keys())
+                            # Check for nested data structure (v4 API format)
+                            if "data" in data and isinstance(data["data"], dict):
+                                response_summary["nested_data_keys"] = list(data["data"].keys())
+                                # Check for stations in nested data
+                                if "stations" in data["data"]:
+                                    stations = data["data"]["stations"]
+                                    response_summary["stations_count"] = len(stations) if isinstance(stations, list) else 0
+                                    # Include sample station if available
+                                    if isinstance(stations, list) and len(stations) > 0:
+                                        sample = stations[0]
+                                        if isinstance(sample, dict):
+                                            response_summary["sample_station_keys"] = list(sample.keys())
+                            # Check for stations at top level (legacy format)
+                            elif "stations" in data:
+                                stations = data["stations"]
+                                response_summary["stations_count"] = len(stations) if isinstance(stations, list) else 0
+                                # Include sample station if available
+                                if isinstance(stations, list) and len(stations) > 0:
+                                    sample = stations[0]
+                                    if isinstance(sample, dict):
+                                        response_summary["sample_station_keys"] = list(sample.keys())
+                            # Add other top-level data info
+                            if "ok" in data:
+                                response_summary["api_ok"] = data["ok"]
+                            if "message" in data:
+                                response_summary["api_message"] = data["message"]
+                    if "error" in value:
+                        response_summary["error"] = value["error"]
+                    if "error_type" in value:
+                        response_summary["error_type"] = value["error_type"]
+                    
+                    filtered_debug["api_response_summary"] = response_summary
                 elif isinstance(value, list):
                     filtered_debug["api_response_summary"] = {
                         "items_count": len(value),
@@ -2346,13 +2386,27 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
                         "size_bytes": sys.getsizeof(value),
                     }
             elif key == "last_api_request":
-                # Summarize request info
+                # Include complete request info with full URL (params masked)
                 if isinstance(value, dict):
-                    # Keep only essential request info
-                    filtered_debug["api_request_summary"] = {
+                    request_summary = {
                         k: v for k, v in value.items() 
                         if k in ["url", "method", "timestamp"]
                     }
+                    
+                    # Build complete URL with query parameters (API key already masked in params)
+                    if "url" in value and "params" in value:
+                        base_url = value["url"]
+                        params = value["params"]
+                        if isinstance(params, dict) and params:
+                            # Build query string from parameters
+                            query_parts = [f"{k}={v}" for k, v in params.items()]
+                            query_string = "&".join(query_parts)
+                            request_summary["url"] = f"{base_url}?{query_string}"
+                        
+                        # Also include parameters separately for clarity
+                        request_summary["params"] = params
+                    
+                    filtered_debug["api_request_summary"] = request_summary
                 else:
                     filtered_debug["api_request_summary"] = str(value)[:self.MAX_STRING_LENGTH]  # Truncate long strings
             else:
