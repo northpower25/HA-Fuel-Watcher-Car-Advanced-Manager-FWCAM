@@ -7,6 +7,7 @@ import random
 import sys
 from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -2398,12 +2399,12 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
                         base_url = value["url"]
                         params = value["params"]
                         if isinstance(params, dict) and params:
-                            # Build query string from parameters
-                            query_parts = [f"{k}={v}" for k, v in params.items()]
-                            query_string = "&".join(query_parts)
+                            # Build properly URL-encoded query string from parameters
+                            query_string = urlencode(params)
                             request_summary["url"] = f"{base_url}?{query_string}"
                         
-                        # Also include parameters separately for clarity
+                        # Also include parameters separately for easier reading
+                        # (URL encoding can make some values harder to read at a glance)
                         request_summary["params"] = params
                     
                     filtered_debug["api_request_summary"] = request_summary
