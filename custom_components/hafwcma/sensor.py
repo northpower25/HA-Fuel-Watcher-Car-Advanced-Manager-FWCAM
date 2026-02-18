@@ -809,8 +809,26 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 # Update next trip ID
                 data["next_trip_id"] = next_id
                 
-                # Save data
-                await save_data(self.hass, self.config_entry, data)
+                # Save the new trips to storage first
+                await storage.save_data(self.hass, self.config_entry, data)
+                
+                # Recalculate trip statistics to include new trips
+                from .utils.storage import recalculate_trip_statistics
+                await recalculate_trip_statistics(self.hass, self.config_entry)
+                
+                # Reload data to update coordinator state
+                # This ensures sensors reflect the new trips immediately
+                updated_data = await storage.load_data(self.hass, self.config_entry)
+                
+                # Update coordinator data with new trips and statistics
+                if self.data is not None:
+                    self.data["trips"] = updated_data.get("trips", [])
+                    self.data["trip_statistics"] = updated_data.get("trip_statistics", {})
+                    _LOGGER.info(
+                        "Updated coordinator data with %d recovered trips. New total: %d trips",
+                        len(missed_trips),
+                        self.data["trip_statistics"].get("total_trips", 0)
+                    )
             else:
                 _LOGGER.debug("No missed trips found in odometer history")
             
