@@ -274,6 +274,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._session = None
         self._api_debug_info = None  # Store debug info about API requests/responses
         self._last_consumption_prediction = None  # Store last consumption prediction time
+        self._last_missed_trip_check = None  # Track when we last checked for missed trips
         self._proximity_tracker = ProximityTracker(
             cooldown_seconds=GEOLOCATION_ALERT_COOLDOWN,
             hysteresis_factor=GEOLOCATION_HYSTERESIS_FACTOR,
@@ -697,7 +698,127 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "next_month": next_month_forecast,
         }
 
-
+    async def _check_for_missed_trips(self) -> None:
+        """Periodically check for missed trips in odometer history.
+        
+        This method checks for trips that may have been missed due to gaps in tracking.
+        It's called periodically during updates to catch trips that weren't detected in real-time.
+        The check runs at most once per hour to avoid excessive processing.
+        """
+        from homeassistant.util import dt as dt_util
+        
+        # Only check if trip tracking is enabled
+        if self.trip_tracker is None:
+            return
+        
+        # Check at most once per hour to avoid excessive processing
+        now = dt_util.now()
+        if self._last_missed_trip_check is not None:
+            time_since_last_check = (now - self._last_missed_trip_check).total_seconds() / 3600  # hours
+            if time_since_last_check < 1.0:
+                _LOGGER.debug("Skipping missed trip check - last check was %.1f minutes ago", time_since_last_check * 60)
+                return
+        
+        try:
+            _LOGGER.debug("Checking for missed trips in odometer history")
+            
+            # Load data
+            data = await storage.load_data(self.hass, self.config_entry)
+            trip_config = data.get("trip_tracking_config", {})
+            
+            if not trip_config.get("enabled", False):
+                return
+            
+            odometer_history = data.get("odometer_history", [])
+            existing_trips = data.get("trips", [])
+            
+            # Build set of existing trip timestamps
+            existing_timestamps = set()
+            for trip in existing_trips:
+                if trip.get("timestamp_start"):
+                    try:
+                        ts = dt_util.parse_datetime(trip["timestamp_start"])
+                        if ts:
+                            if ts.tzinfo is None:
+                                ts = dt_util.as_local(ts)
+                            existing_timestamps.add(ts)
+                    except Exception as err:
+                        _LOGGER.debug(
+                            "Failed to parse trip timestamp '%s': %s",
+                            trip.get("timestamp_start"),
+                            err,
+                        )
+            
+            # Detect missed trips from recent history
+            from .utils.vehicle_tracker import detect_missed_trips_from_history
+            min_distance = trip_config.get("min_trip_distance_km", 0.5)
+            lookback_hours = trip_config.get("missed_trip_lookback_hours", 24)
+            
+            missed_trips = detect_missed_trips_from_history(
+                odometer_history=odometer_history,
+                existing_trip_timestamps=existing_timestamps,
+                min_trip_distance_km=min_distance,
+                lookback_hours=lookback_hours,
+            )
+            
+            if missed_trips:
+                _LOGGER.info(
+                    "Found %d missed trip(s) in odometer history - recovering",
+                    len(missed_trips),
+                )
+                
+                # Save missed trips to storage
+                from .utils.storage import save_data
+                
+                # Initialize trips list if not present
+                if "trips" not in data:
+                    data["trips"] = []
+                
+                # Get next trip ID
+                next_id = data.get("next_trip_id", 1)
+                now_str = now.isoformat()
+                
+                for trip_data_item in missed_trips:
+                    try:
+                        # Assign trip ID
+                        trip_data_item["trip_id"] = next_id
+                        next_id += 1
+                        
+                        # Add timestamps
+                        trip_data_item.setdefault("created_at", now_str)
+                        trip_data_item.setdefault("updated_at", now_str)
+                        
+                        # Add note about recovery
+                        if "notes" not in trip_data_item:
+                            trip_data_item["notes"] = "Auto-recovered from odometer history during periodic check"
+                        
+                        # Add trip to storage
+                        data["trips"].append(trip_data_item)
+                        
+                        _LOGGER.info(
+                            "Recovered trip #%d: %.1f km (%.1f → %.1f km) at %s",
+                            trip_data_item["trip_id"],
+                            trip_data_item.get("distance_km", 0),
+                            trip_data_item.get("odometer_start", 0),
+                            trip_data_item.get("odometer_end", 0),
+                            trip_data_item.get("timestamp_start", "unknown"),
+                        )
+                    except Exception as err:
+                        _LOGGER.warning("Error saving recovered trip: %s", err)
+                
+                # Update next trip ID
+                data["next_trip_id"] = next_id
+                
+                # Save data
+                await save_data(self.hass, self.config_entry, data)
+            else:
+                _LOGGER.debug("No missed trips found in odometer history")
+            
+            # Update last check timestamp
+            self._last_missed_trip_check = now
+            
+        except Exception as err:
+            _LOGGER.warning("Error checking for missed trips: %s", err)
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -1498,6 +1619,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     _LOGGER.debug("Trip tracker disabled")
         except Exception as err:
             _LOGGER.warning("Error handling trip tracking: %s", err)
+        
+        # Periodically check for missed trips in odometer history
+        # This catches trips that weren't detected in real-time due to gaps in tracking
+        try:
+            await self._check_for_missed_trips()
+        except Exception as err:
+            _LOGGER.warning("Error in periodic missed trip check: %s", err)
         
         # Build data structure
         # Calculate tank_level_liters from vehicle data
@@ -2859,6 +2987,15 @@ class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
         # Add data source from consumption prediction
         data_source = consumption_prediction.get("data_source", "unknown")
         attributes["consumption_data_source"] = data_source
+        
+        # Add missed trip check information
+        if hasattr(self.coordinator, '_last_missed_trip_check') and self.coordinator._last_missed_trip_check:
+            attributes["last_missed_trip_check_timestamp"] = self.coordinator._last_missed_trip_check.isoformat()
+            time_since_last_check = (current_time - self.coordinator._last_missed_trip_check).total_seconds() / 3600  # hours
+            attributes["hours_since_last_missed_trip_check"] = round(time_since_last_check, 2)
+        else:
+            attributes["last_missed_trip_check_timestamp"] = None
+            attributes["hours_since_last_missed_trip_check"] = None
         
         # Add recommendations
         recommendations = []
