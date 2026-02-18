@@ -147,6 +147,7 @@ ATTR_DATA_POINTS_USED: Final = "data_points_used"
 CONF_PROXIMITY_ALERT_DISTANCE: Final = "proximity_alert_distance"
 CONF_CHEAP_STATIONS_COUNT: Final = "cheap_stations_count"
 CONF_CHEAP_STATIONS_RADIUS: Final = "cheap_stations_radius"
+CONF_CHEAP_NEAR_STATIONS_RADIUS: Final = "cheap_near_stations_radius"
 CONF_PROXIMITY_ALERTS_ENABLED: Final = "proximity_alerts_enabled"
 CONF_MIN_TANK_LEVEL_FOR_ALERTS: Final = "min_tank_level_for_alerts"
 
@@ -160,6 +161,9 @@ MAX_CHEAP_STATIONS_COUNT: Final = 20
 DEFAULT_CHEAP_STATIONS_RADIUS: Final = 15.0  # km
 MIN_CHEAP_STATIONS_RADIUS: Final = 1.0  # km
 MAX_CHEAP_STATIONS_RADIUS: Final = 50.0  # km
+DEFAULT_CHEAP_NEAR_STATIONS_RADIUS: Final = 10.0  # km - for near vs far comparison
+MIN_CHEAP_NEAR_STATIONS_RADIUS: Final = 1.0  # km
+MAX_CHEAP_NEAR_STATIONS_RADIUS: Final = 30.0  # km
 DEFAULT_MIN_TANK_LEVEL_FOR_ALERTS: Final = 30.0  # percentage
 DEFAULT_PROXIMITY_ALERTS_ENABLED: Final = False  # opt-in
 

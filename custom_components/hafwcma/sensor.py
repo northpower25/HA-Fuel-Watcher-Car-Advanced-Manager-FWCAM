@@ -50,6 +50,7 @@ from .const import (
     CONF_API_KEY,
     CONF_CHEAP_STATIONS_COUNT,
     CONF_CHEAP_STATIONS_RADIUS,
+    CONF_CHEAP_NEAR_STATIONS_RADIUS,
     CONF_CONSUMPTION_MIN_DATA_POINTS,
     CONF_CONSUMPTION_PREDICTION_INTERVAL,
     CONF_FUEL_TYPE,
@@ -69,6 +70,7 @@ from .const import (
     CONF_VEHICLE_NAME,
     DEFAULT_CHEAP_STATIONS_COUNT,
     DEFAULT_CHEAP_STATIONS_RADIUS,
+    DEFAULT_CHEAP_NEAR_STATIONS_RADIUS,
     DEFAULT_CONSUMPTION_MIN_DATA_POINTS,
     DEFAULT_CONSUMPTION_PREDICTION_INTERVAL,
     DEFAULT_MIN_TANK_LEVEL_FOR_ALERTS,
@@ -968,6 +970,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     proximity_enabled = options.get(CONF_PROXIMITY_ALERTS_ENABLED, DEFAULT_PROXIMITY_ALERTS_ENABLED)
                     cheap_stations_count = options.get(CONF_CHEAP_STATIONS_COUNT, DEFAULT_CHEAP_STATIONS_COUNT)
                     cheap_stations_radius = options.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
+                    cheap_near_stations_radius = options.get(CONF_CHEAP_NEAR_STATIONS_RADIUS, DEFAULT_CHEAP_NEAR_STATIONS_RADIUS)
                     proximity_distance = options.get(CONF_PROXIMITY_ALERT_DISTANCE, DEFAULT_PROXIMITY_ALERT_DISTANCE)
                     min_tank_level = options.get(CONF_MIN_TANK_LEVEL_FOR_ALERTS, DEFAULT_MIN_TANK_LEVEL_FOR_ALERTS)
                     
@@ -1498,6 +1501,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 tank_level_liters,
                                 tank_capacity,
                                 avg_consumption,
+                                near_radius=cheap_near_stations_radius,
+                                far_radius=cheap_stations_radius,
                             )
                             _LOGGER.debug("Radius comparison: %s", radius_comparison)
                         except Exception as comp_err:
@@ -1854,25 +1859,80 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             # Add radius comparison if available
             radius_comparison = self.coordinator.data.get("radius_comparison")
             if radius_comparison and radius_comparison.get("has_comparison"):
-                attributes["station_comparison"] = {
-                    "10km": radius_comparison.get("station_10km"),
-                    "20km": radius_comparison.get("station_20km"),
-                    "savings": radius_comparison.get("savings"),
-                    "savings_percent": radius_comparison.get("savings_percent"),
-                    "comparison_recommendation": radius_comparison.get("recommendation"),
-                    "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
-                }
+                # Check comparison type
+                comparison_type = radius_comparison.get("comparison_type", "10km_vs_20km")
+                
+                if comparison_type == "near_vs_far_radius":
+                    # New configurable near vs far radius comparison
+                    near_radius = radius_comparison.get("near_radius_km")
+                    far_radius = radius_comparison.get("far_radius_km")
+                    near_radius_label = radius_comparison.get("near_radius_label", "near")
+                    far_radius_label = radius_comparison.get("far_radius_label", "farther")
+                    attributes["station_comparison"] = {
+                        "near": radius_comparison.get("station_near"),
+                        "far": radius_comparison.get("station_far"),
+                        "near_radius_km": near_radius,
+                        "far_radius_km": far_radius,
+                        "near_radius_label": near_radius_label,
+                        "far_radius_label": far_radius_label,
+                        "savings": radius_comparison.get("savings"),
+                        "savings_percent": radius_comparison.get("savings_percent"),
+                        "comparison_recommendation": radius_comparison.get("recommendation"),
+                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+                        "comparison_type": "near_vs_far_radius",
+                    }
+                elif comparison_type == "nearest_vs_cheapest":
+                    # Alternative comparison: nearest station vs cheapest station
+                    # Use the descriptive keys for clarity
+                    attributes["station_comparison"] = {
+                        "nearest": radius_comparison.get("nearest_station"),
+                        "cheapest": radius_comparison.get("cheapest_station"),
+                        "savings": radius_comparison.get("savings"),
+                        "savings_percent": radius_comparison.get("savings_percent"),
+                        "comparison_recommendation": radius_comparison.get("recommendation"),
+                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+                        "comparison_type": "nearest_vs_cheapest",
+                    }
+                else:
+                    # Standard comparison: 10km vs 20km (backward compatibility)
+                    attributes["station_comparison"] = {
+                        "10km": radius_comparison.get("station_10km"),
+                        "20km": radius_comparison.get("station_20km"),
+                        "savings": radius_comparison.get("savings"),
+                        "savings_percent": radius_comparison.get("savings_percent"),
+                        "comparison_recommendation": radius_comparison.get("recommendation"),
+                        "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
+                        "comparison_type": "10km_vs_20km",
+                    }
 
-                # Add explicit cost savings attribute as requested in PR #121
-                # This shows the total EUR savings when going to the farther (20km) station
-                # Positive value = save money by driving farther
+                # Add explicit cost savings attribute
+                # This shows the total EUR savings when going to the farther/cheapest station
+                # Positive value = save money by driving farther/to cheaper station
                 # Negative value = lose money by driving farther (better to stay close)
                 savings_value = radius_comparison.get("savings")
                 if savings_value is not None:
-                    if savings_value >= 0:
-                        attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving farther)"
+                    if comparison_type == "near_vs_far_radius":
+                        # For configurable near vs far radius comparison
+                        # Use pre-formatted labels for consistency
+                        near_radius_label = radius_comparison.get("near_radius_label", "near station")
+                        far_radius_label = radius_comparison.get("far_radius_label", "farther station")
+                        
+                        if savings_value >= 0:
+                            attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving to {far_radius_label})"
+                        else:
+                            attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (costs more, stay within {near_radius_label})"
+                    elif comparison_type == "nearest_vs_cheapest":
+                        # For nearest vs cheapest comparison
+                        if savings_value >= 0:
+                            attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving to cheapest)"
+                        else:
+                            attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (costs more to drive to cheapest, stay near)"
                     else:
-                        attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (cost more by driving farther)"
+                        # For 10km vs 20km comparison (backward compatibility)
+                        if savings_value >= 0:
+                            attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving farther)"
+                        else:
+                            attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (cost more by driving farther)"
                 else:
                     attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
             elif radius_comparison:
@@ -1884,8 +1944,10 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                     attributes["costsaving_far_vs_near_station"] = "Tank is full - no savings calculation"
                 elif reason == "No different stations to compare":
                     attributes["costsaving_far_vs_near_station"] = "Not applicable - only one station available"
-                elif reason == "No stations within 10km":
-                    attributes["costsaving_far_vs_near_station"] = "Not applicable - no near stations for comparison"
+                elif reason == "Only one station available":
+                    attributes["costsaving_far_vs_near_station"] = "Not applicable - only one station available"
+                elif reason == "Nearest and cheapest stations are the same":
+                    attributes["costsaving_far_vs_near_station"] = "Not applicable - nearest is also cheapest"
                 else:
                     attributes["costsaving_far_vs_near_station"] = f"Not available ({reason})"
             else:
@@ -2292,6 +2354,7 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
+        self._config_entry = config_entry
         self._attr_name = "Fuel Price API Debug"
         self._attr_unique_id = f"{config_entry.entry_id}_fuel_price_api_debug"
         
@@ -2413,6 +2476,45 @@ class FuelPriceApiDebugSensor(CoordinatorEntity, SensorEntity):
             else:
                 # Include other fields as-is (they should be small)
                 filtered_debug[key] = value
+        
+        # Add station count and price analysis at different radius ranges
+        nearby_cheap_stations_data = self.coordinator.data.get("nearby_cheap_stations")
+        if nearby_cheap_stations_data:
+            stations_list = nearby_cheap_stations_data.get("stations", [])
+            search_radius_km = nearby_cheap_stations_data.get("search_radius_km")
+            
+            # Get configured radius values from options
+            options = self._config_entry.options
+            cheap_stations_radius = options.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
+            cheap_near_stations_radius = options.get(CONF_CHEAP_NEAR_STATIONS_RADIUS, DEFAULT_CHEAP_NEAR_STATIONS_RADIUS)
+            
+            if stations_list:
+                # Helper function to get valid prices from station list
+                def get_lowest_price(stations):
+                    """Extract lowest valid price from station list."""
+                    prices = [s.get("price") for s in stations if s.get("price") is not None]
+                    return round(min(prices), 3) if prices else None
+                
+                # Stations within configured full search radius (cheap_stations_radius)
+                filtered_debug["count_stations_cheap_stations_radius_range"] = len(stations_list)
+                filtered_debug["configured_cheap_stations_radius_km"] = cheap_stations_radius
+                filtered_debug["lowest_price_cheap_stations_radius_range"] = get_lowest_price(stations_list)
+                
+                # Stations within configured near radius (cheap_near_stations_radius)
+                stations_near = [s for s in stations_list if s.get("distance_km", float('inf')) <= cheap_near_stations_radius]
+                filtered_debug["count_stations_cheap_near_stations_radius_range"] = len(stations_near)
+                filtered_debug["configured_cheap_near_stations_radius_km"] = cheap_near_stations_radius
+                filtered_debug["lowest_price_cheap_near_stations_radius_range"] = get_lowest_price(stations_near)
+                
+                # Stations within 10km
+                stations_10km = [s for s in stations_list if s.get("distance_km", float('inf')) <= 10]
+                filtered_debug["count_stations_10km_range"] = len(stations_10km)
+                filtered_debug["lowest_price_10km_range"] = get_lowest_price(stations_10km)
+                
+                # Stations within 20km
+                stations_20km = [s for s in stations_list if s.get("distance_km", float('inf')) <= 20]
+                filtered_debug["count_stations_20km_range"] = len(stations_20km)
+                filtered_debug["lowest_price_20km_range"] = get_lowest_price(stations_20km)
         
         return filtered_debug
 
