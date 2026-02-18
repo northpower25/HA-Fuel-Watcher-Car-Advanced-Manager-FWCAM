@@ -267,7 +267,75 @@ async def compare_stations_by_radius(
             ),
         }
     
-    # Only 20km station available (no stations within 10km)
+    # No stations within 10km but there are stations in 10-20km range
+    # Compare nearest station vs cheapest station for cost analysis
+    if cheapest_20km and len(stations_list) >= 2:
+        # Sort all stations by distance to find the nearest one
+        sorted_by_distance = sorted(stations_list, key=lambda s: s.get("distance_km", 999))
+        nearest_station = sorted_by_distance[0]
+        
+        # Find the cheapest station overall
+        cheapest_overall = min(stations_list, key=lambda s: s.get("price", float('inf')))
+        
+        # Only compare if they are different stations
+        if nearest_station.get("id") != cheapest_overall.get("id"):
+            # Cost at nearest station
+            distance_near = nearest_station.get("distance_km", 0)
+            round_trip_near = distance_near * 2
+            fuel_consumed_near = (round_trip_near * avg_consumption) / 100.0
+            price_near = nearest_station.get("price", 0)
+            
+            cost_fuel_near = fuel_to_purchase * price_near
+            cost_trip_near = fuel_consumed_near * price_near
+            total_cost_near = cost_fuel_near + cost_trip_near
+            
+            # Cost at cheapest station
+            distance_cheap = cheapest_overall.get("distance_km", 0)
+            round_trip_cheap = distance_cheap * 2
+            fuel_consumed_cheap = (round_trip_cheap * avg_consumption) / 100.0
+            price_cheap = cheapest_overall.get("price", 0)
+            
+            cost_fuel_cheap = fuel_to_purchase * price_cheap
+            cost_trip_cheap = fuel_consumed_cheap * price_cheap
+            total_cost_cheap = cost_fuel_cheap + cost_trip_cheap
+            
+            # Calculate savings (can be negative if cheaper station is farther and more expensive overall)
+            savings = total_cost_near - total_cost_cheap
+            savings_percent = (savings / total_cost_near * 100) if total_cost_near > 0 else 0
+            
+            return {
+                "has_comparison": True,
+                "fuel_to_purchase": round(fuel_to_purchase, 1),
+                "avg_consumption": round(avg_consumption, 1),
+                "station_10km": {  # Using "station_10km" key for consistency (actually nearest)
+                    "name": nearest_station.get("name"),
+                    "distance_km": round(distance_near, 1),
+                    "price": round(price_near, 3),
+                    "round_trip_km": round(round_trip_near, 1),
+                    "fuel_consumed": round(fuel_consumed_near, 2),
+                    "cost_fuel": round(cost_fuel_near, 2),
+                    "cost_trip": round(cost_trip_near, 2),
+                    "total_cost": round(total_cost_near, 2),
+                },
+                "station_20km": {  # Using "station_20km" key for consistency (actually cheapest)
+                    "name": cheapest_overall.get("name"),
+                    "distance_km": round(distance_cheap, 1),
+                    "price": round(price_cheap, 3),
+                    "round_trip_km": round(round_trip_cheap, 1),
+                    "fuel_consumed": round(fuel_consumed_cheap, 2),
+                    "cost_fuel": round(cost_fuel_cheap, 2),
+                    "cost_trip": round(cost_trip_cheap, 2),
+                    "total_cost": round(total_cost_cheap, 2),
+                },
+                "savings": round(savings, 2),
+                "savings_percent": round(savings_percent, 1),
+                "recommendation": _format_savings_recommendation(
+                    savings, nearest_station, cheapest_overall, distance_near, distance_cheap
+                ),
+                "comparison_type": "nearest_vs_cheapest",  # Indicate alternative comparison
+            }
+    
+    # Only one station available or all stations are the same
     return {
         "has_comparison": False,
         "reason": "No stations within 10km",
