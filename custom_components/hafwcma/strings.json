@@ -55,8 +55,8 @@
           "trip_tracking_initial_enabled": "Enable Trip Tracking (Fahrtenbuch)"
         },
         "data_description": {
-          "proximity_alerts_enabled": "Receive alerts when a cheap fuel station is nearby",
-          "trip_tracking_initial_enabled": "Automatically log every trip for mileage tracking and analysis"
+          "proximity_alerts_enabled": "Required for: automatic notifications when a cheap station is near your vehicle, and the Proximity Alert switch entity",
+          "trip_tracking_initial_enabled": "Required for: automatic trip logging (Fahrtenbuch), trip statistics, and per-trip consumption analysis"
         }
       },
       "telegram": {
@@ -120,8 +120,18 @@
           "import_historical_data": "Import historical vehicle data now"
         },
         "data_description": {
-          "import_historical_data": "Import up to 90 days of historical data from Home Assistant's recorder to enable immediate consumption statistics and predictions"
+          "import_historical_data": "Import up to 90 days of historical data from Home Assistant's recorder. Required for immediate consumption statistics, refueling detection and predictions."
         }
+      },
+      "import_progress": {
+        "title": "Checking Available History…",
+        "description": "Querying Home Assistant's recorder for historical vehicle data. This may take a few seconds."
+      },
+      "finish_setup": {
+        "title": "Setup Complete",
+        "description": "{import_summary}",
+        "data": {},
+        "data_description": {}
       }
     },
     "error": {

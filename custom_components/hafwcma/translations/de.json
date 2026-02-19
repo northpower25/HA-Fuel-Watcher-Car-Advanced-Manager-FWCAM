@@ -55,8 +55,8 @@
           "trip_tracking_initial_enabled": "Fahrtenbuch (Trip Tracking) aktivieren"
         },
         "data_description": {
-          "proximity_alerts_enabled": "Benachrichtigung wenn eine günstige Tankstelle in der Nähe ist",
-          "trip_tracking_initial_enabled": "Jede Fahrt automatisch für Kilometerstandsverfolgung und Analyse aufzeichnen"
+          "proximity_alerts_enabled": "Benötigt für: automatische Benachrichtigungen wenn eine günstige Tankstelle in der Nähe ist, und die Näherungsalarm-Schalter-Entität",
+          "trip_tracking_initial_enabled": "Benötigt für: automatisches Fahrtenbuch, Fahrtstatistiken und Verbrauchsanalyse pro Fahrt"
         }
       },
       "telegram": {
@@ -120,8 +120,18 @@
           "import_historical_data": "Historische Fahrzeugdaten jetzt importieren"
         },
         "data_description": {
-          "import_historical_data": "Bis zu 90 Tage historische Daten aus dem Home Assistant Recorder importieren, um sofort Verbrauchsstatistiken und Vorhersagen zu ermöglichen"
+          "import_historical_data": "Bis zu 90 Tage historische Daten aus dem Home Assistant Recorder importieren. Benötigt für sofortige Verbrauchsstatistiken, Tankerkennung und Vorhersagen."
         }
+      },
+      "import_progress": {
+        "title": "Verfügbare Verlaufsdaten prüfen…",
+        "description": "Der Home Assistant Recorder wird nach historischen Fahrzeugdaten abgefragt. Dies kann einige Sekunden dauern."
+      },
+      "finish_setup": {
+        "title": "Einrichtung abgeschlossen",
+        "description": "{import_summary}",
+        "data": {},
+        "data_description": {}
       }
     },
     "error": {
