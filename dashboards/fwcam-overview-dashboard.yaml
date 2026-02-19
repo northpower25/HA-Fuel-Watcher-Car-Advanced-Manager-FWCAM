@@ -1,0 +1,290 @@
+# FWCAM Overview Dashboard
+# 
+# This dashboard provides a comprehensive overview of all vehicles managed by the
+# Fuel Watcher Car Advanced Manager integration.
+#
+# INSTALLATION INSTRUCTIONS:
+# 1. Copy this entire YAML content
+# 2. In Home Assistant, go to Settings -> Dashboards
+# 3. Click "+ ADD DASHBOARD" button
+# 4. Choose "New dashboard from scratch"
+# 5. Give it a title (e.g., "Fuel Watcher Overview")
+# 6. After creation, click the three dots menu -> "Edit Dashboard"
+# 7. Click the three dots menu again -> "Raw configuration editor"
+# 8. Paste this YAML content and save
+#
+# CUSTOMIZATION:
+# - Replace [YOUR_CAR_NAME] with your actual vehicle entity names
+# - Add more vehicles by duplicating the vehicle sections
+# - Adjust entity IDs to match your setup
+# - Customize colors, icons, and layout as desired
+
+title: Fuel Watcher Overview
+icon: mdi:car-multiple
+views:
+  - title: Overview
+    path: overview
+    icon: mdi:view-dashboard
+    badges: []
+    cards:
+      # Welcome Header Card
+      - type: markdown
+        content: |
+          # 🚗 Fuel Watcher Car Advanced Manager
+          
+          Willkommen im FWCAM Dashboard! Hier finden Sie eine Übersicht aller Ihrer Fahrzeuge.
+          
+          Welcome to the FWCAM Dashboard! Here you'll find an overview of all your vehicles.
+          
+          ---
+          
+          **Schnellzugriff / Quick Access:**
+          - 📊 Fahrzeugübersicht / Vehicle Overview below
+          - ⛽ Tankprotokoll / Refueling Log in vehicle tabs
+          - 🗺️ Fahrtenbuch / Trip Log in vehicle tabs
+          - ⚙️ Einstellungen / Settings at the bottom
+
+      # Vehicle 1 Section
+      # Replace [YOUR_CAR_NAME] with your actual vehicle name (e.g., "my_car", "vw_golf")
+      - type: vertical-stack
+        title: Vehicle 1
+        cards:
+          # Vehicle Info Card
+          - type: horizontal-stack
+            cards:
+              - type: entity
+                entity: sensor.YOUR_CAR_NAME_fuel_price
+                name: Current Fuel Price
+                icon: mdi:gas-station
+              - type: entity
+                entity: sensor.YOUR_CAR_NAME_tank_level
+                name: Tank Level
+                icon: mdi:gauge
+              - type: entity
+                entity: sensor.YOUR_CAR_NAME_range
+                name: Range
+                icon: mdi:map-marker-distance
+          
+          # Gauges
+          - type: horizontal-stack
+            cards:
+              - type: gauge
+                entity: sensor.YOUR_CAR_NAME_tank_level
+                name: Tank Level
+                unit: '%'
+                min: 0
+                max: 100
+                severity:
+                  green: 50
+                  yellow: 25
+                  red: 0
+                needle: true
+              - type: gauge
+                entity: sensor.YOUR_CAR_NAME_consumption_prediction
+                name: Consumption
+                unit: L/100km
+                min: 0
+                max: 15
+                needle: true
+          
+          # Recommendation Card
+          - type: markdown
+            content: |
+              {% set price = states('sensor.YOUR_CAR_NAME_fuel_price') %}
+              {% set tank = states('sensor.YOUR_CAR_NAME_tank_level') | float(0) %}
+              {% set range_km = states('sensor.YOUR_CAR_NAME_range') | float(0) %}
+              {% set station = state_attr('sensor.YOUR_CAR_NAME_fuel_price', 'station_name') %}
+              {% set distance = state_attr('sensor.YOUR_CAR_NAME_fuel_price', 'distance') %}
+              {% set recommendation = state_attr('sensor.YOUR_CAR_NAME_fuel_price', 'recommendation') %}
+              {% set urgency = state_attr('sensor.YOUR_CAR_NAME_fuel_price', 'urgency') %}
+              
+              ### 💡 Refueling Recommendation
+              
+              {% if urgency == 'critical' %}
+              🔴 **CRITICAL**: {{ recommendation | default('Refuel immediately!') }}
+              {% elif urgency == 'high' %}
+              🟠 **HIGH**: {{ recommendation | default('Consider refueling soon.') }}
+              {% elif urgency == 'medium' %}
+              🟡 **MEDIUM**: {{ recommendation | default('Refuel when convenient.') }}
+              {% else %}
+              🟢 **LOW**: {{ recommendation | default('No immediate action needed.') }}
+              {% endif %}
+              
+              **Current Tank**: {{ tank | round(1) }}% ({{ range_km | round(0) }} km range)
+              
+              **Best Price**: {{ price }}€/L at {{ station }}
+              
+              **Distance**: {{ distance }} km away
+          
+          # Nearby Stations
+          - type: entities
+            title: 🔍 Nearby Cheap Stations
+            entities:
+              - entity: sensor.YOUR_CAR_NAME_nearby_cheap_stations
+                type: attribute
+                attribute: stations
+                name: Stations List
+          
+          # Current Trip (if active)
+          - type: conditional
+            conditions:
+              - entity: binary_sensor.YOUR_CAR_NAME_on_trip
+                state: "on"
+            card:
+              type: entities
+              title: 🚗 Current Trip
+              entities:
+                - entity: sensor.YOUR_CAR_NAME_current_trip
+                  name: Trip Status
+                - entity: binary_sensor.YOUR_CAR_NAME_on_trip
+                  name: On Trip
+
+      # Add more vehicle sections here by copying the above vertical-stack
+      # Vehicle 2 Section (Template)
+      # - type: vertical-stack
+      #   title: Vehicle 2
+      #   cards:
+      #     ... (copy vehicle 1 cards and replace entity IDs)
+
+      # Statistics Summary Card
+      - type: markdown
+        content: |
+          ---
+          ## 📊 Overall Statistics
+          
+          Hier können Sie Gesamtstatistiken über alle Fahrzeuge sehen.
+          
+          Here you can see overall statistics across all vehicles.
+
+  # Fuel Prices Comparison View
+  - title: Fuel Prices
+    path: fuel-prices
+    icon: mdi:gas-station
+    badges: []
+    cards:
+      - type: markdown
+        content: |
+          # ⛽ Fuel Price Comparison
+          
+          Compare fuel prices across all your vehicles and stations.
+      
+      # Add price history graph
+      - type: history-graph
+        title: Fuel Price History
+        hours_to_show: 168
+        refresh_interval: 0
+        entities:
+          - entity: sensor.YOUR_CAR_NAME_fuel_price
+            name: Vehicle 1
+      
+      # Nearby stations for each vehicle
+      - type: entities
+        title: All Nearby Cheap Stations
+        entities:
+          - entity: sensor.YOUR_CAR_NAME_nearby_cheap_stations
+            name: Vehicle 1 Stations
+
+  # Trip Log View
+  - title: Trip Logs
+    path: trips
+    icon: mdi:map-marker-path
+    badges: []
+    cards:
+      - type: markdown
+        content: |
+          # 🗺️ Trip Logs
+          
+          View and manage trips for all vehicles.
+          
+          For detailed trip management, please visit the individual vehicle tabs.
+      
+      # Trip statistics
+      - type: entities
+        title: Trip Statistics
+        entities:
+          - entity: sensor.YOUR_CAR_NAME_trip_log
+            name: Vehicle 1 Trips
+          - entity: binary_sensor.YOUR_CAR_NAME_on_trip
+            name: Currently on Trip
+
+  # Settings View
+  - title: Settings
+    path: settings
+    icon: mdi:cog
+    badges: []
+    cards:
+      - type: markdown
+        content: |
+          # ⚙️ Integration Settings
+          
+          Configure your FWCAM integration settings here.
+      
+      # Vehicle 1 Settings
+      - type: entities
+        title: Vehicle 1 Settings
+        entities:
+          - entity: number.YOUR_CAR_NAME_api_update_interval
+            name: API Update Interval
+          - entity: number.YOUR_CAR_NAME_cheap_stations_radius
+            name: Search Radius
+          - entity: number.YOUR_CAR_NAME_cheap_stations_count
+            name: Stations Count
+          - entity: number.YOUR_CAR_NAME_proximity_alert_distance
+            name: Alert Distance
+          - entity: number.YOUR_CAR_NAME_min_tank_level_for_alerts
+            name: Min Tank for Alerts
+          - entity: number.YOUR_CAR_NAME_consumption_min_data_points
+            name: Min Data Points
+          - entity: number.YOUR_CAR_NAME_consumption_prediction_interval
+            name: Prediction Interval
+          - entity: switch.YOUR_CAR_NAME_proximity_alerts
+            name: Proximity Alerts
+          - entity: switch.YOUR_CAR_NAME_trip_tracking
+            name: Trip Tracking
+
+      # Control Buttons
+      - type: entities
+        title: Control Actions
+        entities:
+          - entity: button.YOUR_CAR_NAME_fuel_price_refresh
+            name: Refresh Fuel Prices
+          - entity: button.YOUR_CAR_NAME_consumption_prediction
+            name: Update Consumption Prediction
+          - entity: button.YOUR_CAR_NAME_refresh_vehicle_data
+            name: Refresh Vehicle Data
+          - entity: button.YOUR_CAR_NAME_test_api_connection
+            name: Test API Connection
+
+  # Debug View
+  - title: Debug
+    path: debug
+    icon: mdi:bug
+    badges: []
+    cards:
+      - type: markdown
+        content: |
+          # 🐛 Debug Information
+          
+          Technical details and debug information for troubleshooting.
+      
+      # Debug sensors
+      - type: entities
+        title: Vehicle 1 Debug Info
+        entities:
+          - entity: sensor.YOUR_CAR_NAME_fuel_price_api_debug
+            name: API Debug
+          - entity: sensor.YOUR_CAR_NAME_car_data_debug
+            name: Car Data Debug
+      
+      # Export and maintenance
+      - type: entities
+        title: Data Management
+        entities:
+          - entity: button.YOUR_CAR_NAME_export_vehicle_data
+            name: Export Vehicle Data
+          - entity: button.YOUR_CAR_NAME_import_historical_car_data
+            name: Import Historical Data
+          - entity: button.YOUR_CAR_NAME_validate_refueling_events
+            name: Validate Refueling Events
+          - entity: button.YOUR_CAR_NAME_recalculate_trip_statistics
+            name: Recalculate Trip Stats
