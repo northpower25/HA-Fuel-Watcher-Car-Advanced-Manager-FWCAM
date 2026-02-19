@@ -979,6 +979,22 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         tracking_result = {}
         odometer = None
         
+        # On first run, load last vehicle data from storage to ensure continuity after HA restart
+        if not self._first_successful_fetch and not self._cached_vehicle_data:
+            try:
+                from .utils.storage import get_last_vehicle_data
+                stored_vehicle_data = await get_last_vehicle_data(self.hass, self.config_entry)
+                if stored_vehicle_data:
+                    self._cached_vehicle_data = stored_vehicle_data.copy()
+                    _LOGGER.info(
+                        "Loaded last vehicle data from storage: odometer=%s, tank=%s, range=%s",
+                        stored_vehicle_data.get("odometer_km"),
+                        stored_vehicle_data.get("tank_level"),
+                        stored_vehicle_data.get("range_km")
+                    )
+            except Exception as err:
+                _LOGGER.warning("Failed to load last vehicle data from storage: %s", err)
+        
         try:
             # Check if vehicle entities are available (non-blocking)
             await self._check_vehicle_entities_available()
@@ -1002,10 +1018,31 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 if not self._first_successful_fetch:
                     _LOGGER.info("First successful vehicle data fetch completed")
                     self._first_successful_fetch = True
-            
-            # Cache the data (defensive check, vehicle_data is always a dict but may be empty)
-            if vehicle_data:
+                # Cache the data (defensive check, vehicle_data is always a dict but may be empty)
                 self._cached_vehicle_data = vehicle_data.copy()
+                
+                # Save to persistent storage for recovery after HA restart
+                try:
+                    from .utils.storage import save_last_vehicle_data
+                    await save_last_vehicle_data(self.hass, self.config_entry, vehicle_data)
+                except Exception as err:
+                    _LOGGER.warning("Failed to save vehicle data to storage: %s", err)
+            else:
+                # No live data available - use cached data if available to ensure continuity
+                # This is important after HA restart when entities haven't restored state yet
+                if self._cached_vehicle_data:
+                    _LOGGER.debug(
+                        "No live vehicle data available, using cached data from previous update. "
+                        "Cached data: odometer_km=%s, tank_level=%s, range_km=%s",
+                        self._cached_vehicle_data.get("odometer_km"),
+                        self._cached_vehicle_data.get("tank_level"),
+                        self._cached_vehicle_data.get("range_km")
+                    )
+                    # Use cached data but preserve the current vehicle_data dict structure
+                    # Only use cached values for None entries to avoid overwriting fresh data
+                    for key, cached_value in self._cached_vehicle_data.items():
+                        if vehicle_data.get(key) is None and cached_value is not None:
+                            vehicle_data[key] = cached_value
             
             _LOGGER.debug("Vehicle data: %s", vehicle_data)
             
