@@ -2441,7 +2441,6 @@ class TankLevelSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing current tank level."""
 
     _attr_native_unit_of_measurement = "%"
-    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:gas-station"
     _attr_has_entity_name = True
 

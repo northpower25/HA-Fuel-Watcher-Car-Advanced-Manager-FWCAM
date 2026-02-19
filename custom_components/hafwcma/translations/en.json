@@ -47,6 +47,18 @@
           "position_entity": "Device tracker for vehicle location"
         }
       },
+      "vehicle_features": {
+        "title": "Configure Vehicle Features",
+        "description": "{trip_tracking_info}",
+        "data": {
+          "proximity_alerts_enabled": "Enable Proximity Alerts for cheap fuel stations",
+          "trip_tracking_initial_enabled": "Enable Trip Tracking (Fahrtenbuch)"
+        },
+        "data_description": {
+          "proximity_alerts_enabled": "Receive alerts when a cheap fuel station is nearby",
+          "trip_tracking_initial_enabled": "Automatically log every trip for mileage tracking and analysis"
+        }
+      },
       "telegram": {
         "title": "Configure Telegram Notifications (Optional)",
         "description": "{telegram_info}",
@@ -100,6 +112,16 @@
         "description": "Testing Telegram connection...\n\n{message}\n\n{error_details}",
         "data": {},
         "data_description": {}
+      },
+      "historical_import": {
+        "title": "Import Historical Vehicle Data",
+        "description": "{import_info}",
+        "data": {
+          "import_historical_data": "Import historical vehicle data now"
+        },
+        "data_description": {
+          "import_historical_data": "Import up to 90 days of historical data from Home Assistant's recorder to enable immediate consumption statistics and predictions"
+        }
       }
     },
     "error": {

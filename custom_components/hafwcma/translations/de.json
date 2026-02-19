@@ -47,6 +47,18 @@
           "position_entity": "Geräte-Tracker für Fahrzeugposition"
         }
       },
+      "vehicle_features": {
+        "title": "Fahrzeugfunktionen konfigurieren",
+        "description": "{trip_tracking_info}",
+        "data": {
+          "proximity_alerts_enabled": "Näherungswarnungen für günstige Tankstellen aktivieren",
+          "trip_tracking_initial_enabled": "Fahrtenbuch (Trip Tracking) aktivieren"
+        },
+        "data_description": {
+          "proximity_alerts_enabled": "Benachrichtigung wenn eine günstige Tankstelle in der Nähe ist",
+          "trip_tracking_initial_enabled": "Jede Fahrt automatisch für Kilometerstandsverfolgung und Analyse aufzeichnen"
+        }
+      },
       "telegram": {
         "title": "Telegram-Benachrichtigungen konfigurieren (Optional)",
         "description": "{telegram_info}\n\nFür detaillierte Anweisungen besuchen Sie: https://core.telegram.org/bots#6-botfather",
@@ -100,6 +112,16 @@
         "description": "Teste Telegram-Verbindung...\n\n{message}\n\n{error_details}",
         "data": {},
         "data_description": {}
+      },
+      "historical_import": {
+        "title": "Historische Fahrzeugdaten importieren",
+        "description": "{import_info}",
+        "data": {
+          "import_historical_data": "Historische Fahrzeugdaten jetzt importieren"
+        },
+        "data_description": {
+          "import_historical_data": "Bis zu 90 Tage historische Daten aus dem Home Assistant Recorder importieren, um sofort Verbrauchsstatistiken und Vorhersagen zu ermöglichen"
+        }
       }
     },
     "error": {

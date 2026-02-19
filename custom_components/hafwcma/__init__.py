@@ -1005,7 +1005,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     # Setup options update listener - use update handler instead of reload
     entry.async_on_unload(entry.add_update_listener(async_update_options))
-    
+
+    # Apply initial feature settings from config flow (first-time setup)
+    async def _apply_initial_settings_when_ready(event):
+        """Apply initial feature settings after HA is fully started."""
+        await _apply_initial_feature_settings(hass, entry)
+
+    hass.bus.async_listen_once("homeassistant_started", _apply_initial_settings_when_ready)
+
     # Import historical data after HA is fully started (non-blocking)
     # Use homeassistant_started event to ensure all dependencies are available
     async def _start_import_when_ready(event):
@@ -1015,6 +1022,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.bus.async_listen_once("homeassistant_started", _start_import_when_ready)
     
     return True
+
+
+async def _apply_initial_feature_settings(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> None:
+    """Apply initial feature settings from config flow to storage.
+
+    This runs once after first-time setup to apply trip_tracking_initial_enabled
+    setting from the config entry data to the persistent storage.
+
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+    """
+    from .const import CONF_TRIP_TRACKING_INITIAL_ENABLED
+    from .utils import storage
+
+    trip_tracking_initial = entry.data.get(CONF_TRIP_TRACKING_INITIAL_ENABLED, False)
+    if not trip_tracking_initial:
+        return
+
+    try:
+        data = await storage.load_data(hass, entry)
+        trip_config = data.get("trip_tracking_config", {})
+
+        # Only apply initial setting if trip tracking hasn't been explicitly configured yet
+        if trip_config.get("enabled") is None or not trip_config.get("privacy_notice_accepted"):
+            from homeassistant.util import dt as dt_util
+            trip_config["enabled"] = True
+            trip_config["privacy_notice_accepted"] = True
+            trip_config["privacy_notice_accepted_at"] = dt_util.now().isoformat()
+            trip_config["last_enabled_at"] = dt_util.now().isoformat()
+            data["trip_tracking_config"] = trip_config
+            await storage.save_data(hass, entry, data)
+            _LOGGER.info("Applied initial trip tracking setting: enabled=True")
+    except Exception as err:
+        _LOGGER.error("Error applying initial feature settings: %s", err)
 
 
 async def _import_historical_data_background(
@@ -1034,9 +1079,18 @@ async def _import_historical_data_background(
         entry: Config entry
     """
     try:
+        from .const import CONF_IMPORT_HISTORICAL_DATA
         from .utils.historical_data_import import import_historical_vehicle_data, import_historical_trip_data
         from .utils import storage
         from .utils.geocoding import rebuild_cache_from_trips
+
+        # Check if the user opted out of historical import during setup
+        import_requested = entry.data.get(CONF_IMPORT_HISTORICAL_DATA, True)
+        if not import_requested:
+            _LOGGER.info(
+                "Historical data import skipped: user opted out during setup"
+            )
+            return
         
         _LOGGER.info("Starting background historical data import")
         
@@ -1061,7 +1115,8 @@ async def _import_historical_data_background(
         data = await storage.load_data(hass, entry)
         trip_config = data.get("trip_tracking_config", {})
         trip_tracking_enabled = trip_config.get("enabled", False)
-        
+
+        trip_result = None
         if trip_tracking_enabled:
             _LOGGER.info("Trip tracking is enabled, importing historical trip data")
             trip_result = await import_historical_trip_data(
@@ -1086,6 +1141,36 @@ async def _import_historical_data_background(
         _LOGGER.info("Rebuilding geocoding cache from existing trip data")
         cache_count = await rebuild_cache_from_trips(hass, entry)
         _LOGGER.info("Geocoding cache rebuilt with %d entries", cache_count)
+
+        # Send persistent notification with import results
+        vehicle_name = entry.data.get("vehicle_name", "Vehicle")
+        odometer_pts = result.get("odometer_points_imported", 0)
+        refuel_events = result.get("refuel_events_detected", 0)
+        trip_events = trip_result.get("trips_detected", 0) if trip_result and trip_result.get("imported") else 0
+
+        if result["imported"]:
+            message_lines = [
+                f"✅ **Historical data import complete** for {vehicle_name}\n",
+                f"**Vehicle data records imported:** {odometer_pts}",
+                f"**Refueling events detected:** {refuel_events}",
+            ]
+            if trip_tracking_enabled:
+                message_lines.append(f"**Trip events detected:** {trip_events}")
+            message_lines.append(
+                "\n📊 All data is now available in the haFWCMA dashboard timeline."
+            )
+        else:
+            message_lines = [
+                f"ℹ️ **Historical data import** for {vehicle_name}\n",
+                f"No new data was imported: {result.get('reason', 'Unknown reason')}",
+                "\n💡 Data will accumulate automatically as you drive.",
+            ]
+
+        hass.components.persistent_notification.async_create(
+            "\n".join(message_lines),
+            title=f"haFWCMA – {vehicle_name} Setup Complete",
+            notification_id=f"hafwcma_import_complete_{entry.entry_id}",
+        )
             
     except Exception as err:
         _LOGGER.error("Error during background historical data import: %s", err, exc_info=True)

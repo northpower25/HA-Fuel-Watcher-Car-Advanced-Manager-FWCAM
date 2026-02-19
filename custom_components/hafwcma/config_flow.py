@@ -29,18 +29,21 @@ from .const import (
     CONF_FALLBACK_DAILY_KM_SATURDAY,
     CONF_FALLBACK_DAILY_KM_SUNDAY,
     CONF_FUEL_TYPE,
+    CONF_IMPORT_HISTORICAL_DATA,
     CONF_LOW_FUEL_THRESHOLD,
     CONF_ODOMETER_ENTITY,
     CONF_POSITION_ENTITY,
     CONF_PRICE_DROP_ABSOLUTE_THRESHOLD,
     CONF_PRICE_DROP_PERCENT_THRESHOLD,
     CONF_PROVIDER,
+    CONF_PROXIMITY_ALERTS_ENABLED,
     CONF_RANGE_ENTITY,
     CONF_TANK_CAPACITY,
     CONF_TANK_LEVEL_ENTITY,
     CONF_TELEGRAM_CHAT_ID,
     CONF_TELEGRAM_METHOD,
     CONF_TELEGRAM_TOKEN,
+    CONF_TRIP_TRACKING_INITIAL_ENABLED,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLE_NAME,
     DEFAULT_CHEAP_STATIONS_RADIUS,
@@ -49,6 +52,7 @@ from .const import (
     DEFAULT_LOW_FUEL_THRESHOLD,
     DEFAULT_PRICE_DROP_ABSOLUTE,
     DEFAULT_PRICE_DROP_PERCENT,
+    DEFAULT_PROXIMITY_ALERTS_ENABLED,
     DEFAULT_TANK_CAPACITY,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
@@ -499,7 +503,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             
             if not errors:
                 self.data.update(user_input)
-                return await self.async_step_telegram()
+                return await self.async_step_vehicle_features()
 
         # Use entity selector for easy selection
         data_schema = vol.Schema(
@@ -536,6 +540,126 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=data_schema,
             errors=errors,
         )
+
+    async def async_step_vehicle_features(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle vehicle features configuration step.
+
+        Asks the user whether to enable proximity alerts and trip tracking.
+
+        Args:
+            user_input: User provided feature toggles
+
+        Returns:
+            Form to display or next step
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            self.data.update(user_input)
+            return await self.async_step_telegram()
+
+        trip_tracking_info = (
+            "Enable Trip Tracking to automatically log every trip.\n"
+            "⚠️ Note: Trip tracking stores location and movement data. "
+            "Please review your privacy requirements before enabling."
+        )
+
+        data_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_PROXIMITY_ALERTS_ENABLED,
+                    default=DEFAULT_PROXIMITY_ALERTS_ENABLED,
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_TRIP_TRACKING_INITIAL_ENABLED,
+                    default=False,
+                ): selector.BooleanSelector(),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="vehicle_features",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={
+                "trip_tracking_info": trip_tracking_info,
+            },
+        )
+
+    async def async_step_historical_import(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle historical data import configuration step.
+
+        Asks the user whether to import historical vehicle data from HA's recorder.
+
+        Args:
+            user_input: User provided import preference
+
+        Returns:
+            Form to display or entry creation result
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            self.data.update(user_input)
+
+            # Automatically add latitude and longitude from Home Assistant configuration
+            self.data[CONF_LATITUDE] = self.hass.config.latitude
+            self.data[CONF_LONGITUDE] = self.hass.config.longitude
+
+            # Create the config entry
+            return self.async_create_entry(
+                title=f"haFWCMA - {self.data.get(CONF_VEHICLE_NAME, 'Vehicle')}",
+                data=self.data,
+            )
+
+        trip_tracking_enabled = self.data.get(CONF_TRIP_TRACKING_INITIAL_ENABLED, False)
+
+        if trip_tracking_enabled:
+            import_info = (
+                "⚡ Import historical vehicle data from Home Assistant's recorder.\n\n"
+                "This will import up to 90 days of:\n"
+                "• Odometer readings\n"
+                "• Tank fill level history\n"
+                "• Refueling events\n"
+                "• Trip history (trip tracking is enabled)\n\n"
+                "💡 Without historical data it may take several days before valid consumption "
+                "statistics and predictions appear in the dashboard.\n\n"
+                "📊 Import results will be shown as a notification in Home Assistant once complete."
+            )
+        else:
+            import_info = (
+                "⚡ Import historical vehicle data from Home Assistant's recorder.\n\n"
+                "This will import up to 90 days of:\n"
+                "• Odometer readings\n"
+                "• Tank fill level history\n"
+                "• Refueling events\n\n"
+                "💡 Without historical data it may take several days before valid consumption "
+                "statistics and predictions appear in the dashboard.\n\n"
+                "📊 Import results will be shown as a notification in Home Assistant once complete."
+            )
+
+        data_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_IMPORT_HISTORICAL_DATA,
+                    default=True,
+                ): selector.BooleanSelector(),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="historical_import",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={
+                "import_info": import_info,
+            },
+        )
+
 
     async def async_step_telegram(
         self, user_input: dict[str, Any] | None = None
@@ -740,17 +864,9 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # Merge all data
             self.data.update(user_input)
-            
-            # Automatically add latitude and longitude from Home Assistant configuration
-            # These will be 0.0 if not configured in Home Assistant
-            self.data[CONF_LATITUDE] = self.hass.config.latitude
-            self.data[CONF_LONGITUDE] = self.hass.config.longitude
-            
-            # Create the config entry
-            return self.async_create_entry(
-                title=f"haFWCMA - {self.data.get(CONF_VEHICLE_NAME, 'Vehicle')}",
-                data=self.data,
-            )
+
+            # Continue to historical import configuration
+            return await self.async_step_historical_import()
 
         data_schema = vol.Schema(
             {
