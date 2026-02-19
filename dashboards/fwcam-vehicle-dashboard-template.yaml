@@ -31,7 +31,7 @@
 # - Add custom cards for additional functionality
 # - Change colors and icons as desired
 
-title: [YOUR VEHICLE NAME] Dashboard
+title: "YOUR VEHICLE NAME Dashboard"
 icon: mdi:car
 views:
   # Main Overview View
