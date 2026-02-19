@@ -714,7 +714,9 @@ def detect_missed_refuelings_from_history(
                         "longitude": None,  # Not available from tank level history
                         "fuel_type": None,  # Will use default from config
                         "data_quality": "recovered_from_tank_history",
-                        "confidence": RECOVERED_REFUELING_CONFIDENCE,  # Medium confidence
+                        # Medium confidence: based on tank level increase pattern without direct refueling event confirmation
+                        # Lower than real-time detection due to missing context (location, station, exact time)
+                        "confidence": RECOVERED_REFUELING_CONFIDENCE,
                         "excluded_from_calculation": False,
                     }
                     

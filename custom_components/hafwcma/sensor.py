@@ -1060,15 +1060,16 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 await storage.save_data(self.hass, self.config_entry, data)
             
             # Store tank level history if available (for missed refueling detection)
+            # Record tank level even without odometer - odometer is only supplementary info
             tank_level = vehicle_data.get("tank_level")
-            if tank_level is not None and odometer is not None:
+            if tank_level is not None:
                 from homeassistant.util import dt as dt_util
                 timestamp = dt_util.now().isoformat()
                 await storage.add_tank_level_observation(
                     self.hass,
                     self.config_entry,
                     tank_level,
-                    odometer,
+                    odometer,  # May be None, which is acceptable
                     timestamp,
                 )
         except Exception as err:
