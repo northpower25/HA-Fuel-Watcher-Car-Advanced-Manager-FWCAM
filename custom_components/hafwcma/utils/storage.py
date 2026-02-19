@@ -34,6 +34,9 @@ STORAGE_KEY_TEMPLATE = f"{DOMAIN}_{{entry_id}}"
 # Odometer observation thresholds
 ODOMETER_CHANGE_THRESHOLD_KM = 0.1  # Minimum change to record new observation
 
+# Tank level observation thresholds
+TANK_LEVEL_CHANGE_THRESHOLD_L = 0.5  # Minimum change in liters to record new observation
+
 # Consumption calculation validation thresholds
 DUPLICATE_EVENT_THRESHOLD_SECONDS = 60  # Time gap to warn about possible duplicates
 MAX_REASONABLE_DISTANCE_KM = 2000  # Max km between refuelings before warning
@@ -77,6 +80,7 @@ async def load_data(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
             "version": STORAGE_VERSION,
             "price_history": [],  # List of {ts: str, price: float}
             "odometer_history": [],  # List of {ts: str, value: float}
+            "tank_level_history": [],  # List of {ts: str, value: float, odometer_km: float}
             "weekday_consumption": {},  # {weekday: {km: float, count: int}}
             "tank_history": [],  # List of refueling events
             "last_price": None,  # float
@@ -275,6 +279,75 @@ async def get_odometer_history(
     """
     data = await load_data(hass, entry)
     return data.get("odometer_history", [])
+
+
+async def add_tank_level_observation(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    tank_level_liters: float,
+    odometer_km: float | None,
+    timestamp: str,
+) -> None:
+    """Add a tank level observation to history.
+    
+    Only adds the observation if the tank level has changed significantly from the last recorded value.
+    This prevents duplicate entries and tracks tank level changes for missed refueling detection.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        tank_level_liters: Tank level in liters
+        odometer_km: Current odometer reading in kilometers (optional)
+        timestamp: ISO format timestamp
+    """
+    data = await load_data(hass, entry)
+    
+    # Initialize tank_level_history if not present (for existing installations)
+    if "tank_level_history" not in data:
+        data["tank_level_history"] = []
+    
+    # Check if this is a duplicate of the last tank level value
+    # Only record significant changes to avoid inflated statistics
+    if data["tank_level_history"]:
+        last_entry = data["tank_level_history"][-1]
+        last_value = last_entry.get("value")
+        
+        # Skip if value hasn't changed significantly (within threshold)
+        if last_value is not None and abs(float(last_value) - float(tank_level_liters)) < TANK_LEVEL_CHANGE_THRESHOLD_L:
+            _LOGGER.debug(
+                "Skipping tank level observation: %.1f L (changed by less than %.1f L from last value of %.1f L)",
+                tank_level_liters, TANK_LEVEL_CHANGE_THRESHOLD_L, last_value
+            )
+            return
+    
+    data["tank_level_history"].append({
+        "ts": timestamp,
+        "value": tank_level_liters,
+        "odometer_km": odometer_km,
+    })
+    
+    # Keep only last 1000 entries
+    if len(data["tank_level_history"]) > 1000:
+        data["tank_level_history"] = data["tank_level_history"][-1000:]
+    
+    await save_data(hass, entry, data)
+
+
+async def get_tank_level_history(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> list[dict[str, Any]]:
+    """Get tank level history.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        List of tank level observations with timestamps
+    """
+    data = await load_data(hass, entry)
+    return data.get("tank_level_history", [])
 
 
 # ---------------------------------------------------------------------------

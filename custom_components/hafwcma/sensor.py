@@ -827,6 +827,119 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.warning("Error checking for missed trips: %s", err)
 
+    async def _check_for_missed_refuelings(self) -> None:
+        """Periodically check for missed refuelings in tank level history.
+        
+        This method checks for refueling events that may have been missed due to gaps in tracking.
+        It's called periodically during updates to catch refuelings that weren't detected in real-time.
+        The check runs at most once per hour to avoid excessive processing.
+        """
+        from homeassistant.util import dt as dt_util
+        
+        # Only check if we have vehicle tracking enabled (tank level history available)
+        # Check at most once per hour to avoid excessive processing
+        now = dt_util.now()
+        if self._last_missed_trip_check is not None:  # Reuse the same check timer
+            time_since_last_check = (now - self._last_missed_trip_check).total_seconds() / 3600  # hours
+            if time_since_last_check < 1.0:
+                _LOGGER.debug("Skipping missed refueling check - last check was %.1f minutes ago", time_since_last_check * 60)
+                return
+        
+        try:
+            _LOGGER.debug("Checking for missed refuelings in tank level history")
+            
+            # Load data
+            data = await storage.load_data(self.hass, self.config_entry)
+            
+            # Get tank level history
+            tank_level_history = data.get("tank_level_history", [])
+            
+            if not tank_level_history or len(tank_level_history) < 2:
+                _LOGGER.debug("Not enough tank level history for missed refueling detection")
+                return
+            
+            # Get existing refueling events
+            refueling_log = data.get("refueling_log", [])
+            
+            # Build set of existing refueling timestamps
+            existing_timestamps = set()
+            for refuel in refueling_log:
+                if refuel.get("timestamp"):
+                    try:
+                        ts = dt_util.parse_datetime(refuel["timestamp"])
+                        if ts:
+                            if ts.tzinfo is None:
+                                ts = dt_util.as_local(ts)
+                            existing_timestamps.add(ts)
+                    except Exception as err:
+                        _LOGGER.debug(
+                            "Failed to parse refueling timestamp '%s': %s",
+                            refuel.get("timestamp"),
+                            err,
+                        )
+            
+            # Get tank capacity from config
+            options = self.config_entry.options
+            config = self.config_entry.data
+            tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
+            
+            # Detect missed refuelings from recent history
+            from .utils.vehicle_tracker import detect_missed_refuelings_from_history
+            lookback_hours = 24  # Look back 24 hours for missed refuelings
+            
+            missed_refuelings = detect_missed_refuelings_from_history(
+                tank_level_history=tank_level_history,
+                existing_refuel_timestamps=existing_timestamps,
+                tank_capacity=tank_capacity,
+                min_refuel_threshold_percent=3.5,  # Same as VehicleDataTracker
+                lookback_hours=lookback_hours,
+            )
+            
+            if missed_refuelings:
+                _LOGGER.info(
+                    "Found %d missed refueling(s) in tank level history - recovering",
+                    len(missed_refuelings),
+                )
+                
+                # Get default fuel type from config
+                fuel_type = options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5")
+                
+                for refuel_event in missed_refuelings:
+                    try:
+                        # Set fuel type from config if not set
+                        if not refuel_event.get("fuel_type"):
+                            refuel_event["fuel_type"] = fuel_type
+                        
+                        # Add note about recovery
+                        refuel_event["notes"] = "Auto-recovered from tank level history during periodic check"
+                        
+                        # Store refueling event
+                        refuel_id = await storage.add_refuel_event(
+                            self.hass,
+                            self.config_entry,
+                            refuel_event,
+                        )
+                        
+                        _LOGGER.info(
+                            "Recovered refueling event #%d: %.1f L at %s (odometer: %s km)",
+                            refuel_id,
+                            refuel_event.get("liters_refueled", 0),
+                            refuel_event.get("timestamp", "unknown"),
+                            f"{refuel_event.get('odometer_km'):.1f}" if refuel_event.get("odometer_km") else "unknown",
+                        )
+                    except Exception as err:
+                        _LOGGER.warning("Error saving recovered refueling: %s", err)
+                
+                _LOGGER.info(
+                    "Saved %d recovered refueling(s) to storage. Will be reflected in current update cycle.",
+                    len(missed_refuelings)
+                )
+            else:
+                _LOGGER.debug("No missed refuelings found in tank level history")
+            
+        except Exception as err:
+            _LOGGER.warning("Error checking for missed refuelings: %s", err)
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
         
@@ -943,6 +1056,19 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     "type": "automatic",
                 }
                 await storage.save_data(self.hass, self.config_entry, data)
+            
+            # Store tank level history if available (for missed refueling detection)
+            tank_level = vehicle_data.get("tank_level")
+            if tank_level is not None and odometer is not None:
+                from homeassistant.util import dt as dt_util
+                timestamp = dt_util.now().isoformat()
+                await storage.add_tank_level_observation(
+                    self.hass,
+                    self.config_entry,
+                    tank_level,
+                    odometer,
+                    timestamp,
+                )
         except Exception as err:
             _LOGGER.warning("Error fetching vehicle data: %s", err)
             # Continue with empty vehicle data
@@ -1633,6 +1759,13 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             await self._check_for_missed_trips()
         except Exception as err:
             _LOGGER.warning("Error in periodic missed trip check: %s", err)
+        
+        # Periodically check for missed refuelings in tank level history
+        # This catches refuelings that weren't detected in real-time due to gaps in tracking
+        try:
+            await self._check_for_missed_refuelings()
+        except Exception as err:
+            _LOGGER.warning("Error in periodic missed refueling check: %s", err)
         
         # Build data structure
         # Calculate tank_level_liters from vehicle data
