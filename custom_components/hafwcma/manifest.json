@@ -3,7 +3,7 @@
   "name": "Fuel Watcher Car Advanced Manager",
   "codeowners": ["@northpower25"],
   "config_flow": true,
-  "dependencies": ["recorder"],
+  "dependencies": ["frontend", "recorder"],
   "documentation": "https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM",
   "integration_type": "service",
   "iot_class": "cloud_polling",

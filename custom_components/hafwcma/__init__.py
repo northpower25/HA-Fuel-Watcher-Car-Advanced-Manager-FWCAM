@@ -39,6 +39,11 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.B
 CARD_FILENAME = "fwcam-card.js"
 CARD_VERSION = "1.0.0"  # Update this when the card changes
 
+# Dashboard panel configuration
+PANEL_FILENAME = "fwcam-dashboard-panel.js"
+PANEL_URL_PATH = "fuel-watcher"
+PANEL_ELEMENT_NAME = "fwcam-dashboard-panel"
+
 # Service schemas
 SERVICE_ADD_REFUEL_EVENT = "add_refuel_event"
 SERVICE_UPDATE_REFUEL_EVENT = "update_refuel_event"
@@ -233,6 +238,57 @@ async def _async_register_frontend_card(hass: HomeAssistant) -> None:
         )
 
 
+def _register_dashboard_panel(hass: HomeAssistant) -> None:
+    """Register the FWCAM dashboard as a sidebar panel (panel_custom).
+
+    This adds a "Fuel Watcher" entry to the Home Assistant sidebar that
+    opens the FWCAM dashboard panel.  The panel auto-discovers all
+    configured vehicles so no manual YAML copy-paste is required.
+
+    Note: frontend.async_register_panel is a @callback (synchronous) function
+    in Home Assistant – the async_ prefix indicates it is safe to call from
+    the event loop, not that it is a coroutine.
+
+    The static path for the panel JS is already served via the
+    /{DOMAIN}_local/ prefix registered by _async_register_frontend_card.
+
+    Args:
+        hass: Home Assistant instance
+    """
+    try:
+        from homeassistant.components import frontend
+
+        panel_url = f"/{DOMAIN}_local/{PANEL_FILENAME}?v={CARD_VERSION}"
+
+        frontend.async_register_panel(
+            hass,
+            component_name="custom",
+            sidebar_title="Fuel Watcher",
+            sidebar_icon="mdi:gas-station",
+            frontend_url_path=PANEL_URL_PATH,
+            config={
+                "name": PANEL_ELEMENT_NAME,
+                "module_url": panel_url,
+                "embed_iframe": False,
+                "trust_external": False,
+            },
+            require_admin=False,
+        )
+
+        _LOGGER.info(
+            "FWCAM dashboard panel registered at /%s (module: %s)",
+            PANEL_URL_PATH,
+            panel_url,
+        )
+
+    except Exception as err:
+        _LOGGER.error(
+            "Failed to register FWCAM dashboard panel: %s",
+            err,
+            exc_info=True,
+        )
+
+
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the haFWCMA component from YAML configuration.
     
@@ -248,6 +304,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     
     # Register the frontend card resource
     await _async_register_frontend_card(hass)
+    
+    # Register the dashboard as a sidebar panel (panel_custom)
+    _register_dashboard_panel(hass)
     
     # Register services
     async def handle_add_refuel_event(call: ServiceCall) -> None:
