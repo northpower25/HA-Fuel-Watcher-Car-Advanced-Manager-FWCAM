@@ -267,7 +267,7 @@ async def _register_dashboard_panel(hass: HomeAssistant) -> None:
             sidebar_icon="mdi:gas-station",
             module_url=panel_url,
             embed_iframe=False,
-            trust_external_script=False,
+            trust_external=False,
             require_admin=False,
         )
 
@@ -1166,7 +1166,9 @@ async def _import_historical_data_background(
                 "\n💡 Data will accumulate automatically as you drive.",
             ]
 
-        hass.components.persistent_notification.async_create(
+        from homeassistant.components import persistent_notification
+        persistent_notification.async_create(
+            hass,
             "\n".join(message_lines),
             title=f"haFWCMA – {vehicle_name} Setup Complete",
             notification_id=f"hafwcma_import_complete_{entry.entry_id}",
