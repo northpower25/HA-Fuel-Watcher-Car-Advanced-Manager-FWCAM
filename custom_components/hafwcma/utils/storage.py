@@ -1243,15 +1243,90 @@ async def calculate_consumption_history(
     )
     
     if len(relevant_events) < 2:
-        # Need at least 2 refueling events to calculate consumption
-        # But we can still calculate total cost from available events
+        # Need at least 2 refueling events for refueling-based consumption calculation.
+        # Fall back to trip data for the period when available.
+        trips_in_period = []
+        for trip in data.get("trips", []):
+            trip_end_str = trip.get("timestamp_end")
+            if not trip_end_str:
+                continue
+            try:
+                if isinstance(trip_end_str, str):
+                    trip_end = dt_util.parse_datetime(trip_end_str)
+                elif isinstance(trip_end_str, datetime):
+                    trip_end = trip_end_str
+                else:
+                    continue
+                if trip_end is None:
+                    continue
+                if trip_end.tzinfo is None:
+                    trip_end = dt_util.as_local(trip_end)
+                if trip_end >= cutoff:
+                    trips_in_period.append(trip)
+            except (ValueError, TypeError):
+                continue
+
+        if trips_in_period:
+            trip_total_km = sum(t.get("distance_km") or 0.0 for t in trips_in_period)
+            # Sum fuel_consumed only for trips where it was measured (not None)
+            trips_with_fuel = [t for t in trips_in_period if t.get("fuel_consumed") is not None]
+            trip_total_liters = sum(t.get("fuel_consumed") or 0.0 for t in trips_with_fuel)
+
+            # For trips missing fuel data, estimate using average rate from trips that have it
+            trips_without_fuel_km = sum(
+                t.get("distance_km") or 0.0
+                for t in trips_in_period
+                if t.get("fuel_consumed") is None
+            )
+            if trips_without_fuel_km > 0 and trips_with_fuel:
+                known_km = sum(t.get("distance_km") or 0.0 for t in trips_with_fuel)
+                if known_km > 0:
+                    estimated_rate = trip_total_liters / known_km  # L/km
+                    trip_total_liters += estimated_rate * trips_without_fuel_km
+
+            avg_consumption = (trip_total_liters / trip_total_km) * 100 if trip_total_km > 0 and trip_total_liters > 0 else None
+
+            # Cost from any refueling events in the period
+            total_cost = 0.0
+            for _event_time, event in relevant_events:
+                price_per_liter = event.get("price_per_liter")
+                liters_refueled = event.get("liters_refueled")
+                if price_per_liter is not None and liters_refueled is not None:
+                    total_cost += price_per_liter * liters_refueled
+
+            # If no refueling in period, estimate cost from last known price × consumed liters
+            if total_cost == 0.0 and trip_total_liters > 0:
+                sorted_log = sorted(
+                    [e for e in refueling_log if e.get("price_per_liter") is not None],
+                    key=lambda x: x.get("timestamp", ""),
+                    reverse=True,
+                )
+                last_price = sorted_log[0].get("price_per_liter") if sorted_log else None
+                if last_price is not None:
+                    total_cost = trip_total_liters * last_price
+
+            _LOGGER.debug(
+                "calculate_consumption_history(%d days): used trip data "
+                "(%d trips) total_km=%.1f total_liters=%.2f avg_consumption=%s",
+                days, len(trips_in_period), trip_total_km, trip_total_liters, avg_consumption
+            )
+
+            return {
+                "avg_consumption_l_per_100km": avg_consumption,
+                "total_liters": round(trip_total_liters, 2),
+                "total_km": round(trip_total_km, 2),
+                "refuel_count": len(relevant_events),
+                "total_cost": round(total_cost, 2) if total_cost > 0 else 0.0,
+            }
+
+        # No trip data available either - return cost from any refueling events in period
         total_cost = 0.0
-        for event_time, event in relevant_events:
+        for _event_time, event in relevant_events:
             price_per_liter = event.get("price_per_liter")
             liters_refueled = event.get("liters_refueled")
             if price_per_liter is not None and liters_refueled is not None:
                 total_cost += price_per_liter * liters_refueled
-        
+
         return {
             "avg_consumption_l_per_100km": None,
             "total_liters": 0,
