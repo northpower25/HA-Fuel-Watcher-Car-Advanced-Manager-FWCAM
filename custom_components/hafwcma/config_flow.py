@@ -725,9 +725,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             from homeassistant.util import dt as dt_util
             from datetime import timedelta
 
-            recorder_instance = await self.hass.async_add_executor_job(
-                get_instance, self.hass
-            )
+            recorder_instance = get_instance(self.hass)
             if not recorder_instance:
                 self._preflight_result = result
                 return
@@ -737,7 +735,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             start_time = end_time - timedelta(days=90)
 
             if odometer_entity:
-                odo_states = await self.hass.async_add_executor_job(
+                odo_states = await recorder_instance.async_add_executor_job(
                     history.get_significant_states,
                     self.hass,
                     start_time,
@@ -749,7 +747,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
             if tank_entity:
-                tank_states = await self.hass.async_add_executor_job(
+                tank_states = await recorder_instance.async_add_executor_job(
                     history.get_significant_states,
                     self.hass,
                     start_time,

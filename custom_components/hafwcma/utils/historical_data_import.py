@@ -216,7 +216,7 @@ async def import_historical_vehicle_data(
     
     # Check if recorder is available
     try:
-        recorder_instance = await hass.async_add_executor_job(get_instance, hass)
+        recorder_instance = get_instance(hass)
         if not recorder_instance:
             result["reason"] = "Recorder not available"
             result["errors"].append("Home Assistant recorder is not enabled")
