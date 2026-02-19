@@ -43,11 +43,17 @@ entity: sensor.my_car_refueling_log
 
 ## 🎨 NEW: Ready-to-Use Dashboard Templates
 
-**Get started instantly with pre-configured dashboard templates!**
+**Get started instantly – no configuration required!**
 
-We provide comprehensive Lovelace dashboard templates that work out-of-the-box:
+### ⭐ Option 1: Automatic Sidebar Panel (Recommended)
 
-### Dashboard Options:
+After installing and configuring FWCAM, a **"Fuel Watcher"** entry appears automatically in your Home Assistant sidebar – no YAML, no manual steps needed. The panel auto-discovers all configured vehicles and shows a full dashboard for each one.
+
+> **Note for existing users / after adding a new vehicle:** A Home Assistant restart is required after updating the integration or adding a new vehicle for the sidebar panel to appear. If it still does not appear after restarting, try restarting once more. If it is still missing, see Option 2 below.
+
+### Option 2: YAML Dashboard Templates (Advanced / Fallback)
+
+For users who want a dedicated Lovelace dashboard with a custom layout, or for existing users whose sidebar panel does not appear after restarting, we provide comprehensive ready-to-use YAML templates:
 
 1. **📊 Overview Dashboard** - Multi-vehicle dashboard with comparison views
    - All vehicles at a glance
@@ -61,12 +67,14 @@ We provide comprehensive Lovelace dashboard templates that work out-of-the-box:
    - Advanced statistics and analytics
    - Ideal for detailed vehicle tracking
 
-### Quick Installation (5 minutes):
+**Quick Installation (5 minutes):**
 
 1. Copy the YAML template from the `dashboards/` directory
 2. Create a new dashboard in Home Assistant (Settings → Dashboards)
 3. Paste the template and replace `YOUR_CAR_NAME` with your vehicle name
 4. Save and enjoy your new dashboard! 🎉
+
+> **Note:** A complete reinstallation of the integration is **not** required to use the manual YAML method. Existing users can follow the manual path while keeping all their data and configuration intact.
 
 📖 **[Dashboard Installation Guide](dashboards/DASHBOARD_INSTALLATION_GUIDE.md)** | 📁 **[Browse Templates](dashboards/)**
 
