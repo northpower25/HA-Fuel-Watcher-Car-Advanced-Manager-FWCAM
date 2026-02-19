@@ -91,6 +91,10 @@ FWCAM provides two ways to access its dashboard:
 The panel auto-discovers all your FWCAM vehicles and shows a tab for each one (if you have multiple vehicles). The full `fwcam-card` is embedded, giving you access to the refueling log, trip log, vehicle info, controls, and settings – all without any manual configuration.
 
 > **Note:** If the sidebar entry does not appear, restart Home Assistant once after completing the FWCAM setup.
+>
+> **Existing users (after updating the integration or adding a new vehicle):** If you updated FWCAM via HACS or added a new vehicle to an existing installation – without a full reinstallation of the integration – a Home Assistant restart is required for the sidebar panel to register. If the entry is still missing after restarting, try restarting once more.
+>
+> **If the sidebar entry still does not appear** after restarting: please use [Method 2 (Manual YAML Dashboard)](#method-2-manual-yaml-dashboard) as a fallback. A complete reinstallation of the integration is **not** required – the manual YAML method gives you full dashboard functionality without re-configuring anything.
 
 ---
 
