@@ -129,7 +129,7 @@
       },
       "finish_setup": {
         "title": "Setup Complete",
-        "description": "{import_summary}",
+        "description": "The import pre-check is complete. Here is what was found in Home Assistant's recorder:\n\n{import_summary}",
         "data": {},
         "data_description": {}
       }

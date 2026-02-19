@@ -129,7 +129,7 @@
       },
       "finish_setup": {
         "title": "Einrichtung abgeschlossen",
-        "description": "{import_summary}",
+        "description": "Die Import-Vorprüfung ist abgeschlossen. Folgendes wurde im Home Assistant Recorder gefunden:\n\n{import_summary}",
         "data": {},
         "data_description": {}
       }

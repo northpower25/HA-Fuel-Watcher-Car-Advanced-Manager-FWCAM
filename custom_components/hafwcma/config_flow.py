@@ -710,10 +710,6 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         Stores the result in ``self._preflight_result`` so that
         ``async_step_finish_setup`` can display a meaningful summary.
         """
-        from homeassistant.components.recorder import get_instance, history
-        from homeassistant.util import dt as dt_util
-        from datetime import timedelta
-
         result: dict[str, Any] = {
             "recorder_available": False,
             "odometer_points": 0,
@@ -725,6 +721,10 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         tank_entity = self.data.get(CONF_TANK_LEVEL_ENTITY, "")
 
         try:
+            from homeassistant.components.recorder import get_instance, history
+            from homeassistant.util import dt as dt_util
+            from datetime import timedelta
+
             recorder_instance = await self.hass.async_add_executor_job(
                 get_instance, self.hass
             )
