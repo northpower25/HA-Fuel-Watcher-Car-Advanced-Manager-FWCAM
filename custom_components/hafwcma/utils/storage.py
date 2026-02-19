@@ -95,6 +95,7 @@ async def load_data(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
             "ml_models": {},  # ML model parameters
             "prediction_history": [],  # List of prediction results for accuracy tracking
             "next_refuel_id": 1,  # Counter for refueling event IDs
+            "last_vehicle_data": None,  # dict with last successful vehicle data fetch
             "last_vehicle_data_refresh": None,  # {ts: str, type: "automatic"|"manual"}
             "last_historical_import": None,  # {ts: str, type: "automatic"|"manual"}
             # Trip Tracking
@@ -1861,3 +1862,60 @@ async def recalculate_trip_statistics(
     )
     
     return stats
+
+
+async def save_last_vehicle_data(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    vehicle_data: dict[str, Any],
+) -> None:
+    """Save the last successful vehicle data fetch to storage.
+    
+    This ensures vehicle data persists across HA restarts.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        vehicle_data: Dictionary with vehicle data (odometer_km, tank_level, range_km, etc.)
+    """
+    from homeassistant.util import dt as dt_util
+    
+    data = await load_data(hass, entry)
+    
+    # Store vehicle data with timestamp
+    data["last_vehicle_data"] = {
+        "data": vehicle_data.copy(),
+        "timestamp": dt_util.now().isoformat(),
+    }
+    
+    await save_data(hass, entry, data)
+    _LOGGER.debug("Saved last vehicle data to storage: %s", vehicle_data)
+
+
+async def get_last_vehicle_data(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> dict[str, Any] | None:
+    """Get the last successful vehicle data from storage.
+    
+    Used to restore vehicle data after HA restart when entities haven't loaded yet.
+    
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        
+    Returns:
+        Dictionary with vehicle data or None if not available
+    """
+    data = await load_data(hass, entry)
+    last_vehicle = data.get("last_vehicle_data")
+    
+    if last_vehicle:
+        _LOGGER.debug(
+            "Retrieved last vehicle data from storage (timestamp: %s): %s",
+            last_vehicle.get("timestamp"),
+            last_vehicle.get("data")
+        )
+        return last_vehicle.get("data")
+    
+    return None

@@ -979,6 +979,22 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         tracking_result = {}
         odometer = None
         
+        # On first run, load last vehicle data from storage to ensure continuity after HA restart
+        if not self._first_successful_fetch and not self._cached_vehicle_data:
+            try:
+                from .utils.storage import get_last_vehicle_data
+                stored_vehicle_data = await get_last_vehicle_data(self.hass, self.config_entry)
+                if stored_vehicle_data:
+                    self._cached_vehicle_data = stored_vehicle_data.copy()
+                    _LOGGER.info(
+                        "Loaded last vehicle data from storage: odometer=%s, tank=%s, range=%s",
+                        stored_vehicle_data.get("odometer_km"),
+                        stored_vehicle_data.get("tank_level"),
+                        stored_vehicle_data.get("range_km")
+                    )
+            except Exception as err:
+                _LOGGER.warning("Failed to load last vehicle data from storage: %s", err)
+        
         try:
             # Check if vehicle entities are available (non-blocking)
             await self._check_vehicle_entities_available()
@@ -1002,10 +1018,34 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 if not self._first_successful_fetch:
                     _LOGGER.info("First successful vehicle data fetch completed")
                     self._first_successful_fetch = True
-            
-            # Cache the data (defensive check, vehicle_data is always a dict but may be empty)
-            if vehicle_data:
+                # Cache the data (defensive check, vehicle_data is always a dict but may be empty)
                 self._cached_vehicle_data = vehicle_data.copy()
+                
+                # Save to persistent storage for recovery after HA restart
+                try:
+                    from .utils.storage import save_last_vehicle_data
+                    await save_last_vehicle_data(self.hass, self.config_entry, vehicle_data)
+                except Exception as err:
+                    _LOGGER.warning("Failed to save vehicle data to storage: %s", err)
+            else:
+                # No live data available - use cached data if available to ensure continuity
+                # This is important after HA restart when entities haven't restored state yet
+                if self._cached_vehicle_data:
+                    _LOGGER.debug(
+                        "No live vehicle data available, using cached data from previous update. "
+                        "Cached data: odometer_km=%s, tank_level=%s, range_km=%s",
+                        self._cached_vehicle_data.get("odometer_km"),
+                        self._cached_vehicle_data.get("tank_level"),
+                        self._cached_vehicle_data.get("range_km")
+                    )
+                    # Use cached data but preserve the current vehicle_data dict structure
+                    # Only use cached values for None entries to avoid overwriting fresh data
+                    # Expected keys: odometer_km, tank_level, tank_level_unit, range_km, latitude, longitude
+                    expected_keys = ["odometer_km", "tank_level", "tank_level_unit", "range_km", "latitude", "longitude"]
+                    for key in expected_keys:
+                        cached_value = self._cached_vehicle_data.get(key)
+                        if vehicle_data.get(key) is None and cached_value is not None:
+                            vehicle_data[key] = cached_value
             
             _LOGGER.debug("Vehicle data: %s", vehicle_data)
             
@@ -3378,7 +3418,7 @@ class ConsumptionPredictionSensor(CoordinatorEntity, RestoreEntity, SensorEntity
         return attributes
 
 
-class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
+class ConsumptionHistorySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing average consumption based on historical data."""
 
     _attr_icon = "mdi:chart-line"
@@ -3404,6 +3444,10 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         self._config_entry = config_entry
         self._attr_name = "Average Consumption History"
         self._attr_unique_id = f"{config_entry.entry_id}_consumption_history"
+        self._last_known_value = None
+        # State restoration variables
+        self._restored_value = None
+        self._restored_attributes = {}
         
         # Device info for grouping
         self._attr_device_info = {
@@ -3412,6 +3456,28 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "haFWCMA",
             "model": "Fuel Watcher Car Advanced Manager",
         }
+    
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        # Restore last state
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            try:
+                self._restored_value = float(last_state.state)
+                self._restored_attributes = dict(last_state.attributes)
+                _LOGGER.info(
+                    "Restored %s with value %s from previous state",
+                    self.entity_id,
+                    self._restored_value,
+                )
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Could not restore %s state: %s",
+                    self.entity_id,
+                    err,
+                )
     
     def _add_prediction_metadata(
         self,
@@ -3436,27 +3502,33 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         3. Last week (if available)
         4. Today (as fallback)
         """
-        if self.coordinator.data is None:
-            return None
-        history = self.coordinator.data.get("consumption_history")
-        if not history:
-            _LOGGER.debug("ConsumptionHistorySensor: No consumption_history data available")
-            return None
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            history = self.coordinator.data.get("consumption_history")
+            if history:
+                # Try to get the most comprehensive average, prioritizing longer periods
+                # Use a loop to eliminate duplication
+                for period_key in ["last_month", "last_14_days", "last_week", "today"]:
+                    period_data = history.get(period_key)
+                    if period_data:
+                        consumption = period_data.get("avg_consumption_l_per_100km")
+                        if consumption is not None:
+                            _LOGGER.debug(
+                                "ConsumptionHistorySensor: Using %s consumption: %.2f L/100km",
+                                period_key, consumption
+                            )
+                            self._last_known_value = round(consumption, 2)
+                            return self._last_known_value
         
-        # Try to get the most comprehensive average, prioritizing longer periods
-        # Use a loop to eliminate duplication
-        for period_key in ["last_month", "last_14_days", "last_week", "today"]:
-            period_data = history.get(period_key)
-            if period_data:
-                consumption = period_data.get("avg_consumption_l_per_100km")
-                if consumption is not None:
-                    _LOGGER.debug(
-                        "ConsumptionHistorySensor: Using %s consumption: %.2f L/100km",
-                        period_key, consumption
-                    )
-                    return round(consumption, 2)
+        # Fall back to restored value if coordinator data not yet available
+        if self._restored_value is not None:
+            return self._restored_value
         
-        _LOGGER.warning(
+        # Finally fall back to in-memory last known value
+        if self._last_known_value is not None:
+            return self._last_known_value
+        
+        _LOGGER.debug(
             "ConsumptionHistorySensor: No consumption data available in any period. "
             "This may indicate insufficient refueling events. Need at least 2 refueling "
             "events with odometer readings in a period to calculate consumption."
@@ -3564,7 +3636,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         return attributes
 
 
-class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
+class ConsumptionForecastSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing forecasted average consumption based on prediction engine."""
 
     _attr_icon = "mdi:chart-timeline-variant"
@@ -3591,6 +3663,10 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
         self._config_entry = config_entry
         self._attr_name = "Average Consumption Forecast"
         self._attr_unique_id = f"{config_entry.entry_id}_consumption_forecast"
+        self._last_known_value = None
+        # State restoration variables
+        self._restored_value = None
+        self._restored_attributes = {}
         
         # Device info for grouping
         self._attr_device_info = {
@@ -3599,6 +3675,28 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "haFWCMA",
             "model": "Fuel Watcher Car Advanced Manager",
         }
+    
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        # Restore last state
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            try:
+                self._restored_value = float(last_state.state)
+                self._restored_attributes = dict(last_state.attributes)
+                _LOGGER.info(
+                    "Restored %s with value %s from previous state",
+                    self.entity_id,
+                    self._restored_value,
+                )
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Could not restore %s state: %s",
+                    self.entity_id,
+                    err,
+                )
     
     def _add_prediction_metadata(
         self,
@@ -3616,12 +3714,21 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the forecasted consumption for tomorrow."""
-        if self.coordinator.data is None:
-            return None
-        forecast = self.coordinator.data.get("consumption_forecast")
-        if forecast and forecast.get("tomorrow"):
-            return forecast["tomorrow"].get("avg_consumption_l_per_100km")
-        return None
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            forecast = self.coordinator.data.get("consumption_forecast")
+            if forecast and forecast.get("tomorrow"):
+                value = forecast["tomorrow"].get("avg_consumption_l_per_100km")
+                if value is not None:
+                    self._last_known_value = value
+                    return value
+        
+        # Fall back to restored value if coordinator data not yet available
+        if self._restored_value is not None:
+            return self._restored_value
+        
+        # Finally fall back to in-memory last known value
+        return self._last_known_value
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

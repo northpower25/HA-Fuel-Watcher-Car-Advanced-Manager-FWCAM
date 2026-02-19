@@ -33,6 +33,12 @@ _LOGGER = logging.getLogger(__name__)
 # Prevents infinite loops in edge cases (e.g., extremely low daily km values)
 MAX_PREDICTION_DAYS = 365
 
+# Startup fallback tank level assumption
+# When no vehicle data is available (e.g., after HA restart), we assume 50% tank level
+# This is a conservative estimate that provides a reasonable initial prediction
+# The value will be replaced with actual data as soon as vehicle sensors restore state
+STARTUP_ASSUMED_TANK_LEVEL = 0.5  # 50% of tank capacity
+
 
 def _parse_timestamp(ts: str) -> Optional[datetime]:
     """Parse ISO format timestamp.
@@ -405,26 +411,15 @@ async def predict_days_until_refuel(
     
     now = dt_util.now()
     
-    # Early return for startup scenario where no vehicle data is available yet
-    # This prevents unnecessary processing and log spam during HA restart
-    if current_range_km is None and current_tank_level is None:
+    # During startup, vehicle data may not be available yet
+    # However, we should still try to calculate an estimate using fallback values
+    # This provides an initial value instead of showing "Unknown" after HA restart
+    startup_scenario = current_range_km is None and current_tank_level is None
+    if startup_scenario:
         _LOGGER.debug(
-            "Skipping consumption prediction - no vehicle data available yet (startup scenario). "
-            "Prediction will run once vehicle sensors restore state or provide data."
+            "Startup scenario detected - no vehicle data available yet. "
+            "Will attempt to calculate initial estimate using fallback values and tank capacity."
         )
-        # Return a minimal valid result with fallback values
-        return {
-            "days_until_refuel": None,
-            "predicted_refuel_date": None,
-            "data_source": "no_vehicle_data",
-            "confidence": 0.0,
-            "avg_daily_km": fallback_daily_km,
-            "avg_consumption_rate": fallback_consumption_rate,
-            "last_prediction_time": now,
-            "data_points_used": 0,
-            "ml_prediction": None,
-            "weekday_pattern": None,
-        }
     
     # Check data sufficiency
     sufficiency = await check_data_sufficiency(hass, entry, min_data_points)
@@ -597,7 +592,7 @@ async def predict_days_until_refuel(
         # Use weekday pattern if available for more accurate prediction
         if weekday_pattern and tank_capacity is not None:
             # Estimate current tank level as 50% if unknown (conservative estimate)
-            estimated_tank_level = tank_capacity * 0.5
+            estimated_tank_level = tank_capacity * STARTUP_ASSUMED_TANK_LEVEL
             estimated_range_km = (estimated_tank_level / avg_consumption_rate) * 100
             
             days_until_refuel = _calculate_days_until_refuel_with_weekday_pattern(
@@ -613,7 +608,7 @@ async def predict_days_until_refuel(
         # Fallback to simple calculation if weekday pattern didn't work
         if days_until_refuel is None and tank_capacity is not None:
             # Conservative estimate: assume tank is 50% full
-            estimated_tank_level = tank_capacity * 0.5
+            estimated_tank_level = tank_capacity * STARTUP_ASSUMED_TANK_LEVEL
             estimated_range_km = (estimated_tank_level / avg_consumption_rate) * 100
             days_until_refuel = estimated_range_km / avg_daily_km
             _LOGGER.debug(
@@ -633,6 +628,21 @@ async def predict_days_until_refuel(
                 avg_consumption_rate,
                 avg_consumption_rate > 0
             )
+    
+    # Method 4: Startup fallback - calculate initial estimate using fallback values
+    # This ensures we show an initial value instead of "Unknown" after HA restart
+    if days_until_refuel is None and startup_scenario and tank_capacity is not None and avg_daily_km > 0 and avg_consumption_rate > 0:
+        _LOGGER.debug("Method 4: Using startup fallback with configured values")
+        # Conservative estimate: assume tank is 50% full
+        estimated_tank_level = tank_capacity * STARTUP_ASSUMED_TANK_LEVEL
+        estimated_range_km = (estimated_tank_level / avg_consumption_rate) * 100
+        days_until_refuel = estimated_range_km / avg_daily_km
+        _LOGGER.info(
+            "Startup fallback: Estimated %.1f days from assumed 50%% tank "
+            "(%.1f L → %.1f km range / %.1f km/day). "
+            "This will be refined when actual vehicle data becomes available.",
+            days_until_refuel, estimated_tank_level, estimated_range_km, avg_daily_km
+        )
     
     # Log final result before returning
     if days_until_refuel is None:
