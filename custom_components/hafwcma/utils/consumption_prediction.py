@@ -33,6 +33,12 @@ _LOGGER = logging.getLogger(__name__)
 # Prevents infinite loops in edge cases (e.g., extremely low daily km values)
 MAX_PREDICTION_DAYS = 365
 
+# Startup fallback tank level assumption
+# When no vehicle data is available (e.g., after HA restart), we assume 50% tank level
+# This is a conservative estimate that provides a reasonable initial prediction
+# The value will be replaced with actual data as soon as vehicle sensors restore state
+STARTUP_ASSUMED_TANK_LEVEL = 0.5  # 50% of tank capacity
+
 
 def _parse_timestamp(ts: str) -> Optional[datetime]:
     """Parse ISO format timestamp.
@@ -586,7 +592,7 @@ async def predict_days_until_refuel(
         # Use weekday pattern if available for more accurate prediction
         if weekday_pattern and tank_capacity is not None:
             # Estimate current tank level as 50% if unknown (conservative estimate)
-            estimated_tank_level = tank_capacity * 0.5
+            estimated_tank_level = tank_capacity * STARTUP_ASSUMED_TANK_LEVEL
             estimated_range_km = (estimated_tank_level / avg_consumption_rate) * 100
             
             days_until_refuel = _calculate_days_until_refuel_with_weekday_pattern(
@@ -602,7 +608,7 @@ async def predict_days_until_refuel(
         # Fallback to simple calculation if weekday pattern didn't work
         if days_until_refuel is None and tank_capacity is not None:
             # Conservative estimate: assume tank is 50% full
-            estimated_tank_level = tank_capacity * 0.5
+            estimated_tank_level = tank_capacity * STARTUP_ASSUMED_TANK_LEVEL
             estimated_range_km = (estimated_tank_level / avg_consumption_rate) * 100
             days_until_refuel = estimated_range_km / avg_daily_km
             _LOGGER.debug(
@@ -628,7 +634,7 @@ async def predict_days_until_refuel(
     if days_until_refuel is None and startup_scenario and tank_capacity is not None and avg_daily_km > 0 and avg_consumption_rate > 0:
         _LOGGER.debug("Method 4: Using startup fallback with configured values")
         # Conservative estimate: assume tank is 50% full
-        estimated_tank_level = tank_capacity * 0.5
+        estimated_tank_level = tank_capacity * STARTUP_ASSUMED_TANK_LEVEL
         estimated_range_km = (estimated_tank_level / avg_consumption_rate) * 100
         days_until_refuel = estimated_range_km / avg_daily_km
         _LOGGER.info(

@@ -1040,7 +1040,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     )
                     # Use cached data but preserve the current vehicle_data dict structure
                     # Only use cached values for None entries to avoid overwriting fresh data
-                    for key, cached_value in self._cached_vehicle_data.items():
+                    # Expected keys: odometer_km, tank_level, tank_level_unit, range_km, latitude, longitude
+                    expected_keys = ["odometer_km", "tank_level", "tank_level_unit", "range_km", "latitude", "longitude"]
+                    for key in expected_keys:
+                        cached_value = self._cached_vehicle_data.get(key)
                         if vehicle_data.get(key) is None and cached_value is not None:
                             vehicle_data[key] = cached_value
             
