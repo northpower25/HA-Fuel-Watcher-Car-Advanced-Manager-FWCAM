@@ -15,11 +15,18 @@ _LOGGER = logging.getLogger(__name__)
 # Scale: 0.3 (low) to 1.0 (high), where 0.5 indicates medium confidence
 RECOVERED_TRIP_CONFIDENCE = 0.5
 
+# Confidence score for refuelings recovered from tank level history after system restart
+# Scale: 0.3 (low) to 1.0 (high), where 0.5 indicates medium confidence
+RECOVERED_REFUELING_CONFIDENCE = 0.5
+
 # Time window in minutes for detecting duplicate trips
 DUPLICATE_DETECTION_WINDOW_MINUTES = 5
 
 # Default lookback window in hours for checking missed trips
 DEFAULT_MISSED_TRIP_LOOKBACK_HOURS = 24
+
+# Default lookback window in hours for checking missed refuelings
+DEFAULT_MISSED_REFUELING_LOOKBACK_HOURS = 24
 
 
 @dataclass
@@ -603,3 +610,129 @@ def detect_missed_trips_from_history(
         previous_point = current_point
     
     return detected_trips
+
+
+def detect_missed_refuelings_from_history(
+    tank_level_history: list[dict[str, Any]],
+    existing_refuel_timestamps: set[datetime],
+    tank_capacity: float = 50.0,
+    min_refuel_threshold_percent: float = 3.5,
+    lookback_hours: int = DEFAULT_MISSED_REFUELING_LOOKBACK_HOURS,
+) -> list[dict[str, Any]]:
+    """Detect refueling events from recent tank level history that may have been missed.
+    
+    This function is used to detect refuelings that were missed due to HA restart,
+    integration reload, or gaps in updates. It analyzes recent tank level history
+    to find significant tank level increases that represent refueling events.
+    
+    Args:
+        tank_level_history: List of tank level history points with 'ts', 'value' (liters), and 'odometer_km' keys
+        existing_refuel_timestamps: Set of existing refueling timestamps to avoid duplicates
+        tank_capacity: Tank capacity in liters (default: 50.0)
+        min_refuel_threshold_percent: Minimum threshold as percentage of tank capacity (default: 3.5%)
+        lookback_hours: How many hours back to look for missed refuelings (default: 24)
+        
+    Returns:
+        List of detected refueling event dictionaries
+    """
+    detected_refuelings = []
+    
+    if not tank_level_history or len(tank_level_history) < 2:
+        return detected_refuelings
+    
+    # Calculate cutoff time for lookback window
+    now = dt_util.now()
+    cutoff_time = now - timedelta(hours=lookback_hours)
+    
+    # Calculate threshold in liters
+    threshold_liters = (min_refuel_threshold_percent / 100.0) * tank_capacity
+    
+    # Sort history by timestamp
+    sorted_history = sorted(tank_level_history, key=lambda x: x.get("ts", ""))
+    
+    # Analyze consecutive points for refuelings
+    previous_point = None
+    
+    for current_point in sorted_history:
+        if previous_point is None:
+            previous_point = current_point
+            continue
+        
+        try:
+            # Parse values
+            prev_tank_level = previous_point.get("value")
+            curr_tank_level = current_point.get("value")
+            
+            if prev_tank_level is None or curr_tank_level is None:
+                previous_point = current_point
+                continue
+            
+            # Parse timestamps
+            prev_time = dt_util.parse_datetime(previous_point.get("ts"))
+            curr_time = dt_util.parse_datetime(current_point.get("ts"))
+            
+            if not prev_time or not curr_time:
+                previous_point = current_point
+                continue
+            
+            # Ensure timezone-aware
+            if prev_time.tzinfo is None:
+                prev_time = dt_util.as_local(prev_time)
+            if curr_time.tzinfo is None:
+                curr_time = dt_util.as_local(curr_time)
+            
+            # Skip if outside lookback window
+            if prev_time < cutoff_time:
+                previous_point = current_point
+                continue
+            
+            # Calculate tank level change
+            tank_diff = curr_tank_level - prev_tank_level
+            
+            # Check if this is a refueling event (significant increase in tank level)
+            if tank_diff > threshold_liters:
+                # Check for duplicates (within configured time window)
+                is_duplicate = False
+                for existing_ts in existing_refuel_timestamps:
+                    time_diff_minutes = abs((curr_time - existing_ts).total_seconds()) / 60
+                    if time_diff_minutes < DUPLICATE_DETECTION_WINDOW_MINUTES:
+                        is_duplicate = True
+                        break
+                
+                if not is_duplicate:
+                    # Get odometer readings if available
+                    odometer_km = current_point.get("odometer_km")
+                    
+                    refuel_event = {
+                        "timestamp": curr_time.isoformat(),
+                        "odometer_km": odometer_km,
+                        "liters_refueled": round(tank_diff, 2),
+                        "price_per_liter": None,  # Not available from history
+                        "total_cost": None,  # Not available from history
+                        "station_name": None,  # Not available from history
+                        "latitude": None,  # Not available from tank level history
+                        "longitude": None,  # Not available from tank level history
+                        "fuel_type": None,  # Will use default from config
+                        "data_quality": "recovered_from_tank_history",
+                        # Medium confidence: based on tank level increase pattern without direct refueling event confirmation
+                        # Lower than real-time detection due to missing context (location, station, exact time)
+                        "confidence": RECOVERED_REFUELING_CONFIDENCE,
+                        "excluded_from_calculation": False,
+                    }
+                    
+                    detected_refuelings.append(refuel_event)
+                    existing_refuel_timestamps.add(curr_time)
+                    
+                    _LOGGER.info(
+                        "Recovered missed refueling from tank level history: %.1f L at %s (odometer: %s km)",
+                        tank_diff,
+                        curr_time.isoformat(),
+                        f"{odometer_km:.1f}" if odometer_km else "unknown",
+                    )
+        
+        except Exception as err:
+            _LOGGER.debug("Error analyzing tank level point for missed refuelings: %s", err)
+        
+        previous_point = current_point
+    
+    return detected_refuelings
