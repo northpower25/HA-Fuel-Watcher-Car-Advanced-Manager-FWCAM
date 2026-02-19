@@ -790,7 +790,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     summary += f"• Zeitraum: {date_range}\n"
                 summary += (
                     "\n📥 Historische Daten werden automatisch importiert, sobald Home Assistant "
-                    "vollständig gestartet ist. Die Ergebnisse erscheinen als Benachrichtigung."
+                    "vollständig gestartet ist. Die Ergebnisse erscheinen als Home Assistant Benachrichtigung."
                 )
             else:
                 summary = (

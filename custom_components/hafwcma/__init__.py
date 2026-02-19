@@ -1006,20 +1006,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Setup options update listener - use update handler instead of reload
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
-    # Apply initial feature settings from config flow (first-time setup)
-    async def _apply_initial_settings_when_ready(event):
-        """Apply initial feature settings after HA is fully started."""
+    # Apply initial feature settings and then import historical data, sequentially,
+    # after HA is fully started.  A single listener ensures trip-tracking is
+    # persisted to storage *before* the historical import checks it.
+    async def _on_homeassistant_started(event):
+        """Run first-time setup tasks in order after HA has fully started."""
         await _apply_initial_feature_settings(hass, entry)
-
-    hass.bus.async_listen_once("homeassistant_started", _apply_initial_settings_when_ready)
-
-    # Import historical data after HA is fully started (non-blocking)
-    # Use homeassistant_started event to ensure all dependencies are available
-    async def _start_import_when_ready(event):
-        """Start historical data import after HA is fully started."""
         await _import_historical_data_background(hass, entry)
-    
-    hass.bus.async_listen_once("homeassistant_started", _start_import_when_ready)
+
+    hass.bus.async_listen_once("homeassistant_started", _on_homeassistant_started)
     
     return True
 
@@ -1028,36 +1023,62 @@ async def _apply_initial_feature_settings(
     hass: HomeAssistant,
     entry: ConfigEntry,
 ) -> None:
-    """Apply initial feature settings from config flow to storage.
+    """Apply initial feature settings from config flow to storage and options.
 
     This runs once after first-time setup to apply trip_tracking_initial_enabled
-    setting from the config entry data to the persistent storage.
+    and proximity_alerts_enabled settings from the config entry data to the
+    persistent storage and config entry options respectively.
 
     Args:
         hass: Home Assistant instance
         entry: Config entry
     """
-    from .const import CONF_TRIP_TRACKING_INITIAL_ENABLED
+    from .const import (
+        CONF_PROXIMITY_ALERTS_ENABLED,
+        CONF_TRIP_TRACKING_INITIAL_ENABLED,
+    )
     from .utils import storage
 
     trip_tracking_initial = entry.data.get(CONF_TRIP_TRACKING_INITIAL_ENABLED, False)
-    if not trip_tracking_initial:
-        return
+    trip_tracking_saved = False
 
     try:
-        data = await storage.load_data(hass, entry)
-        trip_config = data.get("trip_tracking_config", {})
+        if trip_tracking_initial:
+            data = await storage.load_data(hass, entry)
+            trip_config = data.get("trip_tracking_config", {})
 
-        # Only apply initial setting if trip tracking hasn't been explicitly configured yet
-        if trip_config.get("enabled") is None or not trip_config.get("privacy_notice_accepted"):
-            from homeassistant.util import dt as dt_util
-            trip_config["enabled"] = True
-            trip_config["privacy_notice_accepted"] = True
-            trip_config["privacy_notice_accepted_at"] = dt_util.now().isoformat()
-            trip_config["last_enabled_at"] = dt_util.now().isoformat()
-            data["trip_tracking_config"] = trip_config
-            await storage.save_data(hass, entry, data)
-            _LOGGER.info("Applied initial trip tracking setting: enabled=True")
+            # Only apply initial setting if trip tracking hasn't been explicitly configured yet
+            if trip_config.get("enabled") is None or not trip_config.get("privacy_notice_accepted"):
+                from homeassistant.util import dt as dt_util
+                trip_config["enabled"] = True
+                trip_config["privacy_notice_accepted"] = True
+                trip_config["privacy_notice_accepted_at"] = dt_util.now().isoformat()
+                trip_config["last_enabled_at"] = dt_util.now().isoformat()
+                data["trip_tracking_config"] = trip_config
+                await storage.save_data(hass, entry, data)
+                trip_tracking_saved = True
+                _LOGGER.info("Applied initial trip tracking setting: enabled=True")
+
+        # Migrate proximity_alerts_enabled from entry.data to entry.options so
+        # that the ProximityAlertsSwitch entity reflects the value chosen during
+        # the config flow (the switch reads exclusively from entry.options).
+        proximity_initial = entry.data.get(CONF_PROXIMITY_ALERTS_ENABLED)
+        if proximity_initial is not None and CONF_PROXIMITY_ALERTS_ENABLED not in entry.options:
+            new_options = dict(entry.options)
+            new_options[CONF_PROXIMITY_ALERTS_ENABLED] = proximity_initial
+            hass.config_entries.async_update_entry(entry, options=new_options)
+            _LOGGER.info(
+                "Migrated initial proximity_alerts_enabled=%s to entry options",
+                proximity_initial,
+            )
+
+        # Refresh the coordinator so that trip-tracking / proximity switches
+        # immediately reflect the values we just persisted.
+        if trip_tracking_saved:
+            coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
+            if coordinator is not None:
+                await coordinator.async_request_refresh()
+
     except Exception as err:
         _LOGGER.error("Error applying initial feature settings: %s", err)
 
@@ -1111,29 +1132,42 @@ async def _import_historical_data_background(
         else:
             _LOGGER.info("Historical data import skipped: %s", result["reason"])
         
-        # Import trip history if trip tracking is enabled
+        # Import trip history if trip tracking is enabled.
+        # This also runs when vehicle data import was already completed so that
+        # a previous run that skipped trip import (e.g. due to the race condition
+        # between initial-feature-settings and this function) can still import trips.
         data = await storage.load_data(hass, entry)
         trip_config = data.get("trip_tracking_config", {})
         trip_tracking_enabled = trip_config.get("enabled", False)
 
         trip_result = None
         if trip_tracking_enabled:
-            _LOGGER.info("Trip tracking is enabled, importing historical trip data")
-            trip_result = await import_historical_trip_data(
-                hass,
-                entry,
-                lookback_days=90,
-                force_reimport=False,
-                import_type="automatic",
-            )
-            
-            if trip_result["imported"]:
-                _LOGGER.info(
-                    "Historical trip import completed: %d trips detected",
-                    trip_result["trips_detected"],
+            # Check whether trip import has already been completed successfully.
+            # import_historical_trip_data uses last_historical_import["imported"] to
+            # guard against duplicate imports; vehicle data import does NOT set that
+            # flag, so a prior vehicle-only run will not block a trip import here.
+            last_trip_import = data.get("last_historical_import", {})
+            trip_already_done = last_trip_import.get("imported", False)
+
+            if not trip_already_done:
+                _LOGGER.info("Trip tracking is enabled, importing historical trip data")
+                trip_result = await import_historical_trip_data(
+                    hass,
+                    entry,
+                    lookback_days=90,
+                    force_reimport=False,
+                    import_type="automatic",
                 )
+                
+                if trip_result["imported"]:
+                    _LOGGER.info(
+                        "Historical trip import completed: %d trips detected",
+                        trip_result["trips_detected"],
+                    )
+                else:
+                    _LOGGER.info("Historical trip import skipped: %s", trip_result["reason"])
             else:
-                _LOGGER.info("Historical trip import skipped: %s", trip_result["reason"])
+                _LOGGER.debug("Historical trip import already completed, skipping")
         else:
             _LOGGER.debug("Trip tracking not enabled, skipping trip history import")
         
@@ -1160,11 +1194,26 @@ async def _import_historical_data_background(
                 "\n📊 All data is now available in the haFWCMA dashboard timeline."
             )
         else:
+            # Vehicle data was already imported in a previous run.  Show what is
+            # currently in storage so the user can see the accumulated data.
+            refuel_log = data.get("refueling_log", [])
+            trip_log = data.get("trip_log", [])
+            existing_refuels = len(refuel_log)
+            existing_trips = len(trip_log)
+
             message_lines = [
                 f"ℹ️ **Historical data import** for {vehicle_name}\n",
-                f"No new data was imported: {result.get('reason', 'Unknown reason')}",
-                "\n💡 Data will accumulate automatically as you drive.",
+                f"Vehicle data was already imported in a previous run.",
             ]
+            if existing_refuels or existing_trips:
+                message_lines.append(f"**Refueling events in storage:** {existing_refuels}")
+                if trip_tracking_enabled:
+                    message_lines.append(f"**Trips in storage:** {existing_trips}")
+                    if trip_result and trip_result.get("imported"):
+                        message_lines.append(f"**New trip events detected:** {trip_result.get('trips_detected', 0)}")
+            message_lines.append(
+                "\n💡 Data will accumulate automatically as you drive."
+            )
 
         from homeassistant.components import persistent_notification
         persistent_notification.async_create(
