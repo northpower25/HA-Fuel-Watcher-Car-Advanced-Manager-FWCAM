@@ -3415,7 +3415,7 @@ class ConsumptionPredictionSensor(CoordinatorEntity, RestoreEntity, SensorEntity
         return attributes
 
 
-class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
+class ConsumptionHistorySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing average consumption based on historical data."""
 
     _attr_icon = "mdi:chart-line"
@@ -3441,6 +3441,10 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         self._config_entry = config_entry
         self._attr_name = "Average Consumption History"
         self._attr_unique_id = f"{config_entry.entry_id}_consumption_history"
+        self._last_known_value = None
+        # State restoration variables
+        self._restored_value = None
+        self._restored_attributes = {}
         
         # Device info for grouping
         self._attr_device_info = {
@@ -3449,6 +3453,28 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "haFWCMA",
             "model": "Fuel Watcher Car Advanced Manager",
         }
+    
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        # Restore last state
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            try:
+                self._restored_value = float(last_state.state)
+                self._restored_attributes = dict(last_state.attributes)
+                _LOGGER.info(
+                    "Restored %s with value %s from previous state",
+                    self.entity_id,
+                    self._restored_value,
+                )
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Could not restore %s state: %s",
+                    self.entity_id,
+                    err,
+                )
     
     def _add_prediction_metadata(
         self,
@@ -3473,27 +3499,33 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         3. Last week (if available)
         4. Today (as fallback)
         """
-        if self.coordinator.data is None:
-            return None
-        history = self.coordinator.data.get("consumption_history")
-        if not history:
-            _LOGGER.debug("ConsumptionHistorySensor: No consumption_history data available")
-            return None
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            history = self.coordinator.data.get("consumption_history")
+            if history:
+                # Try to get the most comprehensive average, prioritizing longer periods
+                # Use a loop to eliminate duplication
+                for period_key in ["last_month", "last_14_days", "last_week", "today"]:
+                    period_data = history.get(period_key)
+                    if period_data:
+                        consumption = period_data.get("avg_consumption_l_per_100km")
+                        if consumption is not None:
+                            _LOGGER.debug(
+                                "ConsumptionHistorySensor: Using %s consumption: %.2f L/100km",
+                                period_key, consumption
+                            )
+                            self._last_known_value = round(consumption, 2)
+                            return self._last_known_value
         
-        # Try to get the most comprehensive average, prioritizing longer periods
-        # Use a loop to eliminate duplication
-        for period_key in ["last_month", "last_14_days", "last_week", "today"]:
-            period_data = history.get(period_key)
-            if period_data:
-                consumption = period_data.get("avg_consumption_l_per_100km")
-                if consumption is not None:
-                    _LOGGER.debug(
-                        "ConsumptionHistorySensor: Using %s consumption: %.2f L/100km",
-                        period_key, consumption
-                    )
-                    return round(consumption, 2)
+        # Fall back to restored value if coordinator data not yet available
+        if self._restored_value is not None:
+            return self._restored_value
         
-        _LOGGER.warning(
+        # Finally fall back to in-memory last known value
+        if self._last_known_value is not None:
+            return self._last_known_value
+        
+        _LOGGER.debug(
             "ConsumptionHistorySensor: No consumption data available in any period. "
             "This may indicate insufficient refueling events. Need at least 2 refueling "
             "events with odometer readings in a period to calculate consumption."
@@ -3601,7 +3633,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, SensorEntity):
         return attributes
 
 
-class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
+class ConsumptionForecastSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing forecasted average consumption based on prediction engine."""
 
     _attr_icon = "mdi:chart-timeline-variant"
@@ -3628,6 +3660,10 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
         self._config_entry = config_entry
         self._attr_name = "Average Consumption Forecast"
         self._attr_unique_id = f"{config_entry.entry_id}_consumption_forecast"
+        self._last_known_value = None
+        # State restoration variables
+        self._restored_value = None
+        self._restored_attributes = {}
         
         # Device info for grouping
         self._attr_device_info = {
@@ -3636,6 +3672,28 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "haFWCMA",
             "model": "Fuel Watcher Car Advanced Manager",
         }
+    
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        # Restore last state
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            try:
+                self._restored_value = float(last_state.state)
+                self._restored_attributes = dict(last_state.attributes)
+                _LOGGER.info(
+                    "Restored %s with value %s from previous state",
+                    self.entity_id,
+                    self._restored_value,
+                )
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Could not restore %s state: %s",
+                    self.entity_id,
+                    err,
+                )
     
     def _add_prediction_metadata(
         self,
@@ -3653,12 +3711,21 @@ class ConsumptionForecastSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the forecasted consumption for tomorrow."""
-        if self.coordinator.data is None:
-            return None
-        forecast = self.coordinator.data.get("consumption_forecast")
-        if forecast and forecast.get("tomorrow"):
-            return forecast["tomorrow"].get("avg_consumption_l_per_100km")
-        return None
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            forecast = self.coordinator.data.get("consumption_forecast")
+            if forecast and forecast.get("tomorrow"):
+                value = forecast["tomorrow"].get("avg_consumption_l_per_100km")
+                if value is not None:
+                    self._last_known_value = value
+                    return value
+        
+        # Fall back to restored value if coordinator data not yet available
+        if self._restored_value is not None:
+            return self._restored_value
+        
+        # Finally fall back to in-memory last known value
+        return self._last_known_value
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
