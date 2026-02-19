@@ -41,7 +41,7 @@ CARD_VERSION = "1.0.0"  # Update this when the card changes
 
 # Dashboard panel configuration
 PANEL_FILENAME = "fwcam-dashboard-panel.js"
-PANEL_URL_PATH = "fuel-watcher"
+PANEL_URL_PATH = "hafwcma"
 PANEL_ELEMENT_NAME = "fwcam-dashboard-panel"
 
 # Service schemas

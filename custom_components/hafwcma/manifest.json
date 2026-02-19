@@ -13,7 +13,7 @@
       "name": "fwcam-dashboard-panel",
       "sidebar_title": "Fuel Watcher",
       "sidebar_icon": "mdi:gas-station",
-      "url_path": "fuel-watcher",
+      "url_path": "hafwcma",
       "module_url": "/hafwcma_local/fwcam-dashboard-panel.js",
       "embed_iframe": false,
       "require_admin": false
