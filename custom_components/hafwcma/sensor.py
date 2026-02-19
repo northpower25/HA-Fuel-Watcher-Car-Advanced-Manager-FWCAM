@@ -93,6 +93,7 @@ from .providers.tankerkonig import TankerkoenigProvider
 from .utils.vehicle_data import async_get_vehicle_data, async_wait_for_entities
 from .utils.vehicle_tracker import VehicleDataTracker
 from .utils import storage
+from .utils.storage import recalculate_trip_statistics
 from .utils.consumption_prediction import predict_days_until_refuel, store_prediction_result
 from .utils.prediction_engine import evaluate_refuel_strategy, get_prediction_summary
 from .utils.price_engine import compute_price_trend, get_price_statistics
@@ -767,9 +768,6 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     len(missed_trips),
                 )
                 
-                # Save missed trips to storage
-                from .utils.storage import save_data
-                
                 # Initialize trips list if not present
                 if "trips" not in data:
                     data["trips"] = []
@@ -809,8 +807,17 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 # Update next trip ID
                 data["next_trip_id"] = next_id
                 
-                # Save data
-                await save_data(self.hass, self.config_entry, data)
+                # Save the new trips to storage first
+                await storage.save_data(self.hass, self.config_entry, data)
+                
+                # Recalculate trip statistics to include new trips
+                # This will update trip_statistics in storage
+                await recalculate_trip_statistics(self.hass, self.config_entry)
+                
+                _LOGGER.info(
+                    "Saved %d recovered trip(s) to storage. Will be reflected in current update cycle.",
+                    len(missed_trips)
+                )
             else:
                 _LOGGER.debug("No missed trips found in odometer history")
             
