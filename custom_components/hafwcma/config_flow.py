@@ -274,6 +274,12 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    def __init__(self) -> None:
+        """Initialize the config flow."""
+        self.data: dict[str, Any] = {}
+        self._import_task: asyncio.Task | None = None
+        self._preflight_result: dict[str, Any] = {}
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -561,7 +567,12 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_telegram()
 
         trip_tracking_info = (
-            "Enable Trip Tracking to automatically log every trip.\n"
+            "ℹ️ **Proximity Alerts** – required for:\n"
+            "• Automatic notifications when a cheap fuel station is near your vehicle\n"
+            "• The Proximity Alert switch entity and fuel-price sensor comparisons\n\n"
+            "ℹ️ **Trip Tracking (Fahrtenbuch)** – required for:\n"
+            "• Automatic trip logging and mileage book\n"
+            "• Trip statistics, route visualisation and per-trip consumption analysis\n\n"
             "⚠️ Note: Trip tracking stores location and movement data. "
             "Please review your privacy requirements before enabling."
         )
@@ -599,7 +610,7 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input: User provided import preference
 
         Returns:
-            Form to display or entry creation result
+            Form to display or next step (progress or entry creation)
         """
         errors: dict[str, str] = {}
 
@@ -610,7 +621,11 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.data[CONF_LATITUDE] = self.hass.config.latitude
             self.data[CONF_LONGITUDE] = self.hass.config.longitude
 
-            # Create the config entry
+            # If import was requested, show a progress indicator before creating the entry
+            if self.data.get(CONF_IMPORT_HISTORICAL_DATA, True):
+                return await self.async_step_import_progress()
+
+            # No import requested – create the entry directly
             return self.async_create_entry(
                 title=f"haFWCMA - {self.data.get(CONF_VEHICLE_NAME, 'Vehicle')}",
                 data=self.data,
@@ -622,10 +637,10 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             import_info = (
                 "⚡ Import historical vehicle data from Home Assistant's recorder.\n\n"
                 "This will import up to 90 days of:\n"
-                "• Odometer readings\n"
-                "• Tank fill level history\n"
-                "• Refueling events\n"
-                "• Trip history (trip tracking is enabled)\n\n"
+                "• Odometer readings – required for consumption statistics\n"
+                "• Tank fill level history – required for refueling detection\n"
+                "• Refueling events – required for cost and consumption analysis\n"
+                "• Trip history – required for the trip log (Fahrtenbuch)\n\n"
                 "💡 Without historical data it may take several days before valid consumption "
                 "statistics and predictions appear in the dashboard.\n\n"
                 "📊 Import results will be shown as a notification in Home Assistant once complete."
@@ -634,9 +649,9 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             import_info = (
                 "⚡ Import historical vehicle data from Home Assistant's recorder.\n\n"
                 "This will import up to 90 days of:\n"
-                "• Odometer readings\n"
-                "• Tank fill level history\n"
-                "• Refueling events\n\n"
+                "• Odometer readings – required for consumption statistics\n"
+                "• Tank fill level history – required for refueling detection\n"
+                "• Refueling events – required for cost and consumption analysis\n\n"
                 "💡 Without historical data it may take several days before valid consumption "
                 "statistics and predictions appear in the dashboard.\n\n"
                 "📊 Import results will be shown as a notification in Home Assistant once complete."
@@ -660,6 +675,164 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_import_progress(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show a progress indicator while checking recorder availability.
+
+        Runs a quick preflight query against HA's recorder to determine how
+        much historical data is available for the configured vehicle entities.
+        This gives the user visible feedback before the setup flow completes.
+        The heavyweight import itself still runs in the background after startup.
+
+        Args:
+            user_input: Unused – called automatically by HA when the task finishes
+
+        Returns:
+            Progress form while the task is running, or entry creation when done
+        """
+        if self._import_task is None:
+            self._import_task = self.hass.async_create_task(
+                self._run_import_preflight()
+            )
+
+        if not self._import_task.done():
+            return self.async_show_progress(
+                step_id="import_progress",
+                progress_action="importing",
+                progress_task=self._import_task,
+            )
+
+        # Task completed – clean up and proceed to finish setup
+        self._import_task = None
+        return self.async_show_progress_done(next_step_id="finish_setup")
+
+    async def async_step_finish_setup(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Final step: show import summary and create the config entry.
+
+        Args:
+            user_input: Submitted by the user to confirm and finish
+
+        Returns:
+            Entry creation result or summary form
+        """
+        if user_input is not None:
+            return self.async_create_entry(
+                title=f"haFWCMA - {self.data.get(CONF_VEHICLE_NAME, 'Vehicle')}",
+                data=self.data,
+            )
+
+        result = self._preflight_result
+        odometer_pts = result.get("odometer_points", 0)
+        tank_pts = result.get("tank_points", 0)
+        date_range = result.get("date_range", "")
+        recorder_ok = result.get("recorder_available", False)
+
+        if recorder_ok and odometer_pts > 0:
+            summary = (
+                f"✅ **Recorder data found!**\n\n"
+                f"• Odometer data points: **{odometer_pts}**\n"
+                f"• Tank level data points: **{tank_pts}**\n"
+            )
+            if date_range:
+                summary += f"• Date range: {date_range}\n"
+            summary += (
+                "\n📥 Historical data will be imported automatically once Home Assistant "
+                "has fully started. Results will appear as a notification."
+            )
+        elif recorder_ok:
+            summary = (
+                "ℹ️ Recorder is available but no historical data was found for the "
+                "configured vehicle entities.\n\n"
+                "Data will accumulate automatically as you drive."
+            )
+        else:
+            preflight_error = result.get("preflight_error", "")
+            if preflight_error:
+                summary = (
+                    f"⚠️ Could not query the recorder: {preflight_error}\n\n"
+                    "Historical import will be skipped. Data will accumulate automatically."
+                )
+            else:
+                summary = (
+                    "⚠️ Home Assistant recorder is not available or could not be queried.\n\n"
+                    "Historical import will be skipped. Data will accumulate automatically."
+                )
+
+        return self.async_show_form(
+            step_id="finish_setup",
+            data_schema=vol.Schema({}),
+            description_placeholders={"import_summary": summary},
+        )
+
+    async def _run_import_preflight(self) -> None:
+        """Query the recorder to estimate how much historical data is available.
+
+        Stores the result in ``self._preflight_result`` so that
+        ``async_step_finish_setup`` can display a meaningful summary.
+        """
+        from homeassistant.components.recorder import get_instance, history
+        from homeassistant.util import dt as dt_util
+        from datetime import timedelta
+
+        result: dict[str, Any] = {
+            "recorder_available": False,
+            "odometer_points": 0,
+            "tank_points": 0,
+            "date_range": "",
+        }
+
+        odometer_entity = self.data.get(CONF_ODOMETER_ENTITY, "")
+        tank_entity = self.data.get(CONF_TANK_LEVEL_ENTITY, "")
+
+        try:
+            recorder_instance = await self.hass.async_add_executor_job(
+                get_instance, self.hass
+            )
+            if not recorder_instance:
+                self._preflight_result = result
+                return
+            result["recorder_available"] = True
+
+            end_time = dt_util.now()
+            start_time = end_time - timedelta(days=90)
+
+            if odometer_entity:
+                odo_states = await self.hass.async_add_executor_job(
+                    history.get_significant_states,
+                    self.hass,
+                    start_time,
+                    end_time,
+                    [odometer_entity],
+                )
+                result["odometer_points"] = len(
+                    odo_states.get(odometer_entity, [])
+                )
+
+            if tank_entity:
+                tank_states = await self.hass.async_add_executor_job(
+                    history.get_significant_states,
+                    self.hass,
+                    start_time,
+                    end_time,
+                    [tank_entity],
+                )
+                result["tank_points"] = len(
+                    tank_states.get(tank_entity, [])
+                )
+
+            if result["odometer_points"] > 0 or result["tank_points"] > 0:
+                result["date_range"] = (
+                    f"{start_time.strftime('%Y-%m-%d')} – {end_time.strftime('%Y-%m-%d')}"
+                )
+
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Import preflight check failed: %s", err)
+            result["preflight_error"] = str(err)
+
+        self._preflight_result = result
 
     async def async_step_telegram(
         self, user_input: dict[str, Any] | None = None
