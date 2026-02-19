@@ -227,6 +227,8 @@ async def add_odometer_observation(
     entry: ConfigEntry,
     odometer_km: float,
     timestamp: str,
+    latitude: float | None = None,
+    longitude: float | None = None,
 ) -> None:
     """Add an odometer observation to history.
     
@@ -238,6 +240,8 @@ async def add_odometer_observation(
         entry: Config entry
         odometer_km: Odometer reading in kilometers
         timestamp: ISO format timestamp
+        latitude: Optional GPS latitude at this odometer reading
+        longitude: Optional GPS longitude at this odometer reading
     """
     data = await load_data(hass, entry)
     
@@ -256,7 +260,12 @@ async def add_odometer_observation(
             )
             return
     
-    data["odometer_history"].append({"ts": timestamp, "value": odometer_km})
+    observation: dict[str, Any] = {"ts": timestamp, "value": odometer_km}
+    if latitude is not None:
+        observation["lat"] = latitude
+    if longitude is not None:
+        observation["lon"] = longitude
+    data["odometer_history"].append(observation)
     
     # Keep only last 1000 entries
     if len(data["odometer_history"]) > 1000:

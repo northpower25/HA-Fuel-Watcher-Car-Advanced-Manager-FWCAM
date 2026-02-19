@@ -203,6 +203,16 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Get state value of an entity, returning null for unavailable/unknown states
+   */
+  getEntityStateValue(entityId) {
+    const entity = this.getEntityState(entityId);
+    if (!entity) return null;
+    if (entity.state === 'unavailable' || entity.state === 'unknown') return null;
+    return entity.state;
+  }
+
+  /**
    * Call a Home Assistant service
    */
   callService(domain, service, serviceData = {}) {
@@ -567,8 +577,10 @@ class FWCAMCard extends HTMLElement {
    * Format number with unit
    */
   formatNumber(value, decimals = 1, unit = '') {
-    if (value === null || value === undefined) return 'N/A';
-    return `${parseFloat(value).toFixed(decimals)}${unit ? ' ' + unit : ''}`;
+    if (value === null || value === undefined || value === 'unavailable' || value === 'unknown') return 'N/A';
+    const num = parseFloat(value);
+    if (isNaN(num)) return 'N/A';
+    return `${num.toFixed(decimals)}${unit ? ' ' + unit : ''}`;
   }
 
   /**
@@ -681,7 +693,7 @@ class FWCAMCard extends HTMLElement {
     const fuelPrice = this.getEntityState(this._entities.fuel_price);
     const tankLevel = this.getEntityState(this._entities.tank_level);
     const range = this.getEntityState(this._entities.range);
-    const nearestStation = this.getEntityState(this._entities.nearest_station);
+    const nearestStation = this.getEntityStateValue(this._entities.nearest_station);
     const daysUntilRefuel = this.getEntityState(this._entities.days_until_refuel);
 
     return `
@@ -702,7 +714,7 @@ class FWCAMCard extends HTMLElement {
           </div>
           <div class="info-item">
             <span class="label">Nearest Station:</span>
-            <span class="value">${nearestStation ? nearestStation.state : 'N/A'}</span>
+            <span class="value">${nearestStation || 'N/A'}</span>
           </div>
           <div class="info-item">
             <span class="label">Days Until Refuel:</span>

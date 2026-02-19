@@ -1089,6 +1089,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     self.config_entry,
                     odometer,
                     timestamp,
+                    latitude=vehicle_data.get("latitude"),
+                    longitude=vehicle_data.get("longitude"),
                 )
                 
                 # Track automatic vehicle data refresh
@@ -2693,7 +2695,7 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
-        self._attr_name = "Cheapest Station"
+        self._attr_name = "Nearest Station"
         self._attr_unique_id = f"{config_entry.entry_id}_nearest_station"
         # State restoration variables
         self._restored_value = None  # Last known sensor value from previous HA session

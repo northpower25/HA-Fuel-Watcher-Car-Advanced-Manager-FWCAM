@@ -49,7 +49,7 @@
       },
       "vehicle_features": {
         "title": "Fahrzeugfunktionen konfigurieren",
-        "description": "{trip_tracking_info}",
+        "description": "**Folgende Einstellungen werden für die jeweiligen Funktionen benötigt:**\n\n**Tankstellen Umkreissuche während Fahrt** (`proximity_alerts_enabled`)\nBenötigt für: Automatische Benachrichtigungen, wenn eine günstige Tankstelle in der Nähe Ihres Fahrzeugs ist, sowie die Näherungsalarm-Schalter-Entität.\nHinweis: Wenn Ihr Fahrzeug keine genauen Positionsdaten bei der Fahrt liefert, werden stattdessen die konfigurierten Home Assistant Koordinaten als Standort verwendet.\n\n**Fahrtenbuchfunktion inkl. Positionserkennung** (`trip_tracking_initial_enabled`)\nBenötigt für: Automatisches Fahrtenbuch, Fahrtstatistiken und Verbrauchsanalyse pro Fahrt.\nHinweis: Bitte informieren Sie alle Benutzer des Fahrzeugs, dass Positions- und Bewegungsdaten aufgezeichnet werden.",
         "data": {
           "proximity_alerts_enabled": "Näherungswarnungen für günstige Tankstellen aktivieren",
           "trip_tracking_initial_enabled": "Fahrtenbuch (Trip Tracking) aktivieren"
@@ -115,7 +115,7 @@
       },
       "historical_import": {
         "title": "Historische Fahrzeugdaten importieren",
-        "description": "{import_info}",
+        "description": "**Folgende Einstellung wird für sofortige Statistiken benötigt:**\n\n**Import historischer Fahrzeugdaten** (`import_historical_data`)\nImportiert bis zu 90 Tage historische Daten aus dem Home Assistant Recorder (Kilometerzähler, Tankfüllstand, Tankereignisse und Fahrten).\nHinweis: Wenn dies nicht aktiviert wird, kann es mehrere Tage dauern, bis aussagekräftige Verbrauchsstatistiken und Vorhersagen verfügbar sind. Der Import läuft nach dem Abschluss der Einrichtung automatisch im Hintergrund.",
         "data": {
           "import_historical_data": "Historische Fahrzeugdaten jetzt importieren"
         },
@@ -129,7 +129,7 @@
       },
       "finish_setup": {
         "title": "Einrichtung abgeschlossen",
-        "description": "{import_summary}",
+        "description": "Die Import-Vorprüfung ist abgeschlossen. Folgendes wurde im Home Assistant Recorder gefunden:\n\n{import_summary}",
         "data": {},
         "data_description": {}
       }
