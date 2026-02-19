@@ -141,6 +141,10 @@ ATTR_CONFIDENCE: Final = "confidence"
 ATTR_AVG_CONSUMPTION_RATE: Final = "avg_consumption_rate"
 ATTR_DATA_POINTS_USED: Final = "data_points_used"
 
+# Initial setup configuration keys (stored in config entry data)
+CONF_TRIP_TRACKING_INITIAL_ENABLED: Final = "trip_tracking_initial_enabled"
+CONF_IMPORT_HISTORICAL_DATA: Final = "import_historical_data"
+
 # Geolocation configuration keys
 CONF_PROXIMITY_ALERT_DISTANCE: Final = "proximity_alert_distance"
 CONF_CHEAP_STATIONS_COUNT: Final = "cheap_stations_count"
