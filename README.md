@@ -41,6 +41,44 @@ entity: sensor.my_car_refueling_log
 
 ---
 
+## 🎨 NEW: Ready-to-Use Dashboard Templates
+
+**Get started instantly with pre-configured dashboard templates!**
+
+We provide comprehensive Lovelace dashboard templates that work out-of-the-box:
+
+### Dashboard Options:
+
+1. **📊 Overview Dashboard** - Multi-vehicle dashboard with comparison views
+   - All vehicles at a glance
+   - Fuel price comparison across vehicles
+   - Centralized settings management
+   - Perfect for users with multiple vehicles
+
+2. **🚗 Per-Vehicle Dashboard** - Detailed single-vehicle dashboard
+   - Comprehensive FWCAM custom card integration
+   - Full refueling and trip log management
+   - Advanced statistics and analytics
+   - Ideal for detailed vehicle tracking
+
+### Quick Installation (5 minutes):
+
+1. Copy the YAML template from the `dashboards/` directory
+2. Create a new dashboard in Home Assistant (Settings → Dashboards)
+3. Paste the template and replace `YOUR_CAR_NAME` with your vehicle name
+4. Save and enjoy your new dashboard! 🎉
+
+📖 **[Dashboard Installation Guide](dashboards/DASHBOARD_INSTALLATION_GUIDE.md)** | 📁 **[Browse Templates](dashboards/)**
+
+**Features:**
+- ✅ No coding required - just copy & paste
+- ✅ Fully customizable YAML templates
+- ✅ Bilingual support (English & German)
+- ✅ Responsive design for mobile and desktop
+- ✅ Follows Home Assistant best practices
+
+---
+
 ## Features
 
 ### 🚗 Vehicle Management
