@@ -8,6 +8,17 @@
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/issues",
+  "panel_custom": [
+    {
+      "name": "fwcam-dashboard-panel",
+      "sidebar_title": "Fuel Watcher",
+      "sidebar_icon": "mdi:gas-station",
+      "url_path": "fuel-watcher",
+      "module_url": "/hafwcma_local/fwcam-dashboard-panel.js",
+      "embed_iframe": false,
+      "require_admin": false
+    }
+  ],
   "requirements": [
     "aiohttp>=3.8.0",
     "python-telegram-bot>=20.0"
