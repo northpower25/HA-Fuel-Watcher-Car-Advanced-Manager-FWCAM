@@ -49,7 +49,7 @@
       },
       "vehicle_features": {
         "title": "Configure Vehicle Features",
-        "description": "{trip_tracking_info}",
+        "description": "**The following settings are required for the respective functions:**\n\n**Fuel Station Proximity Search during Trips** (`proximity_alerts_enabled`)\nRequired for: Automatic notifications when a cheap fuel station is nearby, and the Proximity Alert switch entity.\nNote: If your vehicle does not provide accurate position data during trips, the configured Home Assistant coordinates will be used as the location.\n\n**Trip Log including Position Tracking** (`trip_tracking_initial_enabled`)\nRequired for: Automatic trip log (Fahrtenbuch), trip statistics, and per-trip consumption analysis.\nNote: Please inform all users of the vehicle that location and movement data will be recorded.",
         "data": {
           "proximity_alerts_enabled": "Enable Proximity Alerts for cheap fuel stations",
           "trip_tracking_initial_enabled": "Enable Trip Tracking (Fahrtenbuch)"
@@ -115,7 +115,7 @@
       },
       "historical_import": {
         "title": "Import Historical Vehicle Data",
-        "description": "{import_info}",
+        "description": "**The following setting is required for immediate statistics:**\n\n**Import Historical Vehicle Data** (`import_historical_data`)\nImports up to 90 days of historical data from Home Assistant's recorder (odometer, tank level, refueling events, and trips).\nNote: If this is not enabled, it may take several days before meaningful consumption statistics and predictions become available. The import runs automatically in the background after setup completes.",
         "data": {
           "import_historical_data": "Import historical vehicle data now"
         },
@@ -218,7 +218,7 @@
         "name": "Range"
       },
       "nearest_station": {
-        "name": "Cheapest Station"
+        "name": "Nearest Station"
       }
     },
     "button": {

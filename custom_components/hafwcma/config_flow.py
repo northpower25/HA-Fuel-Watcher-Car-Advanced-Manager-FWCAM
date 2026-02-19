@@ -566,17 +566,6 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.data.update(user_input)
             return await self.async_step_telegram()
 
-        trip_tracking_info = (
-            "ℹ️ **Proximity Alerts** – required for:\n"
-            "• Automatic notifications when a cheap fuel station is near your vehicle\n"
-            "• The Proximity Alert switch entity and fuel-price sensor comparisons\n\n"
-            "ℹ️ **Trip Tracking (Fahrtenbuch)** – required for:\n"
-            "• Automatic trip logging and mileage book\n"
-            "• Trip statistics, route visualisation and per-trip consumption analysis\n\n"
-            "⚠️ Note: Trip tracking stores location and movement data. "
-            "Please review your privacy requirements before enabling."
-        )
-
         data_schema = vol.Schema(
             {
                 vol.Optional(
@@ -594,9 +583,6 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="vehicle_features",
             data_schema=data_schema,
             errors=errors,
-            description_placeholders={
-                "trip_tracking_info": trip_tracking_info,
-            },
         )
 
     async def async_step_historical_import(
@@ -631,32 +617,6 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data=self.data,
             )
 
-        trip_tracking_enabled = self.data.get(CONF_TRIP_TRACKING_INITIAL_ENABLED, False)
-
-        if trip_tracking_enabled:
-            import_info = (
-                "⚡ Import historical vehicle data from Home Assistant's recorder.\n\n"
-                "This will import up to 90 days of:\n"
-                "• Odometer readings – required for consumption statistics\n"
-                "• Tank fill level history – required for refueling detection\n"
-                "• Refueling events – required for cost and consumption analysis\n"
-                "• Trip history – required for the trip log (Fahrtenbuch)\n\n"
-                "💡 Without historical data it may take several days before valid consumption "
-                "statistics and predictions appear in the dashboard.\n\n"
-                "📊 Import results will be shown as a notification in Home Assistant once complete."
-            )
-        else:
-            import_info = (
-                "⚡ Import historical vehicle data from Home Assistant's recorder.\n\n"
-                "This will import up to 90 days of:\n"
-                "• Odometer readings – required for consumption statistics\n"
-                "• Tank fill level history – required for refueling detection\n"
-                "• Refueling events – required for cost and consumption analysis\n\n"
-                "💡 Without historical data it may take several days before valid consumption "
-                "statistics and predictions appear in the dashboard.\n\n"
-                "📊 Import results will be shown as a notification in Home Assistant once complete."
-            )
-
         data_schema = vol.Schema(
             {
                 vol.Optional(
@@ -670,9 +630,6 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="historical_import",
             data_schema=data_schema,
             errors=errors,
-            description_placeholders={
-                "import_info": import_info,
-            },
         )
 
     async def async_step_import_progress(
@@ -729,37 +686,17 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         tank_pts = result.get("tank_points", 0)
         date_range = result.get("date_range", "")
         recorder_ok = result.get("recorder_available", False)
+        preflight_error = result.get("preflight_error", "")
+        is_german = getattr(self.hass.config, "language", "en").startswith("de")
 
-        if recorder_ok and odometer_pts > 0:
-            summary = (
-                f"✅ **Recorder data found!**\n\n"
-                f"• Odometer data points: **{odometer_pts}**\n"
-                f"• Tank level data points: **{tank_pts}**\n"
-            )
-            if date_range:
-                summary += f"• Date range: {date_range}\n"
-            summary += (
-                "\n📥 Historical data will be imported automatically once Home Assistant "
-                "has fully started. Results will appear as a notification."
-            )
-        elif recorder_ok:
-            summary = (
-                "ℹ️ Recorder is available but no historical data was found for the "
-                "configured vehicle entities.\n\n"
-                "Data will accumulate automatically as you drive."
-            )
-        else:
-            preflight_error = result.get("preflight_error", "")
-            if preflight_error:
-                summary = (
-                    f"⚠️ Could not query the recorder: {preflight_error}\n\n"
-                    "Historical import will be skipped. Data will accumulate automatically."
-                )
-            else:
-                summary = (
-                    "⚠️ Home Assistant recorder is not available or could not be queried.\n\n"
-                    "Historical import will be skipped. Data will accumulate automatically."
-                )
+        summary = self._build_import_summary(
+            is_german=is_german,
+            recorder_ok=recorder_ok,
+            odometer_pts=odometer_pts,
+            tank_pts=tank_pts,
+            date_range=date_range,
+            preflight_error=preflight_error,
+        )
 
         return self.async_show_form(
             step_id="finish_setup",
@@ -833,6 +770,69 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             result["preflight_error"] = str(err)
 
         self._preflight_result = result
+
+    @staticmethod
+    def _build_import_summary(
+        is_german: bool,
+        recorder_ok: bool,
+        odometer_pts: int,
+        tank_pts: int,
+        date_range: str,
+        preflight_error: str,
+    ) -> str:
+        """Build a localised import summary string for the finish_setup step."""
+        if recorder_ok and odometer_pts > 0:
+            if is_german:
+                summary = (
+                    f"✅ **Recorder-Daten gefunden!**\n\n"
+                    f"• Kilometerzähler Datenpunkte: **{odometer_pts}**\n"
+                    f"• Tankfüllstand Datenpunkte: **{tank_pts}**\n"
+                )
+                if date_range:
+                    summary += f"• Zeitraum: {date_range}\n"
+                summary += (
+                    "\n📥 Historische Daten werden automatisch importiert, sobald Home Assistant "
+                    "vollständig gestartet ist. Die Ergebnisse erscheinen als Benachrichtigung."
+                )
+            else:
+                summary = (
+                    f"✅ **Recorder data found!**\n\n"
+                    f"• Odometer data points: **{odometer_pts}**\n"
+                    f"• Tank level data points: **{tank_pts}**\n"
+                )
+                if date_range:
+                    summary += f"• Date range: {date_range}\n"
+                summary += (
+                    "\n📥 Historical data will be imported automatically once Home Assistant "
+                    "has fully started. Results will appear as a notification."
+                )
+        elif recorder_ok:
+            summary = (
+                "ℹ️ Recorder ist verfügbar, aber für die konfigurierten Fahrzeugentitäten "
+                "wurden keine historischen Daten gefunden.\n\n"
+                "Daten werden automatisch gesammelt, sobald Sie fahren."
+                if is_german else
+                "ℹ️ Recorder is available but no historical data was found for the "
+                "configured vehicle entities.\n\n"
+                "Data will accumulate automatically as you drive."
+            )
+        elif preflight_error:
+            summary = (
+                f"⚠️ Recorder konnte nicht abgefragt werden: {preflight_error}\n\n"
+                "Historischer Import wird übersprungen. Daten werden automatisch gesammelt."
+                if is_german else
+                f"⚠️ Could not query the recorder: {preflight_error}\n\n"
+                "Historical import will be skipped. Data will accumulate automatically."
+            )
+        else:
+            summary = (
+                "⚠️ Home Assistant Recorder ist nicht verfügbar oder konnte nicht abgefragt werden.\n\n"
+                "Historischer Import wird übersprungen. Daten werden automatisch gesammelt."
+                if is_german else
+                "⚠️ Home Assistant recorder is not available or could not be queried.\n\n"
+                "Historical import will be skipped. Data will accumulate automatically."
+            )
+        return summary
 
     async def async_step_telegram(
         self, user_input: dict[str, Any] | None = None
