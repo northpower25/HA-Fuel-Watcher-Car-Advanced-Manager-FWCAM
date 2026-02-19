@@ -3029,7 +3029,7 @@ class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
         return attributes
 
 
-class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
+class ConsumptionPredictionSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing days until refueling is needed based on consumption prediction."""
 
     _attr_icon = "mdi:fuel"
@@ -3056,6 +3056,9 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{config_entry.entry_id}_days_until_refuel"
         self._last_prediction_update = None
         self._last_known_value = None
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
         
         # Device info for grouping
         self._attr_device_info = {
@@ -3065,18 +3068,45 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
             "model": "Fuel Watcher Car Advanced Manager",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        # Restore last state
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            try:
+                self._restored_value = float(last_state.state)
+                self._restored_attributes = dict(last_state.attributes)
+                _LOGGER.info(
+                    "Restored %s with value %s from previous state",
+                    self.entity_id,
+                    self._restored_value,
+                )
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Could not restore %s state: %s",
+                    self.entity_id,
+                    err,
+                )
+
     @property
     def native_value(self) -> float | None:
         """Return the days until refueling is needed."""
-        if self.coordinator.data is None:
-            return self._last_known_value
-        prediction = self.coordinator.data.get("consumption_prediction")
-        if prediction:
-            days = prediction.get("days_until_refuel")
-            if days is not None:
-                self._last_known_value = days
-                return days
-        # Fallback to last known value if current value is None
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            prediction = self.coordinator.data.get("consumption_prediction")
+            if prediction:
+                days = prediction.get("days_until_refuel")
+                if days is not None:
+                    self._last_known_value = days
+                    return days
+        
+        # Fall back to restored value if coordinator data not yet available
+        if self._restored_value is not None:
+            return self._restored_value
+        
+        # Finally fall back to in-memory last known value
         return self._last_known_value
     
     @property
@@ -3092,99 +3122,116 @@ class ConsumptionPredictionSensor(CoordinatorEntity, SensorEntity):
         6. Statistics (avg_daily_km, avg_consumption_rate)
         7. Config & documentation
         """
-        if self.coordinator.data is None:
-            return {}
-        prediction = self.coordinator.data.get("consumption_prediction")
-        if not prediction:
-            return {
-                "data_source": "no_data",
-                "status": "Waiting for initial prediction",
+        # If coordinator has fresh data, use it
+        if self.coordinator.data is not None:
+            prediction = self.coordinator.data.get("consumption_prediction")
+            if not prediction:
+                return {
+                    "data_source": "no_data",
+                    "status": "Waiting for initial prediction",
+                }
+            
+            # Get min data points configuration
+            from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+            options = self._config_entry.options
+            config = self._config_entry.data
+            min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
+                CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
+            )
+            
+            # Build attributes in standard order
+            # 1. Core metadata
+            attributes = {
+                "state_class": "measurement",
+                "data_source": prediction.get("data_source", "unknown"),
+                "confidence": prediction.get("confidence", 0.0),
             }
-        
-        # Get min data points configuration
-        from .const import CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
-        options = self._config_entry.options
-        config = self._config_entry.data
-        min_data_points = options.get(CONF_CONSUMPTION_MIN_DATA_POINTS) or config.get(
-            CONF_CONSUMPTION_MIN_DATA_POINTS, DEFAULT_CONSUMPTION_MIN_DATA_POINTS
-        )
-        
-        # Build attributes in standard order
-        # 1. Core metadata
-        attributes = {
-            "state_class": "measurement",
-            "data_source": prediction.get("data_source", "unknown"),
-            "confidence": prediction.get("confidence", 0.0),
-        }
-        
-        # 2. Update timestamps
-        if prediction.get("last_prediction_time"):
-            last_pred_time = prediction["last_prediction_time"]
-            if isinstance(last_pred_time, str):
-                attributes["last_prediction"] = last_pred_time
-            else:
-                attributes["last_prediction"] = last_pred_time.isoformat()
-        
-        # Also add predicted refuel date here as it's a key timestamp
-        if prediction.get("predicted_refuel_date"):
-            pred_refuel_date = prediction["predicted_refuel_date"]
-            if isinstance(pred_refuel_date, str):
-                attributes["predicted_refuel_date"] = pred_refuel_date
-            else:
-                attributes["predicted_refuel_date"] = pred_refuel_date.isoformat()
-        
-        # 3. AI/ML patterns - weekday driving pattern
-        weekday_pattern = prediction.get("weekday_pattern")
-        if weekday_pattern:
-            # Convert weekday numbers to names for better readability
-            weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-            formatted_pattern = {}
-            for weekday, km in weekday_pattern.items():
-                if isinstance(weekday, int) and 0 <= weekday < 7:
-                    formatted_pattern[weekday_names[weekday]] = round(km, 1)
             
-            if formatted_pattern:
-                attributes["weekday_driving_pattern (km)"] = formatted_pattern
-        
-        # 4. Recommendations - forecast recommendation
-        if prediction.get("forecast_recommendation"):
-            forecast = prediction["forecast_recommendation"]
-            attributes["forecast_recommendation"] = forecast.get("recommendation", "Not enough data for price forecast") or "Not enough data for price forecast"
-            attributes["forecast_should_refuel"] = forecast.get("should_refuel", False)
-            attributes["forecast_urgency"] = forecast.get("urgency", "low")
-            attributes["forecast_trend"] = forecast.get("forecast_trend", "stable")
+            # 2. Update timestamps
+            if prediction.get("last_prediction_time"):
+                last_pred_time = prediction["last_prediction_time"]
+                if isinstance(last_pred_time, str):
+                    attributes["last_prediction"] = last_pred_time
+                else:
+                    attributes["last_prediction"] = last_pred_time.isoformat()
             
-            # Add detailed forecast data
-            if forecast.get("has_forecast"):
-                attributes["forecast_predicted_weekday"] = forecast.get("predicted_weekday")
-                attributes["forecast_predicted_avg_price"] = forecast.get("predicted_avg_price")
-                attributes["forecast_cheapest_weekday"] = forecast.get("cheapest_weekday")
-                attributes["forecast_cheapest_avg_price"] = forecast.get("cheapest_avg_price")
-                attributes["forecast_price_difference"] = forecast.get("price_difference")
-        else:
-            # No forecast recommendation data available
-            attributes["forecast_recommendation"] = "Waiting for consumption prediction and price history data"
+            # Also add predicted refuel date here as it's a key timestamp
+            if prediction.get("predicted_refuel_date"):
+                pred_refuel_date = prediction["predicted_refuel_date"]
+                if isinstance(pred_refuel_date, str):
+                    attributes["predicted_refuel_date"] = pred_refuel_date
+                else:
+                    attributes["predicted_refuel_date"] = pred_refuel_date.isoformat()
+            
+            # 3. AI/ML patterns - weekday driving pattern
+            weekday_pattern = prediction.get("weekday_pattern")
+            if weekday_pattern:
+                # Convert weekday numbers to names for better readability
+                weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                formatted_pattern = {}
+                for weekday, km in weekday_pattern.items():
+                    if isinstance(weekday, int) and 0 <= weekday < 7:
+                        formatted_pattern[weekday_names[weekday]] = round(km, 1)
+                
+                if formatted_pattern:
+                    attributes["weekday_driving_pattern (km)"] = formatted_pattern
+            
+            # 4. Recommendations - forecast recommendation
+            if prediction.get("forecast_recommendation"):
+                forecast = prediction["forecast_recommendation"]
+                attributes["forecast_recommendation"] = forecast.get("recommendation", "Not enough data for price forecast") or "Not enough data for price forecast"
+                attributes["forecast_should_refuel"] = forecast.get("should_refuel", False)
+                attributes["forecast_urgency"] = forecast.get("urgency", "low")
+                attributes["forecast_trend"] = forecast.get("forecast_trend", "stable")
+                
+                # Add detailed forecast data
+                if forecast.get("has_forecast"):
+                    attributes["forecast_predicted_weekday"] = forecast.get("predicted_weekday")
+                    attributes["forecast_predicted_avg_price"] = forecast.get("predicted_avg_price")
+                    attributes["forecast_cheapest_weekday"] = forecast.get("cheapest_weekday")
+                    attributes["forecast_cheapest_avg_price"] = forecast.get("cheapest_avg_price")
+                    attributes["forecast_price_difference"] = forecast.get("price_difference")
+            else:
+                # No forecast recommendation data available
+                attributes["forecast_recommendation"] = "Waiting for consumption prediction and price history data"
+            
+            # 5. Counters
+            data_points_used = prediction.get("data_points_used", 0)
+            attributes["data_points_used"] = data_points_used
+            
+            # Calculate and add data points percentage
+            if min_data_points > 0:
+                data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
+                attributes["data_points_percentage"] = round(data_points_percentage, 1)
+                attributes["data_points_required"] = min_data_points
+            else:
+                attributes["data_points_percentage"] = 0.0
+                attributes["data_points_required"] = min_data_points
+            
+            # 6. Statistics
+            attributes["avg_daily_km"] = prediction.get("avg_daily_km", 0.0)
+            attributes["avg_consumption_rate"] = prediction.get("avg_consumption_rate", 0.0)
+            
+            # 7. Configuration & documentation metadata
+            attributes["config_entry_id"] = self._config_entry.entry_id
+            
+            metadata = get_entity_metadata("consumption_prediction_sensor")
+            if metadata:
+                attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+                attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+                attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+                attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+            
+            return attributes
         
-        # 5. Counters
-        data_points_used = prediction.get("data_points_used", 0)
-        attributes["data_points_used"] = data_points_used
+        # Fall back to restored attributes if coordinator data not yet available
+        attributes = self._restored_attributes.copy() if self._restored_attributes else {}
         
-        # Calculate and add data points percentage
-        if min_data_points > 0:
-            data_points_percentage = min(100.0, (data_points_used / min_data_points) * 100)
-            attributes["data_points_percentage"] = round(data_points_percentage, 1)
-            attributes["data_points_required"] = min_data_points
-        else:
-            attributes["data_points_percentage"] = 0.0
-            attributes["data_points_required"] = min_data_points
+        # Mark as restored state
+        if self._restored_value is not None:
+            attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
-        # 6. Statistics
-        attributes["avg_daily_km"] = prediction.get("avg_daily_km", 0.0)
-        attributes["avg_consumption_rate"] = prediction.get("avg_consumption_rate", 0.0)
-        
-        # 7. Configuration & documentation metadata
-        attributes["config_entry_id"] = self._config_entry.entry_id
-        
+        # Add standardized entity metadata for inline documentation
         metadata = get_entity_metadata("consumption_prediction_sensor")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
