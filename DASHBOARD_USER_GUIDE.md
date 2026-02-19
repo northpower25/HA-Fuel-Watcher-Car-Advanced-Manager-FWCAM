@@ -2,15 +2,26 @@
 
 ## 🎯 Zusammenfassung / Summary
 
-Dieses PR implementiert ein umfassendes Dashboard-System für die FWCAM-Integration mit vorgefertigten Vorlagen, Hilfesystem und ausführlicher Dokumentation.
+Dieses System implementiert ein umfassendes Dashboard für die FWCAM-Integration mit automatischem Sidebar-Panel, vorgefertigten YAML-Vorlagen und ausführlicher Dokumentation.
 
-This PR implements a comprehensive dashboard system for the FWCAM integration with ready-to-use templates, help system, and extensive documentation.
+This system implements a comprehensive dashboard for the FWCAM integration with an automatic sidebar panel, ready-to-use YAML templates, and extensive documentation.
 
 ---
 
 ## 🚀 Was wurde implementiert / What Was Implemented
 
-### 1. Dashboard-Vorlagen / Dashboard Templates
+### 1. Automatisches Sidebar-Panel / Automatic Sidebar Panel (NEU / NEW)
+
+✅ **Zero-Konfiguration – kein YAML erforderlich / Zero-configuration – no YAML required**
+
+Nach der Installation erscheint **"Fuel Watcher"** automatisch in der Seitenleiste.
+After installation, **"Fuel Watcher"** appears automatically in the sidebar.
+
+- Erkennt alle FWCAM-Fahrzeuge automatisch / Auto-discovers all FWCAM vehicles
+- Fahrzeug-Tabs bei mehreren Fahrzeugen / Vehicle tabs for multiple vehicles
+- Vollständige `fwcam-card` eingebettet / Full `fwcam-card` embedded
+
+### 2. Dashboard-Vorlagen / Dashboard Templates (Fallback)
 
 #### Übersichts-Dashboard / Overview Dashboard
 📁 `dashboards/fwcam-overview-dashboard.yaml`
@@ -18,8 +29,6 @@ This PR implements a comprehensive dashboard system for the FWCAM integration wi
 **Für mehrere Fahrzeuge / For multiple vehicles**
 - 5 Ansichten: Übersicht, Kraftstoffpreise, Fahrten, Einstellungen, Debug
 - 5 views: Overview, Fuel Prices, Trips, Settings, Debug
-- Vergleich zwischen Fahrzeugen / Vehicle comparison
-- Zentrale Konfiguration / Centralized configuration
 
 #### Fahrzeug-Dashboard / Per-Vehicle Dashboard
 📁 `dashboards/fwcam-vehicle-dashboard-template.yaml`
@@ -27,51 +36,42 @@ This PR implements a comprehensive dashboard system for the FWCAM integration wi
 **Für detaillierte Fahrzeugverwaltung / For detailed vehicle management**
 - 6 Ansichten: Übersicht, Tankprotokoll, Fahrtenbuch, Statistiken, Einstellungen, Debug
 - 6 views: Overview, Refueling Log, Trip Log, Statistics, Settings, Debug
-- FWCAM-Karte vollständig integriert / Full FWCAM card integration
-- Erweiterte Statistiken / Advanced statistics
 
-### 2. Hilfe-Module / Helper Modules
+### 3. Hilfe-Module / Helper Modules
 
 #### Hilfe-Inhalte / Help Content
 📁 `custom_components/hafwcma/www/fwcam-card-help.js`
 
 - Zweisprachig (Deutsch/Englisch) / Bilingual (German/English)
 - Hilfe für alle Entitäten / Help for all entities
-- Modal-Popups (keine neuen Tabs) / Modal popups (no new tabs)
-- Links zur Dokumentation / Links to documentation
 
 #### Hilfsfunktionen / Helper Functions
 📁 `custom_components/hafwcma/www/fwcam-card-helpers.js`
 
 - Wiederverwendbare UI-Komponenten / Reusable UI components
-- Hilfe-Buttons / Help buttons
-- Statistik-Karten / Statistics cards
-- Ausklappbare Bereiche / Collapsible sections
-- Fortschrittsbalken / Progress bars
 - Formatierungsfunktionen / Formatting functions
 
-### 3. Dokumentation / Documentation
+### 4. Dokumentation / Documentation
 
-#### Installationsanleitung / Installation Guide
-📁 `dashboards/DASHBOARD_INSTALLATION_GUIDE.md`
-
-- Schritt-für-Schritt-Anleitung / Step-by-step instructions
-- Anpassungsbeispiele / Customization examples
-- Fehlerbehebung / Troubleshooting
-- Technische Limitierungen erklärt / Technical limitations explained
-
-#### Weitere Dokumentation / Additional Documentation
-- 📁 `dashboards/README.md` - Schnellstart / Quick start
-- 📁 `custom_components/hafwcma/www/CARD_ENHANCEMENT_GUIDE.md` - Entwicklerhandbuch / Developer guide
-- 📁 `DASHBOARD_SYSTEM_SUMMARY.md` - Technische Übersicht / Technical overview
+📁 `dashboards/DASHBOARD_INSTALLATION_GUIDE.md` – Installationsanleitung / Installation guide
 
 ---
 
 ## 📋 Installation - Schnellstart / Quick Start
 
-### Option 1: Übersichts-Dashboard (Mehrere Fahrzeuge)
+### ⭐ Option 1: Automatisches Sidebar-Panel (Empfohlen / Recommended)
 
-**5-Minuten-Installation:**
+**Keine Schritte erforderlich! / No steps required!**
+
+1. FWCAM-Integration installieren / Install FWCAM integration
+2. Mindestens ein Fahrzeug konfigurieren / Configure at least one vehicle
+3. ✅ **"Fuel Watcher" erscheint automatisch in der Seitenleiste / appears automatically in the sidebar**
+
+---
+
+### Option 2: Übersichts-Dashboard (Mehrere Fahrzeuge / Multiple Vehicles)
+
+**YAML-Fallback:**
 
 1. **Datei öffnen / Open file:**
    - `dashboards/fwcam-overview-dashboard.yaml`
@@ -80,8 +80,7 @@ This PR implements a comprehensive dashboard system for the FWCAM integration wi
    - Gesamten Inhalt kopieren / Copy entire content
 
 3. **Dashboard erstellen / Create dashboard:**
-   - Einstellungen → Dashboards
-   - Settings → Dashboards
+   - Einstellungen → Dashboards / Settings → Dashboards
    - "+ DASHBOARD HINZUFÜGEN" / "+ ADD DASHBOARD"
 
 4. **YAML einfügen / Paste YAML:**
@@ -94,9 +93,9 @@ This PR implements a comprehensive dashboard system for the FWCAM integration wi
    - Replace `YOUR_CAR_NAME` with your vehicle name
    - Speichern / Save
 
-### Option 2: Fahrzeug-Dashboard (Ein Fahrzeug, detailliert)
+### Option 3: Fahrzeug-Dashboard (Ein Fahrzeug, detailliert)
 
-**Gleicher Prozess mit:**
+**Gleicher Prozess mit / Same process with:**
 - `dashboards/fwcam-vehicle-dashboard-template.yaml`
 
 ---
@@ -144,6 +143,13 @@ hours_to_show: 168  # Ändern Sie diese Zahl / Change this number
 ---
 
 ## 🎨 Funktionen / Features
+
+### Sidebar-Panel Features
+
+**Fahrzeugübersicht / Vehicle Overview:**
+- Automatische Fahrzeugerkennung / Automatic vehicle detection
+- Tab-Navigation bei mehreren Fahrzeugen / Tab navigation for multiple vehicles
+- Vollständige fwcam-card eingebettet / Full fwcam-card embedded
 
 ### Übersichts-Dashboard Features
 
@@ -212,6 +218,15 @@ hours_to_show: 168  # Ändern Sie diese Zahl / Change this number
 
 ## 🆘 Fehlerbehebung / Troubleshooting
 
+### Sidebar-Panel nicht sichtbar / Sidebar panel not visible
+
+**Problem:** "Fuel Watcher" fehlt in der Seitenleiste / missing from sidebar
+
+**Lösung / Solution:**
+1. Home Assistant neu starten / Restart Home Assistant
+2. FWCAM korrekt installiert und konfiguriert? / FWCAM installed and configured?
+3. Browser-Cache leeren (Ctrl+Shift+R) / Clear browser cache
+
 ### "Entität nicht gefunden" / "Entity not found"
 
 **Problem:** Entitäten werden als "nicht verfügbar" angezeigt
@@ -227,9 +242,8 @@ hours_to_show: 168  # Ändern Sie diese Zahl / Change this number
 **Problem:** "Custom element doesn't exist: fwcam-card"
 
 **Lösung / Solution:**
-1. `fwcam-card.js` installiert? / Installed?
-2. Browser-Cache leeren (Ctrl+Shift+R) / Clear cache
-3. Ressourcen neu laden / Reload resources
+1. Browser-Cache leeren (Ctrl+Shift+R) / Clear cache
+2. Home Assistant neu starten / Restart Home Assistant
 
 ### YAML-Fehler / YAML Errors
 
@@ -238,38 +252,26 @@ hours_to_show: 168  # Ändern Sie diese Zahl / Change this number
 **Lösung / Solution:**
 1. YAML-Validator verwenden / Use YAML validator
 2. Einrückung prüfen (Leerzeichen, keine Tabs) / Check indentation
-3. Anführungszeichen geschlossen? / Quotes closed?
-4. Sonderzeichen maskiert? / Special chars escaped?
 
 ---
 
 ## ⚠️ Technische Limitierungen / Technical Limitations
 
-### Warum keine automatische Dashboard-Erstellung?
+### Automatisches Sidebar-Panel / Automatic Sidebar Panel
 
-**Wichtig / Important:**
-Home Assistant unterstützt NICHT die automatische Dashboard-Erstellung durch Integrationen.
+**Seit PR #167 / Since PR #167:**
+FWCAM registriert automatisch ein Sidebar-Panel – kein YAML-Kopieren erforderlich.
 
-Home Assistant does NOT support automatic dashboard creation from integrations.
+FWCAM automatically registers a sidebar panel – no YAML copy-pasting needed.
 
-**Gründe / Reasons:**
-1. Sicherheit / Security
-2. Stabilität / Stability
-3. Architektur / Architecture
-4. Best Practices
+- ✅ Sidebar-Panel (`panel_custom`) wird beim Integrationsstart registriert
+- ✅ Sidebar panel (`panel_custom`) registered on integration start
+- ✅ Fahrzeuge werden automatisch erkannt / Vehicles discovered automatically
+- ✅ `fwcam-card` vollständig eingebettet / `fwcam-card` fully embedded
 
-**Unsere Lösung / Our Solution:**
-- ✅ Vorgefertigte YAML-Vorlagen / Ready-made YAML templates
-- ✅ Ausführliche Anleitungen / Detailed guides
-- ✅ Einfache Anpassung / Easy customization
-- ✅ Best Practices befolgt / Following best practices
-
-**Dieser Ansatz wird auch verwendet von:**
-This approach is also used by:
-- Frigate NVR
-- ESPHome
-- Zigbee2MQTT
-- Node-RED
+**Fallback: YAML-Vorlagen / Fallback: YAML Templates**
+Für benutzerdefinierte Layouts und zusätzliche HA-Karten stehen weiterhin YAML-Vorlagen bereit.
+For custom layouts and additional HA cards, YAML templates are still available.
 
 ---
 
@@ -295,13 +297,13 @@ This approach is also used by:
 
 ## ✅ Checkliste / Checklist
 
-### Vor der Installation / Before Installation
+### Automatisches Sidebar-Panel / Automatic Sidebar Panel
 - [ ] Home Assistant 2023.7 oder neuer / or newer
 - [ ] FWCAM-Integration installiert / installed
 - [ ] Fahrzeug konfiguriert / Vehicle configured
-- [ ] Entitätsnamen notiert / Entity names noted
+- [x] ✅ "Fuel Watcher" erscheint automatisch in der Seitenleiste / appears automatically in the sidebar
 
-### Installation / Installation
+### YAML-Vorlage (optional / optional)
 - [ ] Vorlage ausgewählt / Template selected
 - [ ] YAML kopiert / YAML copied
 - [ ] Dashboard erstellt / Dashboard created
@@ -310,38 +312,20 @@ This approach is also used by:
 - [ ] Gespeichert / Saved
 - [ ] Getestet / Tested
 
-### Nach der Installation / After Installation
-- [ ] Dashboard funktioniert / Dashboard works
-- [ ] Alle Entitäten angezeigt / All entities shown
-- [ ] Mobilansicht geprüft / Mobile view checked
-- [ ] Anpassungen vorgenommen / Customizations made
-- [ ] Dokumentiert / Documented
-
 ---
 
 ## 🎉 Zusammenfassung / Summary
 
 **Was Sie bekommen / What You Get:**
-- 2 vorgefertigte Dashboard-Vorlagen / 2 ready-made templates
+- ✅ Automatisches Sidebar-Panel – kein YAML erforderlich / Automatic sidebar panel – no YAML required
+- 2 vorgefertigte YAML-Vorlagen für benutzerdefinierte Layouts / 2 YAML templates for custom layouts
 - Zweisprachiges Hilfesystem / Bilingual help system
 - Wiederverwendbare UI-Komponenten / Reusable UI components
 - Umfassende Dokumentation / Comprehensive documentation
-- 5-Minuten-Installation / 5-minute installation
-- Vollständig anpassbar / Fully customizable
 
-**Warum dieser Ansatz? / Why This Approach?**
-- ✅ Folgt HA Best Practices / Follows HA best practices
-- ✅ Kein Risiko von Datenbeschädigung / No data corruption risk
-- ✅ Funktioniert mit allen HA-Versionen / Works with all HA versions
-- ✅ Von Benutzern anpassbar / Customizable by users
-- ✅ Einfach zu warten / Easy to maintain
-- ✅ Community kann teilen / Community can share
-
-**Nächste Schritte / Next Steps:**
-1. Vorlage auswählen / Choose template
-2. Installationsanleitung folgen / Follow installation guide
-3. Dashboard anpassen / Customize dashboard
-4. Genießen! / Enjoy!
+**Empfehlung / Recommendation:**
+- ⭐ Sidebar-Panel nutzen / Use sidebar panel (zero setup, auto-discovers vehicles)
+- 📋 YAML-Vorlagen als Fallback / YAML templates as fallback (custom layouts)
 
 ---
 

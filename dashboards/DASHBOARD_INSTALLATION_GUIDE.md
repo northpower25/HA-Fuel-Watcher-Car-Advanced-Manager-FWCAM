@@ -1,6 +1,6 @@
 # FWCAM Dashboard Installation Guide
 
-This guide explains how to set up comprehensive dashboards for the Fuel Watcher Car Advanced Manager (FWCAM) integration.
+This guide explains how to access and set up dashboards for the Fuel Watcher Car Advanced Manager (FWCAM) integration.
 
 ## 📋 Table of Contents
 
@@ -16,19 +16,18 @@ This guide explains how to set up comprehensive dashboards for the Fuel Watcher 
 
 ## Overview
 
-FWCAM provides two types of dashboard templates:
+FWCAM provides two ways to access its dashboard:
 
-1. **Overview Dashboard** (`fwcam-overview-dashboard.yaml`)
-   - Multi-vehicle overview
-   - Comparison across all vehicles
-   - Centralized settings
-   - Statistics summary
+1. **Automatic Sidebar Panel** *(recommended – zero configuration)*
+   - Registers automatically when FWCAM is installed
+   - Appears as **"Fuel Watcher"** in the Home Assistant sidebar
+   - Auto-discovers all configured vehicles
+   - No YAML needed
 
-2. **Per-Vehicle Dashboard** (`fwcam-vehicle-dashboard-template.yaml`)
-   - Detailed single-vehicle view
-   - Comprehensive FWCAM custom card integration
-   - Full refueling and trip log management
-   - Advanced statistics and analytics
+2. **YAML Dashboard Templates** *(advanced / fallback)*
+   - `dashboards/fwcam-overview-dashboard.yaml` – multi-vehicle overview
+   - `dashboards/fwcam-vehicle-dashboard-template.yaml` – per-vehicle detail view
+   - Full control over layout and entities
 
 ## Prerequisites
 
@@ -38,61 +37,66 @@ FWCAM provides two types of dashboard templates:
 - ✅ FWCAM integration installed and configured
 - ✅ At least one vehicle (config entry) set up in FWCAM
 
-### Recommended
+### Recommended (YAML templates only)
 
-- ✅ FWCAM custom card (`fwcam-card.js`) installed in `/config/www/`
 - ✅ Basic knowledge of YAML
-- ✅ Access to Home Assistant UI (Settings -> Dashboards)
+- ✅ Access to Home Assistant UI (Settings → Dashboards)
 
 ## Dashboard Types
 
-### Overview Dashboard
+### Automatic Sidebar Panel
 
 **Best for:**
-- Users with multiple vehicles
-- Quick comparison between vehicles
-- Overview of all fuel prices and tank levels
-- Central configuration management
+- All users – no setup required
+- Quick access from the sidebar
+- Single and multi-vehicle setups
 
 **Features:**
-- Grouped vehicle displays
-- Fuel price comparison view
-- Combined trip log view
-- Centralized settings
-- Debug information for all vehicles
+- Auto-detects all FWCAM vehicles
+- Vehicle tab selector (multi-vehicle)
+- Full FWCAM card embedded (refueling log, trip log, vehicle info, settings)
+- Updates automatically when vehicles are added or removed
 
-**Screenshots:**
-- Overview page with all vehicles
-- Fuel price comparison chart
-- Multi-vehicle statistics
-
-### Per-Vehicle Dashboard
+### Overview Dashboard (YAML)
 
 **Best for:**
-- Detailed vehicle management
-- Frequent refueling log editing
-- Trip log management with geocoding
-- In-depth statistics and analysis
+- Users who need a dedicated multi-vehicle Lovelace dashboard
+- Custom layouts with additional HA cards
+- Comparison between vehicles, centralized settings
 
 **Features:**
-- Comprehensive FWCAM custom card
-- Refueling log with full CRUD operations
-- Trip log with categorization and maps
-- Consumption and price history graphs
-- Detailed settings and controls
-- Debug information
+- 5 views: Overview, Fuel Prices, Trips, Settings, Debug
+- Grouped vehicle displays, fuel price comparison, combined trip log
 
-**Screenshots:**
-- Vehicle overview with gauges and recommendations
-- Refueling log table with editing
-- Trip log with map previews
-- Statistics graphs
+### Per-Vehicle Dashboard (YAML)
+
+**Best for:**
+- Detailed vehicle management with custom layout
+- Statistics and history graphs alongside other HA cards
+
+**Features:**
+- 6 views: Overview, Refueling Log, Trip Log, Statistics, Settings, Debug
+- Full FWCAM card integration, consumption and price history graphs
 
 ## Installation Methods
 
-### Method 1: Manual YAML Dashboard (Recommended)
+### ⭐ Method 1: Automatic Sidebar Panel (Recommended)
 
-This is the **recommended method** as it provides full control and allows easy customization.
+**This is the easiest method.** No YAML, no manual steps.
+
+1. **Install FWCAM** via Settings → Devices & Services → Add Integration → "Fuel Watcher Car Advanced Manager"
+2. **Configure at least one vehicle** during the setup flow
+3. **Done!** A **"Fuel Watcher"** entry appears automatically in your Home Assistant sidebar
+
+The panel auto-discovers all your FWCAM vehicles and shows a tab for each one (if you have multiple vehicles). The full `fwcam-card` is embedded, giving you access to the refueling log, trip log, vehicle info, controls, and settings – all without any manual configuration.
+
+> **Note:** If the sidebar entry does not appear, restart Home Assistant once after completing the FWCAM setup.
+
+---
+
+### Method 2: Manual YAML Dashboard
+
+Use this if you want a dedicated Lovelace dashboard with a custom layout or additional cards.
 
 #### Step-by-Step Instructions:
 
@@ -145,9 +149,9 @@ This is the **recommended method** as it provides full control and allows easy c
    - Click **"DONE"** to exit edit mode
    - Your new dashboard is now live! 🎉
 
-### Method 2: UI-Based Dashboard Creation
+### Method 3: UI-Based Dashboard Creation
 
-For users who prefer a graphical interface:
+For users who prefer a graphical interface without copy-pasting YAML:
 
 1. **Create New Dashboard**
    - Go to **Settings** → **Dashboards**
