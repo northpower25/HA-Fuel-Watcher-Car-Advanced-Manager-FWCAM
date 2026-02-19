@@ -276,6 +276,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._api_debug_info = None  # Store debug info about API requests/responses
         self._last_consumption_prediction = None  # Store last consumption prediction time
         self._last_missed_trip_check = None  # Track when we last checked for missed trips
+        self._last_missed_refueling_check = None  # Track when we last checked for missed refuelings
         self._proximity_tracker = ProximityTracker(
             cooldown_seconds=GEOLOCATION_ALERT_COOLDOWN,
             hysteresis_factor=GEOLOCATION_HYSTERESIS_FACTOR,
@@ -836,11 +837,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         """
         from homeassistant.util import dt as dt_util
         
-        # Only check if we have vehicle tracking enabled (tank level history available)
         # Check at most once per hour to avoid excessive processing
         now = dt_util.now()
-        if self._last_missed_trip_check is not None:  # Reuse the same check timer
-            time_since_last_check = (now - self._last_missed_trip_check).total_seconds() / 3600  # hours
+        if self._last_missed_refueling_check is not None:
+            time_since_last_check = (now - self._last_missed_refueling_check).total_seconds() / 3600  # hours
             if time_since_last_check < 1.0:
                 _LOGGER.debug("Skipping missed refueling check - last check was %.1f minutes ago", time_since_last_check * 60)
                 return
@@ -884,15 +884,14 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             tank_capacity = options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
             
             # Detect missed refuelings from recent history
-            from .utils.vehicle_tracker import detect_missed_refuelings_from_history
-            lookback_hours = 24  # Look back 24 hours for missed refuelings
+            from .utils.vehicle_tracker import detect_missed_refuelings_from_history, DEFAULT_MISSED_REFUELING_LOOKBACK_HOURS
             
             missed_refuelings = detect_missed_refuelings_from_history(
                 tank_level_history=tank_level_history,
                 existing_refuel_timestamps=existing_timestamps,
                 tank_capacity=tank_capacity,
                 min_refuel_threshold_percent=3.5,  # Same as VehicleDataTracker
-                lookback_hours=lookback_hours,
+                lookback_hours=DEFAULT_MISSED_REFUELING_LOOKBACK_HOURS,
             )
             
             if missed_refuelings:
@@ -936,6 +935,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 )
             else:
                 _LOGGER.debug("No missed refuelings found in tank level history")
+            
+            # Update last check timestamp
+            self._last_missed_refueling_check = now
             
         except Exception as err:
             _LOGGER.warning("Error checking for missed refuelings: %s", err)

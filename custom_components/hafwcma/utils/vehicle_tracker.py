@@ -15,11 +15,18 @@ _LOGGER = logging.getLogger(__name__)
 # Scale: 0.3 (low) to 1.0 (high), where 0.5 indicates medium confidence
 RECOVERED_TRIP_CONFIDENCE = 0.5
 
+# Confidence score for refuelings recovered from tank level history after system restart
+# Scale: 0.3 (low) to 1.0 (high), where 0.5 indicates medium confidence
+RECOVERED_REFUELING_CONFIDENCE = 0.5
+
 # Time window in minutes for detecting duplicate trips
 DUPLICATE_DETECTION_WINDOW_MINUTES = 5
 
 # Default lookback window in hours for checking missed trips
 DEFAULT_MISSED_TRIP_LOOKBACK_HOURS = 24
+
+# Default lookback window in hours for checking missed refuelings
+DEFAULT_MISSED_REFUELING_LOOKBACK_HOURS = 24
 
 
 @dataclass
@@ -610,7 +617,7 @@ def detect_missed_refuelings_from_history(
     existing_refuel_timestamps: set[datetime],
     tank_capacity: float = 50.0,
     min_refuel_threshold_percent: float = 3.5,
-    lookback_hours: int = DEFAULT_MISSED_TRIP_LOOKBACK_HOURS,
+    lookback_hours: int = DEFAULT_MISSED_REFUELING_LOOKBACK_HOURS,
 ) -> list[dict[str, Any]]:
     """Detect refueling events from recent tank level history that may have been missed.
     
@@ -707,7 +714,7 @@ def detect_missed_refuelings_from_history(
                         "longitude": None,  # Not available from tank level history
                         "fuel_type": None,  # Will use default from config
                         "data_quality": "recovered_from_tank_history",
-                        "confidence": RECOVERED_TRIP_CONFIDENCE,  # Medium confidence
+                        "confidence": RECOVERED_REFUELING_CONFIDENCE,  # Medium confidence
                         "excluded_from_calculation": False,
                     }
                     
