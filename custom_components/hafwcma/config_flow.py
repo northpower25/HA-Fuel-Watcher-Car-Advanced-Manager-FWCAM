@@ -448,24 +448,29 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            self.data.update(user_input)
-            return await self.async_step_vehicle_entities()
+            tank_capacity = user_input.get(CONF_TANK_CAPACITY)
+            initial_consumption = user_input.get(CONF_INITIAL_CONSUMPTION)
+            if tank_capacity is None or tank_capacity <= 0:
+                errors[CONF_TANK_CAPACITY] = "value_out_of_range"
+            if initial_consumption is None or initial_consumption <= 0:
+                errors[CONF_INITIAL_CONSUMPTION] = "value_out_of_range"
+            if not errors:
+                self.data.update(user_input)
+                return await self.async_step_vehicle_entities()
 
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_VEHICLE_NAME, default="My Car"): str,
-                vol.Required(CONF_TANK_CAPACITY): selector.NumberSelector(
+                vol.Optional(CONF_TANK_CAPACITY): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=10.0,
                         max=200.0,
                         step=0.01,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="L",
                     )
                 ),
-                vol.Required(CONF_INITIAL_CONSUMPTION): selector.NumberSelector(
+                vol.Optional(CONF_INITIAL_CONSUMPTION): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1.0,
                         max=50.0,
                         step=0.1,
                         mode=selector.NumberSelectorMode.BOX,
