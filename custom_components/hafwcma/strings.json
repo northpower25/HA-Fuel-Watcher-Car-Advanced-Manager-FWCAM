@@ -134,7 +134,8 @@
       "entity_validation_failed": "Failed to validate entities. Please check your Home Assistant configuration.",
       "api_test_failed": "API connection test failed. Please check your API key and try again. Note: You can modify API settings later in the integration options and test the connection using the 'Test API Connection' button entity.",
       "telegram_test_failed": "Telegram connection test failed. Please check your bot token and chat ID. Note: You can modify Telegram settings later in the integration options.",
-      "unknown": "Unexpected error occurred"
+      "unknown": "Unexpected error occurred",
+      "value_out_of_range": "Please enter a valid positive value"
     },
     "abort": {
       "already_configured": "This integration is already configured"

@@ -910,7 +910,7 @@ async def _import_tank_history_and_detect_refueling(
                             # Add to pending events for potential merging
                             pending_refuel_events.append({
                                 "timestamp": current_time_aware,
-                                "liters": level_increase,
+                                "liters": round(level_increase, 3),
                             })
                             _LOGGER.info(
                                 "✓ Refueling event detected: +%.2fL at %s (exceeds threshold of %.2fL, raw_state=%s)",
@@ -1027,7 +1027,7 @@ async def _import_tank_history_and_detect_refueling(
                 "timestamp": current_time.isoformat(),
                 "odometer_km": odometer_km,
                 "station_name": "Historical Import",
-                "liters_refueled": level_increase,
+                "liters_refueled": round(level_increase, 3),
                 "price_per_liter": price_per_liter,
                 "total_cost": level_increase * price_per_liter if price_per_liter else None,
                 "latitude": None,
@@ -1295,6 +1295,7 @@ MIN_LOCATION_DIFFERENCE_DEGREES = 0.001  # Minimum coordinate difference (~100m)
 MAX_TANK_LEVEL_LOOKUP_TIME_HOURS = 6.0  # Maximum time difference (hours) for a valid tank level reading near a trip
 MAX_REASONABLE_FUEL_CONSUMPTION_L_PER_100KM = 50.0  # Upper plausibility bound for fuel consumption
 MIN_REASONABLE_FUEL_CONSUMPTION_L_PER_100KM = 1.0   # Lower plausibility bound for fuel consumption
+WLTP_PLAUSIBILITY_TOLERANCE = 0.25  # Acceptable deviation (±25%) from WLTP reference consumption
 
 
 async def import_historical_trip_data(
@@ -1731,6 +1732,23 @@ async def _import_trip_history(
                                             consumption_per_100km,
                                         )
                                         fuel_consumed = None
+                                    elif initial_consumption is not None and consumption_fallback is not None:
+                                        # WLTP plausibility check: sensor-derived value must be within ±25% of WLTP reference
+                                        wltp_lower = initial_consumption * (1.0 - WLTP_PLAUSIBILITY_TOLERANCE)
+                                        wltp_upper = initial_consumption * (1.0 + WLTP_PLAUSIBILITY_TOLERANCE)
+                                        if consumption_per_100km < wltp_lower or consumption_per_100km > wltp_upper:
+                                            _LOGGER.warning(
+                                                "Fuel consumption for trip (%.1f km) %.2f L/100km deviates more than %.0f%% "
+                                                "from WLTP reference %.2f L/100km (bounds %.2f–%.2f L/100km). "
+                                                "Replacing with fallback consumption.",
+                                                distance_km,
+                                                consumption_per_100km,
+                                                WLTP_PLAUSIBILITY_TOLERANCE * 100,
+                                                initial_consumption,
+                                                wltp_lower,
+                                                wltp_upper,
+                                            )
+                                            fuel_consumed = None
                             
                             # If tank data was unavailable or implausible, estimate from
                             # the best available consumption rate (historical average or WLTP)
