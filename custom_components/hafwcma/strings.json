@@ -21,14 +21,16 @@
       },
       "vehicle": {
         "title": "Configure Vehicle",
-        "description": "Enter your vehicle information",
+        "description": "Enter your vehicle information.\n\n⚠️ **Both fields below are required.** The tank capacity and average consumption are critical for accurate fuel calculations and trip import. Please enter the values known for your specific vehicle (e.g., from the manual or WLTP data sheet).",
         "data": {
           "vehicle_name": "Vehicle Name (e.g., 'My Car')",
-          "tank_capacity": "Tank Capacity in Liters (e.g., 50.0)"
+          "tank_capacity": "Tank Capacity in Liters (e.g., 50.0)",
+          "initial_consumption": "Average Fuel Consumption (L/100km, e.g. WLTP value)"
         },
         "data_description": {
           "vehicle_name": "A friendly name for your vehicle",
-          "tank_capacity": "Total capacity of your fuel tank"
+          "tank_capacity": "Total capacity of your fuel tank",
+          "initial_consumption": "Your vehicle's average fuel consumption in liters per 100 km (e.g. the WLTP value from the manufacturer). This value is used as a fallback for trip fuel estimates when tank level data is unavailable or unreliable."
         }
       },
       "vehicle_entities": {
@@ -166,7 +168,8 @@
           "fallback_daily_km_thursday": "Fallback Daily km - Thursday (0-1000, e.g., 40)",
           "fallback_daily_km_friday": "Fallback Daily km - Friday (0-1000, e.g., 40)",
           "fallback_daily_km_saturday": "Fallback Daily km - Saturday (0-1000, e.g., 20)",
-          "fallback_daily_km_sunday": "Fallback Daily km - Sunday (0-1000, e.g., 20)"
+          "fallback_daily_km_sunday": "Fallback Daily km - Sunday (0-1000, e.g., 20)",
+          "initial_consumption": "Average Fuel Consumption (L/100km)"
         },
         "data_description": {
           "provider": "Choose your fuel price data provider",
@@ -191,7 +194,8 @@
           "fallback_daily_km_thursday": "Estimated daily driving distance for Thursday",
           "fallback_daily_km_friday": "Estimated daily driving distance for Friday",
           "fallback_daily_km_saturday": "Estimated daily driving distance for Saturday",
-          "fallback_daily_km_sunday": "Estimated daily driving distance for Sunday"
+          "fallback_daily_km_sunday": "Estimated daily driving distance for Sunday",
+          "initial_consumption": "Your vehicle's average fuel consumption in liters per 100 km (e.g. the WLTP value). Used as a fallback for trip fuel estimates when tank level data is unavailable."
         }
       }
     }

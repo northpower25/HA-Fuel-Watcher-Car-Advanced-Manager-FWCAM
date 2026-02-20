@@ -1336,6 +1336,7 @@ async def import_historical_trip_data(
         CONF_TANK_LEVEL_ENTITY,
         CONF_POSITION_ENTITY,
         CONF_TANK_CAPACITY,
+        CONF_INITIAL_CONSUMPTION,
         DEFAULT_TANK_CAPACITY,
         DOMAIN,
     )
@@ -1388,6 +1389,11 @@ async def import_historical_trip_data(
             options.get(CONF_TANK_CAPACITY)
             or entry.data.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
         )
+        # Initial consumption (WLTP / user-known average) used as ultimate fallback
+        initial_consumption = (
+            options.get(CONF_INITIAL_CONSUMPTION)
+            or entry.data.get(CONF_INITIAL_CONSUMPTION)
+        )
         
         if not odometer_entity:
             result["reason"] = "No odometer entity configured"
@@ -1416,6 +1422,7 @@ async def import_historical_trip_data(
             start_time,
             end_time,
             tank_capacity,
+            initial_consumption,
         )
         
         result["trips_detected"] = trips_detected
@@ -1486,6 +1493,7 @@ async def _import_trip_history(
     start_time: datetime,
     end_time: datetime,
     tank_capacity: float = 50.0,
+    initial_consumption: float | None = None,
 ) -> int:
     """Import trip history from recorder.
     
@@ -1500,6 +1508,7 @@ async def _import_trip_history(
         start_time: Start of time range
         end_time: End of time range
         tank_capacity: Tank capacity in liters (used for % → L conversion)
+        initial_consumption: User-configured average consumption in L/100km (WLTP fallback)
         
     Returns:
         Number of trips detected
@@ -1521,6 +1530,30 @@ async def _import_trip_history(
         if odometer_points == 0:
             _LOGGER.warning("No odometer data found for trip detection")
             return 0
+        
+        # Determine the best available fallback consumption rate:
+        # 1. Historical average from stored refueling events (most accurate)
+        # 2. User-configured WLTP/initial value
+        # 3. None (no fallback, trip will have fuel_consumed=None)
+        from .statistics_engine import get_average_consumption_rate
+        historical_avg_consumption = None
+        try:
+            # Pass None as fallback to distinguish "no data" from an actual historical average
+            rate = await get_average_consumption_rate(hass, entry, fallback=None)
+            if rate is not None and MIN_REASONABLE_FUEL_CONSUMPTION_L_PER_100KM <= rate <= MAX_REASONABLE_FUEL_CONSUMPTION_L_PER_100KM:
+                historical_avg_consumption = rate
+        except Exception:
+            pass
+        
+        # Best consumption fallback: prefer historical average, then user-configured WLTP value
+        consumption_fallback = historical_avg_consumption if historical_avg_consumption is not None else initial_consumption
+        if consumption_fallback:
+            _LOGGER.debug(
+                "Trip fuel consumption fallback: %.2f L/100km "
+                "(source: %s)",
+                consumption_fallback,
+                "historical_average" if historical_avg_consumption is not None else "initial_consumption",
+            )
         
         # Get tank level history for fuel consumption calculation
         tank_level_states = []
@@ -1698,6 +1731,17 @@ async def _import_trip_history(
                                             consumption_per_100km,
                                         )
                                         fuel_consumed = None
+                            
+                            # If tank data was unavailable or implausible, estimate from
+                            # the best available consumption rate (historical average or WLTP)
+                            if fuel_consumed is None and consumption_fallback and distance_km > 0:
+                                fuel_consumed = round((consumption_fallback / 100.0) * distance_km, 2)
+                                _LOGGER.debug(
+                                    "Estimated fuel for trip (%.1f km) using fallback %.2f L/100km: %.2f L",
+                                    distance_km,
+                                    consumption_fallback,
+                                    fuel_consumed,
+                                )
                             
                             # Get GPS coordinates
                             # For start: prefer location just before the trip started

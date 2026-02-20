@@ -30,6 +30,7 @@ from .const import (
     CONF_FALLBACK_DAILY_KM_SUNDAY,
     CONF_FUEL_TYPE,
     CONF_IMPORT_HISTORICAL_DATA,
+    CONF_INITIAL_CONSUMPTION,
     CONF_LOW_FUEL_THRESHOLD,
     CONF_ODOMETER_ENTITY,
     CONF_POSITION_ENTITY,
@@ -453,13 +454,22 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_VEHICLE_NAME, default="My Car"): str,
-                vol.Required(CONF_TANK_CAPACITY, default=DEFAULT_TANK_CAPACITY): selector.NumberSelector(
+                vol.Required(CONF_TANK_CAPACITY): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=10.0,
                         max=200.0,
                         step=0.01,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="L",
+                    )
+                ),
+                vol.Required(CONF_INITIAL_CONSUMPTION): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=50.0,
+                        step=0.1,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="L/100km",
                     )
                 ),
             }
@@ -1313,6 +1323,10 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
             tank_capacity_value = current_config.get(CONF_TANK_CAPACITY)
         if tank_capacity_value is None or tank_capacity_value == "":
             tank_capacity_value = DEFAULT_TANK_CAPACITY
+        
+        initial_consumption_value = current_options.get(CONF_INITIAL_CONSUMPTION)
+        if initial_consumption_value is None or initial_consumption_value == "":
+            initial_consumption_value = current_config.get(CONF_INITIAL_CONSUMPTION)
             
         telegram_token_value = current_options.get(CONF_TELEGRAM_TOKEN, "")
         if not telegram_token_value:
@@ -1446,6 +1460,18 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                         step=0.01,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="L",
+                    )
+                ),
+                vol.Optional(
+                    CONF_INITIAL_CONSUMPTION,
+                    description={"suggested_value": initial_consumption_value},
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=50.0,
+                        step=0.1,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="L/100km",
                     )
                 ),
                 vol.Optional(
