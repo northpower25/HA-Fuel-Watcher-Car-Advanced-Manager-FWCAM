@@ -1198,6 +1198,17 @@ async def _import_historical_data_background(
         await recompute_weekday_stats(hass, entry)
         _LOGGER.info("Weekday consumption stats recomputed after historical import")
 
+        # Ensure trip_statistics are consistent with the saved trips list.
+        # This is a safety measure in case the batch-save in _import_trip_history
+        # wrote trips but the statistics dict was not updated atomically.
+        if trip_result is not None and trip_result.get("imported"):
+            try:
+                from .utils.storage import recalculate_trip_statistics
+                await recalculate_trip_statistics(hass, entry)
+                _LOGGER.info("Trip statistics recalculated after historical import")
+            except Exception as stats_err:
+                _LOGGER.warning("Error recalculating trip statistics: %s", stats_err)
+
         # Rebuild geocoding cache from existing trip data
         _LOGGER.info("Rebuilding geocoding cache from existing trip data")
         cache_count = await rebuild_cache_from_trips(hass, entry)
@@ -1206,6 +1217,16 @@ async def _import_historical_data_background(
         # Mark import status as completed
         if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
             hass.data[DOMAIN][entry.entry_id]["historical_import_status"] = "completed"
+
+        # Trigger a coordinator refresh so sensors immediately show the imported data
+        # without waiting for the next scheduled update cycle.
+        try:
+            coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
+            if coordinator is not None:
+                await coordinator.async_request_refresh()
+                _LOGGER.debug("Coordinator refresh requested after historical import")
+        except Exception as refresh_err:
+            _LOGGER.warning("Error requesting coordinator refresh after import: %s", refresh_err)
 
         # Reload storage data to capture everything written during the import
         data = await storage.load_data(hass, entry)

@@ -691,6 +691,17 @@ def detect_missed_refuelings_from_history(
             
             # Check if this is a refueling event (significant increase in tank level)
             if tank_diff > threshold_liters:
+                # Physical constraint: cannot refuel more than tank capacity
+                if tank_diff > tank_capacity:
+                    _LOGGER.debug(
+                        "Skipping physically impossible refueling: +%.2fL > tank capacity %.1fL at %s",
+                        tank_diff,
+                        tank_capacity,
+                        curr_time.isoformat(),
+                    )
+                    previous_point = current_point
+                    continue
+                
                 # Check for duplicates (within configured time window)
                 is_duplicate = False
                 for existing_ts in existing_refuel_timestamps:
