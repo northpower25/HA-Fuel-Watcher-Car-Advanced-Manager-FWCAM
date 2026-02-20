@@ -111,13 +111,15 @@ class _StateLike:
 
 # Constants for historical data import configuration
 REFUEL_DETECTION_THRESHOLD_PERCENT = 3.5  # Minimum tank level increase (as percentage of tank capacity) to detect refueling
-REFUEL_MERGE_TIME_WINDOW_MINUTES = 15  # Time window to merge multiple refueling events into one
+REFUEL_MERGE_TIME_WINDOW_MINUTES = 90  # Time window to merge multiple refueling events into one (90 min covers hourly statistics data where a single fill-up may span two consecutive hourly readings)
 REFUEL_DETECTION_MIN_TIME_GAP_MINUTES = 5  # Minimum time between separate refuelings (deprecated - use merge window)
 ODOMETER_LOOKUP_MAX_TIME_DIFF_HOURS = 1  # Maximum time difference for odometer lookup
 PRICE_LOOKUP_WINDOW_DAYS = 7  # Maximum age of price data to use for historical events
 SECONDS_PER_HOUR = 3600  # Number of seconds in an hour
 DUPLICATE_DETECTION_WINDOW_HOURS = 24  # Window for detecting duplicate refuelings
 PERCENTAGE_MULTIPLIER = 100  # Multiplier for converting decimals to percentages
+PERCENTAGE_MAX_VALUE = 100.0  # Maximum valid value for a percentage-based sensor reading (0–100 range)
+UNIT_DETECTION_SAMPLE_SIZE = 10  # Number of historical values to sample when inferring sensor unit from value range
 INVALID_SENSOR_STATES = ["unknown", "unavailable", "none", "null", None, ""]  # States to ignore when processing sensor data
 SHORT_TERM_HISTORY_DAYS = 10  # Home Assistant default history retention (short-term)
 LONG_TERM_STATISTICS_OVERLAP_DAYS = 1  # Overlap between short-term and long-term queries to ensure no gaps
@@ -747,16 +749,67 @@ async def _import_tank_history_and_detect_refueling(
         states_with_positive_increase = 0
         states_below_threshold = 0
         
-        # Determine if tank level is in percentage or liters from first valid state
+        # Determine if tank level is in percentage or liters.
+        # Priority 1: live entity state (always has correct unit_of_measurement attribute).
+        #   This handles the common case where all_tank_states are _StateLike objects
+        #   from long-term statistics – those objects have empty attributes dicts and
+        #   therefore cannot supply unit information themselves.
+        # Priority 2: first valid state's attributes (fallback for real State objects).
         tank_level_in_percentage = False
-        for state in all_tank_states:
-            if state.state not in INVALID_SENSOR_STATES:
-                # Both real State objects and _StateLike have attributes property
-                unit = state.attributes.get("unit_of_measurement", "").lower()
-                if unit in ["%", "percent", "percentage"]:
-                    tank_level_in_percentage = True
-                    _LOGGER.debug("Tank level entity uses percentage unit: %s", unit)
-                break
+        live_entity_state = hass.states.get(tank_level_entity)
+        if live_entity_state is not None:
+            unit = live_entity_state.attributes.get("unit_of_measurement", "").lower()
+            if unit in ["%", "percent", "percentage"]:
+                tank_level_in_percentage = True
+                _LOGGER.debug(
+                    "Tank level entity uses percentage unit (detected from live state): %s", unit
+                )
+            else:
+                _LOGGER.debug(
+                    "Tank level entity unit from live state: '%s' (treating as liters)", unit
+                )
+        else:
+            # Fallback: check the first valid historical state's attributes
+            for state in all_tank_states:
+                if state.state not in INVALID_SENSOR_STATES:
+                    # Both real State objects and _StateLike have attributes property
+                    unit = state.attributes.get("unit_of_measurement", "").lower()
+                    if unit in ["%", "percent", "percentage"]:
+                        tank_level_in_percentage = True
+                        _LOGGER.debug("Tank level entity uses percentage unit (from history): %s", unit)
+                    break
+        
+        # Last-resort heuristic: if unit is still unknown, infer from the data values.
+        # Sensors reporting percentage will have values in 0-100; sensors reporting
+        # liters directly can exceed 100 for large tanks but cannot exceed typical
+        # tank capacities (< 200 L).  If all valid values are <= PERCENTAGE_MAX_VALUE AND
+        # the configured tank_capacity is > PERCENTAGE_MAX_VALUE, the data is almost
+        # certainly in %.
+        if not tank_level_in_percentage and tank_capacity > PERCENTAGE_MAX_VALUE:
+            valid_values = []
+            for state in all_tank_states:
+                if state.state not in INVALID_SENSOR_STATES:
+                    try:
+                        valid_values.append(float(_normalize_numeric_string(state.state)))
+                    except (ValueError, TypeError):
+                        pass
+                    if len(valid_values) >= UNIT_DETECTION_SAMPLE_SIZE:
+                        break
+            if valid_values and max(valid_values) <= PERCENTAGE_MAX_VALUE:
+                tank_level_in_percentage = True
+                _LOGGER.warning(
+                    "Tank level unit could not be determined from entity or history; "
+                    "inferred PERCENTAGE from value range (max sampled value: %.1f, tank_capacity: %.1fL). "
+                    "Verify CONF_TANK_LEVEL_ENTITY unit configuration.",
+                    max(valid_values),
+                    tank_capacity,
+                )
+        
+        _LOGGER.info(
+            "Tank level unit detection: tank_level_in_percentage=%s (tank_capacity=%.1fL)",
+            tank_level_in_percentage,
+            tank_capacity,
+        )
         
         # Calculate threshold in liters based on percentage
         threshold_liters = (REFUEL_DETECTION_THRESHOLD_PERCENT / 100.0) * tank_capacity
@@ -808,6 +861,22 @@ async def _import_tank_history_and_detect_refueling(
                     
                     # Refueling detected if increase exceeds threshold
                     if level_increase > threshold_liters:
+                        # Physical constraint: a single detected increase cannot exceed
+                        # the full tank capacity (it would be physically impossible to add
+                        # more fuel than the tank can hold).  This guards against mis-detected
+                        # events caused by unit confusion or sensor calibration drift.
+                        if level_increase > tank_capacity:
+                            _LOGGER.warning(
+                                "Skipping physically impossible refueling: +%.2fL exceeds tank capacity of %.1fL at %s "
+                                "(possible unit mismatch – check whether tank_level_entity reports in %% or liters)",
+                                level_increase,
+                                tank_capacity,
+                                current_time.isoformat(),
+                            )
+                            previous_level = current_level
+                            previous_time = current_time
+                            continue
+
                         # Check if this refueling is a duplicate
                         is_duplicate = False
                         
@@ -897,6 +966,20 @@ async def _import_tank_history_and_detect_refueling(
                 _LOGGER.info("  %d. %s: +%.2fL", i, evt["timestamp"].isoformat(), evt["liters"])
         
         merged_events = _merge_refueling_events(pending_refuel_events, REFUEL_MERGE_TIME_WINDOW_MINUTES)
+        
+        # Physical constraint: cap each merged event at tank_capacity.
+        # After merging consecutive hourly readings the summed amount can still
+        # exceed the physical tank size due to sensor mean-value artefacts.
+        for evt in merged_events:
+            if evt["liters"] > tank_capacity:
+                _LOGGER.warning(
+                    "Capping merged refueling amount %.2fL to tank capacity %.1fL at %s",
+                    evt["liters"],
+                    tank_capacity,
+                    evt["timestamp"].isoformat(),
+                )
+                evt["liters"] = tank_capacity
+        
         _LOGGER.info(
             "After merging: %d refueling event(s) to be added to storage",
             len(merged_events),
