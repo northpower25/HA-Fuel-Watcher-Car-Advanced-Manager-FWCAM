@@ -115,7 +115,7 @@
       },
       "historical_import": {
         "title": "Historische Fahrzeugdaten importieren",
-        "description": "**Folgende Einstellung wird für sofortige Statistiken benötigt:**\n\n**Import historischer Fahrzeugdaten** (`import_historical_data`)\nImportiert bis zu 90 Tage historische Daten aus dem Home Assistant Recorder (Kilometerzähler, Tankfüllstand, Tankereignisse und Fahrten).\nHinweis: Der Import läuft nach dem Abschluss der Einrichtung automatisch im Hintergrund sobald Home Assistant vollständig gestartet ist. Das Ergebnis erscheint als Home Assistant Benachrichtigung (und ggf. per Telegram).",
+        "description": "**Folgende Einstellung wird für sofortige Statistiken benötigt:**\n\n**Import historischer Fahrzeugdaten** (`import_historical_data`)\nImportiert bis zu 90 Tage historische Daten aus dem Home Assistant Recorder (Kilometerzähler, Tankfüllstand, Tankereignisse und Fahrten).\n\n**Was passiert als nächstes?**\n- Der Importvorgang startet automatisch im Hintergrund – entweder **5 Minuten nach Abschluss dieser Einrichtung** (wenn Home Assistant bereits läuft) oder beim **nächsten Start von Home Assistant**.\n- Du wirst im Home Assistant Nachrichtencenter (und ggf. per Telegram) benachrichtigt, sobald der Import abgeschlossen ist und welche Daten importiert wurden.\n- Dieser Vorgang wird nur **einmalig** für dieses Fahrzeug durchgeführt.\n- Den aktuellen Status kannst du jederzeit in `sensor.[fahrzeugname]_car_data_debug` ablesen.",
         "data": {
           "import_historical_data": "Historische Fahrzeugdaten importieren"
         },
