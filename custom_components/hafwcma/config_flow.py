@@ -1217,9 +1217,6 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="prediction",
             data_schema=data_schema,
             errors=errors,
-            description_placeholders={
-                "prediction_info": "Configure refueling prediction thresholds"
-            },
         )
 
     @staticmethod

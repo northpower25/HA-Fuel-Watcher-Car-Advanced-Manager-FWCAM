@@ -73,7 +73,7 @@
       },
       "prediction": {
         "title": "Vorhersage-Engine konfigurieren (Optional)",
-        "description": "{prediction_info}",
+        "description": "**Schwellenwerte der Vorhersage-Engine konfigurieren:**\n\nLegen Sie fest, bei welchen Bedingungen Benachrichtigungen gesendet werden sollen (z.B. Preissenkungen, niedriger Kraftstoffstand), und geben Sie Standard-Tageskilometer für die Verbrauchsvorhersage an, wenn noch keine historischen Daten vorhanden sind.",
         "data": {
           "price_drop_percent_threshold": "Preissenkung Prozentschwelle (0-100, z.B. 2.0)",
           "price_drop_absolute_threshold": "Preissenkung Absolute Schwelle in EUR (min 0.01, z.B. 0.05)",

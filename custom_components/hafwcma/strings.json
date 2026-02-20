@@ -73,7 +73,7 @@
       },
       "prediction": {
         "title": "Configure Prediction Engine (Optional)",
-        "description": "{prediction_info}",
+        "description": "**Configure the prediction engine thresholds:**\n\nSet the conditions for price drop notifications and fuel level warnings, and provide default daily driving distances for consumption prediction when no historical data is available.",
         "data": {
           "price_drop_percent_threshold": "Price Drop % Threshold (0-100, e.g., 2.0)",
           "price_drop_absolute_threshold": "Price Drop Absolute Threshold in EUR (min 0.01, e.g., 0.05)",
@@ -218,7 +218,7 @@
         "name": "Range"
       },
       "nearest_station": {
-        "name": "Cheapest Station"
+        "name": "Nearest Station"
       }
     },
     "button": {
@@ -232,6 +232,12 @@
       },
       "consumption_prediction": {
         "name": "Consumption Prediction"
+      },
+      "proximity_alerts": {
+        "name": "Proximity Alerts"
+      },
+      "telegram_test": {
+        "name": "Telegram API Test"
       }
     },
     "number": {
