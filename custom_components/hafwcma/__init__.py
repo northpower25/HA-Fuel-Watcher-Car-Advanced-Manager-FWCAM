@@ -1176,52 +1176,127 @@ async def _import_historical_data_background(
         cache_count = await rebuild_cache_from_trips(hass, entry)
         _LOGGER.info("Geocoding cache rebuilt with %d entries", cache_count)
 
-        # Send persistent notification with import results
+        # Reload storage data to capture everything written during the import
+        data = await storage.load_data(hass, entry)
+
+        # ── Gather statistics from storage ──────────────────────────────────
         vehicle_name = entry.data.get("vehicle_name", "Vehicle")
-        odometer_pts = result.get("odometer_points_imported", 0)
-        refuel_events = result.get("refuel_events_detected", 0)
-        trip_events = trip_result.get("trips_detected", 0) if trip_result and trip_result.get("imported") else 0
+        is_german = getattr(hass.config, "language", "en").startswith("de")
 
-        if result["imported"]:
+        odometer_history = data.get("odometer_history", [])
+        odo_count = len(odometer_history)
+        last_odo = odometer_history[-1].get("value") if odometer_history else None
+
+        tank_level_history = data.get("tank_level_history", [])
+        tank_count = len(tank_level_history)
+        last_tank = tank_level_history[-1].get("value") if tank_level_history else None
+
+        # Range comes from the last cached vehicle data (not stored in history)
+        last_vehicle_data = data.get("last_vehicle_data") or {}
+        last_range = last_vehicle_data.get("range_km")
+        # Range is not stored as a separate history – show 0 records
+        range_count = 0
+
+        refuel_events = len(data.get("refueling_log", []))
+
+        trips = data.get("trips", [])
+        trips_with_pos = sum(
+            1 for t in trips
+            if t.get("start_latitude") is not None or t.get("end_latitude") is not None
+        )
+        trips_without_pos = len(trips) - trips_with_pos
+
+        # Weekday names and consumption pattern (0=Monday … 6=Sunday)
+        weekday_names = (
+            ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+            if is_german
+            else ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        )
+        weekday_consumption = data.get("weekday_consumption", {})
+
+        # ── Build notification message ───────────────────────────────────────
+        odo_str = f"{last_odo:.1f} km" if last_odo is not None else "0"
+        tank_str = f"{last_tank:.1f}" if last_tank is not None else "0"
+        range_str = f"{last_range:.0f} km" if last_range is not None else "0"
+
+        if is_german:
             message_lines = [
-                f"✅ **Historical data import complete** for {vehicle_name}\n",
-                f"**Vehicle data records imported:** {odometer_pts}",
-                f"**Refueling events detected:** {refuel_events}",
+                f"Nach der Erstinstallation für das Fahrzeug **{vehicle_name}** "
+                f"wurden folgende Daten wie gewünscht importiert:\n",
+                f"- Kilometerstand: {odo_str} / {odo_count} Datensätze",
+                f"- Tanklevel: {tank_str} / {tank_count} Datensätze",
+                f"- Restreichweite: {range_str} / {range_count} Datensätze",
+                "",
+                "Nach dem Import wurde eine erste Analyse durchgeführt, "
+                "dabei konnte folgendes ermittelt werden:\n",
+                f"- Tankvorgänge: {refuel_events}",
+                f"- Fahrtenbuch: {trips_with_pos} Trips mit Position / "
+                f"{trips_without_pos} Trips ohne Position",
+                "",
+                "Historisches Verbrauchspattern:",
             ]
-            if trip_tracking_enabled:
-                message_lines.append(f"**Trip events detected:** {trip_events}")
+            for day_idx, day_name in enumerate(weekday_names):
+                day_data = weekday_consumption.get(str(day_idx), {})
+                day_km = day_data.get("km", 0.0)
+                day_count = day_data.get("count", 0)
+                avg_km = round(day_km / day_count, 1) if day_count > 0 else 0
+                message_lines.append(f"   - {day_name}: {avg_km} km")
             message_lines.append(
-                "\n📊 All data is now available in the haFWCMA dashboard timeline."
+                "\nAb sofort ermittelt die Integration die Daten zur Laufzeit."
             )
+            notification_title = f"haFWCMA – {vehicle_name} Erstinstallation abgeschlossen"
         else:
-            # Vehicle data was already imported in a previous run.  Show what is
-            # currently in storage so the user can see the accumulated data.
-            refuel_log = data.get("refueling_log", [])
-            trip_log = data.get("trip_log", [])
-            existing_refuels = len(refuel_log)
-            existing_trips = len(trip_log)
-
             message_lines = [
-                f"ℹ️ **Historical data import** for {vehicle_name}\n",
-                f"Vehicle data was already imported in a previous run.",
+                f"After the initial installation for vehicle **{vehicle_name}** "
+                f"the following data was imported as requested:\n",
+                f"- Odometer: {odo_str} / {odo_count} records",
+                f"- Tank level: {tank_str} / {tank_count} records",
+                f"- Range: {range_str} / {range_count} records",
+                "",
+                "A first analysis was performed after the import:\n",
+                f"- Refueling events: {refuel_events}",
+                f"- Trip log: {trips_with_pos} trips with position / "
+                f"{trips_without_pos} trips without position",
+                "",
+                "Historical consumption pattern:",
             ]
-            if existing_refuels or existing_trips:
-                message_lines.append(f"**Refueling events in storage:** {existing_refuels}")
-                if trip_tracking_enabled:
-                    message_lines.append(f"**Trips in storage:** {existing_trips}")
-                    if trip_result and trip_result.get("imported"):
-                        message_lines.append(f"**New trip events detected:** {trip_result.get('trips_detected', 0)}")
+            for day_idx, day_name in enumerate(weekday_names):
+                day_data = weekday_consumption.get(str(day_idx), {})
+                day_km = day_data.get("km", 0.0)
+                day_count = day_data.get("count", 0)
+                avg_km = round(day_km / day_count, 1) if day_count > 0 else 0
+                message_lines.append(f"   - {day_name}: {avg_km} km")
             message_lines.append(
-                "\n💡 Data will accumulate automatically as you drive."
+                "\nFrom now on the integration collects data at runtime."
             )
+            notification_title = f"haFWCMA – {vehicle_name} first install complete"
+
+        notification_message = "\n".join(message_lines)
 
         from homeassistant.components import persistent_notification
         persistent_notification.async_create(
             hass,
-            "\n".join(message_lines),
-            title=f"haFWCMA – {vehicle_name} Setup Complete",
+            notification_message,
+            title=notification_title,
             notification_id=f"hafwcma_import_complete_{entry.entry_id}",
         )
+
+        # ── Optional Telegram notification ──────────────────────────────────
+        telegram_token = entry.data.get("telegram_token", "")
+        telegram_chat_id = entry.data.get("telegram_chat_id", "")
+        if telegram_token and telegram_chat_id:
+            try:
+                from .messaging.telegram import TelegramNotifier
+
+                # Re-use the same message lines for Telegram (plain text)
+                await TelegramNotifier(
+                    bot_token=telegram_token,
+                    chat_id=telegram_chat_id,
+                    hass=hass,
+                ).send_message(notification_message)
+                _LOGGER.info("Telegram first-install notification sent for %s", vehicle_name)
+            except Exception as tg_err:
+                _LOGGER.warning("Could not send Telegram first-install notification: %s", tg_err)
             
     except Exception as err:
         _LOGGER.error("Error during background historical data import: %s", err, exc_info=True)

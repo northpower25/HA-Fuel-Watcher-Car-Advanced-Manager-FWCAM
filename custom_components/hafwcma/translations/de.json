@@ -115,23 +115,13 @@
       },
       "historical_import": {
         "title": "Historische Fahrzeugdaten importieren",
-        "description": "**Folgende Einstellung wird für sofortige Statistiken benötigt:**\n\n**Import historischer Fahrzeugdaten** (`import_historical_data`)\nImportiert bis zu 90 Tage historische Daten aus dem Home Assistant Recorder (Kilometerzähler, Tankfüllstand, Tankereignisse und Fahrten).\nHinweis: Wenn dies nicht aktiviert wird, kann es mehrere Tage dauern, bis aussagekräftige Verbrauchsstatistiken und Vorhersagen verfügbar sind. Der Import läuft nach dem Abschluss der Einrichtung automatisch im Hintergrund.",
+        "description": "**Folgende Einstellung wird für sofortige Statistiken benötigt:**\n\n**Import historischer Fahrzeugdaten** (`import_historical_data`)\nImportiert bis zu 90 Tage historische Daten aus dem Home Assistant Recorder (Kilometerzähler, Tankfüllstand, Tankereignisse und Fahrten).\nHinweis: Der Import läuft nach dem Abschluss der Einrichtung automatisch im Hintergrund sobald Home Assistant vollständig gestartet ist. Das Ergebnis erscheint als Home Assistant Benachrichtigung (und ggf. per Telegram).",
         "data": {
-          "import_historical_data": "Historische Fahrzeugdaten jetzt importieren"
+          "import_historical_data": "Historische Fahrzeugdaten importieren"
         },
         "data_description": {
           "import_historical_data": "Bis zu 90 Tage historische Daten aus dem Home Assistant Recorder importieren. Benötigt für sofortige Verbrauchsstatistiken, Tankerkennung und Vorhersagen."
         }
-      },
-      "import_progress": {
-        "title": "Verfügbare Verlaufsdaten prüfen…",
-        "description": "Der Home Assistant Recorder wird nach historischen Fahrzeugdaten abgefragt. Dies kann einige Sekunden dauern."
-      },
-      "finish_setup": {
-        "title": "Einrichtung abgeschlossen",
-        "description": "Die Import-Vorprüfung ist abgeschlossen. Folgendes wurde im Home Assistant Recorder gefunden:\n\n{import_summary}",
-        "data": {},
-        "data_description": {}
       }
     },
     "error": {

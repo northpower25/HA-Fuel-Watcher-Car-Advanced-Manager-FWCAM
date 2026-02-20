@@ -607,11 +607,9 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.data[CONF_LATITUDE] = self.hass.config.latitude
             self.data[CONF_LONGITUDE] = self.hass.config.longitude
 
-            # If import was requested, show a progress indicator before creating the entry
-            if self.data.get(CONF_IMPORT_HISTORICAL_DATA, True):
-                return await self.async_step_import_progress()
-
-            # No import requested – create the entry directly
+            # Create the entry directly – the actual import runs in the background
+            # after HA has fully started (_import_historical_data_background) and
+            # the result is reported via a persistent notification.
             return self.async_create_entry(
                 title=f"haFWCMA - {self.data.get(CONF_VEHICLE_NAME, 'Vehicle')}",
                 data=self.data,

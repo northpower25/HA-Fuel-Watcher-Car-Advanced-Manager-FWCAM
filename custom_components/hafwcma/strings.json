@@ -115,23 +115,13 @@
       },
       "historical_import": {
         "title": "Import Historical Vehicle Data",
-        "description": "**The following setting is required for immediate statistics:**\n\n**Import Historical Vehicle Data** (`import_historical_data`)\nImports up to 90 days of historical data from Home Assistant's recorder (odometer, tank level, refueling events, and trips).\nNote: If this is not enabled, it may take several days before meaningful consumption statistics and predictions become available. The import runs automatically in the background after setup completes.",
+        "description": "**The following setting is required for immediate statistics:**\n\n**Import Historical Vehicle Data** (`import_historical_data`)\nImports up to 90 days of historical data from Home Assistant's recorder (odometer, tank level, refueling events, and trips).\nNote: The import runs automatically in the background after setup completes, once Home Assistant has fully started. Results will appear as a Home Assistant notification (and optionally via Telegram).",
         "data": {
-          "import_historical_data": "Import historical vehicle data now"
+          "import_historical_data": "Import historical vehicle data"
         },
         "data_description": {
           "import_historical_data": "Import up to 90 days of historical data from Home Assistant's recorder. Required for immediate consumption statistics, refueling detection and predictions."
         }
-      },
-      "import_progress": {
-        "title": "Checking Available History…",
-        "description": "Querying Home Assistant's recorder for historical vehicle data. This may take a few seconds."
-      },
-      "finish_setup": {
-        "title": "Setup Complete",
-        "description": "The import pre-check is complete. Here is what was found in Home Assistant's recorder:\n\n{import_summary}",
-        "data": {},
-        "data_description": {}
       }
     },
     "error": {
