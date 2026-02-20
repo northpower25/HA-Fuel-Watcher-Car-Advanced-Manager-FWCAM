@@ -709,6 +709,10 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         Stores the result in ``self._preflight_result`` so that
         ``async_step_finish_setup`` can display a meaningful summary.
+        Each recorder query has a 25-second timeout to prevent the
+        import_progress spinner from hanging indefinitely when the
+        recorder is slow or busy.  A ``finally`` block guarantees that
+        ``_preflight_result`` is always set, even on task cancellation.
         """
         result: dict[str, Any] = {
             "recorder_available": False,
@@ -727,36 +731,56 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             recorder_instance = get_instance(self.hass)
             if not recorder_instance:
-                self._preflight_result = result
-                return
+                return  # finally block ensures _preflight_result is set
             result["recorder_available"] = True
 
             end_time = dt_util.now()
             start_time = end_time - timedelta(days=90)
 
             if odometer_entity:
-                odo_states = await recorder_instance.async_add_executor_job(
-                    history.get_significant_states,
-                    self.hass,
-                    start_time,
-                    end_time,
-                    [odometer_entity],
-                )
-                result["odometer_points"] = len(
-                    odo_states.get(odometer_entity, [])
-                )
+                try:
+                    odo_states = await asyncio.wait_for(
+                        recorder_instance.async_add_executor_job(
+                            history.get_significant_states,
+                            self.hass,
+                            start_time,
+                            end_time,
+                            [odometer_entity],
+                        ),
+                        timeout=25.0,
+                    )
+                    result["odometer_points"] = len(
+                        odo_states.get(odometer_entity, [])
+                    )
+                except asyncio.TimeoutError:
+                    _LOGGER.warning(
+                        "Import preflight: odometer query timed out for %s",
+                        odometer_entity,
+                    )
+                    result["preflight_error"] = "Odometer recorder query timed out"
 
             if tank_entity:
-                tank_states = await recorder_instance.async_add_executor_job(
-                    history.get_significant_states,
-                    self.hass,
-                    start_time,
-                    end_time,
-                    [tank_entity],
-                )
-                result["tank_points"] = len(
-                    tank_states.get(tank_entity, [])
-                )
+                try:
+                    tank_states = await asyncio.wait_for(
+                        recorder_instance.async_add_executor_job(
+                            history.get_significant_states,
+                            self.hass,
+                            start_time,
+                            end_time,
+                            [tank_entity],
+                        ),
+                        timeout=25.0,
+                    )
+                    result["tank_points"] = len(
+                        tank_states.get(tank_entity, [])
+                    )
+                except asyncio.TimeoutError:
+                    _LOGGER.warning(
+                        "Import preflight: tank level query timed out for %s",
+                        tank_entity,
+                    )
+                    if not result.get("preflight_error"):
+                        result["preflight_error"] = "Tank level recorder query timed out"
 
             if result["odometer_points"] > 0 or result["tank_points"] > 0:
                 result["date_range"] = (
@@ -766,8 +790,10 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Import preflight check failed: %s", err)
             result["preflight_error"] = str(err)
-
-        self._preflight_result = result
+        finally:
+            # Ensure _preflight_result is always set, even if the task is cancelled
+            # (CancelledError is BaseException in Python 3.8+ and bypasses except Exception)
+            self._preflight_result = result
 
     @staticmethod
     def _build_import_summary(
