@@ -18,8 +18,9 @@ import voluptuous as vol
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import CoreState, HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.event import async_call_later
 import homeassistant.helpers.config_validation as cv
 
 # ServiceResponse is available in HA 2023.7+, but return type annotation is optional
@@ -1014,7 +1015,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await _apply_initial_feature_settings(hass, entry)
         await _import_historical_data_background(hass, entry)
 
-    hass.bus.async_listen_once("homeassistant_started", _on_homeassistant_started)
+    if hass.state is CoreState.running:
+        # HA is already running (e.g. integration reloaded at runtime).
+        # Schedule import 5 minutes from now so the integration can finish
+        # loading before the heavyweight recorder queries start.
+        _LOGGER.info(
+            "HA already running – scheduling historical import in 5 minutes for %s",
+            entry.entry_id,
+        )
+
+        async def _delayed_start(_now):
+            await _apply_initial_feature_settings(hass, entry)
+            await _import_historical_data_background(hass, entry)
+
+        entry.async_on_unload(
+            async_call_later(hass, 300, _delayed_start)
+        )
+    else:
+        hass.bus.async_listen_once("homeassistant_started", _on_homeassistant_started)
     
     return True
 
@@ -1104,6 +1122,7 @@ async def _import_historical_data_background(
         from .utils.historical_data_import import import_historical_vehicle_data, import_historical_trip_data
         from .utils import storage
         from .utils.geocoding import rebuild_cache_from_trips
+        from .utils.statistics_engine import recompute_weekday_stats
 
         # Check if the user opted out of historical import during setup
         import_requested = entry.data.get(CONF_IMPORT_HISTORICAL_DATA, True)
@@ -1112,6 +1131,10 @@ async def _import_historical_data_background(
                 "Historical data import skipped: user opted out during setup"
             )
             return
+
+        # Signal that the import is now running
+        if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+            hass.data[DOMAIN][entry.entry_id]["historical_import_status"] = "running"
         
         _LOGGER.info("Starting background historical data import")
         
@@ -1171,13 +1194,29 @@ async def _import_historical_data_background(
         else:
             _LOGGER.debug("Trip tracking not enabled, skipping trip history import")
         
+        # Recompute weekday consumption stats from the freshly imported odometer history
+        await recompute_weekday_stats(hass, entry)
+        _LOGGER.info("Weekday consumption stats recomputed after historical import")
+
         # Rebuild geocoding cache from existing trip data
         _LOGGER.info("Rebuilding geocoding cache from existing trip data")
         cache_count = await rebuild_cache_from_trips(hass, entry)
         _LOGGER.info("Geocoding cache rebuilt with %d entries", cache_count)
 
+        # Mark import status as completed
+        if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+            hass.data[DOMAIN][entry.entry_id]["historical_import_status"] = "completed"
+
         # Reload storage data to capture everything written during the import
         data = await storage.load_data(hass, entry)
+
+        # ── Only send the first-install notification ONCE per vehicle ────────
+        if data.get("first_install_notification_sent"):
+            _LOGGER.debug(
+                "First-install notification already sent for %s, skipping",
+                entry.entry_id,
+            )
+            return
 
         # ── Gather statistics from storage ──────────────────────────────────
         vehicle_name = entry.data.get("vehicle_name", "Vehicle")
@@ -1190,12 +1229,6 @@ async def _import_historical_data_background(
         tank_level_history = data.get("tank_level_history", [])
         tank_count = len(tank_level_history)
         last_tank = tank_level_history[-1].get("value") if tank_level_history else None
-
-        # Range comes from the last cached vehicle data (not stored in history)
-        last_vehicle_data = data.get("last_vehicle_data") or {}
-        last_range = last_vehicle_data.get("range_km")
-        # Range is not stored as a separate history – show 0 records
-        range_count = 0
 
         refuel_events = len(data.get("refueling_log", []))
 
@@ -1215,68 +1248,79 @@ async def _import_historical_data_background(
         weekday_consumption = data.get("weekday_consumption", {})
 
         # ── Build notification message ───────────────────────────────────────
+        # ha_lines uses Markdown (** **) for HA persistent_notification.
+        # tg_lines uses HTML (<b></b>) for Telegram (parse_mode="html").
         odo_str = f"{last_odo:.1f} km" if last_odo is not None else "0"
         tank_str = f"{last_tank:.1f}" if last_tank is not None else "0"
-        range_str = f"{last_range:.0f} km" if last_range is not None else "0"
+
+        weekday_pattern_lines: list[str] = []
+        for day_idx, day_name in enumerate(weekday_names):
+            day_data = weekday_consumption.get(str(day_idx), {})
+            day_km = day_data.get("km", 0.0)
+            day_count = day_data.get("count", 0)
+            avg_km = round(day_km / day_count, 1) if day_count > 0 else 0
+            weekday_pattern_lines.append(f"   - {day_name}: {avg_km} km")
+        weekday_pattern_str = "\n".join(weekday_pattern_lines)
 
         if is_german:
-            message_lines = [
+            ha_message = (
                 f"Nach der Erstinstallation für das Fahrzeug **{vehicle_name}** "
-                f"wurden folgende Daten wie gewünscht importiert:\n",
-                f"- Kilometerstand: {odo_str} / {odo_count} Datensätze",
-                f"- Tanklevel: {tank_str} / {tank_count} Datensätze",
-                f"- Restreichweite: {range_str} / {range_count} Datensätze",
-                "",
+                f"wurden folgende Daten wie gewünscht importiert:\n\n"
+                f"- Kilometerstand: {odo_str} / {odo_count} Datensätze\n"
+                f"- Tanklevel: {tank_str} / {tank_count} Datensätze\n\n"
                 "Nach dem Import wurde eine erste Analyse durchgeführt, "
-                "dabei konnte folgendes ermittelt werden:\n",
-                f"- Tankvorgänge: {refuel_events}",
+                "dabei konnte folgendes ermittelt werden:\n\n"
+                f"- Tankvorgänge: {refuel_events}\n"
                 f"- Fahrtenbuch: {trips_with_pos} Trips mit Position / "
-                f"{trips_without_pos} Trips ohne Position",
-                "",
-                "Historisches Verbrauchspattern:",
-            ]
-            for day_idx, day_name in enumerate(weekday_names):
-                day_data = weekday_consumption.get(str(day_idx), {})
-                day_km = day_data.get("km", 0.0)
-                day_count = day_data.get("count", 0)
-                avg_km = round(day_km / day_count, 1) if day_count > 0 else 0
-                message_lines.append(f"   - {day_name}: {avg_km} km")
-            message_lines.append(
-                "\nAb sofort ermittelt die Integration die Daten zur Laufzeit."
+                f"{trips_without_pos} Trips ohne Position\n\n"
+                f"Historisches Verbrauchspattern:\n{weekday_pattern_str}\n\n"
+                "Ab sofort ermittelt die Integration die Daten zur Laufzeit."
+            )
+            tg_message = (
+                f"Nach der Erstinstallation für das Fahrzeug <b>{vehicle_name}</b> "
+                f"wurden folgende Daten wie gewünscht importiert:\n\n"
+                f"- Kilometerstand: {odo_str} / {odo_count} Datensätze\n"
+                f"- Tanklevel: {tank_str} / {tank_count} Datensätze\n\n"
+                "Nach dem Import wurde eine erste Analyse durchgeführt, "
+                "dabei konnte folgendes ermittelt werden:\n\n"
+                f"- Tankvorgänge: {refuel_events}\n"
+                f"- Fahrtenbuch: {trips_with_pos} Trips mit Position / "
+                f"{trips_without_pos} Trips ohne Position\n\n"
+                f"Historisches Verbrauchspattern:\n{weekday_pattern_str}\n\n"
+                "Ab sofort ermittelt die Integration die Daten zur Laufzeit."
             )
             notification_title = f"haFWCMA – {vehicle_name} Erstinstallation abgeschlossen"
         else:
-            message_lines = [
+            ha_message = (
                 f"After the initial installation for vehicle **{vehicle_name}** "
-                f"the following data was imported as requested:\n",
-                f"- Odometer: {odo_str} / {odo_count} records",
-                f"- Tank level: {tank_str} / {tank_count} records",
-                f"- Range: {range_str} / {range_count} records",
-                "",
-                "A first analysis was performed after the import:\n",
-                f"- Refueling events: {refuel_events}",
+                f"the following data was imported as requested:\n\n"
+                f"- Odometer: {odo_str} / {odo_count} records\n"
+                f"- Tank level: {tank_str} / {tank_count} records\n\n"
+                "A first analysis was performed after the import:\n\n"
+                f"- Refueling events: {refuel_events}\n"
                 f"- Trip log: {trips_with_pos} trips with position / "
-                f"{trips_without_pos} trips without position",
-                "",
-                "Historical consumption pattern:",
-            ]
-            for day_idx, day_name in enumerate(weekday_names):
-                day_data = weekday_consumption.get(str(day_idx), {})
-                day_km = day_data.get("km", 0.0)
-                day_count = day_data.get("count", 0)
-                avg_km = round(day_km / day_count, 1) if day_count > 0 else 0
-                message_lines.append(f"   - {day_name}: {avg_km} km")
-            message_lines.append(
-                "\nFrom now on the integration collects data at runtime."
+                f"{trips_without_pos} trips without position\n\n"
+                f"Historical consumption pattern:\n{weekday_pattern_str}\n\n"
+                "From now on the integration collects data at runtime."
+            )
+            tg_message = (
+                f"After the initial installation for vehicle <b>{vehicle_name}</b> "
+                f"the following data was imported as requested:\n\n"
+                f"- Odometer: {odo_str} / {odo_count} records\n"
+                f"- Tank level: {tank_str} / {tank_count} records\n\n"
+                "A first analysis was performed after the import:\n\n"
+                f"- Refueling events: {refuel_events}\n"
+                f"- Trip log: {trips_with_pos} trips with position / "
+                f"{trips_without_pos} trips without position\n\n"
+                f"Historical consumption pattern:\n{weekday_pattern_str}\n\n"
+                "From now on the integration collects data at runtime."
             )
             notification_title = f"haFWCMA – {vehicle_name} first install complete"
-
-        notification_message = "\n".join(message_lines)
 
         from homeassistant.components import persistent_notification
         persistent_notification.async_create(
             hass,
-            notification_message,
+            ha_message,
             title=notification_title,
             notification_id=f"hafwcma_import_complete_{entry.entry_id}",
         )
@@ -1288,18 +1332,24 @@ async def _import_historical_data_background(
             try:
                 from .messaging.telegram import TelegramNotifier
 
-                # Re-use the same message lines for Telegram (plain text)
+                # Use HTML-formatted message for Telegram (parse_mode="html")
                 await TelegramNotifier(
                     bot_token=telegram_token,
                     chat_id=telegram_chat_id,
                     hass=hass,
-                ).send_message(notification_message)
+                ).send_message(tg_message)
                 _LOGGER.info("Telegram first-install notification sent for %s", vehicle_name)
             except Exception as tg_err:
                 _LOGGER.warning("Could not send Telegram first-install notification: %s", tg_err)
+
+        # ── Mark notification as sent so it is never repeated ───────────────
+        data["first_install_notification_sent"] = True
+        await storage.save_data(hass, entry, data)
             
     except Exception as err:
         _LOGGER.error("Error during background historical data import: %s", err, exc_info=True)
+        if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+            hass.data[DOMAIN][entry.entry_id]["historical_import_status"] = "error"
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

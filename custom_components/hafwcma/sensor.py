@@ -3025,6 +3025,17 @@ class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         """Return the overall data status."""
+        # Reflect an in-progress or completed historical import first
+        import_status = (
+            self.hass.data.get(DOMAIN, {})
+            .get(self._config_entry.entry_id, {})
+            .get("historical_import_status")
+        )
+        if import_status == "running":
+            return "Historical Import Running"
+        if import_status == "completed":
+            return "Historical Import Complete"
+
         if self.coordinator.data is None:
             return "No Data"
         
