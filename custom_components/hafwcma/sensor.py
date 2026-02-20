@@ -454,6 +454,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             CONF_CONSUMPTION_MIN_DATA_POINTS,
             CONF_CONSUMPTION_PREDICTION_INTERVAL,
             CONF_FALLBACK_DAILY_KM,
+            CONF_INITIAL_CONSUMPTION,
             DEFAULT_CONSUMPTION_MIN_DATA_POINTS,
             DEFAULT_CONSUMPTION_PREDICTION_INTERVAL,
             DEFAULT_FALLBACK_DAILY_KM,
@@ -480,6 +481,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         fallback_daily_km = options.get(CONF_FALLBACK_DAILY_KM) or config.get(
             CONF_FALLBACK_DAILY_KM, DEFAULT_FALLBACK_DAILY_KM
         )
+        # Use user-configured initial consumption (WLTP) as the fallback, defaulting to 7.0
+        initial_consumption = options.get(CONF_INITIAL_CONSUMPTION) or config.get(CONF_INITIAL_CONSUMPTION) or 7.0
         
         # Check if we should run prediction (based on interval)
         now = dt_util.now()
@@ -492,11 +495,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         # Update last prediction time
         self._last_consumption_prediction = now
         
-        # Get average consumption rate from history
+        # Get average consumption rate from history, falling back to configured WLTP value
         fallback_consumption_rate = await get_average_consumption_rate(
             self.hass,
             self.config_entry,
-            fallback=7.0,
+            fallback=initial_consumption,
         )
         
         # Debug logging before calling prediction

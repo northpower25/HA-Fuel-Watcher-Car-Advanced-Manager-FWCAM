@@ -245,17 +245,19 @@ async def get_average_consumption_rate(
     hass: HomeAssistant,
     entry: ConfigEntry,
     *,
-    fallback: float = 7.0,
-) -> float:
+    fallback: float | None = 7.0,
+) -> float | None:
     """Get average fuel consumption rate from tank history.
     
     Args:
         hass: Home Assistant instance
         entry: Config entry
-        fallback: Fallback consumption rate in L/100km
+        fallback: Fallback consumption rate in L/100km. Pass None to return None
+                  when no historical data is available (allows callers to distinguish
+                  "no data" from an actual historical average).
         
     Returns:
-        Average consumption rate in L/100km
+        Average consumption rate in L/100km, or fallback if no data available
     """
     data = await load_data(hass, entry)
     tank_history = data.get("tank_history", [])

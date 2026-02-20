@@ -10,6 +10,7 @@ CONF_LATITUDE: Final = "latitude"
 CONF_LONGITUDE: Final = "longitude"
 CONF_FUEL_TYPE: Final = "fuel_type"
 CONF_TANK_CAPACITY: Final = "tank_capacity"
+CONF_INITIAL_CONSUMPTION: Final = "initial_consumption"  # WLTP / user-known average L/100km
 CONF_VEHICLE_NAME: Final = "vehicle_name"
 CONF_TELEGRAM_TOKEN: Final = "telegram_token"
 CONF_TELEGRAM_CHAT_ID: Final = "telegram_chat_id"

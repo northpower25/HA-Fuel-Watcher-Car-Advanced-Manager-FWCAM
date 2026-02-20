@@ -21,14 +21,16 @@
       },
       "vehicle": {
         "title": "Fahrzeug konfigurieren",
-        "description": "Geben Sie Ihre Fahrzeuginformationen ein",
+        "description": "Geben Sie Ihre Fahrzeuginformationen ein.\n\n⚠️ **Beide Felder sind Pflichtfelder.** Tankinhalt und Durchschnittsverbrauch sind entscheidend für genaue Kraftstoffberechnungen und den Trip-Import. Bitte geben Sie die für Ihr Fahrzeug bekannten Werte ein (z.B. aus dem Handbuch oder WLTP-Datenblatt).",
         "data": {
           "vehicle_name": "Fahrzeugname (z.B. 'Mein Auto')",
-          "tank_capacity": "Tankinhalt in Litern (z.B. 50.0)"
+          "tank_capacity": "Tankinhalt in Litern (z.B. 50.0)",
+          "initial_consumption": "Durchschnittsverbrauch (L/100km, z.B. WLTP-Wert)"
         },
         "data_description": {
           "vehicle_name": "Ein freundlicher Name für Ihr Fahrzeug",
-          "tank_capacity": "Gesamtkapazität Ihres Kraftstofftanks"
+          "tank_capacity": "Gesamtkapazität Ihres Kraftstofftanks",
+          "initial_consumption": "Der durchschnittliche Kraftstoffverbrauch Ihres Fahrzeugs in Litern pro 100 km (z.B. der WLTP-Wert des Herstellers). Dieser Wert wird als Fallback für Trip-Kraftstoffschätzungen verwendet, wenn Tankfüllstandsdaten nicht verfügbar oder unzuverlässig sind."
         }
       },
       "vehicle_entities": {
@@ -166,7 +168,8 @@
           "fallback_daily_km_thursday": "Standard Tageskilometer - Donnerstag (0-1000, z.B. 40)",
           "fallback_daily_km_friday": "Standard Tageskilometer - Freitag (0-1000, z.B. 40)",
           "fallback_daily_km_saturday": "Standard Tageskilometer - Samstag (0-1000, z.B. 20)",
-          "fallback_daily_km_sunday": "Standard Tageskilometer - Sonntag (0-1000, z.B. 20)"
+          "fallback_daily_km_sunday": "Standard Tageskilometer - Sonntag (0-1000, z.B. 20)",
+          "initial_consumption": "Durchschnittsverbrauch (L/100km)"
         },
         "data_description": {
           "provider": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter",
@@ -191,7 +194,8 @@
           "fallback_daily_km_thursday": "Geschätzte tägliche Fahrtstrecke für Donnerstag",
           "fallback_daily_km_friday": "Geschätzte tägliche Fahrtstrecke für Freitag",
           "fallback_daily_km_saturday": "Geschätzte tägliche Fahrtstrecke für Samstag",
-          "fallback_daily_km_sunday": "Geschätzte tägliche Fahrtstrecke für Sonntag"
+          "fallback_daily_km_sunday": "Geschätzte tägliche Fahrtstrecke für Sonntag",
+          "initial_consumption": "Der durchschnittliche Kraftstoffverbrauch Ihres Fahrzeugs in Litern pro 100 km (z.B. WLTP-Wert). Wird als Fallback für Trip-Kraftstoffschätzungen verwendet."
         }
       }
     }

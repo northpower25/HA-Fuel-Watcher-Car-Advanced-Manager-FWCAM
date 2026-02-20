@@ -621,3 +621,27 @@ hafwcma_diagnostics_20260214_142500.zip
 **Note**: This is a living document. Items will be added, removed, or reprioritized based on user feedback and development progress.
 
 Last updated: 2026-02-11
+
+## 💡 Concept: AI-Powered Vehicle Lookup in Setup Flow
+
+**Status**: 📋 Concept / Future Enhancement  
+**Priority**: Low  
+**Source**: User feedback (2026-02-20)
+
+### Idea
+Allow the user to type in their vehicle type during setup, and use an AI service (e.g. Copilot/ChatGPT) to automatically retrieve and pre-fill:
+- Maximum tank capacity (L)
+- Average WLTP consumption (L/100km)
+
+### Proposed Interaction Flow
+1. User enters vehicle model (e.g., "Skoda Superb")
+2. System asks for year (e.g., "2025")
+3. System asks for engine/trim (e.g., "Sportline 4x4 TFSI")
+4. AI returns: "Your vehicle has a tank volume of 69.5 L and an average WLTP consumption of 7.6–7.8 L/100km. Is this correct?"
+5. User confirms → values are automatically filled in the setup form
+
+### Implementation Considerations
+- Requires integration with an AI/LLM API (OpenAI, Copilot, or similar)
+- Could use a public vehicle database API as an alternative
+- Optional feature, falls back to manual entry if unavailable
+- Privacy: vehicle model data sent to third-party API; needs user consent
