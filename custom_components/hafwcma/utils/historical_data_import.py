@@ -1283,6 +1283,9 @@ TRIP_MERGE_TIME_WINDOW_MINUTES = 5  # Time window to merge short stops into sing
 TRIP_MAX_SPEED_KMH = 300  # Maximum reasonable speed (to filter outliers)
 TRIP_MIN_DURATION_MINUTES = 1  # Minimum trip duration
 MIN_LOCATION_DIFFERENCE_DEGREES = 0.001  # Minimum coordinate difference (~100m) to consider locations distinct
+MAX_TANK_LEVEL_LOOKUP_TIME_HOURS = 6.0  # Maximum time difference (hours) for a valid tank level reading near a trip
+MAX_REASONABLE_FUEL_CONSUMPTION_L_PER_100KM = 50.0  # Upper plausibility bound for fuel consumption
+MIN_REASONABLE_FUEL_CONSUMPTION_L_PER_100KM = 1.0   # Lower plausibility bound for fuel consumption
 
 
 async def import_historical_trip_data(
@@ -1323,6 +1326,8 @@ async def import_historical_trip_data(
         CONF_ODOMETER_ENTITY,
         CONF_TANK_LEVEL_ENTITY,
         CONF_POSITION_ENTITY,
+        CONF_TANK_CAPACITY,
+        DEFAULT_TANK_CAPACITY,
         DOMAIN,
     )
     
@@ -1369,6 +1374,11 @@ async def import_historical_trip_data(
         odometer_entity = entry.data.get(CONF_ODOMETER_ENTITY)
         tank_level_entity = entry.data.get(CONF_TANK_LEVEL_ENTITY)
         location_entity = entry.data.get(CONF_POSITION_ENTITY)
+        options = entry.options
+        tank_capacity = (
+            options.get(CONF_TANK_CAPACITY)
+            or entry.data.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
+        )
         
         if not odometer_entity:
             result["reason"] = "No odometer entity configured"
@@ -1396,6 +1406,7 @@ async def import_historical_trip_data(
             location_entity,
             start_time,
             end_time,
+            tank_capacity,
         )
         
         result["trips_detected"] = trips_detected
@@ -1465,6 +1476,7 @@ async def _import_trip_history(
     location_entity: str | None,
     start_time: datetime,
     end_time: datetime,
+    tank_capacity: float = 50.0,
 ) -> int:
     """Import trip history from recorder.
     
@@ -1478,6 +1490,7 @@ async def _import_trip_history(
         location_entity: Entity ID of location sensor (optional)
         start_time: Start of time range
         end_time: End of time range
+        tank_capacity: Tank capacity in liters (used for % → L conversion)
         
     Returns:
         Number of trips detected
@@ -1502,12 +1515,44 @@ async def _import_trip_history(
         
         # Get tank level history for fuel consumption calculation
         tank_level_states = []
+        tank_level_in_percentage = False
         if tank_level_entity:
             tank_level_states = await _fetch_entity_history(
                 hass,
                 tank_level_entity,
                 start_time,
                 end_time,
+            )
+            # Detect whether tank level is reported as percentage or liters
+            # (same 3-tier logic as refueling detection)
+            live_entity_state = hass.states.get(tank_level_entity)
+            if live_entity_state is not None:
+                unit = live_entity_state.attributes.get("unit_of_measurement", "").lower()
+                if unit in ["%", "percent", "percentage"]:
+                    tank_level_in_percentage = True
+            if not tank_level_in_percentage:
+                for state in tank_level_states:
+                    if state.state not in INVALID_SENSOR_STATES:
+                        unit = getattr(state, "attributes", {}).get("unit_of_measurement", "").lower()
+                        if unit in ["%", "percent", "percentage"]:
+                            tank_level_in_percentage = True
+                        break
+            if not tank_level_in_percentage and tank_capacity > PERCENTAGE_MAX_VALUE:
+                valid_vals = []
+                for state in tank_level_states:
+                    if state.state not in INVALID_SENSOR_STATES:
+                        try:
+                            valid_vals.append(float(_normalize_numeric_string(state.state)))
+                        except (ValueError, TypeError):
+                            pass
+                        if len(valid_vals) >= UNIT_DETECTION_SAMPLE_SIZE:
+                            break
+                if valid_vals and max(valid_vals) <= PERCENTAGE_MAX_VALUE:
+                    tank_level_in_percentage = True
+            _LOGGER.debug(
+                "Trip fuel consumption: tank_level_in_percentage=%s (tank_capacity=%.1f L)",
+                tank_level_in_percentage,
+                tank_capacity,
             )
         
         # Get location history for GPS coordinates
@@ -1633,13 +1678,39 @@ async def _import_trip_history(
                         
                         if not is_duplicate:
                             # Get tank levels for fuel consumption
-                            fuel_level_start = _find_closest_tank_level(tank_level_states, prev_time_aware)
-                            fuel_level_end = _find_closest_tank_level(tank_level_states, curr_time_aware)
+                            # Use time-bounded lookup to prevent picking readings from far away
+                            fuel_level_start = _find_closest_tank_level(
+                                tank_level_states, prev_time_aware,
+                                max_time_diff_hours=MAX_TANK_LEVEL_LOOKUP_TIME_HOURS,
+                            )
+                            fuel_level_end = _find_closest_tank_level(
+                                tank_level_states, curr_time_aware,
+                                max_time_diff_hours=MAX_TANK_LEVEL_LOOKUP_TIME_HOURS,
+                            )
                             
                             # Calculate fuel consumed
                             fuel_consumed = None
                             if fuel_level_start is not None and fuel_level_end is not None and fuel_level_start > fuel_level_end:
-                                fuel_consumed = fuel_level_start - fuel_level_end
+                                raw_diff = fuel_level_start - fuel_level_end
+                                # Convert percentage to liters if the entity reports in %
+                                if tank_level_in_percentage:
+                                    fuel_consumed = (raw_diff / 100.0) * tank_capacity
+                                else:
+                                    fuel_consumed = raw_diff
+                                # Sanity-check: discard implausible consumption rates
+                                if fuel_consumed is not None and distance_km > 0:
+                                    consumption_per_100km = (fuel_consumed / distance_km) * 100
+                                    if (consumption_per_100km > MAX_REASONABLE_FUEL_CONSUMPTION_L_PER_100KM
+                                            or consumption_per_100km < MIN_REASONABLE_FUEL_CONSUMPTION_L_PER_100KM):
+                                        _LOGGER.warning(
+                                            "Discarding implausible fuel consumption for trip (%.1f km): "
+                                            "%.2f L (%.1f L/100km). "
+                                            "Possible cause: tank level readings too far from trip time or unit mismatch.",
+                                            distance_km,
+                                            fuel_consumed,
+                                            consumption_per_100km,
+                                        )
+                                        fuel_consumed = None
                             
                             # Get GPS coordinates
                             # For start: prefer location just before the trip started
@@ -1657,6 +1728,16 @@ async def _import_trip_history(
                                     abs(start_lon - end_lon) > MIN_LOCATION_DIFFERENCE_DEGREES
                                 )
                             
+                            # Determine original position quality (before any backfill)
+                            has_start = start_lat is not None and start_lon is not None
+                            has_end = end_lat is not None and end_lon is not None
+                            if has_start and has_end:
+                                position_quality = "full"
+                            elif has_start or has_end:
+                                position_quality = "partial"
+                            else:
+                                position_quality = "none"
+                            
                             # Create trip data
                             trip_data = {
                                 "timestamp_start": prev_time_aware.isoformat(),
@@ -1670,6 +1751,7 @@ async def _import_trip_history(
                                 "start_longitude": start_lon,
                                 "end_latitude": end_lat,
                                 "end_longitude": end_lon,
+                                "position_quality": position_quality,
                                 "category": "private",  # Default category
                                 "data_quality": "historical_import",
                                 "confidence": _calculate_trip_confidence(
@@ -1733,6 +1815,12 @@ async def _import_trip_history(
         
         # Save detected trips in batch to avoid race conditions
         # Load data once, add all trips with proper ID assignment and statistics, save once
+        
+        # Position backfill: for trips with missing start or end coordinates,
+        # use the end/start coordinates of the neighboring trip in chronological order.
+        if pending_trips:
+            _backfill_trip_positions(pending_trips)
+        
         _LOGGER.info(
             "Trip detection summary: %d trips detected, %d filtered (distance: %d, duration: %d, speed: %d, duplicate: %d)",
             len(pending_trips),
@@ -1823,6 +1911,68 @@ async def _import_trip_history(
     return trip_count
 
 
+def _backfill_trip_positions(trips: list[dict[str, Any]]) -> None:
+    """Backfill missing GPS coordinates in trips from neighboring trips.
+
+    Trips are processed in chronological order (ascending timestamp_start).
+    - Missing start position → filled from the end position of the previous trip.
+    - Missing end position   → filled from the start position of the next trip.
+
+    The ``position_quality`` field already reflects the *original* data quality
+    ("full", "partial", "none") set during detection, so it is left unchanged.
+    A separate ``position_backfilled`` flag is added to trips that received at
+    least one coordinate from a neighbor.
+
+    Args:
+        trips: List of trip dictionaries (modified in place).
+    """
+    if not trips:
+        return
+
+    # Ensure chronological order
+    trips.sort(key=lambda t: t.get("timestamp_start", ""))
+
+    backfilled = 0
+    for i, trip in enumerate(trips):
+        start_missing = trip.get("start_latitude") is None or trip.get("start_longitude") is None
+        end_missing = trip.get("end_latitude") is None or trip.get("end_longitude") is None
+
+        if start_missing and i > 0:
+            prev = trips[i - 1]
+            if prev.get("end_latitude") is not None and prev.get("end_longitude") is not None:
+                trip["start_latitude"] = prev["end_latitude"]
+                trip["start_longitude"] = prev["end_longitude"]
+                trip.setdefault("position_backfilled", True)
+                backfilled += 1
+                _LOGGER.debug(
+                    "Backfilled start position for trip %s from previous trip end (%.4f, %.4f)",
+                    trip.get("timestamp_start"),
+                    trip["start_latitude"],
+                    trip["start_longitude"],
+                )
+
+        if end_missing and i < len(trips) - 1:
+            nxt = trips[i + 1]
+            if nxt.get("start_latitude") is not None and nxt.get("start_longitude") is not None:
+                trip["end_latitude"] = nxt["start_latitude"]
+                trip["end_longitude"] = nxt["start_longitude"]
+                trip.setdefault("position_backfilled", True)
+                backfilled += 1
+                _LOGGER.debug(
+                    "Backfilled end position for trip %s from next trip start (%.4f, %.4f)",
+                    trip.get("timestamp_start"),
+                    trip["end_latitude"],
+                    trip["end_longitude"],
+                )
+
+    if backfilled:
+        _LOGGER.info(
+            "Position backfill: filled %d missing coordinate(s) across %d trip(s)",
+            backfilled,
+            len(trips),
+        )
+
+
 async def _fetch_entity_history(
     hass: HomeAssistant,
     entity_id: str,
@@ -1892,12 +2042,15 @@ async def _fetch_entity_history(
 def _find_closest_tank_level(
     tank_level_states: list[Any],
     target_time: datetime,
+    max_time_diff_hours: float = float('inf'),
 ) -> float | None:
     """Find the closest tank level reading to a target time.
     
     Args:
         tank_level_states: List of tank level state objects
         target_time: Target timestamp
+        max_time_diff_hours: Maximum allowed time difference in hours. Readings
+            further away than this are ignored. Defaults to no limit.
         
     Returns:
         Tank level value or None if not found
@@ -1905,6 +2058,7 @@ def _find_closest_tank_level(
     if not tank_level_states:
         return None
     
+    max_time_diff_seconds = max_time_diff_hours * SECONDS_PER_HOUR
     closest_state = None
     min_diff_seconds = float('inf')
     
@@ -1924,7 +2078,7 @@ def _find_closest_tank_level(
             
             time_diff_seconds = abs((target_time_aware - state_time_aware).total_seconds())
             
-            if time_diff_seconds < min_diff_seconds:
+            if time_diff_seconds <= max_time_diff_seconds and time_diff_seconds < min_diff_seconds:
                 min_diff_seconds = time_diff_seconds
                 closest_state = state
         except Exception:

@@ -1254,11 +1254,25 @@ async def _import_historical_data_background(
         refuel_events = len(data.get("refueling_log", []))
 
         trips = data.get("trips", [])
-        trips_with_pos = sum(
+        # Count by position quality (new field) or derive from coordinates (legacy trips)
+        trips_full_pos = sum(
             1 for t in trips
-            if t.get("start_latitude") is not None or t.get("end_latitude") is not None
+            if t.get("position_quality") == "full"
+            or (
+                "position_quality" not in t
+                and t.get("start_latitude") is not None
+                and t.get("end_latitude") is not None
+            )
         )
-        trips_without_pos = len(trips) - trips_with_pos
+        trips_partial_pos = sum(
+            1 for t in trips
+            if t.get("position_quality") == "partial"
+            or (
+                "position_quality" not in t
+                and (t.get("start_latitude") is None) != (t.get("end_latitude") is None)
+            )
+        )
+        trips_no_pos = len(trips) - trips_full_pos - trips_partial_pos
 
         # Weekday names and consumption pattern (0=Monday … 6=Sunday)
         weekday_names = (
@@ -1292,8 +1306,9 @@ async def _import_historical_data_background(
                 "Nach dem Import wurde eine erste Analyse durchgeführt, "
                 "dabei konnte folgendes ermittelt werden:\n\n"
                 f"- Tankvorgänge: {refuel_events}\n"
-                f"- Fahrtenbuch: {trips_with_pos} Trips mit Position / "
-                f"{trips_without_pos} Trips ohne Position\n\n"
+                f"- Fahrtenbuch: {trips_full_pos} Trips mit vollständiger Position / "
+                f"{trips_partial_pos} Trips mit partieller Position / "
+                f"{trips_no_pos} Trips ohne Position\n\n"
                 f"Historisches Verbrauchspattern:\n{weekday_pattern_str}\n\n"
                 "Ab sofort ermittelt die Integration die Daten zur Laufzeit."
             )
@@ -1305,8 +1320,9 @@ async def _import_historical_data_background(
                 "Nach dem Import wurde eine erste Analyse durchgeführt, "
                 "dabei konnte folgendes ermittelt werden:\n\n"
                 f"- Tankvorgänge: {refuel_events}\n"
-                f"- Fahrtenbuch: {trips_with_pos} Trips mit Position / "
-                f"{trips_without_pos} Trips ohne Position\n\n"
+                f"- Fahrtenbuch: {trips_full_pos} Trips mit vollständiger Position / "
+                f"{trips_partial_pos} Trips mit partieller Position / "
+                f"{trips_no_pos} Trips ohne Position\n\n"
                 f"Historisches Verbrauchspattern:\n{weekday_pattern_str}\n\n"
                 "Ab sofort ermittelt die Integration die Daten zur Laufzeit."
             )
@@ -1319,8 +1335,9 @@ async def _import_historical_data_background(
                 f"- Tank level: {tank_str} / {tank_count} records\n\n"
                 "A first analysis was performed after the import:\n\n"
                 f"- Refueling events: {refuel_events}\n"
-                f"- Trip log: {trips_with_pos} trips with position / "
-                f"{trips_without_pos} trips without position\n\n"
+                f"- Trip log: {trips_full_pos} trips with full position / "
+                f"{trips_partial_pos} trips with partial position / "
+                f"{trips_no_pos} trips without position\n\n"
                 f"Historical consumption pattern:\n{weekday_pattern_str}\n\n"
                 "From now on the integration collects data at runtime."
             )
@@ -1331,8 +1348,9 @@ async def _import_historical_data_background(
                 f"- Tank level: {tank_str} / {tank_count} records\n\n"
                 "A first analysis was performed after the import:\n\n"
                 f"- Refueling events: {refuel_events}\n"
-                f"- Trip log: {trips_with_pos} trips with position / "
-                f"{trips_without_pos} trips without position\n\n"
+                f"- Trip log: {trips_full_pos} trips with full position / "
+                f"{trips_partial_pos} trips with partial position / "
+                f"{trips_no_pos} trips without position\n\n"
                 f"Historical consumption pattern:\n{weekday_pattern_str}\n\n"
                 "From now on the integration collects data at runtime."
             )
