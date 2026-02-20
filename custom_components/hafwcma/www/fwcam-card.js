@@ -969,6 +969,18 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Derive position quality string for a trip.
+   * Uses the stored position_quality field when available; falls back to
+   * inferring it from the presence of start/end coordinates.
+   */
+  getPositionQuality(trip) {
+    if (trip.position_quality) return trip.position_quality;
+    if (trip.start_latitude != null && trip.end_latitude != null) return 'full';
+    if (trip.start_latitude != null || trip.end_latitude != null) return 'partial';
+    return 'none';
+  }
+
+  /**
    * Render sort icon for table headers
    */
   renderSortIcon(column) {
@@ -1617,6 +1629,13 @@ class FWCAMCard extends HTMLElement {
                     <span class="confidence-badge confidence-${this.getConfidenceLevel(trip.confidence !== undefined ? trip.confidence : 1.0)}">
                       ${Math.round((trip.confidence !== undefined ? trip.confidence : 1.0) * 100)}%
                     </span>
+                    <br>
+                    ${(() => {
+                      const pq = this.getPositionQuality(trip);
+                      const icon = pq === 'full' ? 'mdi:map-marker' : pq === 'partial' ? 'mdi:map-marker-alert' : 'mdi:map-marker-off';
+                      const label = pq === 'full' ? 'GPS: full' : pq === 'partial' ? 'GPS: partial' : 'GPS: none';
+                      return `<span class="position-quality-badge position-quality-${pq}" title="${label}"><ha-icon icon="${icon}"></ha-icon> ${pq}</span>`;
+                    })()}
                   </td>
                   <td>${trip.fuel_consumed ? this.formatNumber(trip.fuel_consumed, 2) : '-'}</td>
                   <td class="actions">
@@ -3382,6 +3401,32 @@ class FWCAMCard extends HTMLElement {
 
         .category-commute {
           background: #ff9800;
+          color: white;
+        }
+
+        .position-quality-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 3px;
+          padding: 3px 6px;
+          border-radius: 4px;
+          font-size: 10px;
+          font-weight: 600;
+          text-transform: uppercase;
+        }
+
+        .position-quality-full {
+          background: #4caf50;
+          color: white;
+        }
+
+        .position-quality-partial {
+          background: #ff9800;
+          color: white;
+        }
+
+        .position-quality-none {
+          background: #9e9e9e;
           color: white;
         }
 

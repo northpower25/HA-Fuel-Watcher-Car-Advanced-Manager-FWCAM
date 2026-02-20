@@ -1990,7 +1990,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 "tank_error": 0,
                 "range_good": 0,  # Range is not stored historically
                 "range_error": 0,
-                "position_good": sum(1 for trip in trips if trip.get("start_location") is not None),
+                "position_good": sum(1 for trip in trips if trip.get("start_latitude") is not None or trip.get("end_latitude") is not None),
                 "position_error": 0,
                 "refueling_count": len(tank_history),
                 "trip_count": len(trips),
@@ -3069,7 +3069,7 @@ class CarDataDebugSensor(CoordinatorEntity, SensorEntity):
         # Count range observations (not directly stored, use current value availability)
         # Count position observations from trips
         trips = data.get("trips", [])
-        position_good = sum(1 for trip in trips if trip.get("start_location") is not None)
+        position_good = sum(1 for trip in trips if trip.get("start_latitude") is not None or trip.get("end_latitude") is not None)
         
         # Get refueling count
         refueling_count = len(tank_history)
