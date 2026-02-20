@@ -532,6 +532,66 @@ async def _import_odometer_history(
     return count
 
 
+def _detect_tank_level_in_percentage(
+    hass: HomeAssistant,
+    tank_level_entity: str,
+    tank_level_states: list[Any],
+    tank_capacity: float,
+) -> bool:
+    """Detect whether a tank level entity reports in percentage or liters.
+
+    Uses a three-tier fallback strategy:
+    1. Live entity's unit_of_measurement attribute (most reliable).
+    2. First valid historical state's attributes (fallback for real State objects).
+    3. Value-range heuristic: if all sampled values ≤ 100 and tank_capacity > 100,
+       the sensor is almost certainly reporting in %.
+
+    Args:
+        hass: Home Assistant instance
+        tank_level_entity: Entity ID of the tank level sensor
+        tank_level_states: Historical state objects for the entity
+        tank_capacity: Configured tank capacity in liters
+
+    Returns:
+        True if the entity reports in percentage, False if in liters
+    """
+    # Priority 1: live entity state
+    live_entity_state = hass.states.get(tank_level_entity)
+    if live_entity_state is not None:
+        unit = live_entity_state.attributes.get("unit_of_measurement", "").lower()
+        if unit in ["%", "percent", "percentage"]:
+            return True
+        if unit:
+            # Unit is known but not a percentage unit – treat as liters
+            return False
+
+    # Priority 2: first valid historical state's attributes
+    for state in tank_level_states:
+        if state.state not in INVALID_SENSOR_STATES:
+            unit = getattr(state, "attributes", {}).get("unit_of_measurement", "").lower()
+            if unit in ["%", "percent", "percentage"]:
+                return True
+            if unit:
+                return False
+            break
+
+    # Priority 3: value-range heuristic
+    if tank_capacity > PERCENTAGE_MAX_VALUE:
+        valid_vals: list[float] = []
+        for state in tank_level_states:
+            if state.state not in INVALID_SENSOR_STATES:
+                try:
+                    valid_vals.append(float(_normalize_numeric_string(state.state)))
+                except (ValueError, TypeError):
+                    pass
+                if len(valid_vals) >= UNIT_DETECTION_SAMPLE_SIZE:
+                    break
+        if valid_vals and max(valid_vals) <= PERCENTAGE_MAX_VALUE:
+            return True
+
+    return False
+
+
 async def _import_tank_history_and_detect_refueling(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -749,61 +809,10 @@ async def _import_tank_history_and_detect_refueling(
         states_with_positive_increase = 0
         states_below_threshold = 0
         
-        # Determine if tank level is in percentage or liters.
-        # Priority 1: live entity state (always has correct unit_of_measurement attribute).
-        #   This handles the common case where all_tank_states are _StateLike objects
-        #   from long-term statistics – those objects have empty attributes dicts and
-        #   therefore cannot supply unit information themselves.
-        # Priority 2: first valid state's attributes (fallback for real State objects).
-        tank_level_in_percentage = False
-        live_entity_state = hass.states.get(tank_level_entity)
-        if live_entity_state is not None:
-            unit = live_entity_state.attributes.get("unit_of_measurement", "").lower()
-            if unit in ["%", "percent", "percentage"]:
-                tank_level_in_percentage = True
-                _LOGGER.debug(
-                    "Tank level entity uses percentage unit (detected from live state): %s", unit
-                )
-            else:
-                _LOGGER.debug(
-                    "Tank level entity unit from live state: '%s' (treating as liters)", unit
-                )
-        else:
-            # Fallback: check the first valid historical state's attributes
-            for state in all_tank_states:
-                if state.state not in INVALID_SENSOR_STATES:
-                    # Both real State objects and _StateLike have attributes property
-                    unit = state.attributes.get("unit_of_measurement", "").lower()
-                    if unit in ["%", "percent", "percentage"]:
-                        tank_level_in_percentage = True
-                        _LOGGER.debug("Tank level entity uses percentage unit (from history): %s", unit)
-                    break
-        
-        # Last-resort heuristic: if unit is still unknown, infer from the data values.
-        # Sensors reporting percentage will have values in 0-100; sensors reporting
-        # liters directly can exceed 100 for large tanks but cannot exceed typical
-        # tank capacities (< 200 L).  If all valid values are <= PERCENTAGE_MAX_VALUE AND
-        # the configured tank_capacity is > PERCENTAGE_MAX_VALUE, the data is almost
-        # certainly in %.
-        if not tank_level_in_percentage and tank_capacity > PERCENTAGE_MAX_VALUE:
-            valid_values = []
-            for state in all_tank_states:
-                if state.state not in INVALID_SENSOR_STATES:
-                    try:
-                        valid_values.append(float(_normalize_numeric_string(state.state)))
-                    except (ValueError, TypeError):
-                        pass
-                    if len(valid_values) >= UNIT_DETECTION_SAMPLE_SIZE:
-                        break
-            if valid_values and max(valid_values) <= PERCENTAGE_MAX_VALUE:
-                tank_level_in_percentage = True
-                _LOGGER.warning(
-                    "Tank level unit could not be determined from entity or history; "
-                    "inferred PERCENTAGE from value range (max sampled value: %.1f, tank_capacity: %.1fL). "
-                    "Verify CONF_TANK_LEVEL_ENTITY unit configuration.",
-                    max(valid_values),
-                    tank_capacity,
-                )
+        # Determine if tank level is in percentage or liters using shared helper
+        tank_level_in_percentage = _detect_tank_level_in_percentage(
+            hass, tank_level_entity, all_tank_states, tank_capacity
+        )
         
         _LOGGER.info(
             "Tank level unit detection: tank_level_in_percentage=%s (tank_capacity=%.1fL)",
@@ -1524,31 +1533,9 @@ async def _import_trip_history(
                 end_time,
             )
             # Detect whether tank level is reported as percentage or liters
-            # (same 3-tier logic as refueling detection)
-            live_entity_state = hass.states.get(tank_level_entity)
-            if live_entity_state is not None:
-                unit = live_entity_state.attributes.get("unit_of_measurement", "").lower()
-                if unit in ["%", "percent", "percentage"]:
-                    tank_level_in_percentage = True
-            if not tank_level_in_percentage:
-                for state in tank_level_states:
-                    if state.state not in INVALID_SENSOR_STATES:
-                        unit = getattr(state, "attributes", {}).get("unit_of_measurement", "").lower()
-                        if unit in ["%", "percent", "percentage"]:
-                            tank_level_in_percentage = True
-                        break
-            if not tank_level_in_percentage and tank_capacity > PERCENTAGE_MAX_VALUE:
-                valid_vals = []
-                for state in tank_level_states:
-                    if state.state not in INVALID_SENSOR_STATES:
-                        try:
-                            valid_vals.append(float(_normalize_numeric_string(state.state)))
-                        except (ValueError, TypeError):
-                            pass
-                        if len(valid_vals) >= UNIT_DETECTION_SAMPLE_SIZE:
-                            break
-                if valid_vals and max(valid_vals) <= PERCENTAGE_MAX_VALUE:
-                    tank_level_in_percentage = True
+            tank_level_in_percentage = _detect_tank_level_in_percentage(
+                hass, tank_level_entity, tank_level_states, tank_capacity
+            )
             _LOGGER.debug(
                 "Trip fuel consumption: tank_level_in_percentage=%s (tank_capacity=%.1f L)",
                 tank_level_in_percentage,
@@ -2078,7 +2065,7 @@ def _find_closest_tank_level(
             
             time_diff_seconds = abs((target_time_aware - state_time_aware).total_seconds())
             
-            if time_diff_seconds <= max_time_diff_seconds and time_diff_seconds < min_diff_seconds:
+            if time_diff_seconds < min_diff_seconds and time_diff_seconds <= max_time_diff_seconds:
                 min_diff_seconds = time_diff_seconds
                 closest_state = state
         except Exception:

@@ -969,6 +969,18 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Derive position quality string for a trip.
+   * Uses the stored position_quality field when available; falls back to
+   * inferring it from the presence of start/end coordinates.
+   */
+  getPositionQuality(trip) {
+    if (trip.position_quality) return trip.position_quality;
+    if (trip.start_latitude != null && trip.end_latitude != null) return 'full';
+    if (trip.start_latitude != null || trip.end_latitude != null) return 'partial';
+    return 'none';
+  }
+
+  /**
    * Render sort icon for table headers
    */
   renderSortIcon(column) {
@@ -1619,9 +1631,7 @@ class FWCAMCard extends HTMLElement {
                     </span>
                     <br>
                     ${(() => {
-                      const pq = trip.position_quality ||
-                        (trip.start_latitude != null && trip.end_latitude != null ? 'full' :
-                         (trip.start_latitude != null || trip.end_latitude != null) ? 'partial' : 'none');
+                      const pq = this.getPositionQuality(trip);
                       const icon = pq === 'full' ? 'mdi:map-marker' : pq === 'partial' ? 'mdi:map-marker-alert' : 'mdi:map-marker-off';
                       const label = pq === 'full' ? 'GPS: full' : pq === 'partial' ? 'GPS: partial' : 'GPS: none';
                       return `<span class="position-quality-badge position-quality-${pq}" title="${label}"><ha-icon icon="${icon}"></ha-icon> ${pq}</span>`;
