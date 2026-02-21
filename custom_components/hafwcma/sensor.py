@@ -2347,13 +2347,10 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 if "20km" in comparison_rec or savings > STATION_RECOMMENDATION_MIN_SAVINGS:
                     station_20km = radius_comparison.get("station_20km", {})
                     if station_20km:
-                        # Build station data from 20km comparison data
-                        # Note: Station address is not available in comparison data as it only
-                        # contains essential fields (name, distance, price) for cost calculation.
-                        # The address would require an additional lookup from the full station list.
                         display_station = {
                             "name": station_20km.get("name"),
                             "distance": station_20km.get("distance_km"),
+                            "address": station_20km.get("address"),
                         }
                 else:
                     # Show 10km station as recommended
@@ -2362,19 +2359,14 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         display_station = {
                             "name": station_10km.get("name"),
                             "distance": station_10km.get("distance_km"),
+                            "address": station_10km.get("address"),
                         }
             
-            # 1. Core metadata
+            # 1. Data source & location
             attributes = {
-                ATTR_STATION_NAME: display_station.get("name"),
-                ATTR_STATION_ADDRESS: display_station.get("address"),
-                ATTR_DISTANCE: display_station.get("distance"),
+                ATTR_DATA_SOURCE: "api",
             }
             
-            # Add data source (API-based)
-            attributes[ATTR_DATA_SOURCE] = "api"
-            
-            # Add location source information
             location_source = self.coordinator.data.get("location_source")
             if location_source:
                 attributes["location_source"] = location_source
@@ -2388,6 +2380,11 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 staleness_warning = check_data_staleness(last_price_timestamp, "Fuel price data")
                 if staleness_warning:
                     attributes["data_staleness_warning"] = staleness_warning
+            
+            # 3. Core station metadata
+            attributes[ATTR_STATION_NAME] = display_station.get("name")
+            attributes[ATTR_STATION_ADDRESS] = display_station.get("address")
+            attributes[ATTR_DISTANCE] = display_station.get("distance")
         else:
             # Fall back to restored attributes if coordinator data not yet available
             attributes = self._restored_attributes.copy() if self._restored_attributes else {}
@@ -2398,17 +2395,17 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         
         # Add supplementary attributes from coordinator data if available
         if self.coordinator.data is not None:
-            # 3. AI/ML patterns (history price pattern - weekday patterns)
-            price_statistics = self.coordinator.data.get("price_statistics")
-            if price_statistics:
-                weekday_patterns = price_statistics.get("weekday_patterns")
-                if weekday_patterns:
-                    attributes["history_price_pattern"] = weekday_patterns
-            
-            # 4. Last event summary - NOT applicable for this sensor
-            
-            # 5. Recommendations
+            radius_comparison = self.coordinator.data.get("radius_comparison")
             recommendation = self.coordinator.data.get("recommendation", {})
+            price_statistics = self.coordinator.data.get("price_statistics")
+            
+            # 4. Cost savings comparison
+            attributes["costsaving_far_vs_near_station"] = _format_costsaving_attribute(radius_comparison)
+            
+            # 5. Time-based forecast
+            attributes[ATTR_FORECAST_TREND] = self.coordinator.data.get("forecast_trend")
+            
+            # 6. Recommendations
             if recommendation:
                 attributes[ATTR_SHOULD_REFUEL] = recommendation.get("should_refuel", False)
                 attributes[ATTR_URGENCY] = recommendation.get("urgency", "low")
@@ -2416,74 +2413,12 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 attributes[ATTR_PRICE_DELTA] = recommendation.get("price_delta")
                 attributes[ATTR_PRICE_DELTA_PERCENT] = recommendation.get("price_delta_percent")
             
-            # Add cost savings comparison (part of recommendations)
-            radius_comparison = self.coordinator.data.get("radius_comparison")
-            attributes["costsaving_far_vs_near_station"] = _format_costsaving_attribute(radius_comparison)
-            
             # Add cooldown information if present (part of recommendations)
             if recommendation and recommendation.get("in_cooldown"):
                 attributes["in_cooldown"] = True
                 attributes["cooldown_remaining_minutes"] = recommendation.get("cooldown_remaining_minutes")
             
-            # 6. Counters - NOT applicable for this sensor
-            
-            # 7. Time-based statistics
-            attributes[ATTR_FORECAST_TREND] = self.coordinator.data.get("forecast_trend")
-            
-            # Add period statistics
-            if price_statistics:
-                last_week = price_statistics.get("last_week")
-                if last_week:
-                    attributes["last_week_price"] = last_week.get("avg_price")
-                    attributes["last_week_trend"] = last_week.get("trend", "Waiting for more data")
-                    attributes["last_week_top_stations"] = last_week.get("top_stations", [])
-                else:
-                    attributes["last_week_trend"] = "Waiting for more data"
-                    attributes["last_week_top_stations"] = [
-                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                    ]
-                
-                last_14_days = price_statistics.get("last_14_days")
-                if last_14_days:
-                    attributes["last_14_days_price"] = last_14_days.get("avg_price")
-                    attributes["last_14_days_trend"] = last_14_days.get("trend", "Waiting for more data")
-                    attributes["last_14_days_top_stations"] = last_14_days.get("top_stations", [])
-                else:
-                    attributes["last_14_days_trend"] = "Waiting for more data"
-                    attributes["last_14_days_top_stations"] = [
-                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                    ]
-                
-                last_month = price_statistics.get("last_month")
-                if last_month:
-                    attributes["last_month_price"] = last_month.get("avg_price")
-                    attributes["last_month_trend"] = last_month.get("trend", "Waiting for more data")
-                    attributes["last_month_top_stations"] = last_month.get("top_stations", [])
-                else:
-                    attributes["last_month_trend"] = "Waiting for more data"
-                    attributes["last_month_top_stations"] = [
-                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
-                    ]
-        
-        # 8. Configuration & documentation
-        attributes["config_entry_id"] = self._config_entry.entry_id
-        
-        metadata = get_entity_metadata("fuel_price_sensor")
-        if metadata:
-            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
-            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
-            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
-            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
-        
-        # 9. Mass data - station_comparison object (keep as is, but move to end)
-        if self.coordinator.data is not None:
-            radius_comparison = self.coordinator.data.get("radius_comparison")
+            # 7. Station comparison object
             if radius_comparison and radius_comparison.get("has_comparison"):
                 comparison_type = radius_comparison.get("comparison_type", "10km_vs_20km")
                 
@@ -2525,6 +2460,63 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         "fuel_to_purchase": radius_comparison.get("fuel_to_purchase"),
                         "comparison_type": "10km_vs_20km",
                     }
+            
+            # 8. AI/ML patterns (history price pattern - weekday patterns)
+            if price_statistics:
+                weekday_patterns = price_statistics.get("weekday_patterns")
+                if weekday_patterns:
+                    attributes["history_price_pattern"] = weekday_patterns
+            
+            # 9. Period statistics
+            if price_statistics:
+                last_week = price_statistics.get("last_week")
+                if last_week:
+                    attributes["last_week_price"] = last_week.get("avg_price")
+                    attributes["last_week_trend"] = last_week.get("trend", "Waiting for more data")
+                    attributes["last_week_top_stations"] = last_week.get("top_stations", [])
+                else:
+                    attributes["last_week_trend"] = "Waiting for more data"
+                    attributes["last_week_top_stations"] = [
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    ]
+                
+                last_14_days = price_statistics.get("last_14_days")
+                if last_14_days:
+                    attributes["last_14_days_price"] = last_14_days.get("avg_price")
+                    attributes["last_14_days_trend"] = last_14_days.get("trend", "Waiting for more data")
+                    attributes["last_14_days_top_stations"] = last_14_days.get("top_stations", [])
+                else:
+                    attributes["last_14_days_trend"] = "Waiting for more data"
+                    attributes["last_14_days_top_stations"] = [
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    ]
+                
+                last_month = price_statistics.get("last_month")
+                if last_month:
+                    attributes["last_month_price"] = last_month.get("avg_price")
+                    attributes["last_month_trend"] = last_month.get("trend", "Waiting for more data")
+                    attributes["last_month_top_stations"] = last_month.get("top_stations", [])
+                else:
+                    attributes["last_month_trend"] = "Waiting for more data"
+                    attributes["last_month_top_stations"] = [
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                    ]
+        
+        # 10. Configuration & documentation
+        attributes["config_entry_id"] = self._config_entry.entry_id
+        
+        metadata = get_entity_metadata("fuel_price_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return attributes
 
