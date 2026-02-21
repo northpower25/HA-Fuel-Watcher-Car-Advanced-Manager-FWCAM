@@ -900,6 +900,14 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 # Save the new trips to storage first
                 await storage.save_data(self.hass, self.config_entry, data)
                 
+                # Backfill coordinates for trips with missing positions using
+                # data from newly added neighboring trips (cross-session).
+                try:
+                    from .utils.historical_data_import import backfill_stored_trip_positions
+                    await backfill_stored_trip_positions(self.hass, self.config_entry)
+                except Exception as backfill_err:
+                    _LOGGER.debug("Error during cross-session position backfill: %s", backfill_err)
+                
                 # Recalculate trip statistics to include new trips
                 # This will update trip_statistics in storage
                 await recalculate_trip_statistics(self.hass, self.config_entry)
@@ -1712,6 +1720,14 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                             
                             # Save data
                             await save_data(self.hass, self.config_entry, data)
+                            
+                            # Backfill coordinates for trips with missing positions
+                            # using data from newly added neighboring trips (cross-session).
+                            try:
+                                from .utils.historical_data_import import backfill_stored_trip_positions
+                                await backfill_stored_trip_positions(self.hass, self.config_entry)
+                            except Exception as backfill_err:
+                                _LOGGER.debug("Error during cross-session position backfill: %s", backfill_err)
                             
                     except Exception as err:
                         _LOGGER.warning("Error checking for missed trips: %s", err)
