@@ -212,6 +212,43 @@ def _format_costsaving_attribute(radius_comparison: dict | None) -> str:
     return "Waiting for more data"
 
 
+def _get_best_station_from_comparison(
+    radius_comparison: dict | None,
+    fallback_station: dict | None = None,
+) -> dict:
+    """Return the most cost-effective station from a radius comparison result.
+
+    Picks the station (near or far) that minimises total cost of the refuelling
+    trip including travel.  Falls back to *fallback_station* when no comparison
+    data is available.
+
+    Args:
+        radius_comparison: Radius comparison dict from coordinator data.
+        fallback_station: Station dict to return when comparison is unavailable.
+
+    Returns:
+        Station dict (may be empty if no data at all).
+    """
+    if radius_comparison:
+        if radius_comparison.get("has_comparison"):
+            savings = radius_comparison.get("savings") or 0
+            if savings > STATION_RECOMMENDATION_MIN_SAVINGS:
+                station = radius_comparison.get("station_far") or {}
+            else:
+                station = radius_comparison.get("station_near") or {}
+            if station:
+                return station
+        # has_comparison=False: return whichever station data is present
+        station = (
+            radius_comparison.get("station_near")
+            or radius_comparison.get("station_far")
+            or {}
+        )
+        if station:
+            return station
+    return fallback_station or {}
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -1899,44 +1936,23 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         recommendation = None
         position_change_info = None
         radius_comparison = None
+        best_station: dict = {}
+        effective_price: float | None = fuel_price  # updated inside block below
         
         if fuel_price is not None and tank_percentage is not None:
             try:
                 # Track position changes and check cooldown status
+                # Use the globally-cheapest price here so that position-based
+                # cooldown is triggered by real market-price changes, not by a
+                # station switch caused by driving-cost analysis.
                 if vehicle_lat is not None and vehicle_lon is not None:
                     position_change_info = self._position_tracker.update(
                         vehicle_lat, vehicle_lon, fuel_price
                     )
                     _LOGGER.debug("Position change info: %s", position_change_info)
                 
-                # Only generate recommendation if not in cooldown
-                if not position_change_info or not position_change_info.get("in_cooldown", False):
-                    recommendation = await evaluate_refuel_strategy(
-                        self.hass,
-                        self.config_entry,
-                        current_price=fuel_price,
-                        tank_percentage=tank_percentage,
-                        range_km=vehicle_data.get("range_km"),
-                        station_name=nearest_station.get("name") if nearest_station else None,
-                    )
-                    _LOGGER.debug("Refuel recommendation: %s", recommendation)
-                else:
-                    # In cooldown - provide modified recommendation
-                    cooldown_reason = position_change_info.get("cooldown_reason", "Position change cooldown")
-                    recommendation = {
-                        "should_refuel": False,
-                        "reason": "position_change_cooldown",
-                        "urgency": "low",
-                        "price_delta": 0.0,
-                        "price_delta_percent": 0.0,
-                        "days_left": None,
-                        "recommendation": f"⏸️ {cooldown_reason}. Recommendations paused temporarily.",
-                        "in_cooldown": True,
-                        "cooldown_remaining_minutes": position_change_info.get("cooldown_remaining_minutes"),
-                    }
-                    _LOGGER.info("Recommendation in cooldown: %s", cooldown_reason)
-                
-                # Compare stations by radius if we have nearby stations data
+                # --- Radius comparison (computed FIRST so best-station price
+                # can be used in the refuel recommendation below) ---
                 if nearby_cheap_stations_data and tank_level_liters is not None:
                     stations_list = (
                         nearby_cheap_stations_data.get("all_stations")
@@ -1966,6 +1982,47 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                             _LOGGER.debug("Radius comparison: %s", radius_comparison)
                         except Exception as comp_err:
                             _LOGGER.warning("Error comparing stations by radius: %s", comp_err)
+                
+                # Determine the best (most cost-effective) station and its price.
+                # If no radius comparison is available, fall back to the globally
+                # cheapest station returned by the API.
+                best_station = _get_best_station_from_comparison(radius_comparison)
+                # _get_best_station_from_comparison always returns a dict (possibly
+                # empty), so .get() is always safe.  None means no price in that dict.
+                best_station_price = best_station.get("price")
+                # effective_price is what the user will actually pay at the
+                # recommended station; fall back to globally cheapest price when
+                # no comparison data exists (best_station dict is empty).
+                effective_price = best_station_price if best_station_price is not None else fuel_price
+                
+                # Only generate recommendation if not in cooldown
+                if not position_change_info or not position_change_info.get("in_cooldown", False):
+                    recommendation = await evaluate_refuel_strategy(
+                        self.hass,
+                        self.config_entry,
+                        current_price=effective_price,
+                        tank_percentage=tank_percentage,
+                        range_km=vehicle_data.get("range_km"),
+                        station_name=best_station.get("name") or (
+                            nearest_station.get("name") if nearest_station else None
+                        ),
+                    )
+                    _LOGGER.debug("Refuel recommendation: %s", recommendation)
+                else:
+                    # In cooldown - provide modified recommendation
+                    cooldown_reason = position_change_info.get("cooldown_reason", "Position change cooldown")
+                    recommendation = {
+                        "should_refuel": False,
+                        "reason": "position_change_cooldown",
+                        "urgency": "low",
+                        "price_delta": 0.0,
+                        "price_delta_percent": 0.0,
+                        "days_left": None,
+                        "recommendation": f"⏸️ {cooldown_reason}. Recommendations paused temporarily.",
+                        "in_cooldown": True,
+                        "cooldown_remaining_minutes": position_change_info.get("cooldown_remaining_minutes"),
+                    }
+                    _LOGGER.info("Recommendation in cooldown: %s", cooldown_reason)
             except Exception as err:
                 _LOGGER.warning("Error evaluating refuel strategy: %s", err)
         
@@ -2057,7 +2114,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Error getting refueling log and metadata: %s", err)
         
         data = {
-            "fuel_price": fuel_price,
+            "fuel_price": effective_price,
             "last_price_timestamp": last_price_timestamp,
             "tank_level": tank_level_liters,  # Always in liters for consistency
             "tank_percentage": tank_percentage,
@@ -2072,6 +2129,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 "distance": 0.0,
                 "price": None,
             },
+            "best_station": best_station,  # Most cost-effective station (winner of near/far comparison)
             "last_station_timestamp": last_station_timestamp,
             "forecast_trend": price_trend,
             "vehicle_data": vehicle_data,
@@ -2333,34 +2391,12 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             recommendation = self.coordinator.data.get("recommendation", {})
             radius_comparison = self.coordinator.data.get("radius_comparison")
             
-            # Determine which station to display as primary
-            # If we have a comparison and a clear recommendation, show the recommended station
-            display_station = station  # Default to nearest by price
-            
-            if radius_comparison and radius_comparison.get("has_comparison"):
-                comparison_rec = radius_comparison.get("recommendation", "")
-                savings = radius_comparison.get("savings", 0)
-                
-                # If the farther station actually saves money (positive savings),
-                # or if the recommendation suggests it's better, show the 20km station
-                # Otherwise (negative savings or similar cost), show the 10km station
-                if "20km" in comparison_rec or savings > STATION_RECOMMENDATION_MIN_SAVINGS:
-                    station_20km = radius_comparison.get("station_20km", {})
-                    if station_20km:
-                        display_station = {
-                            "name": station_20km.get("name"),
-                            "distance": station_20km.get("distance_km"),
-                            "address": station_20km.get("address"),
-                        }
-                else:
-                    # Show 10km station as recommended
-                    station_10km = radius_comparison.get("station_10km", {})
-                    if station_10km:
-                        display_station = {
-                            "name": station_10km.get("name"),
-                            "distance": station_10km.get("distance_km"),
-                            "address": station_10km.get("address"),
-                        }
+            # Determine which station to display as primary.
+            # Use the pre-computed best_station (winner of near-vs-far cost
+            # analysis) so that the station name/address/distance shown here
+            # always matches the cheapest_station sensor.
+            best_station = self.coordinator.data.get("best_station") or {}
+            display_station = best_station if best_station else station
             
             # 1. Data source & location
             attributes = {
@@ -2384,7 +2420,11 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             # 3. Core station metadata
             attributes[ATTR_STATION_NAME] = display_station.get("name")
             attributes[ATTR_STATION_ADDRESS] = display_station.get("address")
-            attributes[ATTR_DISTANCE] = display_station.get("distance")
+            # distance_km key is used by radius-comparison station dicts;
+            # "distance" key is used by the legacy nearest_station fallback.
+            attributes[ATTR_DISTANCE] = (
+                display_station.get("distance_km") or display_station.get("distance")
+            )
         else:
             # Fall back to restored attributes if coordinator data not yet available
             attributes = self._restored_attributes.copy() if self._restored_attributes else {}
@@ -2808,10 +2848,12 @@ class CheapestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        """Return the name of cheapest station."""
+        """Return the name of the most cost-effective station."""
         # If coordinator has fresh data, use it
         if self.coordinator.data is not None:
-            station = self.coordinator.data.get("nearest_station", {})
+            # best_station is the winner of the near-vs-far cost comparison.
+            # Fall back to nearest_station when no radius comparison was run.
+            station = self.coordinator.data.get("best_station") or self.coordinator.data.get("nearest_station", {})
             value = station.get("name")
             if value is not None:
                 return value
@@ -2824,10 +2866,12 @@ class CheapestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         """Return additional attributes."""
         # If coordinator has fresh data, use it
         if self.coordinator.data is not None:
-            station = self.coordinator.data.get("nearest_station", {})
+            station = self.coordinator.data.get("best_station") or self.coordinator.data.get("nearest_station", {})
+            # best_station dicts (from radius comparison) use "distance_km";
+            # the legacy nearest_station fallback dict uses "distance".
             attributes = {
                 ATTR_STATION_ADDRESS: station.get("address"),
-                ATTR_DISTANCE: station.get("distance"),
+                ATTR_DISTANCE: station.get("distance_km") or station.get("distance"),
                 ATTR_PRICE: station.get("price"),
             }
             
