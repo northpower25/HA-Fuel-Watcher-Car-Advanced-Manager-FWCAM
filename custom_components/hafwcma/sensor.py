@@ -2521,6 +2521,8 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                     ]
                 
                 last_14_days = price_statistics.get("last_14_days")
@@ -2534,6 +2536,8 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                     ]
                 
                 last_month = price_statistics.get("last_month")
@@ -2544,6 +2548,8 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 else:
                     attributes["last_30_days_trend"] = "Waiting for more data"
                     attributes["last_30_days_top_stations"] = [
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
+                        {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
@@ -4642,7 +4648,69 @@ class TripLogSensor(CoordinatorEntity, SensorEntity):
         # NOTE: Components should use get_all_trips service for complete history
         attrs["recent_trips"] = sorted_trips[:5]  # Reduced from 10 to 5
         
+        # 6. Top 20 trip destinations (aggregated from all available trips)
+        attrs["top_trip_destinations"] = self._compute_top_destinations(trips)
+        
         return attrs
+    
+    @staticmethod
+    def _compute_top_destinations(trips: list, top_n: int = 20) -> list:
+        """Aggregate trips by destination and return top N by visit count.
+        
+        Groups trips by end_address (or end_lat/end_lon when address unavailable).
+        For each destination computes: trip count, average distance, average fuel
+        consumed, and average fuel cost.
+        
+        Args:
+            trips: List of trip dicts from storage.
+            top_n: Maximum number of destinations to return (default 20).
+            
+        Returns:
+            List of destination dicts sorted descending by trip count, capped at top_n.
+        """
+        from collections import defaultdict
+        dest_data: dict[str, dict] = defaultdict(lambda: {
+            "trip_count": 0,
+            "total_distance_km": 0.0,
+            "total_fuel_consumed": 0.0,
+            "total_fuel_cost": 0.0,
+        })
+        
+        for trip in trips:
+            # Use end_address if available; fall back to rounded coordinates
+            end_address = trip.get("end_address") or ""
+            if not end_address:
+                lat = trip.get("end_latitude")
+                lon = trip.get("end_longitude")
+                if lat is not None and lon is not None:
+                    try:
+                        end_address = f"{round(float(lat), 3)},{round(float(lon), 3)}"
+                    except (ValueError, TypeError):
+                        continue  # Non-numeric coordinates
+                else:
+                    continue  # No usable destination key
+            
+            d = dest_data[end_address]
+            d["trip_count"] += 1
+            d["total_distance_km"] += trip.get("distance_km") or 0.0
+            d["total_fuel_consumed"] += trip.get("fuel_consumed") or 0.0
+            d["total_fuel_cost"] += trip.get("fuel_cost") or 0.0
+        
+        # Build result list with averages
+        results = []
+        for destination, d in dest_data.items():
+            count = d["trip_count"]
+            results.append({
+                "destination": destination,
+                "trip_count": count,
+                "avg_distance_km": round(d["total_distance_km"] / count, 2) if count else 0.0,
+                "avg_fuel_consumed_l": round(d["total_fuel_consumed"] / count, 3) if count else 0.0,
+                "avg_fuel_cost_eur": round(d["total_fuel_cost"] / count, 2) if count else 0.0,
+            })
+        
+        # Sort by trip count descending, then by destination name for stable ordering
+        results.sort(key=lambda x: (-x["trip_count"], x["destination"]))
+        return results[:top_n]
     
     @property
     def available(self) -> bool:

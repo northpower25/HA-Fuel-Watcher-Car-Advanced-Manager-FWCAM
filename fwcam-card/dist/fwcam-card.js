@@ -173,8 +173,8 @@ class FWCAMCard extends HTMLElement {
       nearest_station: `sensor.${baseName}_nearest_station`,
       api_debug: `sensor.${baseName}_api_debug`,
       days_until_refuel: `sensor.${baseName}_days_until_refuel`,
-      consumption_history: `sensor.${baseName}_consumption_history`,
-      consumption_forecast: `sensor.${baseName}_consumption_forecast`,
+      consumption_history: `sensor.${baseName}_average_consumption_history`,
+      consumption_forecast: `sensor.${baseName}_average_consumption_forecast`,
       trip_log_sensor: `sensor.${baseName}_trip_log`,
       current_trip: `sensor.${baseName}_current_trip`,
       // Switches
@@ -584,6 +584,18 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Wrap a formatted value in a styled span when it is N/A.
+   * @param {string|null} formattedValue - output from formatNumber or null
+   * @returns {string} HTML string
+   */
+  _formatValueOrNA(formattedValue) {
+    if (formattedValue === null || formattedValue === undefined || formattedValue === 'N/A') {
+      return '<span class="na-value">N/A</span>';
+    }
+    return formattedValue;
+  }
+
+  /**
    * Force an immediate render (bypasses throttling)
    * Used after user interactions to provide immediate feedback
    * Note: _lastRender will be updated by render() after successful completion
@@ -669,10 +681,14 @@ class FWCAMCard extends HTMLElement {
         
         <div class="card-content">
           ${this._config.show_vehicle_info ? this.renderVehicleInfo() : ''}
+          ${this._config.show_vehicle_info ? this.renderPriceChart() : ''}
+          ${this._config.show_vehicle_info ? this.renderConsumptionChart() : ''}
+          ${this._config.show_vehicle_info ? this.renderTopCheapestStations() : ''}
           ${this._config.show_controls ? this.renderControls() : ''}
           ${this._config.show_settings ? this.renderSettings() : ''}
           ${this._config.show_refueling_log ? this.renderRefuelingLog(this._allRefuelings || [], lastRefueling) : ''}
           ${this._config.show_trip_log ? this.renderTripLog(this._allTrips || []) : ''}
+          ${this._config.show_trip_log ? this.renderTopDestinations(this._allTrips || []) : ''}
         </div>
       </ha-card>
       ${this.renderDialog()}
@@ -696,30 +712,272 @@ class FWCAMCard extends HTMLElement {
     const nearestStation = this.getEntityStateValue(this._entities.nearest_station);
     const daysUntilRefuel = this.getEntityState(this._entities.days_until_refuel);
 
+    const fuelPriceVal = this._formatValueOrNA(fuelPrice ? this.formatNumber(fuelPrice.state, 3, '€/L') : null);
+    const tankLevelVal = this._formatValueOrNA(tankLevel ? this.formatNumber(tankLevel.state, 0, '%') : null);
+    const rangeVal = this._formatValueOrNA(range ? this.formatNumber(range.state, 0, 'km') : null);
+    const stationVal = nearestStation ? nearestStation : '<span class="na-value">N/A</span>';
+    const daysVal = this._formatValueOrNA(daysUntilRefuel ? this.formatNumber(daysUntilRefuel.state, 1) : null);
+
     return `
       <div class="section">
         <h3>Vehicle Information</h3>
         <div class="info-grid">
           <div class="info-item">
             <span class="label">Fuel Price:</span>
-            <span class="value">${fuelPrice ? this.formatNumber(fuelPrice.state, 3, '€/L') : 'N/A'}</span>
+            <span class="value">${fuelPriceVal}</span>
           </div>
           <div class="info-item">
             <span class="label">Tank Level:</span>
-            <span class="value">${tankLevel ? this.formatNumber(tankLevel.state, 0, '%') : 'N/A'}</span>
+            <span class="value">${tankLevelVal}</span>
           </div>
           <div class="info-item">
             <span class="label">Range:</span>
-            <span class="value">${range ? this.formatNumber(range.state, 0, 'km') : 'N/A'}</span>
+            <span class="value">${rangeVal}</span>
           </div>
           <div class="info-item">
             <span class="label">Nearest Station:</span>
-            <span class="value">${nearestStation || 'N/A'}</span>
+            <span class="value">${stationVal}</span>
           </div>
           <div class="info-item">
             <span class="label">Days Until Refuel:</span>
-            <span class="value">${daysUntilRefuel ? this.formatNumber(daysUntilRefuel.state, 1) : 'N/A'}</span>
+            <span class="value">${daysVal}</span>
           </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Build an inline SVG bar chart.
+   * @param {Array<{label:string, value:number|null}>} bars - chart data
+   * @param {string} yUnit - unit suffix for y-axis labels (e.g. "€/L")
+   * @param {string} color - bar fill colour (CSS colour)
+   * @returns {string} SVG markup
+   */
+  _buildBarChartSVG(bars, yUnit, color, chartTitle = 'Bar chart') {
+    const W = 400, H = 160, PAD_LEFT = 52, PAD_RIGHT = 8, PAD_TOP = 10, PAD_BOTTOM = 36;
+    const chartW = W - PAD_LEFT - PAD_RIGHT;
+    const chartH = H - PAD_TOP - PAD_BOTTOM;
+    const validValues = bars.map(b => b.value).filter(v => v !== null && !isNaN(v));
+    if (validValues.length === 0) return `<p class="na-value" role="status">No chart data yet</p>`;
+
+    const minVal = Math.min(...validValues);
+    const maxVal = Math.max(...validValues);
+    const range = maxVal - minVal || 1;
+    const barW = chartW / bars.length;
+
+    const yLines = 4;
+    let gridLines = '';
+    let yLabels = '';
+    for (let i = 0; i <= yLines; i++) {
+      const y = PAD_TOP + chartH - (i / yLines) * chartH;
+      const val = minVal + (i / yLines) * range;
+      gridLines += `<line x1="${PAD_LEFT}" y1="${y}" x2="${W - PAD_RIGHT}" y2="${y}" stroke="var(--divider-color)" stroke-width="1" stroke-dasharray="3,3" aria-hidden="true"/>`;
+      yLabels += `<text x="${PAD_LEFT - 4}" y="${y + 4}" text-anchor="end" font-size="10" fill="var(--secondary-text-color)" aria-hidden="true">${val.toFixed(2)}</text>`;
+    }
+
+    let barsHTML = '';
+    let xLabels = '';
+    bars.forEach((bar, i) => {
+      const x = PAD_LEFT + i * barW + barW * 0.1;
+      const bw = barW * 0.8;
+      if (bar.value !== null && !isNaN(bar.value)) {
+        const normalized = (bar.value - minVal) / range;
+        const bh = Math.max(2, normalized * chartH);
+        const y = PAD_TOP + chartH - bh;
+        barsHTML += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${color}" rx="2"><title>${bar.label}: ${bar.value.toFixed(3)} ${yUnit}</title></rect>`;
+        barsHTML += `<text x="${(x + bw / 2).toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--primary-text-color)" aria-hidden="true">${bar.value.toFixed(2)}</text>`;
+      }
+      xLabels += `<text x="${(PAD_LEFT + i * barW + barW / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--secondary-text-color)" aria-hidden="true">${bar.label}</text>`;
+    });
+
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;display:block" role="img" aria-label="${chartTitle}">
+      ${gridLines}${yLabels}${barsHTML}${xLabels}
+      <text x="${PAD_LEFT}" y="${H}" text-anchor="start" font-size="9" fill="var(--secondary-text-color)">${yUnit}</text>
+    </svg>`;
+  }
+
+  /**
+   * Render fuel price history chart section using weekday patterns.
+   */
+  renderPriceChart() {
+    const fuelPriceEntity = this.getEntityState(this._entities.fuel_price);
+    if (!fuelPriceEntity || !fuelPriceEntity.attributes) return '';
+
+    const weekdayPattern = fuelPriceEntity.attributes.history_price_pattern;
+    if (!weekdayPattern || typeof weekdayPattern !== 'object') return '';
+
+    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const shortLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const bars = weekdays.map((day, i) => {
+      const dayData = weekdayPattern[day];
+      const val = dayData && typeof dayData.avg_price === 'number' ? dayData.avg_price : null;
+      return { label: shortLabels[i], value: val };
+    });
+
+    const hasData = bars.some(b => b.value !== null);
+    if (!hasData) return '';
+
+    const last7 = fuelPriceEntity.attributes.last_7_days_price;
+    const last30 = fuelPriceEntity.attributes.last_30_days_price;
+    const trend7 = fuelPriceEntity.attributes.last_7_days_trend || '';
+    const trendIcon = trend7 === 'up' ? '↑' : trend7 === 'down' ? '↓' : '→';
+    const trendColor = trend7 === 'up' ? '#f44336' : trend7 === 'down' ? '#4caf50' : 'var(--secondary-text-color)';
+
+    return `
+      <div class="section">
+        <h3>⛽ Fuel Price Development</h3>
+        <div class="chart-summary">
+          ${last7 !== undefined ? `<span class="chart-stat">7-day avg: <strong>${parseFloat(last7).toFixed(3)} €/L</strong> <span style="color:${trendColor}">${trendIcon}</span></span>` : ''}
+          ${last30 !== undefined ? `<span class="chart-stat">30-day avg: <strong>${parseFloat(last30).toFixed(3)} €/L</strong></span>` : ''}
+        </div>
+        <div class="chart-container">
+          ${this._buildBarChartSVG(bars, '€/L', 'var(--primary-color)', 'Fuel price development by weekday')}
+        </div>
+        <p class="chart-caption">Average fuel price per weekday (last 7 days)</p>
+      </div>
+    `;
+  }
+
+  /**
+   * Render consumption history chart section.
+   */
+  renderConsumptionChart() {
+    const consumptionEntity = this.getEntityState(this._entities.consumption_history);
+    if (!consumptionEntity || !consumptionEntity.attributes) return '';
+
+    const attrs = consumptionEntity.attributes;
+    const bars = [
+      { label: '24h',  value: attrs.last_24h_consumption  !== undefined ? attrs.last_24h_consumption  : null },
+      { label: '7d',   value: attrs.last_7_days_consumption !== undefined ? attrs.last_7_days_consumption : null },
+      { label: '14d',  value: attrs.last_14_days_consumption !== undefined ? attrs.last_14_days_consumption : null },
+      { label: '30d',  value: attrs.last_30_days_consumption !== undefined ? attrs.last_30_days_consumption : null },
+    ].filter(b => b.value !== null && !isNaN(b.value));
+
+    if (bars.length === 0) return '';
+
+    const overallState = parseFloat(consumptionEntity.state);
+    return `
+      <div class="section">
+        <h3>📊 Consumption</h3>
+        <div class="chart-summary">
+          ${!isNaN(overallState) ? `<span class="chart-stat">Overall avg: <strong>${overallState.toFixed(2)} L/100km</strong></span>` : ''}
+          ${attrs.last_30_days_km ? `<span class="chart-stat">30-day km: <strong>${attrs.last_30_days_km}</strong></span>` : ''}
+        </div>
+        <div class="chart-container">
+          ${this._buildBarChartSVG(bars, 'L/100km', '#ff9800', 'Fuel consumption history by period')}
+        </div>
+        <p class="chart-caption">Average consumption per period (L/100km)</p>
+      </div>
+    `;
+  }
+
+  /**
+   * Render TOP 5 cheapest stations for last 7 and 30 days.
+   */
+  renderTopCheapestStations() {
+    const fuelPriceEntity = this.getEntityState(this._entities.fuel_price);
+    if (!fuelPriceEntity || !fuelPriceEntity.attributes) return '';
+
+    const stations7 = fuelPriceEntity.attributes.last_7_days_top_stations || [];
+    const stations30 = fuelPriceEntity.attributes.last_30_days_top_stations || [];
+
+    const hasData7 = stations7.some(s => s.name && s.name !== 'Waiting for more data');
+    const hasData30 = stations30.some(s => s.name && s.name !== 'Waiting for more data');
+
+    if (!hasData7 && !hasData30) return '';
+
+    const renderList = (stations, label) => {
+      const items = stations.slice(0, 5).map((s, i) => {
+        const name = s.name && s.name !== 'Waiting for more data' ? s.name : '—';
+        const price = (typeof s.avg_price === 'number') ? `${s.avg_price.toFixed(3)} €/L` : '—';
+        return `<tr><td class="rank">#${i + 1}</td><td class="station-name">${name}</td><td class="station-price">${price}</td></tr>`;
+      }).join('');
+      return `
+        <div class="top-stations-col">
+          <h4>${label}</h4>
+          <table class="top-stations-table">
+            <thead><tr><th></th><th>Station</th><th>Ø Price</th></tr></thead>
+            <tbody>${items}</tbody>
+          </table>
+        </div>`;
+    };
+
+    return `
+      <div class="section">
+        <h3>🏆 Top 5 Cheapest Stations</h3>
+        <div class="top-stations-grid">
+          ${hasData7 ? renderList(stations7, 'Last 7 Days') : ''}
+          ${hasData30 ? renderList(stations30, 'Last 30 Days') : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render TOP 20 trip destinations.
+   * @param {Array} trips - all available trip records
+   */
+  renderTopDestinations(trips) {
+    if (!trips || trips.length === 0) return '';
+
+    // Aggregate destinations
+    const destMap = new Map();
+    for (const trip of trips) {
+      let dest = trip.end_address || null;
+      if (!dest && trip.end_latitude != null && trip.end_longitude != null) {
+        const lat = parseFloat(trip.end_latitude);
+        const lon = parseFloat(trip.end_longitude);
+        if (!isNaN(lat) && !isNaN(lon)) {
+          dest = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+        }
+      }
+      if (!dest) continue;
+      if (!destMap.has(dest)) destMap.set(dest, { count: 0, totalDist: 0, totalFuel: 0, totalCost: 0 });
+      const d = destMap.get(dest);
+      d.count++;
+      d.totalDist += parseFloat(trip.distance_km) || 0;
+      d.totalFuel += parseFloat(trip.fuel_consumed) || 0;
+      d.totalCost += parseFloat(trip.fuel_cost) || 0;
+    }
+
+    if (destMap.size === 0) return '';
+
+    const sorted = [...destMap.entries()]
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 20);
+
+    const rows = sorted.map(([dest, d], i) => {
+      const avgDist = d.count ? (d.totalDist / d.count).toFixed(1) : '—';
+      const avgFuel = d.count ? (d.totalFuel / d.count).toFixed(3) : '—';
+      const avgCost = d.count ? (d.totalCost / d.count).toFixed(2) : '—';
+      return `<tr>
+        <td class="rank">#${i + 1}</td>
+        <td class="dest-name" title="${dest}">${dest.length > 40 ? dest.substring(0, 38) + '…' : dest}</td>
+        <td class="dest-stat">${d.count}</td>
+        <td class="dest-stat">${avgDist} km</td>
+        <td class="dest-stat">${avgFuel} L</td>
+        <td class="dest-stat">${avgCost} €</td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <div class="section">
+        <h3>🗺️ Top 20 Trip Destinations</h3>
+        <div class="table-container">
+          <table class="refueling-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Destination</th>
+                <th>Trips</th>
+                <th>Ø Distance</th>
+                <th>Ø Fuel</th>
+                <th>Ø Cost</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
         </div>
       </div>
     `;
@@ -3800,6 +4058,96 @@ class FWCAMCard extends HTMLElement {
           color: #f44336;
           padding: 16px;
           text-align: center;
+        }
+
+        .na-value {
+          color: var(--disabled-text-color, #9e9e9e);
+          font-style: italic;
+        }
+
+        .chart-container {
+          margin: 8px 0;
+        }
+
+        .chart-summary {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          margin-bottom: 8px;
+        }
+
+        .chart-stat {
+          font-size: 13px;
+          color: var(--secondary-text-color);
+        }
+
+        .chart-caption {
+          font-size: 11px;
+          color: var(--disabled-text-color, #9e9e9e);
+          margin: 4px 0 0 0;
+          text-align: center;
+        }
+
+        .top-stations-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 16px;
+        }
+
+        .top-stations-col h4 {
+          margin: 0 0 8px 0;
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--secondary-text-color);
+        }
+
+        .top-stations-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 13px;
+        }
+
+        .top-stations-table th {
+          text-align: left;
+          padding: 4px 6px;
+          font-weight: 600;
+          color: var(--secondary-text-color);
+          border-bottom: 1px solid var(--divider-color);
+          font-size: 11px;
+        }
+
+        .top-stations-table td {
+          padding: 4px 6px;
+          border-bottom: 1px solid var(--divider-color);
+          vertical-align: top;
+        }
+
+        .top-stations-table .rank {
+          color: var(--secondary-text-color);
+          font-size: 11px;
+          width: 24px;
+        }
+
+        .top-stations-table .station-name {
+          word-break: break-word;
+        }
+
+        .top-stations-table .station-price {
+          white-space: nowrap;
+          font-weight: 600;
+          color: var(--primary-color);
+        }
+
+        .dest-name {
+          max-width: 200px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .dest-stat {
+          white-space: nowrap;
+          text-align: right;
         }
       </style>
     `;

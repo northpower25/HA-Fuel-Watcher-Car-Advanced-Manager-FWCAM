@@ -326,8 +326,8 @@ def _calculate_period_statistics(
             else:
                 trend = "down"
     
-    # Get top 3 stations for this period
-    top_stations = _calculate_top_stations(period_stations, top_n=3)
+    # Get top 5 stations for this period
+    top_stations = _calculate_top_stations(period_stations, top_n=5)
     
     result = {
         "avg_price": round(avg_price, 3),
@@ -335,9 +335,9 @@ def _calculate_period_statistics(
         "trend": trend,
     }
     
-    # Always show 3 station slots with proper formatting
+    # Always show 5 station slots with proper formatting
     formatted_stations = []
-    for i in range(3):
+    for i in range(5):
         if i < len(top_stations):
             formatted_stations.append({
                 "name": top_stations[i]["station_name"],
