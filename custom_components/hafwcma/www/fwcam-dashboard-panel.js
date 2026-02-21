@@ -95,6 +95,10 @@ class FWCAMDashboardPanel extends HTMLElement {
   _updateCardHass(hass) {
     if (this._card) {
       this._card.hass = hass;
+    } else if (customElements.get(FWCAM_CARD_ELEMENT)) {
+      // fwcam-card is now registered (was not yet when _render() first ran).
+      // Re-render so the card gets properly configured.
+      this._render();
     }
   }
 
