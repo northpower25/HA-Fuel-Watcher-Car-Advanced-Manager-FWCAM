@@ -2570,6 +2570,10 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                     ]
+
+                daily_cheapest = price_statistics.get("daily_cheapest_prices")
+                if daily_cheapest:
+                    attributes["daily_cheapest_prices"] = daily_cheapest
         
         # 10. Configuration & documentation
         attributes["config_entry_id"] = self._config_entry.entry_id
