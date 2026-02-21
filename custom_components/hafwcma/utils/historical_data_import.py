@@ -1296,6 +1296,38 @@ MAX_TANK_LEVEL_LOOKUP_TIME_HOURS = 6.0  # Maximum time difference (hours) for a 
 MAX_REASONABLE_FUEL_CONSUMPTION_L_PER_100KM = 50.0  # Upper plausibility bound for fuel consumption
 MIN_REASONABLE_FUEL_CONSUMPTION_L_PER_100KM = 1.0   # Lower plausibility bound for fuel consumption
 WLTP_PLAUSIBILITY_TOLERANCE = 0.25  # Acceptable deviation (±25%) from WLTP reference consumption
+# Maximum odometer gap (km) allowed when backfilling trip positions across sessions.
+# This is intentionally larger than TRIP_DETECTION_MIN_DISTANCE_KM to tolerate small
+# discrepancies between real-time and history-based odometer readings (e.g., when a
+# manually-tracked trip end odometer differs slightly from the history start point of
+# a subsequently recovered trip).  Using 4× the minimum trip distance (2.0 km) covers
+# typical measurement imprecision while still preventing backfill across genuine gaps.
+TRIP_POSITION_BACKFILL_MAX_GAP_KM = 2.0
+
+
+def _refresh_trip_position_quality(trip: dict[str, Any]) -> None:
+    """Update the ``position_quality`` field of a trip based on its current coordinates.
+
+    Should be called after any backfill that modifies ``start_latitude``,
+    ``start_longitude``, ``end_latitude``, or ``end_longitude``.
+
+    Args:
+        trip: Trip dictionary (modified in place).
+    """
+    has_start = (
+        trip.get("start_latitude") is not None
+        and trip.get("start_longitude") is not None
+    )
+    has_end = (
+        trip.get("end_latitude") is not None
+        and trip.get("end_longitude") is not None
+    )
+    if has_start and has_end:
+        trip["position_quality"] = "full"
+    elif has_start or has_end:
+        trip["position_quality"] = "partial"
+    else:
+        trip["position_quality"] = "none"
 
 
 async def import_historical_trip_data(
@@ -1979,10 +2011,9 @@ def _backfill_trip_positions(trips: list[dict[str, Any]]) -> None:
     - Missing start position → filled from the end position of the previous trip.
     - Missing end position   → filled from the start position of the next trip.
 
-    The ``position_quality`` field already reflects the *original* data quality
-    ("full", "partial", "none") set during detection, so it is left unchanged.
-    A separate ``position_backfilled`` flag is added to trips that received at
-    least one coordinate from a neighbor.
+    After any coordinates are filled, the ``position_quality`` field is
+    updated to reflect the new state ("full", "partial", or "none").  A
+    separate ``position_backfilled`` flag is also added.
 
     Args:
         trips: List of trip dictionaries (modified in place).
@@ -2026,6 +2057,10 @@ def _backfill_trip_positions(trips: list[dict[str, Any]]) -> None:
                     trip["end_longitude"],
                 )
 
+        # Refresh position_quality to reflect any coordinates just filled.
+        if trip.get("position_backfilled"):
+            _refresh_trip_position_quality(trip)
+
     if backfilled:
         _LOGGER.info(
             "Position backfill: filled %d missing coordinate(s) across %d trip(s)",
@@ -2049,9 +2084,11 @@ async def backfill_stored_trip_positions(
     Two trips are considered *adjacent* (no undetected trip between them) only
     when their odometer readings are contiguous – i.e. the gap between
     ``odometer_end`` of the previous trip and ``odometer_start`` of the next
-    trip is less than :const:`TRIP_DETECTION_MIN_DISTANCE_KM`.  This prevents
-    assigning a wrong position across an odometer gap caused by an undetected
-    trip.
+    trip is less than :const:`TRIP_POSITION_BACKFILL_MAX_GAP_KM`.  This
+    threshold is intentionally larger than :const:`TRIP_DETECTION_MIN_DISTANCE_KM`
+    to account for small odometer discrepancies between real-time-tracked trips
+    and trips recovered from history, while still preventing incorrect position
+    assignment across genuine undetected-trip gaps.
 
     After filling coordinates, a reverse-geocoding step is performed for trips
     that gained a new start or end position and do not yet have the
@@ -2095,12 +2132,15 @@ async def backfill_stored_trip_positions(
                 prev = sorted_trips[i - 1]
                 # Only propagate when the two trips are odometer-adjacent so we
                 # don't assign a wrong position when a trip was missed in between.
+                # Use TRIP_POSITION_BACKFILL_MAX_GAP_KM (larger than the minimum
+                # trip distance) to tolerate small discrepancies between real-time
+                # and history-based odometer readings.
                 prev_end_odo = prev.get("odometer_end")
                 curr_start_odo = trip.get("odometer_start")
                 odometer_adjacent = (
                     prev_end_odo is not None
                     and curr_start_odo is not None
-                    and abs(prev_end_odo - curr_start_odo) < TRIP_DETECTION_MIN_DISTANCE_KM
+                    and abs(prev_end_odo - curr_start_odo) < TRIP_POSITION_BACKFILL_MAX_GAP_KM
                 )
                 if (
                     odometer_adjacent
@@ -2128,7 +2168,7 @@ async def backfill_stored_trip_positions(
                 odometer_adjacent = (
                     curr_end_odo is not None
                     and nxt_start_odo is not None
-                    and abs(curr_end_odo - nxt_start_odo) < TRIP_DETECTION_MIN_DISTANCE_KM
+                    and abs(curr_end_odo - nxt_start_odo) < TRIP_POSITION_BACKFILL_MAX_GAP_KM
                 )
                 if (
                     odometer_adjacent
@@ -2148,6 +2188,10 @@ async def backfill_stored_trip_positions(
                         trip["end_latitude"],
                         trip["end_longitude"],
                     )
+
+            # Refresh position_quality to reflect any coordinates that were just filled.
+            if trip.get("position_backfilled"):
+                _refresh_trip_position_quality(trip)
 
         if backfilled == 0:
             return 0

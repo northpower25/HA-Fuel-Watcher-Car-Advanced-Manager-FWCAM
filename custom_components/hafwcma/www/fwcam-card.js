@@ -115,11 +115,17 @@ class FWCAMCard extends HTMLElement {
       return;
     }
     
-    // Throttle rendering based on refresh_interval (in seconds)
+    // Throttle rendering based on refresh_interval (in seconds).
+    // When the primary entity is still unavailable (e.g. right after HA restart
+    // before the first coordinator refresh), use a shorter 15-second interval so
+    // the card picks up real data quickly instead of waiting the full interval.
     const now = Date.now();
     const intervalMs = this._config.refresh_interval * 1000;
+    const entity = hass.states[this._config.entity];
+    const isUnavailable = !entity || entity.state === 'unavailable' || entity.state === 'unknown';
+    const effectiveIntervalMs = isUnavailable ? Math.min(intervalMs, 15000) : intervalMs;
     
-    if (now - this._lastRender >= intervalMs) {
+    if (now - this._lastRender >= effectiveIntervalMs) {
       this.render();
     }
   }

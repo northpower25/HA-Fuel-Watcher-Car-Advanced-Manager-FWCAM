@@ -38,7 +38,7 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.B
 
 # Frontend card configuration
 CARD_FILENAME = "fwcam-card.js"
-CARD_VERSION = "1.1.0"  # Update this when the card changes
+CARD_VERSION = "1.2.0"  # Update this when the card changes
 
 # Dashboard panel configuration
 PANEL_FILENAME = "fwcam-dashboard-panel.js"

@@ -575,6 +575,18 @@ def detect_missed_trips_from_history(
                             break
                     
                     if not is_duplicate:
+                        start_lat = previous_point.get("lat")
+                        start_lon = previous_point.get("lon")
+                        end_lat = current_point.get("lat")
+                        end_lon = current_point.get("lon")
+                        has_start = start_lat is not None and start_lon is not None
+                        has_end = end_lat is not None and end_lon is not None
+                        if has_start and has_end:
+                            position_quality = "full"
+                        elif has_start or has_end:
+                            position_quality = "partial"
+                        else:
+                            position_quality = "none"
                         trip_data = {
                             "timestamp_start": prev_time.isoformat(),
                             "timestamp_end": curr_time.isoformat(),
@@ -584,10 +596,11 @@ def detect_missed_trips_from_history(
                             "duration_minutes": round(duration_minutes, 1),
                             "fuel_consumed": None,  # Not available from odometer history alone
                             "consumption_rate": None,
-                            "start_latitude": previous_point.get("lat"),
-                            "start_longitude": previous_point.get("lon"),
-                            "end_latitude": current_point.get("lat"),
-                            "end_longitude": current_point.get("lon"),
+                            "start_latitude": start_lat,
+                            "start_longitude": start_lon,
+                            "end_latitude": end_lat,
+                            "end_longitude": end_lon,
+                            "position_quality": position_quality,
                             "category": "private",
                             "data_quality": "recovered_from_history",
                             "confidence": RECOVERED_TRIP_CONFIDENCE,
