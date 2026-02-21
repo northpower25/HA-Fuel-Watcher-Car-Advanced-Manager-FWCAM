@@ -115,6 +115,13 @@ class FWCAMCard extends HTMLElement {
       return;
     }
     
+    // findEntities() needs this._hass, so it returns early when called from
+    // setConfig() before the first hass assignment.  Populate entities now
+    // if they haven't been resolved yet.
+    if (!this._entities?.fuel_price) {
+      this.findEntities();
+    }
+    
     // Throttle rendering based on refresh_interval (in seconds).
     // When the primary entity is still unavailable (e.g. right after HA restart
     // before the first coordinator refresh), use a shorter 15-second interval so
