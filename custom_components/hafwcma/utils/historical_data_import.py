@@ -1952,6 +1952,18 @@ async def _import_trip_history(
                 "Historical trip import completed: detected %d trips from odometer changes",
                 trip_count,
             )
+            
+            # Cross-session position backfill: fill missing coordinates in stored
+            # trips (including those just saved) using neighboring trips.  This
+            # handles cases where a previously stored trip had no start/end
+            # position because a neighboring trip had not yet been detected.
+            try:
+                await backfill_stored_trip_positions(hass, entry)
+            except Exception as backfill_err:
+                _LOGGER.warning(
+                    "Error during cross-session position backfill after import: %s",
+                    backfill_err,
+                )
         
     except Exception as err:
         _LOGGER.error("Error importing trip history: %s", err, exc_info=True)
@@ -2020,6 +2032,186 @@ def _backfill_trip_positions(trips: list[dict[str, Any]]) -> None:
             backfilled,
             len(trips),
         )
+
+
+async def backfill_stored_trip_positions(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> int:
+    """Backfill missing GPS coordinates in stored trips from neighboring trips.
+
+    This is the cross-session complement to :func:`_backfill_trip_positions`,
+    which only operates on trips detected within the *current* scan batch.
+    When subsequent scan sessions add new trips adjacent to previously stored
+    ones, older trips may still be missing start or end coordinates because no
+    suitable neighbor existed at the time they were first saved.
+
+    Two trips are considered *adjacent* (no undetected trip between them) only
+    when their odometer readings are contiguous – i.e. the gap between
+    ``odometer_end`` of the previous trip and ``odometer_start`` of the next
+    trip is less than :const:`TRIP_DETECTION_MIN_DISTANCE_KM`.  This prevents
+    assigning a wrong position across an odometer gap caused by an undetected
+    trip.
+
+    After filling coordinates, a reverse-geocoding step is performed for trips
+    that gained a new start or end position and do not yet have the
+    corresponding address field, provided ``auto_geocode`` is enabled in the
+    trip tracking configuration.
+
+    Args:
+        hass: Home Assistant instance.
+        entry: Config entry for the vehicle.
+
+    Returns:
+        Number of coordinate fields that were backfilled.
+    """
+    try:
+        data = await load_data(hass, entry)
+        trips = data.get("trips", [])
+        if len(trips) < 2:
+            return 0
+
+        # Sort trips by start timestamp (ascending).  sorted() preserves dict
+        # object identity so in-place modifications are reflected in data["trips"].
+        sorted_trips = sorted(trips, key=lambda t: t.get("timestamp_start", ""))
+
+        backfilled = 0
+        trips_needing_geocode: list[dict[str, Any]] = []
+
+        for i, trip in enumerate(sorted_trips):
+            start_missing = (
+                trip.get("start_latitude") is None
+                or trip.get("start_longitude") is None
+            )
+            end_missing = (
+                trip.get("end_latitude") is None
+                or trip.get("end_longitude") is None
+            )
+
+            if not start_missing and not end_missing:
+                continue
+
+            if start_missing and i > 0:
+                prev = sorted_trips[i - 1]
+                # Only propagate when the two trips are odometer-adjacent so we
+                # don't assign a wrong position when a trip was missed in between.
+                prev_end_odo = prev.get("odometer_end")
+                curr_start_odo = trip.get("odometer_start")
+                odometer_adjacent = (
+                    prev_end_odo is not None
+                    and curr_start_odo is not None
+                    and abs(prev_end_odo - curr_start_odo) < TRIP_DETECTION_MIN_DISTANCE_KM
+                )
+                if (
+                    odometer_adjacent
+                    and prev.get("end_latitude") is not None
+                    and prev.get("end_longitude") is not None
+                ):
+                    trip["start_latitude"] = prev["end_latitude"]
+                    trip["start_longitude"] = prev["end_longitude"]
+                    trip["position_backfilled"] = True
+                    backfilled += 1
+                    if trip.get("start_address") is None:
+                        trips_needing_geocode.append({"trip": trip, "side": "start"})
+                    _LOGGER.debug(
+                        "Cross-session backfill: start position for trip %s "
+                        "from previous trip end (%.4f, %.4f)",
+                        trip.get("timestamp_start"),
+                        trip["start_latitude"],
+                        trip["start_longitude"],
+                    )
+
+            if end_missing and i < len(sorted_trips) - 1:
+                nxt = sorted_trips[i + 1]
+                curr_end_odo = trip.get("odometer_end")
+                nxt_start_odo = nxt.get("odometer_start")
+                odometer_adjacent = (
+                    curr_end_odo is not None
+                    and nxt_start_odo is not None
+                    and abs(curr_end_odo - nxt_start_odo) < TRIP_DETECTION_MIN_DISTANCE_KM
+                )
+                if (
+                    odometer_adjacent
+                    and nxt.get("start_latitude") is not None
+                    and nxt.get("start_longitude") is not None
+                ):
+                    trip["end_latitude"] = nxt["start_latitude"]
+                    trip["end_longitude"] = nxt["start_longitude"]
+                    trip["position_backfilled"] = True
+                    backfilled += 1
+                    if trip.get("end_address") is None:
+                        trips_needing_geocode.append({"trip": trip, "side": "end"})
+                    _LOGGER.debug(
+                        "Cross-session backfill: end position for trip %s "
+                        "from next trip start (%.4f, %.4f)",
+                        trip.get("timestamp_start"),
+                        trip["end_latitude"],
+                        trip["end_longitude"],
+                    )
+
+        if backfilled == 0:
+            return 0
+
+        _LOGGER.info(
+            "Cross-session position backfill: filled %d missing coordinate(s)",
+            backfilled,
+        )
+
+        # Save updated trips.  The dict objects in sorted_trips are the same
+        # references as in data["trips"], so modifications are already reflected.
+        await save_data(hass, entry, data)
+
+        # Optionally reverse-geocode the newly backfilled positions.
+        trip_config = data.get("trip_tracking_config", {})
+        if trip_config.get("auto_geocode", True) and trips_needing_geocode:
+            geocoded = 0
+            try:
+                from .geocoding import geocode_trip_location
+                for item in trips_needing_geocode:
+                    trip = item["trip"]
+                    side = item["side"]
+                    try:
+                        geo = await geocode_trip_location(
+                            trip[f"{side}_latitude"],
+                            trip[f"{side}_longitude"],
+                        )
+                        if geo:
+                            if geo.get("location_name"):
+                                trip[f"{side}_name"] = geo["location_name"]
+                            if geo.get("address"):
+                                trip[f"{side}_address"] = geo["address"]
+                                geocoded += 1
+                            _LOGGER.debug(
+                                "Geocoded backfilled %s for trip %s: %s",
+                                side,
+                                trip.get("timestamp_start"),
+                                geo.get("address"),
+                            )
+                    except Exception as geo_err:
+                        _LOGGER.debug(
+                            "Error geocoding backfilled %s for trip %s: %s",
+                            side,
+                            trip.get("timestamp_start"),
+                            geo_err,
+                        )
+            except ImportError:
+                _LOGGER.debug(
+                    "Geocoding module not available; skipping address resolution for backfilled positions"
+                )
+
+            if geocoded > 0:
+                _LOGGER.info(
+                    "Cross-session backfill: geocoded %d address(es) for backfilled positions",
+                    geocoded,
+                )
+                # Re-save with geocoded addresses.
+                await save_data(hass, entry, data)
+
+        return backfilled
+
+    except Exception as err:
+        _LOGGER.warning("Error during cross-session trip position backfill: %s", err)
+        return 0
 
 
 async def _fetch_entity_history(
