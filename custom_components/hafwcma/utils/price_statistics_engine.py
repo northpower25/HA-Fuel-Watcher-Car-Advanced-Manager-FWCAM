@@ -228,6 +228,7 @@ def _calculate_weekday_statistics(
         
         result[weekday_name] = {
             "avg_price": round(avg_price, 3),
+            "min_price": round(min(prices), 3),
             "best_timeframe": best_timeframe if best_timeframe else "Waiting for more data",
             "observations": len(prices),
         }
@@ -355,6 +356,46 @@ def _calculate_period_statistics(
     return result
 
 
+def _calculate_daily_cheapest_prices(
+    price_history: List[Dict[str, Any]],
+    start_date: datetime,
+    end_date: datetime,
+) -> List[Dict[str, Any]]:
+    """Calculate the cheapest price recorded per calendar day.
+
+    Args:
+        price_history: List of price observations
+        start_date: Start of the period
+        end_date: End of the period
+
+    Returns:
+        List of {date: str (YYYY-MM-DD), min_price: float} sorted by date.
+    """
+    daily_min: Dict[str, float] = {}
+
+    for obs in price_history:
+        ts_str = obs.get("ts")
+        if not ts_str:
+            continue
+
+        ts = _parse_iso_timestamp(ts_str)
+        if not ts or ts < start_date or ts > end_date:
+            continue
+
+        price = obs.get("price")
+        if price is None:
+            continue
+
+        day_key = ts.strftime("%Y-%m-%d")
+        if day_key not in daily_min or price < daily_min[day_key]:
+            daily_min[day_key] = price
+
+    return [
+        {"date": day, "min_price": round(daily_min[day], 3)}
+        for day in sorted(daily_min)
+    ]
+
+
 async def calculate_price_statistics(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -431,6 +472,13 @@ async def calculate_price_statistics(
         previous_month_end,
     )
     
+    # Calculate daily cheapest prices for last 30 days (for line chart)
+    daily_cheapest = _calculate_daily_cheapest_prices(
+        price_history,
+        last_month_start,
+        last_month_end,
+    )
+
     result = {}
     
     if weekday_patterns:
@@ -444,6 +492,9 @@ async def calculate_price_statistics(
     
     if last_month_stats:
         result["last_month"] = last_month_stats
+
+    if daily_cheapest:
+        result["daily_cheapest_prices"] = daily_cheapest
     
     _LOGGER.debug("Price statistics calculated: %d weekdays, periods: %s", 
                   len(weekday_patterns), list(result.keys()))

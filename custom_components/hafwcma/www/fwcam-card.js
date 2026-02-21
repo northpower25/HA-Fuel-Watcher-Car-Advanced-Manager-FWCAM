@@ -171,6 +171,7 @@ class FWCAMCard extends HTMLElement {
       tank_level: `sensor.${baseName}_tank_level`,
       range: `sensor.${baseName}_range`,
       nearest_station: `sensor.${baseName}_nearest_station`,
+      cheapest_station: `sensor.${baseName}_cheapest_station`,
       api_debug: `sensor.${baseName}_api_debug`,
       days_until_refuel: `sensor.${baseName}_days_until_refuel`,
       consumption_history: `sensor.${baseName}_average_consumption_history`,
@@ -711,12 +712,14 @@ class FWCAMCard extends HTMLElement {
     const tankLevel = this.getEntityState(this._entities.tank_level);
     const range = this.getEntityState(this._entities.range);
     const nearestStation = this.getEntityStateValue(this._entities.nearest_station);
+    const cheapestStation = this.getEntityStateValue(this._entities.cheapest_station);
     const daysUntilRefuel = this.getEntityState(this._entities.days_until_refuel);
 
     const fuelPriceVal = this._formatValueOrNA(fuelPrice ? this.formatNumber(fuelPrice.state, 3, '€/L') : null);
     const tankLevelVal = this._formatValueOrNA(tankLevel ? this.formatNumber(tankLevel.state, 0, '%') : null);
     const rangeVal = this._formatValueOrNA(range ? this.formatNumber(range.state, 0, 'km') : null);
     const stationVal = nearestStation ? nearestStation : '<span class="na-value">N/A</span>';
+    const cheapestVal = cheapestStation ? cheapestStation : '<span class="na-value">N/A</span>';
     const daysVal = this._formatValueOrNA(daysUntilRefuel ? this.formatNumber(daysUntilRefuel.state, 1) : null);
 
     return `
@@ -726,6 +729,10 @@ class FWCAMCard extends HTMLElement {
           <div class="info-item">
             <span class="label">Fuel Price:</span>
             <span class="value">${fuelPriceVal}</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Cheapest Station:</span>
+            <span class="value">${cheapestVal}</span>
           </div>
           <div class="info-item">
             <span class="label">Tank Level:</span>
@@ -800,43 +807,202 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Build an inline SVG line chart with an optional average trend line.
+   * @param {Array<{label:string, value:number|null}>} points - chart data
+   * @param {string} yUnit - unit suffix for y-axis labels
+   * @param {string} lineColor - line/dot colour (CSS colour)
+   * @param {number|null} avgValue - optional horizontal average line value
+   * @param {string} [chartTitle] - accessible title for the chart
+   * @returns {string} SVG markup
+   */
+  _buildLineChartSVG(points, yUnit, lineColor, avgValue = null, chartTitle = 'Line chart') {
+    const W = 400, H = 160, PAD_LEFT = 52, PAD_RIGHT = 8, PAD_TOP = 10, PAD_BOTTOM = 36;
+    const chartW = W - PAD_LEFT - PAD_RIGHT;
+    const chartH = H - PAD_TOP - PAD_BOTTOM;
+
+    const validValues = points.map(p => p.value).filter(v => v !== null && !isNaN(v));
+    if (validValues.length === 0) return `<p class="na-value" role="status">No chart data yet</p>`;
+
+    const allValues = avgValue !== null ? [...validValues, avgValue] : validValues;
+    const minVal = Math.min(...allValues);
+    const maxVal = Math.max(...allValues);
+    const valRange = maxVal - minVal || 1;
+
+    const toX = (i) => PAD_LEFT + (i / (points.length - 1 || 1)) * chartW;
+    const toY = (v) => PAD_TOP + chartH - ((v - minVal) / valRange) * chartH;
+
+    // Grid lines & y-axis labels
+    const yLines = 4;
+    let gridLines = '';
+    let yLabels = '';
+    for (let i = 0; i <= yLines; i++) {
+      const y = PAD_TOP + chartH - (i / yLines) * chartH;
+      const val = minVal + (i / yLines) * valRange;
+      gridLines += `<line x1="${PAD_LEFT}" y1="${y}" x2="${W - PAD_RIGHT}" y2="${y}" stroke="var(--divider-color)" stroke-width="1" stroke-dasharray="3,3" aria-hidden="true"/>`;
+      yLabels += `<text x="${PAD_LEFT - 4}" y="${y + 4}" text-anchor="end" font-size="10" fill="var(--secondary-text-color)" aria-hidden="true">${val.toFixed(2)}</text>`;
+    }
+
+    // Build polyline path through valid points
+    let pathD = '';
+    let dots = '';
+    let xLabels = '';
+    const labelStep = Math.max(1, Math.ceil(points.length / 7));
+    points.forEach((pt, i) => {
+      if (pt.value !== null && !isNaN(pt.value)) {
+        const x = toX(i);
+        const y = toY(pt.value);
+        pathD += pathD === '' ? `M${x.toFixed(1)},${y.toFixed(1)}` : ` L${x.toFixed(1)},${y.toFixed(1)}`;
+        dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${lineColor}"><title>${pt.label}: ${pt.value.toFixed(3)} ${yUnit}</title></circle>`;
+      }
+      if (i % labelStep === 0 || i === points.length - 1) {
+        xLabels += `<text x="${toX(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="var(--secondary-text-color)" aria-hidden="true">${pt.label}</text>`;
+      }
+    });
+
+    const polyline = pathD ? `<path d="${pathD}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : '';
+
+    // Optional average trend line
+    let avgLine = '';
+    if (avgValue !== null && !isNaN(avgValue)) {
+      const ay = toY(avgValue);
+      avgLine = `<line x1="${PAD_LEFT}" y1="${ay.toFixed(1)}" x2="${W - PAD_RIGHT}" y2="${ay.toFixed(1)}" stroke="#ff9800" stroke-width="1.5" stroke-dasharray="5,3" aria-hidden="true"/>
+        <text x="${(W - PAD_RIGHT + 2).toFixed(1)}" y="${(ay + 4).toFixed(1)}" font-size="9" fill="#ff9800" aria-hidden="true">Ø</text>`;
+    }
+
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;display:block" role="img" aria-label="${chartTitle}">
+      ${gridLines}${yLabels}${avgLine}${polyline}${dots}${xLabels}
+      <text x="${PAD_LEFT}" y="${H}" text-anchor="start" font-size="9" fill="var(--secondary-text-color)">${yUnit}</text>
+    </svg>`;
+  }
+
+  /**
+   * Build an inline SVG grouped bar chart with two series per category.
+   * @param {Array<{label:string, value1:number|null, value2:number|null}>} bars - chart data
+   * @param {string} yUnit - unit suffix
+   * @param {string} color1 - fill colour for series 1 (min price)
+   * @param {string} color2 - fill colour for series 2 (avg price)
+   * @param {string} [chartTitle]
+   * @returns {string} SVG markup
+   */
+  _buildGroupedBarChartSVG(bars, yUnit, color1, color2, chartTitle = 'Grouped bar chart') {
+    const W = 400, H = 170, PAD_LEFT = 52, PAD_RIGHT = 8, PAD_TOP = 10, PAD_BOTTOM = 46;
+    const chartW = W - PAD_LEFT - PAD_RIGHT;
+    const chartH = H - PAD_TOP - PAD_BOTTOM;
+
+    const allValues = bars.flatMap(b => [b.value1, b.value2]).filter(v => v !== null && !isNaN(v));
+    if (allValues.length === 0) return `<p class="na-value" role="status">No chart data yet</p>`;
+
+    const minVal = Math.min(...allValues);
+    const maxVal = Math.max(...allValues);
+    const valRange = maxVal - minVal || 1;
+    const groupW = chartW / bars.length;
+    const barW = groupW * 0.38;
+
+    const yLines = 4;
+    let gridLines = '';
+    let yLabels = '';
+    for (let i = 0; i <= yLines; i++) {
+      const y = PAD_TOP + chartH - (i / yLines) * chartH;
+      const val = minVal + (i / yLines) * valRange;
+      gridLines += `<line x1="${PAD_LEFT}" y1="${y}" x2="${W - PAD_RIGHT}" y2="${y}" stroke="var(--divider-color)" stroke-width="1" stroke-dasharray="3,3" aria-hidden="true"/>`;
+      yLabels += `<text x="${PAD_LEFT - 4}" y="${y + 4}" text-anchor="end" font-size="10" fill="var(--secondary-text-color)" aria-hidden="true">${val.toFixed(2)}</text>`;
+    }
+
+    let barsHTML = '';
+    let xLabels = '';
+    bars.forEach((bar, i) => {
+      const gx = PAD_LEFT + i * groupW;
+      [[bar.value1, color1, 0], [bar.value2, color2, barW + 2]].forEach(([val, col, offset]) => {
+        if (val !== null && !isNaN(val)) {
+          const normalized = (val - minVal) / valRange;
+          const bh = Math.max(2, normalized * chartH);
+          const y = PAD_TOP + chartH - bh;
+          const x = gx + groupW * 0.06 + offset;
+          barsHTML += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${col}" rx="2"><title>${bar.label}: ${val.toFixed(3)} ${yUnit}</title></rect>`;
+        }
+      });
+      xLabels += `<text x="${(gx + groupW / 2).toFixed(1)}" y="${H - 20}" text-anchor="middle" font-size="10" fill="var(--secondary-text-color)" aria-hidden="true">${bar.label}</text>`;
+    });
+
+    // Legend
+    const legend = `<rect x="${PAD_LEFT}" y="${H - 14}" width="10" height="8" fill="${color1}" rx="1"/>
+      <text x="${PAD_LEFT + 13}" y="${H - 7}" font-size="9" fill="var(--secondary-text-color)">Min</text>
+      <rect x="${PAD_LEFT + 40}" y="${H - 14}" width="10" height="8" fill="${color2}" rx="1"/>
+      <text x="${PAD_LEFT + 53}" y="${H - 7}" font-size="9" fill="var(--secondary-text-color)">Avg</text>`;
+
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto;display:block" role="img" aria-label="${chartTitle}">
+      ${gridLines}${yLabels}${barsHTML}${xLabels}${legend}
+      <text x="${W - PAD_RIGHT}" y="${H}" text-anchor="end" font-size="9" fill="var(--secondary-text-color)">${yUnit}</text>
+    </svg>`;
+  }
+
+  /**
    * Render fuel price history chart section using weekday patterns.
    */
   renderPriceChart() {
     const fuelPriceEntity = this.getEntityState(this._entities.fuel_price);
     if (!fuelPriceEntity || !fuelPriceEntity.attributes) return '';
 
-    const weekdayPattern = fuelPriceEntity.attributes.history_price_pattern;
-    if (!weekdayPattern || typeof weekdayPattern !== 'object') return '';
+    const attrs = fuelPriceEntity.attributes;
+    const last14Price = attrs.last_14_days_price;
+    const last14Trend = attrs.last_14_days_trend || '';
+    const last30Price = attrs.last_30_days_price;
+    const trendIcon = last14Trend === 'up' ? '↑' : last14Trend === 'down' ? '↓' : '→';
+    const trendColor = last14Trend === 'up' ? '#f44336' : last14Trend === 'down' ? '#4caf50' : 'var(--secondary-text-color)';
 
-    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const shortLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const bars = weekdays.map((day, i) => {
-      const dayData = weekdayPattern[day];
-      const val = dayData && typeof dayData.avg_price === 'number' ? dayData.avg_price : null;
-      return { label: shortLabels[i], value: val };
-    });
+    // --- 1. Daily cheapest price line chart ---
+    const dailyPrices = attrs.daily_cheapest_prices;
+    let lineChartHTML = '';
+    if (Array.isArray(dailyPrices) && dailyPrices.length > 0) {
+      const linePoints = dailyPrices.map(d => ({
+        label: d.date ? d.date.slice(5) : '',  // MM-DD
+        value: typeof d.min_price === 'number' ? d.min_price : null,
+      }));
+      const avg14 = typeof last14Price === 'number' ? last14Price : (last14Price ? parseFloat(last14Price) : null);
+      lineChartHTML = `
+        <h4 style="margin:8px 0 4px">📈 Daily Cheapest Price (last 30 days)</h4>
+        <div class="chart-summary">
+          ${last14Price !== undefined ? `<span class="chart-stat">14-day avg: <strong>${parseFloat(last14Price).toFixed(3)} €/L</strong> <span style="color:${trendColor}">${trendIcon}</span></span>` : ''}
+          ${last30Price !== undefined ? `<span class="chart-stat">30-day avg: <strong>${parseFloat(last30Price).toFixed(3)} €/L</strong></span>` : ''}
+        </div>
+        <div class="chart-container">
+          ${this._buildLineChartSVG(linePoints, '€/L', 'var(--primary-color)', avg14, 'Daily cheapest fuel price over last 30 days')}
+        </div>
+        <p class="chart-caption">Cheapest price per day — dashed line: 14-day average</p>`;
+    }
 
-    const hasData = bars.some(b => b.value !== null);
-    if (!hasData) return '';
+    // --- 2. Weekday min/avg grouped bar chart ---
+    const weekdayPattern = attrs.history_price_pattern;
+    let weekdayChartHTML = '';
+    if (weekdayPattern && typeof weekdayPattern === 'object') {
+      const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      const shortLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+      const groupedBars = weekdays.map((day, i) => {
+        const dayData = weekdayPattern[day];
+        return {
+          label: shortLabels[i],
+          value1: dayData && typeof dayData.min_price === 'number' ? dayData.min_price : null,
+          value2: dayData && typeof dayData.avg_price === 'number' ? dayData.avg_price : null,
+        };
+      });
+      const hasData = groupedBars.some(b => b.value1 !== null || b.value2 !== null);
+      if (hasData) {
+        weekdayChartHTML = `
+          <h4 style="margin:12px 0 4px">📊 Weekday Price Pattern</h4>
+          <div class="chart-container">
+            ${this._buildGroupedBarChartSVG(groupedBars, '€/L', 'var(--primary-color)', '#ff9800', 'Weekday fuel price pattern: cheapest and average')}
+          </div>
+          <p class="chart-caption">Cheapest (blue) and average (orange) price per weekday (last 7 days)</p>`;
+      }
+    }
 
-    const last7 = fuelPriceEntity.attributes.last_7_days_price;
-    const last30 = fuelPriceEntity.attributes.last_30_days_price;
-    const trend7 = fuelPriceEntity.attributes.last_7_days_trend || '';
-    const trendIcon = trend7 === 'up' ? '↑' : trend7 === 'down' ? '↓' : '→';
-    const trendColor = trend7 === 'up' ? '#f44336' : trend7 === 'down' ? '#4caf50' : 'var(--secondary-text-color)';
+    if (!lineChartHTML && !weekdayChartHTML) return '';
 
     return `
       <div class="section">
         <h3>⛽ Fuel Price Development</h3>
-        <div class="chart-summary">
-          ${last7 !== undefined ? `<span class="chart-stat">7-day avg: <strong>${parseFloat(last7).toFixed(3)} €/L</strong> <span style="color:${trendColor}">${trendIcon}</span></span>` : ''}
-          ${last30 !== undefined ? `<span class="chart-stat">30-day avg: <strong>${parseFloat(last30).toFixed(3)} €/L</strong></span>` : ''}
-        </div>
-        <div class="chart-container">
-          ${this._buildBarChartSVG(bars, '€/L', 'var(--primary-color)', 'Fuel price development by weekday')}
-        </div>
-        <p class="chart-caption">Average fuel price per weekday (last 7 days)</p>
+        ${lineChartHTML}
+        ${weekdayChartHTML}
       </div>
     `;
   }
