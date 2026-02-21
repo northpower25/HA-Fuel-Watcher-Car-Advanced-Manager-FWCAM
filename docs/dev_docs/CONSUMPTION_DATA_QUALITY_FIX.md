@@ -132,8 +132,8 @@ These thresholds are conservative to avoid false positives while catching obviou
 
 **Problem**: After historical import, sensor shows:
 ```
-today_km: 11111
-last_week_km: 11111
+last_24h_km: 11111
+last_7_days_km: 11111
 ```
 
 **Diagnosis**: 

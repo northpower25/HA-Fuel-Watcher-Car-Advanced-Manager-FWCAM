@@ -2,7 +2,7 @@
 
 ## Problem
 
-The integration was showing inflated km values (e.g., `today_km: 11111`) when the actual vehicle odometer was much lower (e.g., `2089 km`).
+The integration was showing inflated km values (e.g., `last_24h_km: 11111`) when the actual vehicle odometer was much lower (e.g., `2089 km`).
 
 ### Root Cause
 
@@ -120,7 +120,7 @@ for i in range(len(relevant_events) - 1):
 
 ## Recommendation
 
-If you're experiencing inflated `today_km` values with existing data, check your refueling log for:
+If you're experiencing inflated `last_24h_km` values with existing data, check your refueling log for:
 1. Duplicate refueling events (same timestamp, same odometer)
 2. Incorrect odometer values in refueling events (e.g., cumulative instead of actual reading)
 3. Very large gaps between consecutive odometer readings

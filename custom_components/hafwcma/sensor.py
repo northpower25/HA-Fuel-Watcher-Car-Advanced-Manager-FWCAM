@@ -653,7 +653,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         """Calculate consumption history for different time periods.
         
         Returns:
-            Dictionary with consumption statistics for today, last week, last 14 days, last month
+            Dictionary with consumption statistics for last 24h, last 7 days, last 14 days, last 30 days.
+            All periods are rolling windows (e.g. last_24h = now minus 24 hours, not since midnight).
         """
         from .utils.storage import calculate_consumption_history
         
@@ -2511,12 +2512,12 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             if price_statistics:
                 last_week = price_statistics.get("last_week")
                 if last_week:
-                    attributes["last_week_price"] = last_week.get("avg_price")
-                    attributes["last_week_trend"] = last_week.get("trend", "Waiting for more data")
-                    attributes["last_week_top_stations"] = last_week.get("top_stations", [])
+                    attributes["last_7_days_price"] = last_week.get("avg_price")
+                    attributes["last_7_days_trend"] = last_week.get("trend", "Waiting for more data")
+                    attributes["last_7_days_top_stations"] = last_week.get("top_stations", [])
                 else:
-                    attributes["last_week_trend"] = "Waiting for more data"
-                    attributes["last_week_top_stations"] = [
+                    attributes["last_7_days_trend"] = "Waiting for more data"
+                    attributes["last_7_days_top_stations"] = [
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
@@ -2537,12 +2538,12 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 
                 last_month = price_statistics.get("last_month")
                 if last_month:
-                    attributes["last_month_price"] = last_month.get("avg_price")
-                    attributes["last_month_trend"] = last_month.get("trend", "Waiting for more data")
-                    attributes["last_month_top_stations"] = last_month.get("top_stations", [])
+                    attributes["last_30_days_price"] = last_month.get("avg_price")
+                    attributes["last_30_days_trend"] = last_month.get("trend", "Waiting for more data")
+                    attributes["last_30_days_top_stations"] = last_month.get("top_stations", [])
                 else:
-                    attributes["last_month_trend"] = "Waiting for more data"
-                    attributes["last_month_top_stations"] = [
+                    attributes["last_30_days_trend"] = "Waiting for more data"
+                    attributes["last_30_days_top_stations"] = [
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
                         {"name": "Waiting for more data", "avg_price": "Waiting for more data"},
@@ -3933,7 +3934,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return consumption statistics for different time periods."""
+        """Return consumption statistics for different rolling time windows (last 24h / 7 / 14 / 30 days)."""
         if self.coordinator.data is None:
             return {}
         history = self.coordinator.data.get("consumption_history")
@@ -3941,41 +3942,41 @@ class ConsumptionHistorySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         
         if not history:
             return {
-                "today": None,
-                "last_week": None,
+                "last_24h": None,
+                "last_7_days": None,
                 "last_14_days": None,
-                "last_month": None,
+                "last_30_days": None,
                 "status": "Waiting for refueling data",
             }
         
         attributes = {}
         
-        # Today's consumption
+        # Last 24h consumption (rolling window, not calendar day)
         if history.get("today"):
             today = history["today"]
-            attributes["today_consumption"] = today.get("avg_consumption_l_per_100km")
-            attributes["today_km"] = today.get("total_km", 0)
-            attributes["today_liters"] = today.get("total_liters", 0)
-            attributes["today_refuel_count"] = today.get("refuel_count", 0)
-            attributes["today_cost"] = today.get("total_cost", 0.0)
+            attributes["last_24h_consumption"] = today.get("avg_consumption_l_per_100km")
+            attributes["last_24h_km"] = today.get("total_km", 0)
+            attributes["last_24h_liters"] = today.get("total_liters", 0)
+            attributes["last_24h_refuel_count"] = today.get("refuel_count", 0)
+            attributes["last_24h_cost"] = today.get("total_cost", 0.0)
             
             # Add data quality warning if daily km seems unrealistic
             total_km = today.get("total_km", 0)
-            if total_km > 1000:  # More than 1000 km in one day is suspicious
+            if total_km > 1000:  # More than 1000 km in 24h is suspicious
                 attributes["data_quality_warning"] = (
-                    f"Today shows {total_km} km driven, which is unusually high. "
+                    f"Last 24h shows {total_km} km driven, which is unusually high. "
                     "This may indicate incorrect timestamps or odometer values in your refueling events. "
                     "Check your refueling log or use the recalculation button to fix data issues."
                 )
         
-        # Last week
+        # Last 7 days (rolling window)
         if history.get("last_week"):
             week = history["last_week"]
-            attributes["last_week_consumption"] = week.get("avg_consumption_l_per_100km")
-            attributes["last_week_km"] = week.get("total_km", 0)
-            attributes["last_week_liters"] = week.get("total_liters", 0)
-            attributes["last_week_refuel_count"] = week.get("refuel_count", 0)
-            attributes["last_week_cost"] = week.get("total_cost", 0.0)
+            attributes["last_7_days_consumption"] = week.get("avg_consumption_l_per_100km")
+            attributes["last_7_days_km"] = week.get("total_km", 0)
+            attributes["last_7_days_liters"] = week.get("total_liters", 0)
+            attributes["last_7_days_refuel_count"] = week.get("refuel_count", 0)
+            attributes["last_7_days_cost"] = week.get("total_cost", 0.0)
             
             # Detect if weekly data is suspiciously similar to daily data
             if history.get("today"):
@@ -3988,7 +3989,7 @@ class ConsumptionHistorySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                     else:
                         attributes["data_quality_warning"] += " "
                     attributes["data_quality_warning"] += (
-                        f"Last week and today show nearly identical km ({week_km} vs {today_km}). "
+                        f"Last 7 days and last 24h show nearly identical km ({week_km} vs {today_km}). "
                         "This suggests all refueling events may have the same or very recent timestamps. "
                         "Check if historical data was imported correctly or if refueling events need to be updated."
                     )
@@ -4005,11 +4006,11 @@ class ConsumptionHistorySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         # Last month
         if history.get("last_month"):
             month = history["last_month"]
-            attributes["last_month_consumption"] = month.get("avg_consumption_l_per_100km")
-            attributes["last_month_km"] = month.get("total_km", 0)
-            attributes["last_month_liters"] = month.get("total_liters", 0)
-            attributes["last_month_refuel_count"] = month.get("refuel_count", 0)
-            attributes["last_month_cost"] = month.get("total_cost", 0.0)
+            attributes["last_30_days_consumption"] = month.get("avg_consumption_l_per_100km")
+            attributes["last_30_days_km"] = month.get("total_km", 0)
+            attributes["last_30_days_liters"] = month.get("total_liters", 0)
+            attributes["last_30_days_refuel_count"] = month.get("refuel_count", 0)
+            attributes["last_30_days_cost"] = month.get("total_cost", 0.0)
         
         # Add weekday driving pattern if available in consumption_prediction, with fallback to storage
         weekday_consumption = self.coordinator.data.get("weekday_consumption", {})
