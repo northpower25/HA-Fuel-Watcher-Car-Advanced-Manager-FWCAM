@@ -115,6 +115,10 @@ from .utils.refuel_recommendation_engine import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Weekday name constants for pattern display
+WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+WEEKDAY_ATTR_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
 # Station recommendation constants
 # Minimum savings in EUR required to recommend driving to a farther station
 STATION_RECOMMENDATION_MIN_SAVINGS = 0.50  # EUR
@@ -1973,6 +1977,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         trips = []
         trip_statistics = {}
         storage_statistics = {}
+        weekday_consumption = {}
         try:
             stored_data = await storage.load_data(self.hass, self.config_entry)
             refueling_log = stored_data.get("refueling_log", [])
@@ -1981,6 +1986,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             trip_tracking_config = stored_data.get("trip_tracking_config", {})
             trips = stored_data.get("trips", [])
             trip_statistics = stored_data.get("trip_statistics", {})
+            weekday_consumption = stored_data.get("weekday_consumption", {})
             
             # Calculate storage statistics for debug sensor
             odometer_history = stored_data.get("odometer_history", [])
@@ -2039,6 +2045,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "position_change_info": position_change_info,  # Add position change tracking
             "radius_comparison": radius_comparison,  # Add 10km vs 20km comparison
             "storage_statistics": storage_statistics,  # Add storage statistics for debug sensor
+            "weekday_consumption": weekday_consumption,  # Add weekday consumption for pattern attributes
         }
         
         # Apply randomization for next update interval
@@ -2105,11 +2112,13 @@ def add_prediction_metadata_to_attributes(
 
 def format_weekday_pattern(
     weekday_pattern: dict[int, float] | None,
+    avg_consumption_rate: float | None = None,
 ) -> dict[str, str] | None:
     """Convert weekday pattern from numeric keys to named keys with units.
     
     Args:
         weekday_pattern: Dictionary with weekday numbers (0-6) as keys and km values
+        avg_consumption_rate: Average consumption in L/100km for liters calculation
         
     Returns:
         Dictionary with weekday names as keys and formatted km values with units, or None if input is None
@@ -2117,14 +2126,83 @@ def format_weekday_pattern(
     if not weekday_pattern:
         return None
     
-    # Convert weekday numbers to names for better readability
-    weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     formatted_pattern = {}
     for weekday, km in weekday_pattern.items():
-        if isinstance(weekday, int) and 0 <= weekday < 7:
-            formatted_pattern[weekday_names[weekday]] = f"{round(km, 1)} km"
+        # Accept both int and str keys (int keys from ml_engine, str keys after JSON round-trip)
+        try:
+            weekday_int = int(weekday)
+        except (ValueError, TypeError):
+            continue
+        if 0 <= weekday_int < 7:
+            if avg_consumption_rate is not None and avg_consumption_rate > 0:
+                liters = km * avg_consumption_rate / 100.0
+                formatted_pattern[WEEKDAY_NAMES[weekday_int]] = f"{round(km, 1)} km / {round(liters, 3)} L"
+            else:
+                formatted_pattern[WEEKDAY_NAMES[weekday_int]] = f"{round(km, 1)} km"
     
     return formatted_pattern if formatted_pattern else None
+
+
+def _build_weekday_pattern_from_storage(
+    weekday_consumption: dict,
+) -> dict[int, float] | None:
+    """Build a weekday pattern dict from stored weekday_consumption data.
+    
+    Args:
+        weekday_consumption: Dict mapping weekday str/int to {km, count} from storage
+        
+    Returns:
+        Dict mapping weekday int (0-6) to avg km, or None if no data
+    """
+    if not weekday_consumption:
+        return None
+    pattern = {}
+    for key, stats in weekday_consumption.items():
+        try:
+            weekday_int = int(key)
+            km_total = stats.get("km", 0.0)
+            count = stats.get("count", 0)
+            if count > 0 and 0 <= weekday_int < 7:
+                pattern[weekday_int] = km_total / count
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return pattern if pattern else None
+
+
+def add_weekday_pattern_attributes(
+    attributes: dict[str, Any],
+    weekday_pattern: dict | None,
+    avg_consumption_rate: float | None,
+    attribute_name: str = "weekday_driving_pattern",
+) -> None:
+    """Add weekday pattern as both a summary dict and individual per-weekday attributes.
+    
+    Args:
+        attributes: Dictionary to add attributes to
+        weekday_pattern: Dict mapping weekday int/str keys to avg km values
+        avg_consumption_rate: Average consumption in L/100km for liters calculation
+        attribute_name: Name for the summary dict attribute
+    """
+    if not weekday_pattern:
+        return
+
+    formatted_pattern = format_weekday_pattern(weekday_pattern, avg_consumption_rate)
+    if formatted_pattern:
+        attributes[attribute_name] = formatted_pattern
+
+    # Add individual per-weekday attributes for easier automation/template access
+    for weekday, km in weekday_pattern.items():
+        try:
+            weekday_int = int(weekday)
+        except (ValueError, TypeError):
+            continue
+        if 0 <= weekday_int < 7:
+            if avg_consumption_rate is not None and avg_consumption_rate > 0:
+                liters = km * avg_consumption_rate / 100.0
+                attr_value = f"{round(km, 1)} km / {round(liters, 3)} L"
+            else:
+                attr_value = f"{round(km, 1)} km"
+            attributes[f"avg_{WEEKDAY_ATTR_NAMES[weekday_int]}"] = attr_value
 
 
 class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
@@ -3630,12 +3708,20 @@ class ConsumptionHistorySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             attributes["last_month_refuel_count"] = month.get("refuel_count", 0)
             attributes["last_month_cost"] = month.get("total_cost", 0.0)
         
-        # Add weekday driving pattern if available in consumption_prediction
-        if consumption_prediction:
-            weekday_pattern = consumption_prediction.get("weekday_pattern")
-            formatted_pattern = format_weekday_pattern(weekday_pattern)
-            if formatted_pattern:
-                attributes["weekday_driving_pattern"] = formatted_pattern
+        # Add weekday driving pattern if available in consumption_prediction, with fallback to storage
+        weekday_consumption = self.coordinator.data.get("weekday_consumption", {})
+        avg_consumption_rate = (
+            consumption_prediction.get("avg_consumption_rate") if consumption_prediction else None
+        )
+        weekday_pattern = (
+            consumption_prediction.get("weekday_pattern") if consumption_prediction else None
+        )
+        # Fall back to weekday_consumption from storage if prediction pattern unavailable
+        if not weekday_pattern:
+            weekday_pattern = _build_weekday_pattern_from_storage(weekday_consumption)
+        add_weekday_pattern_attributes(
+            attributes, weekday_pattern, avg_consumption_rate, "weekday_driving_pattern"
+        )
         
         # Add metadata from consumption_prediction if available
         self._add_prediction_metadata(attributes, consumption_prediction)
@@ -3815,12 +3901,20 @@ class ConsumptionForecastSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             if month.get("forecast_cost") is not None:
                 attributes["next_month_cost"] = month.get("forecast_cost")
         
-        # Add weekday driving pattern if available in consumption_prediction
-        if consumption_prediction:
-            weekday_pattern = consumption_prediction.get("weekday_pattern")
-            formatted_pattern = format_weekday_pattern(weekday_pattern)
-            if formatted_pattern:
-                attributes["weekday_driving_pattern (km)"] = formatted_pattern
+        # Add weekday driving pattern if available in consumption_prediction, with fallback to storage
+        weekday_consumption = self.coordinator.data.get("weekday_consumption", {})
+        avg_consumption_rate = (
+            consumption_prediction.get("avg_consumption_rate") if consumption_prediction else None
+        )
+        weekday_pattern = (
+            consumption_prediction.get("weekday_pattern") if consumption_prediction else None
+        )
+        # Fall back to weekday_consumption from storage if prediction pattern unavailable
+        if not weekday_pattern:
+            weekday_pattern = _build_weekday_pattern_from_storage(weekday_consumption)
+        add_weekday_pattern_attributes(
+            attributes, weekday_pattern, avg_consumption_rate, "weekday_driving_pattern"
+        )
         
         # Add metadata from consumption_prediction if available
         self._add_prediction_metadata(attributes, consumption_prediction)

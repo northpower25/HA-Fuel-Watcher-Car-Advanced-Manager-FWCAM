@@ -24,8 +24,8 @@
         "description": "Geben Sie Ihre Fahrzeuginformationen ein.\n\n⚠️ **Beide Felder sind Pflichtfelder.** Tankinhalt und Durchschnittsverbrauch sind entscheidend für genaue Kraftstoffberechnungen und den Trip-Import. Bitte geben Sie die für Ihr Fahrzeug bekannten Werte ein (z.B. aus dem Handbuch oder WLTP-Datenblatt).",
         "data": {
           "vehicle_name": "Fahrzeugname (z.B. 'Mein Auto')",
-          "tank_capacity": "Tankinhalt in Litern (z.B. 50.0)",
-          "initial_consumption": "Durchschnittsverbrauch (L/100km, z.B. WLTP-Wert)"
+          "tank_capacity": "Tankinhalt in Litern (z.B. 50.0 oder 50,5)",
+          "initial_consumption": "Durchschnittsverbrauch (L/100km, z.B. WLTP-Wert, Komma oder Punkt als Dezimaltrennzeichen)"
         },
         "data_description": {
           "vehicle_name": "Ein freundlicher Name für Ihr Fahrzeug",
@@ -152,7 +152,7 @@
           "update_interval": "Aktualisierungsintervall in Minuten (1-60, z.B. 5)",
           "radius": "Suchradius in km (z.B. 5.0)",
           "fuel_type": "Kraftstoffart (Dropdown-Auswahl)",
-          "tank_capacity": "Tankinhalt in Litern (z.B. 50.0)",
+          "tank_capacity": "Tankinhalt in Litern (z.B. 50.0 oder 50,5)",
           "telegram_token": "Telegram Bot-Token (Optional)",
           "telegram_chat_id": "Telegram Chat-ID (Optional)",
           "odometer_entity": "Kilometerzähler Sensor (km)",
@@ -170,7 +170,7 @@
           "fallback_daily_km_friday": "Standard Tageskilometer - Freitag (0-1000, z.B. 40)",
           "fallback_daily_km_saturday": "Standard Tageskilometer - Samstag (0-1000, z.B. 20)",
           "fallback_daily_km_sunday": "Standard Tageskilometer - Sonntag (0-1000, z.B. 20)",
-          "initial_consumption": "Durchschnittsverbrauch (L/100km)"
+          "initial_consumption": "Durchschnittsverbrauch (L/100km, Komma oder Punkt als Dezimaltrennzeichen)"
         },
         "data_description": {
           "provider": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter",

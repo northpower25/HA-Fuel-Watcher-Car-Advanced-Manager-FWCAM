@@ -208,6 +208,29 @@ async def async_send_telegram_test_message(
         raise
 
 
+def _parse_decimal(value: Any) -> float | None:
+    """Parse a decimal number accepting both '.' and ',' as decimal separator.
+    
+    Args:
+        value: The value to parse (str, int, or float)
+        
+    Returns:
+        Float value or None if parsing fails
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        # Replace comma with dot for locales that use comma as decimal separator
+        normalized = value.strip().replace(",", ".")
+        try:
+            return float(normalized)
+        except ValueError:
+            return None
+    return None
+
+
 def format_station_list_for_display(stations: list[dict[str, Any]]) -> str:
     """Format station list for display in config flow.
     
@@ -448,33 +471,36 @@ class HaFWCMAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            tank_capacity = user_input.get(CONF_TANK_CAPACITY)
-            initial_consumption = user_input.get(CONF_INITIAL_CONSUMPTION)
+            tank_capacity = _parse_decimal(user_input.get(CONF_TANK_CAPACITY))
+            initial_consumption = _parse_decimal(user_input.get(CONF_INITIAL_CONSUMPTION))
             if tank_capacity is None or tank_capacity <= 0:
                 errors[CONF_TANK_CAPACITY] = "value_out_of_range"
             if initial_consumption is None or initial_consumption <= 0:
                 errors[CONF_INITIAL_CONSUMPTION] = "value_out_of_range"
             if not errors:
-                self.data.update(user_input)
+                parsed_input = dict(user_input)
+                parsed_input[CONF_TANK_CAPACITY] = tank_capacity
+                parsed_input[CONF_INITIAL_CONSUMPTION] = initial_consumption
+                self.data.update(parsed_input)
                 return await self.async_step_vehicle_entities()
 
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_VEHICLE_NAME, default="My Car"): str,
-                vol.Optional(CONF_TANK_CAPACITY): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        max=200.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="L",
+                vol.Optional(
+                    CONF_TANK_CAPACITY,
+                    description={"suggested_value": "50.0"},
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT,
                     )
                 ),
-                vol.Optional(CONF_INITIAL_CONSUMPTION): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        max=50.0,
-                        step=0.1,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="L/100km",
+                vol.Optional(
+                    CONF_INITIAL_CONSUMPTION,
+                    description={"suggested_value": "7.5"},
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT,
                     )
                 ),
             }
@@ -1288,7 +1314,15 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 errors[CONF_POSITION_ENTITY] = "not_device_tracker"
             
             if not errors:
-                return self.async_create_entry(title="", data=user_input)
+                # Parse decimal fields accepting both '.' and ',' as separator
+                parsed_input = dict(user_input)
+                tank_capacity = _parse_decimal(user_input.get(CONF_TANK_CAPACITY))
+                initial_consumption = _parse_decimal(user_input.get(CONF_INITIAL_CONSUMPTION))
+                if tank_capacity is not None:
+                    parsed_input[CONF_TANK_CAPACITY] = tank_capacity
+                if initial_consumption is not None:
+                    parsed_input[CONF_INITIAL_CONSUMPTION] = initial_consumption
+                return self.async_create_entry(title="", data=parsed_input)
 
         current_config = self.config_entry.data
         current_options = self.config_entry.options
@@ -1457,26 +1491,18 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_TANK_CAPACITY,
-                    default=tank_capacity_value,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=10.0,
-                        max=200.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="L",
+                    description={"suggested_value": tank_capacity_value},
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT,
                     )
                 ),
                 vol.Optional(
                     CONF_INITIAL_CONSUMPTION,
                     description={"suggested_value": initial_consumption_value},
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1.0,
-                        max=50.0,
-                        step=0.1,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="L/100km",
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT,
                     )
                 ),
                 vol.Optional(
