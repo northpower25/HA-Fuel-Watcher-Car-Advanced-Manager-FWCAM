@@ -289,15 +289,15 @@ Each sensor provides additional attributes:
   - `best_timeframe`: Best time to refuel on that weekday (`morning` 7:00-12:00, `afternoon` 12:01-17:00, `evening` 17:01-21:00, `night` 21:01-6:59)
   - `observations`: Number of price observations for that weekday
   - `top_stations`: List of the 3 cheapest stations for that weekday with their name, brand, and average price
-- `last_week_price`: Average price for all observations in the last 7 days (EUR/L)
-- `last_week_trend`: Price trend compared to the previous week (`up`, `down`, or `stable`)
-- `last_week_top_stations`: List of the 3 cheapest stations in the last 7 days
+- `last_7_days_price`: Average price for all observations in the last 7 days (EUR/L)
+- `last_7_days_trend`: Price trend compared to the previous 7-day period (`up`, `down`, or `stable`)
+- `last_7_days_top_stations`: List of the 3 cheapest stations in the last 7 days
 - `last_14_days_price`: Average price for all observations in the last 14 days (EUR/L)
 - `last_14_days_trend`: Price trend compared to the previous 14-day period
 - `last_14_days_top_stations`: List of the 3 cheapest stations in the last 14 days
-- `last_month_price`: Average price for all observations in the last 30 days (EUR/L)
-- `last_month_trend`: Price trend compared to the previous 30-day period
-- `last_month_top_stations`: List of the 3 cheapest stations in the last 30 days
+- `last_30_days_price`: Average price for all observations in the last 30 days (EUR/L)
+- `last_30_days_trend`: Price trend compared to the previous 30-day period
+- `last_30_days_top_stations`: List of the 3 cheapest stations in the last 30 days
 
 #### Range Sensor
 - `days_left`: Estimated days until refuel needed (based on learned patterns)
@@ -318,22 +318,28 @@ Each sensor provides additional attributes:
 - `ml_prediction`: ML-enhanced prediction data (weekday patterns, trends) if available
 
 #### Average Consumption History Sensor
-- `today_consumption`: Average consumption for today (L/100km)
-- `today_km`: Total kilometers driven today
-- `today_liters`: Total liters consumed today
-- `today_refuel_count`: Number of refueling events today
-- `last_week_consumption`: Average consumption for last 7 days (L/100km)
-- `last_week_km`: Total kilometers driven in last 7 days
-- `last_week_liters`: Total liters consumed in last 7 days
-- `last_week_refuel_count`: Number of refueling events in last 7 days
+
+> **Note:** All periods are rolling windows measured backwards from "now", not calendar day/week/month boundaries.
+
+- `last_24h_consumption`: Average consumption over the last 24 hours (L/100km)
+- `last_24h_km`: Total kilometers driven in the last 24 hours
+- `last_24h_liters`: Total liters consumed in the last 24 hours
+- `last_24h_refuel_count`: Number of refueling events in the last 24 hours
+- `last_24h_cost`: Total fuel cost in the last 24 hours
+- `last_7_days_consumption`: Average consumption over the last 7 days (L/100km)
+- `last_7_days_km`: Total kilometers driven in the last 7 days
+- `last_7_days_liters`: Total liters consumed in the last 7 days
+- `last_7_days_refuel_count`: Number of refueling events in the last 7 days
+- `last_7_days_cost`: Total fuel cost in the last 7 days
 - `last_14_days_consumption`: Average consumption for last 14 days (L/100km)
 - `last_14_days_km`: Total kilometers driven in last 14 days
 - `last_14_days_liters`: Total liters consumed in last 14 days
 - `last_14_days_refuel_count`: Number of refueling events in last 14 days
-- `last_month_consumption`: Average consumption for last 30 days (L/100km)
-- `last_month_km`: Total kilometers driven in last 30 days
-- `last_month_liters`: Total liters consumed in last 30 days
-- `last_month_refuel_count`: Number of refueling events in last 30 days
+- `last_30_days_consumption`: Average consumption over the last 30 days (L/100km)
+- `last_30_days_km`: Total kilometers driven in the last 30 days
+- `last_30_days_liters`: Total liters consumed in the last 30 days
+- `last_30_days_refuel_count`: Number of refueling events in the last 30 days
+- `last_30_days_cost`: Total fuel cost in the last 30 days
 
 #### Average Consumption Forecast Sensor
 - `tomorrow_consumption`: Forecasted consumption for tomorrow (L/100km)

@@ -28,14 +28,14 @@ Der Sensor zeigt "unknown", weil keine Fahrzeugdaten (Tank-Level oder Reichweite
 2. Verwenden Sie den neuen `sensor.{name}_car_data_debug` Sensor, um zu prüfen, welche Daten empfangen werden
 3. Führen Sie mindestens 5 Tankvorgänge durch (oder importieren Sie historische Daten)
 
-#### 2. sensor.test_car_average_consumption_history zeigt null für "today" und "last_week"
+#### 2. sensor.test_car_average_consumption_history zeigt null für "last_24h" und "last_7_days"
 
 **Attribute:**
-- `today_consumption: null`
-- `today_km: 0`
-- `last_week_consumption: null`
-- `last_week_km: 0`
-- Aber: `last_14_days` und `last_month` haben Daten
+- `last_24h_consumption: null`
+- `last_24h_km: 0`
+- `last_7_days_consumption: null`
+- `last_7_days_km: 0`
+- Aber: `last_14_days` und `last_30_days` haben Daten
 
 **Ursache:**
 Dies ist **erwartetes Verhalten**, KEIN Fehler! Die Verbrauchsberechnung benötigt mindestens 2 Tankdaten-Punkte innerhalb des Zeitraums.
@@ -48,16 +48,16 @@ Der Verbrauch wird zwischen zwei Tankvorgängen berechnet:
 
 **Beispiel:**
 ```
-Heute (24 Stunden):
+Letzte 24h (gleitendes Fenster – jetzt minus 24 Stunden):
   - 0 oder 1 Tankvorgang → null (erwartet)
   
-Letzte Woche (7 Tage):
+Letzte 7 Tage (gleitendes Fenster – jetzt minus 7 Tage):
   - 0 oder 1 Tankvorgang → null (erwartet)
   
 Letzte 14 Tage:
   - 2+ Tankvorgänge → Verbrauch wird berechnet ✓
   
-Letzter Monat:
+Letzte 30 Tage:
   - 4+ Tankvorgänge → Verbrauch wird berechnet ✓
 ```
 
@@ -167,14 +167,14 @@ The sensor shows "unknown" because no vehicle data (tank level or range) is bein
 2. Use the new `sensor.{name}_car_data_debug` sensor to check which data is being received
 3. Perform at least 5 refueling events (or import historical data)
 
-#### 2. sensor.test_car_average_consumption_history shows null for "today" and "last_week"
+#### 2. sensor.test_car_average_consumption_history shows null for "last_24h" and "last_7_days"
 
 **Attributes:**
-- `today_consumption: null`
-- `today_km: 0`
-- `last_week_consumption: null`
-- `last_week_km: 0`
-- But: `last_14_days` and `last_month` have data
+- `last_24h_consumption: null`
+- `last_24h_km: 0`
+- `last_7_days_consumption: null`
+- `last_7_days_km: 0`
+- But: `last_14_days` and `last_30_days` have data
 
 **Cause:**
 This is **expected behavior**, NOT a bug! Consumption calculation requires at least 2 refueling data points within the time period.
@@ -187,16 +187,16 @@ Consumption is calculated between two refueling events:
 
 **Example:**
 ```
-Today (24 hours):
+Last 24h (rolling window – now minus 24 hours):
   - 0 or 1 refueling event → null (expected)
   
-Last week (7 days):
+Last 7 days (rolling window – now minus 7 days):
   - 0 or 1 refueling event → null (expected)
   
 Last 14 days:
   - 2+ refueling events → consumption calculated ✓
   
-Last month:
+Last 30 days:
   - 4+ refueling events → consumption calculated ✓
 ```
 

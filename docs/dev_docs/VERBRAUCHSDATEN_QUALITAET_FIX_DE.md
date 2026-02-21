@@ -132,8 +132,8 @@ Diese Schwellen sind konservativ um False Positives zu vermeiden, während offen
 
 **Problem**: Nach historischem Import zeigt der Sensor:
 ```
-today_km: 11111
-last_week_km: 11111
+last_24h_km: 11111
+last_7_days_km: 11111
 ```
 
 **Diagnose**: 
