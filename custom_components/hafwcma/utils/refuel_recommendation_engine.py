@@ -209,9 +209,12 @@ async def compare_stations_by_radius(
     
     # If no far stations or same as near, no comparison needed
     if not cheapest_far or (cheapest_near and cheapest_near.get("id") == cheapest_far.get("id")):
+        near_station_data = _build_station_display_data(cheapest_near)
         return {
             "has_comparison": False,
             "reason": "No different stations to compare",
+            "station_near": near_station_data,
+            "station_far": near_station_data,
             "cheapest_near": cheapest_near,
             "near_radius_km": near_radius,
         }
@@ -364,6 +367,10 @@ async def compare_stations_by_radius(
                 # Use descriptive keys for clarity
                 "nearest_station": nearest_data,
                 "cheapest_station": cheapest_data,
+                # station_near is None because no stations exist within near_radius;
+                # station_far is the cheapest within the full search radius
+                "station_near": None,
+                "station_far": cheapest_data,
                 # Keep old keys for backward compatibility with existing code that expects
                 # station_10km/station_20km keys. In this alternative comparison mode,
                 # these keys represent nearest/cheapest rather than actual 10km/20km stations.
@@ -384,10 +391,36 @@ async def compare_stations_by_radius(
     else:
         reason = "Nearest and cheapest stations are the same"
     
+    far_station_data = _build_station_display_data(cheapest_far)
+    
     return {
         "has_comparison": False,
         "reason": reason,
+        "station_near": None,
+        "station_far": far_station_data,
         "cheapest_far": cheapest_far,
+    }
+
+
+def _build_station_display_data(station: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Build a minimal station display data dict from an enriched station object.
+    
+    Args:
+        station: Enriched station dictionary (may be None)
+        
+    Returns:
+        Station display dict or None if station is None
+    """
+    if not station:
+        return None
+    return {
+        "name": station.get("name"),
+        "distance_km": round(station.get("distance_km", 0), 1),
+        "price": round(station.get("price", 0), 3),
+        "address": station.get("address"),
+        "latitude": station.get("latitude") or station.get("lat"),
+        "longitude": station.get("longitude") or station.get("lng"),
+        "navigation_urls": station.get("navigation_urls"),
     }
 
 
