@@ -170,6 +170,48 @@ def check_data_staleness(timestamp: str | datetime | None, data_type: str) -> st
     return None
 
 
+def _format_costsaving_attribute(radius_comparison: dict | None) -> str:
+    """Format the costsaving_far_vs_near_station attribute value.
+
+    Args:
+        radius_comparison: Radius comparison dict from coordinator data.
+
+    Returns:
+        Formatted costsaving string.
+    """
+    if radius_comparison and radius_comparison.get("has_comparison"):
+        comparison_type = radius_comparison.get("comparison_type", "10km_vs_20km")
+        savings_value = radius_comparison.get("savings")
+        if savings_value is not None:
+            if comparison_type == "near_vs_far_radius":
+                near_radius_label = radius_comparison.get("near_radius_label", "near station")
+                far_radius_label = radius_comparison.get("far_radius_label", "farther station")
+                if savings_value >= 0:
+                    return f"+{savings_value:.2f} € (save by driving to {far_radius_label})"
+                return f"{savings_value:.2f} € (costs more, stay within {near_radius_label})"
+            elif comparison_type == "nearest_vs_cheapest":
+                if savings_value >= 0:
+                    return f"+{savings_value:.2f} € (save by driving to cheapest)"
+                return f"{savings_value:.2f} € (costs more to drive to cheapest, stay near)"
+            else:
+                if savings_value >= 0:
+                    return f"+{savings_value:.2f} € (save by driving farther)"
+                return f"{savings_value:.2f} € (cost more by driving farther)"
+        return "Waiting for more data"
+    elif radius_comparison:
+        reason = radius_comparison.get("reason", "Unknown")
+        if reason == "No stations available":
+            return "Waiting for station data"
+        if reason == "Tank is full":
+            return "Tank is full - no savings calculation"
+        if reason in ("No different stations to compare", "Only one station available"):
+            return "Not applicable - only one station available"
+        if reason == "Nearest and cheapest stations are the same":
+            return "Not applicable - nearest is also cheapest"
+        return f"Not available ({reason})"
+    return "Waiting for more data"
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -205,7 +247,9 @@ async def async_setup_entry(
         FuelPriceSensor(coordinator, config_entry, vehicle_name),
         TankLevelSensor(coordinator, config_entry, vehicle_name),
         RangeSensor(coordinator, config_entry, vehicle_name),
+        CheapestStationSensor(coordinator, config_entry, vehicle_name),
         NearestStationSensor(coordinator, config_entry, vehicle_name),
+        FarStationSensor(coordinator, config_entry, vehicle_name),
         FuelPriceApiDebugSensor(coordinator, config_entry, vehicle_name),
         CarDataDebugSensor(coordinator, config_entry, vehicle_name),
         ConsumptionPredictionSensor(coordinator, config_entry, vehicle_name),
@@ -2369,47 +2413,7 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             
             # Add cost savings comparison (part of recommendations)
             radius_comparison = self.coordinator.data.get("radius_comparison")
-            if radius_comparison and radius_comparison.get("has_comparison"):
-                comparison_type = radius_comparison.get("comparison_type", "10km_vs_20km")
-                savings_value = radius_comparison.get("savings")
-                
-                if savings_value is not None:
-                    if comparison_type == "near_vs_far_radius":
-                        near_radius_label = radius_comparison.get("near_radius_label", "near station")
-                        far_radius_label = radius_comparison.get("far_radius_label", "farther station")
-                        
-                        if savings_value >= 0:
-                            attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving to {far_radius_label})"
-                        else:
-                            attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (costs more, stay within {near_radius_label})"
-                    elif comparison_type == "nearest_vs_cheapest":
-                        if savings_value >= 0:
-                            attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving to cheapest)"
-                        else:
-                            attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (costs more to drive to cheapest, stay near)"
-                    else:
-                        if savings_value >= 0:
-                            attributes["costsaving_far_vs_near_station"] = f"+{savings_value:.2f} € (save by driving farther)"
-                        else:
-                            attributes["costsaving_far_vs_near_station"] = f"{savings_value:.2f} € (cost more by driving farther)"
-                else:
-                    attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
-            elif radius_comparison:
-                reason = radius_comparison.get("reason", "Unknown")
-                if reason == "No stations available":
-                    attributes["costsaving_far_vs_near_station"] = "Waiting for station data"
-                elif reason == "Tank is full":
-                    attributes["costsaving_far_vs_near_station"] = "Tank is full - no savings calculation"
-                elif reason == "No different stations to compare":
-                    attributes["costsaving_far_vs_near_station"] = "Not applicable - only one station available"
-                elif reason == "Only one station available":
-                    attributes["costsaving_far_vs_near_station"] = "Not applicable - only one station available"
-                elif reason == "Nearest and cheapest stations are the same":
-                    attributes["costsaving_far_vs_near_station"] = "Not applicable - nearest is also cheapest"
-                else:
-                    attributes["costsaving_far_vs_near_station"] = f"Not available ({reason})"
-            else:
-                attributes["costsaving_far_vs_near_station"] = "Waiting for more data"
+            attributes["costsaving_far_vs_near_station"] = _format_costsaving_attribute(radius_comparison)
             
             # Add cooldown information if present (part of recommendations)
             if recommendation and recommendation.get("in_cooldown"):
@@ -2756,8 +2760,8 @@ class RangeSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         return attributes
 
 
-class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
-    """Sensor showing cheapest fuel station within radius."""
+class CheapestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
+    """Sensor showing cheapest fuel station (including costs)."""
 
     _attr_icon = "mdi:gas-station"
     _attr_has_entity_name = True
@@ -2776,8 +2780,8 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             vehicle_name: Name of the vehicle
         """
         super().__init__(coordinator)
-        self._attr_name = "Nearest Station"
-        self._attr_unique_id = f"{config_entry.entry_id}_nearest_station"
+        self._attr_name = "Cheapest Station"
+        self._attr_unique_id = f"{config_entry.entry_id}_cheapest_station"
         # State restoration variables
         self._restored_value = None  # Last known sensor value from previous HA session
         self._restored_attributes = {}  # Last known attributes dict from previous HA session
@@ -2848,6 +2852,10 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
                 attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
             
+            # Add costsaving comparison
+            radius_comparison = self.coordinator.data.get("radius_comparison")
+            attributes["costsaving_far_vs_near_station"] = _format_costsaving_attribute(radius_comparison)
+            
             return attributes
         
         # Fall back to restored attributes if coordinator data not yet available
@@ -2858,7 +2866,251 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
         
         # Add standardized entity metadata for inline documentation
+        metadata = get_entity_metadata("cheapest_station_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
+
+
+class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
+    """Sensor showing cheapest fuel station within near radius."""
+
+    _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._attr_name = "Nearest Station"
+        self._attr_unique_id = f"{config_entry.entry_id}_nearest_station"
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            self._restored_value = last_state.state
+            self._restored_attributes = dict(last_state.attributes)
+            _LOGGER.info(
+                "Restored %s with value %s from previous state",
+                self.entity_id,
+                self._restored_value,
+            )
+
+    def _get_near_station(self) -> dict:
+        """Return cheapest station data for the near radius from coordinator."""
+        radius_comparison = self.coordinator.data.get("radius_comparison") if self.coordinator.data else None
+        if radius_comparison and radius_comparison.get("has_comparison"):
+            return radius_comparison.get("station_near") or {}
+        if radius_comparison:
+            # Fallback: no separate near/far – use nearest_station from coordinator
+            return radius_comparison.get("nearest_station") or {}
+        return {}
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the name of cheapest near station."""
+        if self.coordinator.data is not None:
+            station = self._get_near_station()
+            name = station.get("name")
+            if name is not None:
+                return name
+        return self._restored_value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        if self.coordinator.data is not None:
+            station = self._get_near_station()
+            attributes = {
+                ATTR_STATION_ADDRESS: station.get("address"),
+                ATTR_DISTANCE: station.get("distance_km"),
+                ATTR_PRICE: station.get("price"),
+            }
+            
+            # Add navigation links
+            nav_urls = station.get("navigation_urls")
+            if nav_urls:
+                attributes["google_maps_url"] = nav_urls.get("google_maps")
+                attributes["apple_maps_url"] = nav_urls.get("apple_maps")
+                attributes["waze_url"] = nav_urls.get("waze")
+            else:
+                lat = station.get("latitude")
+                lon = station.get("longitude")
+                if lat and lon:
+                    attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+                    attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
+                    attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+            
+            # Add timestamp of last successful station fetch
+            last_station_timestamp = self.coordinator.data.get("last_station_timestamp")
+            if last_station_timestamp:
+                attributes["last_update_timestamp"] = last_station_timestamp
+                staleness_warning = check_data_staleness(last_station_timestamp, "Station data")
+                if staleness_warning:
+                    attributes["data_staleness_warning"] = staleness_warning
+            
+            # Add costsaving comparison
+            radius_comparison = self.coordinator.data.get("radius_comparison")
+            attributes["costsaving_far_vs_near_station"] = _format_costsaving_attribute(radius_comparison)
+            
+            return attributes
+        
+        # Fall back to restored attributes
+        attributes = self._restored_attributes.copy() if self._restored_attributes else {}
+        if self._restored_value is not None:
+            attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
+        
         metadata = get_entity_metadata("nearest_station_sensor")
+        if metadata:
+            attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
+            attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")
+            attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
+            attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
+        
+        return attributes
+
+
+class FarStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
+    """Sensor showing cheapest fuel station within far radius."""
+
+    _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+        """
+        super().__init__(coordinator)
+        self._attr_name = "Far Station"
+        self._attr_unique_id = f"{config_entry.entry_id}_far_station"
+        # State restoration variables
+        self._restored_value = None  # Last known sensor value from previous HA session
+        self._restored_attributes = {}  # Last known attributes dict from previous HA session
+        
+        # Device info for grouping
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Restore last known state when added to hass."""
+        await super().async_added_to_hass()
+        
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            self._restored_value = last_state.state
+            self._restored_attributes = dict(last_state.attributes)
+            _LOGGER.info(
+                "Restored %s with value %s from previous state",
+                self.entity_id,
+                self._restored_value,
+            )
+
+    def _get_far_station(self) -> dict:
+        """Return cheapest station data for the far radius from coordinator."""
+        radius_comparison = self.coordinator.data.get("radius_comparison") if self.coordinator.data else None
+        if radius_comparison and radius_comparison.get("has_comparison"):
+            return radius_comparison.get("station_far") or {}
+        if radius_comparison:
+            # Fallback: use cheapest_station key
+            return radius_comparison.get("cheapest_station") or {}
+        return {}
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the name of cheapest far station."""
+        if self.coordinator.data is not None:
+            station = self._get_far_station()
+            name = station.get("name")
+            if name is not None:
+                return name
+        return self._restored_value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        if self.coordinator.data is not None:
+            station = self._get_far_station()
+            attributes = {
+                ATTR_STATION_ADDRESS: station.get("address"),
+                ATTR_DISTANCE: station.get("distance_km"),
+                ATTR_PRICE: station.get("price"),
+            }
+            
+            # Add navigation links
+            nav_urls = station.get("navigation_urls")
+            if nav_urls:
+                attributes["google_maps_url"] = nav_urls.get("google_maps")
+                attributes["apple_maps_url"] = nav_urls.get("apple_maps")
+                attributes["waze_url"] = nav_urls.get("waze")
+            else:
+                lat = station.get("latitude")
+                lon = station.get("longitude")
+                if lat and lon:
+                    attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+                    attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
+                    attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+            
+            # Add timestamp of last successful station fetch
+            last_station_timestamp = self.coordinator.data.get("last_station_timestamp")
+            if last_station_timestamp:
+                attributes["last_update_timestamp"] = last_station_timestamp
+                staleness_warning = check_data_staleness(last_station_timestamp, "Station data")
+                if staleness_warning:
+                    attributes["data_staleness_warning"] = staleness_warning
+            
+            # Add costsaving comparison
+            radius_comparison = self.coordinator.data.get("radius_comparison")
+            attributes["costsaving_far_vs_near_station"] = _format_costsaving_attribute(radius_comparison)
+            
+            return attributes
+        
+        # Fall back to restored attributes
+        attributes = self._restored_attributes.copy() if self._restored_attributes else {}
+        if self._restored_value is not None:
+            attributes["data_source"] = STATE_RESTORED_DATA_SOURCE
+        
+        metadata = get_entity_metadata("far_station_sensor")
         if metadata:
             attributes[ATTR_ENTITY_PURPOSE] = metadata.get("purpose_info")
             attributes[ATTR_ENTITY_DATA_SOURCE] = metadata.get("data_source_info")

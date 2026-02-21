@@ -172,8 +172,20 @@ ENTITY_METADATA: Final = {
     "nearest_station_sensor": {
         "data_source_info": "Fuel price provider API station data, vehicle location",
         "dependencies_info": "Fuel Price Sensor; used by navigation helpers, station recommendations",
-        "purpose_info": "Name of nearest/cheapest fuel station",
+        "purpose_info": "Cheapest near gas station (including costs)",
         "documentation_url": "nearest-station-sensor",
+    },
+    "cheapest_station_sensor": {
+        "data_source_info": "Fuel price provider API station data, vehicle location",
+        "dependencies_info": "Fuel Price Sensor; used by navigation helpers, station recommendations",
+        "purpose_info": "Cheapest gas station (including costs)",
+        "documentation_url": "cheapest-station-sensor",
+    },
+    "far_station_sensor": {
+        "data_source_info": "Fuel price provider API station data, vehicle location",
+        "dependencies_info": "Fuel Price Sensor; used by navigation helpers, station recommendations",
+        "purpose_info": "Cheapest far gas station (including costs)",
+        "documentation_url": "far-station-sensor",
     },
     "fuel_price_api_debug_sensor": {
         "data_source_info": "API request/response logging from fuel price provider calls",
