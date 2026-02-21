@@ -103,7 +103,7 @@ class TestProviderConnectionButton(ButtonEntity):
         self._coordinator = coordinator
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = "Test API Connection"
+        self._attr_name = "Test Fuelprice API Connection"
         self._attr_unique_id = f"{config_entry.entry_id}_test_connection"
         self._last_result: dict[str, Any] = {}
         

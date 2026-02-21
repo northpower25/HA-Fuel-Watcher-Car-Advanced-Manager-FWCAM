@@ -1347,12 +1347,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                     # Sort by price
                                     geo_stations_valid.sort(key=lambda s: s.get_price(fuel_type))
                                     
-                                    # Get N cheapest stations
-                                    cheapest_stations = geo_stations_valid[:cheap_stations_count]
-                                    
-                                    # Convert to dict format with enriched data
-                                    stations_list = []
-                                    for station in cheapest_stations:
+                                    # Convert ALL valid stations to enriched dict format
+                                    # (needed for radius comparison to correctly identify near/far stations)
+                                    all_enriched_stations = []
+                                    for station in geo_stations_valid:
                                         station_dict = {
                                             "id": station.station_id,
                                             "name": station.name,
@@ -1368,11 +1366,15 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                         }
                                         # Enrich with distance and navigation
                                         enriched = enrich_station_data(station_dict, vehicle_lat, vehicle_lon)
-                                        stations_list.append(enriched)
+                                        all_enriched_stations.append(enriched)
+                                    
+                                    # Limit display list to N cheapest (already sorted by price above)
+                                    stations_list = all_enriched_stations[:cheap_stations_count]
                                     
                                     nearby_cheap_stations_data = {
                                         "count": len(stations_list),
                                         "stations": stations_list,
+                                        "all_stations": all_enriched_stations,
                                         "search_radius_km": cheap_stations_radius,
                                         "vehicle_latitude": vehicle_lat,
                                         "vehicle_longitude": vehicle_lon,
@@ -1936,7 +1938,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 
                 # Compare stations by radius if we have nearby stations data
                 if nearby_cheap_stations_data and tank_level_liters is not None:
-                    stations_list = nearby_cheap_stations_data.get("stations", [])
+                    stations_list = (
+                        nearby_cheap_stations_data.get("all_stations")
+                        or nearby_cheap_stations_data.get("stations", [])
+                    )
                     if stations_list and vehicle_lat and vehicle_lon:
                         # Get average consumption from consumption history
                         avg_consumption = DEFAULT_AVG_CONSUMPTION  # Default from shared constant
@@ -2927,11 +2932,14 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     def _get_near_station(self) -> dict:
         """Return cheapest station data for the near radius from coordinator."""
         radius_comparison = self.coordinator.data.get("radius_comparison") if self.coordinator.data else None
-        if radius_comparison and radius_comparison.get("has_comparison"):
-            return radius_comparison.get("station_near") or {}
         if radius_comparison:
-            # Fallback: no separate near/far – use nearest_station from coordinator
-            return radius_comparison.get("nearest_station") or {}
+            # station_near key is set in all comparison paths (both has_comparison=True and False)
+            # Use key-existence check so an explicit None means "no station in near radius"
+            if "station_near" in radius_comparison:
+                return radius_comparison.get("station_near") or {}
+            # Legacy fallback for old data format without station_near key
+            if radius_comparison.get("has_comparison"):
+                return radius_comparison.get("nearest_station") or {}
         return {}
 
     @property
@@ -2942,6 +2950,8 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name = station.get("name")
             if name is not None:
                 return name
+            # Fresh data available but no station in near radius - don't show stale restored value
+            return None
         return self._restored_value
 
     @property
@@ -3049,11 +3059,14 @@ class FarStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     def _get_far_station(self) -> dict:
         """Return cheapest station data for the far radius from coordinator."""
         radius_comparison = self.coordinator.data.get("radius_comparison") if self.coordinator.data else None
-        if radius_comparison and radius_comparison.get("has_comparison"):
-            return radius_comparison.get("station_far") or {}
         if radius_comparison:
-            # Fallback: use cheapest_station key
-            return radius_comparison.get("cheapest_station") or {}
+            # station_far key is set in all comparison paths (both has_comparison=True and False)
+            # Use key-existence check so an explicit None means "no station in far radius"
+            if "station_far" in radius_comparison:
+                return radius_comparison.get("station_far") or {}
+            # Legacy fallback for old data format without station_far key
+            if radius_comparison.get("has_comparison"):
+                return radius_comparison.get("cheapest_station") or {}
         return {}
 
     @property
@@ -3064,6 +3077,8 @@ class FarStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name = station.get("name")
             if name is not None:
                 return name
+            # Fresh data available but no far station found - don't show stale restored value
+            return None
         return self._restored_value
 
     @property
