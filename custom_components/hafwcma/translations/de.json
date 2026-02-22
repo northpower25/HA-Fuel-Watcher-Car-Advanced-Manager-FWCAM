@@ -1,250 +1,253 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "Kraftstoffpreis-Anbieter konfigurieren",
-        "description": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter und geben Sie die API-Zugangsdaten ein.\n\n{api_info}",
-        "data": {
-          "provider": "Kraftstoffpreis-Anbieter (Dropdown-Auswahl)",
-          "api_key": "API-Schlüssel (Von Tankerkönig-Website)",
-          "radius": "Suchradius in km (z.B. 5.0)",
-          "fuel_type": "Kraftstoffart (Dropdown-Auswahl)",
-          "update_interval": "Aktualisierungsintervall in Minuten (1-60, z.B. 5)"
+    "config": {
+        "step": {
+            "user": {
+                "title": "Kraftstoffpreis-Anbieter konfigurieren",
+                "description": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter und geben Sie die API-Zugangsdaten ein.\n\n{api_info}",
+                "data": {
+                    "provider": "Kraftstoffpreis-Anbieter (Dropdown-Auswahl)",
+                    "api_key": "API-Schlüssel (Von Tankerkönig-Website)",
+                    "radius": "Suchradius in km (z.B. 5.0)",
+                    "fuel_type": "Kraftstoffart (Dropdown-Auswahl)",
+                    "update_interval": "Aktualisierungsintervall in Minuten (1-60, z.B. 5)"
+                },
+                "data_description": {
+                    "provider": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter",
+                    "api_key": "Geben Sie Ihren Tankerkönig API-Schlüssel ein",
+                    "radius": "Maximale Entfernung zur Suche nach Tankstellen",
+                    "fuel_type": "Kraftstoffart für Ihr Fahrzeug",
+                    "update_interval": "Wie oft nach Preisaktualisierungen gesucht werden soll"
+                }
+            },
+            "vehicle": {
+                "title": "Fahrzeug konfigurieren",
+                "description": "Geben Sie Ihre Fahrzeuginformationen ein.\n\n⚠️ **Beide Felder sind Pflichtfelder.** Tankinhalt und Durchschnittsverbrauch sind entscheidend für genaue Kraftstoffberechnungen und den Trip-Import. Bitte geben Sie die für Ihr Fahrzeug bekannten Werte ein (z.B. aus dem Handbuch oder WLTP-Datenblatt).",
+                "data": {
+                    "vehicle_name": "Fahrzeugname (z.B. 'Mein Auto')",
+                    "tank_capacity": "Tankinhalt in Litern (z.B. 50.0 oder 50,5)",
+                    "initial_consumption": "Durchschnittsverbrauch (L/100km, z.B. WLTP-Wert, Komma oder Punkt als Dezimaltrennzeichen)"
+                },
+                "data_description": {
+                    "vehicle_name": "Ein freundlicher Name für Ihr Fahrzeug",
+                    "tank_capacity": "Gesamtkapazität Ihres Kraftstofftanks",
+                    "initial_consumption": "Der durchschnittliche Kraftstoffverbrauch Ihres Fahrzeugs in Litern pro 100 km (z.B. der WLTP-Wert des Herstellers). Dieser Wert wird als Fallback für Trip-Kraftstoffschätzungen verwendet, wenn Tankfüllstandsdaten nicht verfügbar oder unzuverlässig sind."
+                }
+            },
+            "vehicle_entities": {
+                "title": "Fahrzeugentitäten konfigurieren (Optional)",
+                "description": "Wählen Sie bestehende Home Assistant Entitäten für Ihre Fahrzeugdaten aus. Diese Entitäten werden für Verbrauchsverfolgung und Tankerkennung überwacht.",
+                "data": {
+                    "odometer_entity": "Kilometerzähler Sensor (km)",
+                    "tank_level_entity": "Tankfüllstand Sensor (in %)",
+                    "range_entity": "Restreichweite Sensor (km)",
+                    "position_entity": "Fahrzeugposition (Device Tracker)"
+                },
+                "data_description": {
+                    "odometer_entity": "Sensor zeigt die gesamten gefahrenen Kilometer an",
+                    "tank_level_entity": "Sensor zeigt Kraftstoffstand als Prozentsatz (0-100%)",
+                    "range_entity": "Sensor zeigt verbleibende Reichweite in Kilometern",
+                    "position_entity": "Geräte-Tracker für Fahrzeugposition"
+                }
+            },
+            "vehicle_features": {
+                "title": "Fahrzeugfunktionen konfigurieren",
+                "description": "**Folgende Einstellungen werden für die jeweiligen Funktionen benötigt:**\n\n**Tankstellen Umkreissuche während Fahrt** (`proximity_alerts_enabled`)\nBenötigt für: Automatische Benachrichtigungen, wenn eine günstige Tankstelle in der Nähe Ihres Fahrzeugs ist, sowie die Näherungsalarm-Schalter-Entität.\nHinweis: Wenn Ihr Fahrzeug keine genauen Positionsdaten bei der Fahrt liefert, werden stattdessen die konfigurierten Home Assistant Koordinaten als Standort verwendet.\n\n**Fahrtenbuchfunktion inkl. Positionserkennung** (`trip_tracking_initial_enabled`)\nBenötigt für: Automatisches Fahrtenbuch, Fahrtstatistiken und Verbrauchsanalyse pro Fahrt.\nHinweis: Bitte informieren Sie alle Benutzer des Fahrzeugs, dass Positions- und Bewegungsdaten aufgezeichnet werden.",
+                "data": {
+                    "proximity_alerts_enabled": "Näherungswarnungen für günstige Tankstellen aktivieren",
+                    "trip_tracking_initial_enabled": "Fahrtenbuch (Trip Tracking) aktivieren"
+                },
+                "data_description": {
+                    "proximity_alerts_enabled": "Benötigt für: automatische Benachrichtigungen wenn eine günstige Tankstelle in der Nähe ist, und die Näherungsalarm-Schalter-Entität",
+                    "trip_tracking_initial_enabled": "Benötigt für: automatisches Fahrtenbuch, Fahrtstatistiken und Verbrauchsanalyse pro Fahrt"
+                }
+            },
+            "telegram": {
+                "title": "Telegram-Benachrichtigungen konfigurieren (Optional)",
+                "description": "{telegram_info}\n\nFür detaillierte Anweisungen besuchen Sie: https://core.telegram.org/bots#6-botfather",
+                "data": {
+                    "telegram_token": "Telegram Bot-Token (Optional)",
+                    "telegram_chat_id": "Telegram Chat-ID (Optional)"
+                },
+                "data_description": {
+                    "telegram_token": "Token vom BotFather (@BotFather auf Telegram)",
+                    "telegram_chat_id": "Ihre Telegram Chat-ID (erhalten von @userinfobot)"
+                }
+            },
+            "prediction": {
+                "title": "Vorhersage-Engine konfigurieren (Optional)",
+                "description": "**Schwellenwerte der Vorhersage-Engine konfigurieren:**\n\nLegen Sie fest, bei welchen Bedingungen Benachrichtigungen gesendet werden sollen (z.B. Preissenkungen, niedriger Kraftstoffstand), und geben Sie Standard-Tageskilometer für die Verbrauchsvorhersage an, wenn noch keine historischen Daten vorhanden sind.",
+                "data": {
+                    "price_drop_percent_threshold": "Preissenkung Prozentschwelle (0-100, z.B. 2.0)",
+                    "price_drop_absolute_threshold": "Preissenkung Absolute Schwelle in EUR (min 0.01, z.B. 0.05)",
+                    "low_fuel_threshold": "Niedriger Tank-Alarm Schwelle in km (z.B. 150)",
+                    "critical_fuel_threshold": "Kritischer Tank-Alarm Schwelle in km (z.B. 50)",
+                    "fallback_daily_km_monday": "Standard Tageskilometer - Montag (0-1000, z.B. 40)",
+                    "fallback_daily_km_tuesday": "Standard Tageskilometer - Dienstag (0-1000, z.B. 40)",
+                    "fallback_daily_km_wednesday": "Standard Tageskilometer - Mittwoch (0-1000, z.B. 40)",
+                    "fallback_daily_km_thursday": "Standard Tageskilometer - Donnerstag (0-1000, z.B. 40)",
+                    "fallback_daily_km_friday": "Standard Tageskilometer - Freitag (0-1000, z.B. 40)",
+                    "fallback_daily_km_saturday": "Standard Tageskilometer - Samstag (0-1000, z.B. 20)",
+                    "fallback_daily_km_sunday": "Standard Tageskilometer - Sonntag (0-1000, z.B. 20)"
+                },
+                "data_description": {
+                    "price_drop_percent_threshold": "Benachrichtigung bei Preissenkung um diesen Prozentsatz",
+                    "price_drop_absolute_threshold": "Benachrichtigung bei Preissenkung um diesen Betrag in EUR",
+                    "low_fuel_threshold": "Alarm wenn Restreichweite unter diesen Wert in km fällt",
+                    "critical_fuel_threshold": "Kritischer Alarm wenn Restreichweite unter diesen Wert in km fällt",
+                    "fallback_daily_km_monday": "Geschätzte tägliche Fahrtstrecke für Montag",
+                    "fallback_daily_km_tuesday": "Geschätzte tägliche Fahrtstrecke für Dienstag",
+                    "fallback_daily_km_wednesday": "Geschätzte tägliche Fahrtstrecke für Mittwoch",
+                    "fallback_daily_km_thursday": "Geschätzte tägliche Fahrtstrecke für Donnerstag",
+                    "fallback_daily_km_friday": "Geschätzte tägliche Fahrtstrecke für Freitag",
+                    "fallback_daily_km_saturday": "Geschätzte tägliche Fahrtstrecke für Samstag",
+                    "fallback_daily_km_sunday": "Geschätzte tägliche Fahrtstrecke für Sonntag"
+                }
+            },
+            "validate_api": {
+                "title": "API-Verbindungstest",
+                "description": "Teste API-Verbindung mit Ihren Zugangsdaten...\n\n{stations}\n\n{error_details}",
+                "data": {},
+                "data_description": {}
+            },
+            "validate_telegram": {
+                "title": "Telegram-Verbindungstest",
+                "description": "Teste Telegram-Verbindung...\n\n{message}\n\n{error_details}",
+                "data": {},
+                "data_description": {}
+            },
+            "historical_import": {
+                "title": "Historische Fahrzeugdaten importieren",
+                "description": "**Folgende Einstellung wird für sofortige Statistiken benötigt:**\n\n**Import historischer Fahrzeugdaten** (`import_historical_data`)\nImportiert bis zu 90 Tage historische Daten aus dem Home Assistant Recorder (Kilometerzähler, Tankfüllstand, Tankereignisse und Fahrten).\n\n**Was passiert als nächstes?**\n- Der Importvorgang startet automatisch im Hintergrund – entweder **5 Minuten nach Abschluss dieser Einrichtung** (wenn Home Assistant bereits läuft) oder beim **nächsten Start von Home Assistant**.\n- Du wirst im Home Assistant Nachrichtencenter (und ggf. per Telegram) benachrichtigt, sobald der Import abgeschlossen ist und welche Daten importiert wurden.\n- Dieser Vorgang wird nur **einmalig** für dieses Fahrzeug durchgeführt.\n- Den aktuellen Status kannst du jederzeit in `sensor.[fahrzeugname]_car_data_debug` ablesen.",
+                "data": {
+                    "import_historical_data": "Historische Fahrzeugdaten importieren"
+                },
+                "data_description": {
+                    "import_historical_data": "Bis zu 90 Tage historische Daten aus dem Home Assistant Recorder importieren. Benötigt für sofortige Verbrauchsstatistiken, Tankerkennung und Vorhersagen."
+                }
+            }
         },
-        "data_description": {
-          "provider": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter",
-          "api_key": "Geben Sie Ihren Tankerkönig API-Schlüssel ein",
-          "radius": "Maximale Entfernung zur Suche nach Tankstellen",
-          "fuel_type": "Kraftstoffart für Ihr Fahrzeug",
-          "update_interval": "Wie oft nach Preisaktualisierungen gesucht werden soll"
-        }
-      },
-      "vehicle": {
-        "title": "Fahrzeug konfigurieren",
-        "description": "Geben Sie Ihre Fahrzeuginformationen ein.\n\n⚠️ **Beide Felder sind Pflichtfelder.** Tankinhalt und Durchschnittsverbrauch sind entscheidend für genaue Kraftstoffberechnungen und den Trip-Import. Bitte geben Sie die für Ihr Fahrzeug bekannten Werte ein (z.B. aus dem Handbuch oder WLTP-Datenblatt).",
-        "data": {
-          "vehicle_name": "Fahrzeugname (z.B. 'Mein Auto')",
-          "tank_capacity": "Tankinhalt in Litern (z.B. 50.0 oder 50,5)",
-          "initial_consumption": "Durchschnittsverbrauch (L/100km, z.B. WLTP-Wert, Komma oder Punkt als Dezimaltrennzeichen)"
+        "error": {
+            "invalid_api_key": "Ungültiger API-Schlüssel. Bitte überprüfen Sie Ihren Tankerkönig API-Schlüssel.",
+            "cannot_connect": "Verbindung zur Tankerkönig API fehlgeschlagen",
+            "invalid_entity": "Entität existiert nicht in Home Assistant",
+            "not_device_tracker": "Positionsentität muss ein device_tracker sein",
+            "entity_validation_failed": "Fehler beim Validieren der Entitäten. Bitte überprüfen Sie Ihre Home Assistant Konfiguration.",
+            "api_test_failed": "API-Verbindungstest fehlgeschlagen. Bitte überprüfen Sie Ihren API-Schlüssel und versuchen Sie es erneut. Hinweis: Sie können die API-Einstellungen später in den Integrationsoptionen ändern und die Verbindung mit der Button-Entität 'API-Verbindung testen' prüfen.",
+            "telegram_test_failed": "Telegram-Verbindungstest fehlgeschlagen. Bitte überprüfen Sie Ihren Bot-Token und Chat-ID. Hinweis: Sie können die Telegram-Einstellungen später in den Integrationsoptionen ändern.",
+            "unknown": "Ein unerwarteter Fehler ist aufgetreten",
+            "value_out_of_range": "Bitte geben Sie einen gültigen positiven Wert ein"
         },
-        "data_description": {
-          "vehicle_name": "Ein freundlicher Name für Ihr Fahrzeug",
-          "tank_capacity": "Gesamtkapazität Ihres Kraftstofftanks",
-          "initial_consumption": "Der durchschnittliche Kraftstoffverbrauch Ihres Fahrzeugs in Litern pro 100 km (z.B. der WLTP-Wert des Herstellers). Dieser Wert wird als Fallback für Trip-Kraftstoffschätzungen verwendet, wenn Tankfüllstandsdaten nicht verfügbar oder unzuverlässig sind."
+        "abort": {
+            "already_configured": "Diese Integration ist bereits konfiguriert"
         }
-      },
-      "vehicle_entities": {
-        "title": "Fahrzeugentitäten konfigurieren (Optional)",
-        "description": "Wählen Sie bestehende Home Assistant Entitäten für Ihre Fahrzeugdaten aus. Diese Entitäten werden für Verbrauchsverfolgung und Tankerkennung überwacht.",
-        "data": {
-          "odometer_entity": "Kilometerzähler Sensor (km)",
-          "tank_level_entity": "Tankfüllstand Sensor (in %)",
-          "range_entity": "Restreichweite Sensor (km)",
-          "position_entity": "Fahrzeugposition (Device Tracker)"
-        },
-        "data_description": {
-          "odometer_entity": "Sensor zeigt die gesamten gefahrenen Kilometer an",
-          "tank_level_entity": "Sensor zeigt Kraftstoffstand als Prozentsatz (0-100%)",
-          "range_entity": "Sensor zeigt verbleibende Reichweite in Kilometern",
-          "position_entity": "Geräte-Tracker für Fahrzeugposition"
-        }
-      },
-      "vehicle_features": {
-        "title": "Fahrzeugfunktionen konfigurieren",
-        "description": "**Folgende Einstellungen werden für die jeweiligen Funktionen benötigt:**\n\n**Tankstellen Umkreissuche während Fahrt** (`proximity_alerts_enabled`)\nBenötigt für: Automatische Benachrichtigungen, wenn eine günstige Tankstelle in der Nähe Ihres Fahrzeugs ist, sowie die Näherungsalarm-Schalter-Entität.\nHinweis: Wenn Ihr Fahrzeug keine genauen Positionsdaten bei der Fahrt liefert, werden stattdessen die konfigurierten Home Assistant Koordinaten als Standort verwendet.\n\n**Fahrtenbuchfunktion inkl. Positionserkennung** (`trip_tracking_initial_enabled`)\nBenötigt für: Automatisches Fahrtenbuch, Fahrtstatistiken und Verbrauchsanalyse pro Fahrt.\nHinweis: Bitte informieren Sie alle Benutzer des Fahrzeugs, dass Positions- und Bewegungsdaten aufgezeichnet werden.",
-        "data": {
-          "proximity_alerts_enabled": "Näherungswarnungen für günstige Tankstellen aktivieren",
-          "trip_tracking_initial_enabled": "Fahrtenbuch (Trip Tracking) aktivieren"
-        },
-        "data_description": {
-          "proximity_alerts_enabled": "Benötigt für: automatische Benachrichtigungen wenn eine günstige Tankstelle in der Nähe ist, und die Näherungsalarm-Schalter-Entität",
-          "trip_tracking_initial_enabled": "Benötigt für: automatisches Fahrtenbuch, Fahrtstatistiken und Verbrauchsanalyse pro Fahrt"
-        }
-      },
-      "telegram": {
-        "title": "Telegram-Benachrichtigungen konfigurieren (Optional)",
-        "description": "{telegram_info}\n\nFür detaillierte Anweisungen besuchen Sie: https://core.telegram.org/bots#6-botfather",
-        "data": {
-          "telegram_token": "Telegram Bot-Token (Optional)",
-          "telegram_chat_id": "Telegram Chat-ID (Optional)"
-        },
-        "data_description": {
-          "telegram_token": "Token vom BotFather (@BotFather auf Telegram)",
-          "telegram_chat_id": "Ihre Telegram Chat-ID (erhalten von @userinfobot)"
-        }
-      },
-      "prediction": {
-        "title": "Vorhersage-Engine konfigurieren (Optional)",
-        "description": "**Schwellenwerte der Vorhersage-Engine konfigurieren:**\n\nLegen Sie fest, bei welchen Bedingungen Benachrichtigungen gesendet werden sollen (z.B. Preissenkungen, niedriger Kraftstoffstand), und geben Sie Standard-Tageskilometer für die Verbrauchsvorhersage an, wenn noch keine historischen Daten vorhanden sind.",
-        "data": {
-          "price_drop_percent_threshold": "Preissenkung Prozentschwelle (0-100, z.B. 2.0)",
-          "price_drop_absolute_threshold": "Preissenkung Absolute Schwelle in EUR (min 0.01, z.B. 0.05)",
-          "low_fuel_threshold": "Niedriger Tank-Alarm Schwelle in km (z.B. 150)",
-          "critical_fuel_threshold": "Kritischer Tank-Alarm Schwelle in km (z.B. 50)",
-          "fallback_daily_km_monday": "Standard Tageskilometer - Montag (0-1000, z.B. 40)",
-          "fallback_daily_km_tuesday": "Standard Tageskilometer - Dienstag (0-1000, z.B. 40)",
-          "fallback_daily_km_wednesday": "Standard Tageskilometer - Mittwoch (0-1000, z.B. 40)",
-          "fallback_daily_km_thursday": "Standard Tageskilometer - Donnerstag (0-1000, z.B. 40)",
-          "fallback_daily_km_friday": "Standard Tageskilometer - Freitag (0-1000, z.B. 40)",
-          "fallback_daily_km_saturday": "Standard Tageskilometer - Samstag (0-1000, z.B. 20)",
-          "fallback_daily_km_sunday": "Standard Tageskilometer - Sonntag (0-1000, z.B. 20)"
-        },
-        "data_description": {
-          "price_drop_percent_threshold": "Benachrichtigung bei Preissenkung um diesen Prozentsatz",
-          "price_drop_absolute_threshold": "Benachrichtigung bei Preissenkung um diesen Betrag in EUR",
-          "low_fuel_threshold": "Alarm wenn Restreichweite unter diesen Wert in km fällt",
-          "critical_fuel_threshold": "Kritischer Alarm wenn Restreichweite unter diesen Wert in km fällt",
-          "fallback_daily_km_monday": "Geschätzte tägliche Fahrtstrecke für Montag",
-          "fallback_daily_km_tuesday": "Geschätzte tägliche Fahrtstrecke für Dienstag",
-          "fallback_daily_km_wednesday": "Geschätzte tägliche Fahrtstrecke für Mittwoch",
-          "fallback_daily_km_thursday": "Geschätzte tägliche Fahrtstrecke für Donnerstag",
-          "fallback_daily_km_friday": "Geschätzte tägliche Fahrtstrecke für Freitag",
-          "fallback_daily_km_saturday": "Geschätzte tägliche Fahrtstrecke für Samstag",
-          "fallback_daily_km_sunday": "Geschätzte tägliche Fahrtstrecke für Sonntag"
-        }
-      },
-      "validate_api": {
-        "title": "API-Verbindungstest",
-        "description": "Teste API-Verbindung mit Ihren Zugangsdaten...\n\n{stations}\n\n{error_details}",
-        "data": {},
-        "data_description": {}
-      },
-      "validate_telegram": {
-        "title": "Telegram-Verbindungstest",
-        "description": "Teste Telegram-Verbindung...\n\n{message}\n\n{error_details}",
-        "data": {},
-        "data_description": {}
-      },
-      "historical_import": {
-        "title": "Historische Fahrzeugdaten importieren",
-        "description": "**Folgende Einstellung wird für sofortige Statistiken benötigt:**\n\n**Import historischer Fahrzeugdaten** (`import_historical_data`)\nImportiert bis zu 90 Tage historische Daten aus dem Home Assistant Recorder (Kilometerzähler, Tankfüllstand, Tankereignisse und Fahrten).\n\n**Was passiert als nächstes?**\n- Der Importvorgang startet automatisch im Hintergrund – entweder **5 Minuten nach Abschluss dieser Einrichtung** (wenn Home Assistant bereits läuft) oder beim **nächsten Start von Home Assistant**.\n- Du wirst im Home Assistant Nachrichtencenter (und ggf. per Telegram) benachrichtigt, sobald der Import abgeschlossen ist und welche Daten importiert wurden.\n- Dieser Vorgang wird nur **einmalig** für dieses Fahrzeug durchgeführt.\n- Den aktuellen Status kannst du jederzeit in `sensor.[fahrzeugname]_car_data_debug` ablesen.",
-        "data": {
-          "import_historical_data": "Historische Fahrzeugdaten importieren"
-        },
-        "data_description": {
-          "import_historical_data": "Bis zu 90 Tage historische Daten aus dem Home Assistant Recorder importieren. Benötigt für sofortige Verbrauchsstatistiken, Tankerkennung und Vorhersagen."
-        }
-      }
     },
-    "error": {
-      "invalid_api_key": "Ungültiger API-Schlüssel. Bitte überprüfen Sie Ihren Tankerkönig API-Schlüssel.",
-      "cannot_connect": "Verbindung zur Tankerkönig API fehlgeschlagen",
-      "invalid_entity": "Entität existiert nicht in Home Assistant",
-      "not_device_tracker": "Positionsentität muss ein device_tracker sein",
-      "entity_validation_failed": "Fehler beim Validieren der Entitäten. Bitte überprüfen Sie Ihre Home Assistant Konfiguration.",
-      "api_test_failed": "API-Verbindungstest fehlgeschlagen. Bitte überprüfen Sie Ihren API-Schlüssel und versuchen Sie es erneut. Hinweis: Sie können die API-Einstellungen später in den Integrationsoptionen ändern und die Verbindung mit der Button-Entität 'API-Verbindung testen' prüfen.",
-      "telegram_test_failed": "Telegram-Verbindungstest fehlgeschlagen. Bitte überprüfen Sie Ihren Bot-Token und Chat-ID. Hinweis: Sie können die Telegram-Einstellungen später in den Integrationsoptionen ändern.",
-      "unknown": "Ein unerwarteter Fehler ist aufgetreten",
-      "value_out_of_range": "Bitte geben Sie einen gültigen positiven Wert ein"
+    "options": {
+        "step": {
+            "init": {
+                "title": "haFWCMA Optionen",
+                "description": "haFWCMA Integrationsoptionen konfigurieren",
+                "data": {
+                    "provider": "Kraftstoffpreis-Anbieter (Dropdown-Auswahl)",
+                    "api_key": "API-Schlüssel (Von Tankerkönig-Website erhalten)",
+                    "update_interval": "Aktualisierungsintervall in Minuten (1-60, z.B. 5)",
+                    "radius": "Suchradius in km (z.B. 5.0)",
+                    "fuel_type": "Kraftstoffart (Dropdown-Auswahl)",
+                    "tank_capacity": "Tankinhalt in Litern (z.B. 50.0 oder 50,5)",
+                    "telegram_token": "Telegram Bot-Token (Optional)",
+                    "telegram_chat_id": "Telegram Chat-ID (Optional)",
+                    "odometer_entity": "Kilometerzähler Sensor (km)",
+                    "tank_level_entity": "Tankfüllstand Sensor (in %)",
+                    "range_entity": "Restreichweite Sensor (km)",
+                    "position_entity": "Fahrzeugposition (Device Tracker)",
+                    "price_drop_percent_threshold": "Preissenkung Prozentschwelle (0-100, z.B. 2.0)",
+                    "price_drop_absolute_threshold": "Preissenkung Absolute Schwelle in EUR (min 0.01, z.B. 0.05)",
+                    "low_fuel_threshold": "Niedriger Tank-Alarm Schwelle in km (z.B. 150)",
+                    "critical_fuel_threshold": "Kritischer Tank-Alarm Schwelle in km (z.B. 50)",
+                    "fallback_daily_km_monday": "Standard Tageskilometer - Montag (0-1000, z.B. 40)",
+                    "fallback_daily_km_tuesday": "Standard Tageskilometer - Dienstag (0-1000, z.B. 40)",
+                    "fallback_daily_km_wednesday": "Standard Tageskilometer - Mittwoch (0-1000, z.B. 40)",
+                    "fallback_daily_km_thursday": "Standard Tageskilometer - Donnerstag (0-1000, z.B. 40)",
+                    "fallback_daily_km_friday": "Standard Tageskilometer - Freitag (0-1000, z.B. 40)",
+                    "fallback_daily_km_saturday": "Standard Tageskilometer - Samstag (0-1000, z.B. 20)",
+                    "fallback_daily_km_sunday": "Standard Tageskilometer - Sonntag (0-1000, z.B. 20)",
+                    "initial_consumption": "Durchschnittsverbrauch (L/100km, Komma oder Punkt als Dezimaltrennzeichen)"
+                },
+                "data_description": {
+                    "provider": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter",
+                    "api_key": "Geben Sie Ihren Tankerkönig API-Schlüssel ein",
+                    "update_interval": "Wie oft nach Preisaktualisierungen gesucht werden soll",
+                    "radius": "Maximale Entfernung zur Suche nach Tankstellen",
+                    "fuel_type": "Kraftstoffart für Ihr Fahrzeug",
+                    "tank_capacity": "Gesamtkapazität Ihres Kraftstofftanks",
+                    "telegram_token": "Token vom BotFather (@BotFather auf Telegram)",
+                    "telegram_chat_id": "Ihre Telegram Chat-ID (erhalten von @userinfobot)",
+                    "odometer_entity": "Sensor zeigt die gesamten gefahrenen Kilometer an",
+                    "tank_level_entity": "Sensor zeigt Kraftstoffstand als Prozentsatz (0-100%)",
+                    "range_entity": "Sensor zeigt verbleibende Reichweite in Kilometern",
+                    "position_entity": "Geräte-Tracker für Fahrzeugposition",
+                    "price_drop_percent_threshold": "Benachrichtigung bei Preissenkung um diesen Prozentsatz",
+                    "price_drop_absolute_threshold": "Benachrichtigung bei Preissenkung um diesen Betrag in EUR",
+                    "low_fuel_threshold": "Alarm wenn Restreichweite unter diesen Wert in km fällt",
+                    "critical_fuel_threshold": "Kritischer Alarm wenn Restreichweite unter diesen Wert in km fällt",
+                    "fallback_daily_km_monday": "Geschätzte tägliche Fahrtstrecke für Montag",
+                    "fallback_daily_km_tuesday": "Geschätzte tägliche Fahrtstrecke für Dienstag",
+                    "fallback_daily_km_wednesday": "Geschätzte tägliche Fahrtstrecke für Mittwoch",
+                    "fallback_daily_km_thursday": "Geschätzte tägliche Fahrtstrecke für Donnerstag",
+                    "fallback_daily_km_friday": "Geschätzte tägliche Fahrtstrecke für Freitag",
+                    "fallback_daily_km_saturday": "Geschätzte tägliche Fahrtstrecke für Samstag",
+                    "fallback_daily_km_sunday": "Geschätzte tägliche Fahrtstrecke für Sonntag",
+                    "initial_consumption": "Der durchschnittliche Kraftstoffverbrauch Ihres Fahrzeugs in Litern pro 100 km (z.B. WLTP-Wert). Wird als Fallback für Trip-Kraftstoffschätzungen verwendet."
+                }
+            }
+        }
     },
-    "abort": {
-      "already_configured": "Diese Integration ist bereits konfiguriert"
+    "entity": {
+        "sensor": {
+            "fuel_price": {
+                "name": "Kraftstoffpreis"
+            },
+            "tank_level": {
+                "name": "Tankfüllstand"
+            },
+            "range": {
+                "name": "Reichweite"
+            },
+            "nearest_station": {
+                "name": "Günstigste Tankstelle"
+            }
+        },
+        "button": {
+            "test_connection": {
+                "name": "API-Verbindung testen"
+            },
+            "create_backup": {
+                "name": "Backup erstellen"
+            }
+        },
+        "switch": {
+            "fuel_price_refresh": {
+                "name": "Kraftstoffpreis Aktualisierung"
+            },
+            "consumption_prediction": {
+                "name": "Verbrauchsvorhersage"
+            },
+            "proximity_alerts": {
+                "name": "Näherungswarnungen"
+            },
+            "telegram_test": {
+                "name": "Telegram API Test"
+            }
+        },
+        "number": {
+            "api_update_interval": {
+                "name": "API Aktualisierungsintervall"
+            },
+            "consumption_min_data_points": {
+                "name": "Verbrauch Min Datenpunkte"
+            },
+            "consumption_prediction_interval": {
+                "name": "Verbrauchsvorhersage Intervall"
+            }
+        }
     }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "haFWCMA Optionen",
-        "description": "haFWCMA Integrationsoptionen konfigurieren",
-        "data": {
-          "provider": "Kraftstoffpreis-Anbieter (Dropdown-Auswahl)",
-          "api_key": "API-Schlüssel (Von Tankerkönig-Website erhalten)",
-          "update_interval": "Aktualisierungsintervall in Minuten (1-60, z.B. 5)",
-          "radius": "Suchradius in km (z.B. 5.0)",
-          "fuel_type": "Kraftstoffart (Dropdown-Auswahl)",
-          "tank_capacity": "Tankinhalt in Litern (z.B. 50.0 oder 50,5)",
-          "telegram_token": "Telegram Bot-Token (Optional)",
-          "telegram_chat_id": "Telegram Chat-ID (Optional)",
-          "odometer_entity": "Kilometerzähler Sensor (km)",
-          "tank_level_entity": "Tankfüllstand Sensor (in %)",
-          "range_entity": "Restreichweite Sensor (km)",
-          "position_entity": "Fahrzeugposition (Device Tracker)",
-          "price_drop_percent_threshold": "Preissenkung Prozentschwelle (0-100, z.B. 2.0)",
-          "price_drop_absolute_threshold": "Preissenkung Absolute Schwelle in EUR (min 0.01, z.B. 0.05)",
-          "low_fuel_threshold": "Niedriger Tank-Alarm Schwelle in km (z.B. 150)",
-          "critical_fuel_threshold": "Kritischer Tank-Alarm Schwelle in km (z.B. 50)",
-          "fallback_daily_km_monday": "Standard Tageskilometer - Montag (0-1000, z.B. 40)",
-          "fallback_daily_km_tuesday": "Standard Tageskilometer - Dienstag (0-1000, z.B. 40)",
-          "fallback_daily_km_wednesday": "Standard Tageskilometer - Mittwoch (0-1000, z.B. 40)",
-          "fallback_daily_km_thursday": "Standard Tageskilometer - Donnerstag (0-1000, z.B. 40)",
-          "fallback_daily_km_friday": "Standard Tageskilometer - Freitag (0-1000, z.B. 40)",
-          "fallback_daily_km_saturday": "Standard Tageskilometer - Samstag (0-1000, z.B. 20)",
-          "fallback_daily_km_sunday": "Standard Tageskilometer - Sonntag (0-1000, z.B. 20)",
-          "initial_consumption": "Durchschnittsverbrauch (L/100km, Komma oder Punkt als Dezimaltrennzeichen)"
-        },
-        "data_description": {
-          "provider": "Wählen Sie Ihren Kraftstoffpreis-Datenanbieter",
-          "api_key": "Geben Sie Ihren Tankerkönig API-Schlüssel ein",
-          "update_interval": "Wie oft nach Preisaktualisierungen gesucht werden soll",
-          "radius": "Maximale Entfernung zur Suche nach Tankstellen",
-          "fuel_type": "Kraftstoffart für Ihr Fahrzeug",
-          "tank_capacity": "Gesamtkapazität Ihres Kraftstofftanks",
-          "telegram_token": "Token vom BotFather (@BotFather auf Telegram)",
-          "telegram_chat_id": "Ihre Telegram Chat-ID (erhalten von @userinfobot)",
-          "odometer_entity": "Sensor zeigt die gesamten gefahrenen Kilometer an",
-          "tank_level_entity": "Sensor zeigt Kraftstoffstand als Prozentsatz (0-100%)",
-          "range_entity": "Sensor zeigt verbleibende Reichweite in Kilometern",
-          "position_entity": "Geräte-Tracker für Fahrzeugposition",
-          "price_drop_percent_threshold": "Benachrichtigung bei Preissenkung um diesen Prozentsatz",
-          "price_drop_absolute_threshold": "Benachrichtigung bei Preissenkung um diesen Betrag in EUR",
-          "low_fuel_threshold": "Alarm wenn Restreichweite unter diesen Wert in km fällt",
-          "critical_fuel_threshold": "Kritischer Alarm wenn Restreichweite unter diesen Wert in km fällt",
-          "fallback_daily_km_monday": "Geschätzte tägliche Fahrtstrecke für Montag",
-          "fallback_daily_km_tuesday": "Geschätzte tägliche Fahrtstrecke für Dienstag",
-          "fallback_daily_km_wednesday": "Geschätzte tägliche Fahrtstrecke für Mittwoch",
-          "fallback_daily_km_thursday": "Geschätzte tägliche Fahrtstrecke für Donnerstag",
-          "fallback_daily_km_friday": "Geschätzte tägliche Fahrtstrecke für Freitag",
-          "fallback_daily_km_saturday": "Geschätzte tägliche Fahrtstrecke für Samstag",
-          "fallback_daily_km_sunday": "Geschätzte tägliche Fahrtstrecke für Sonntag",
-          "initial_consumption": "Der durchschnittliche Kraftstoffverbrauch Ihres Fahrzeugs in Litern pro 100 km (z.B. WLTP-Wert). Wird als Fallback für Trip-Kraftstoffschätzungen verwendet."
-        }
-      }
-    }
-  },
-  "entity": {
-    "sensor": {
-      "fuel_price": {
-        "name": "Kraftstoffpreis"
-      },
-      "tank_level": {
-        "name": "Tankfüllstand"
-      },
-      "range": {
-        "name": "Reichweite"
-      },
-      "nearest_station": {
-        "name": "Günstigste Tankstelle"
-      }
-    },
-    "button": {
-      "test_connection": {
-        "name": "API-Verbindung testen"
-      }
-    },
-    "switch": {
-      "fuel_price_refresh": {
-        "name": "Kraftstoffpreis Aktualisierung"
-      },
-      "consumption_prediction": {
-        "name": "Verbrauchsvorhersage"
-      },
-      "proximity_alerts": {
-        "name": "Näherungswarnungen"
-      },
-      "telegram_test": {
-        "name": "Telegram API Test"
-      }
-    },
-    "number": {
-      "api_update_interval": {
-        "name": "API Aktualisierungsintervall"
-      },
-      "consumption_min_data_points": {
-        "name": "Verbrauch Min Datenpunkte"
-      },
-      "consumption_prediction_interval": {
-        "name": "Verbrauchsvorhersage Intervall"
-      }
-    }
-  }
 }

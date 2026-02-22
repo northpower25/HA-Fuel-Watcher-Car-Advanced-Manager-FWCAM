@@ -59,6 +59,8 @@ SERVICE_GET_ALL_REFUELINGS = "get_all_refuelings"
 SERVICE_REVERSE_GEOCODE = "reverse_geocode"
 SERVICE_GET_GEOCODING_CACHE_STATS = "get_geocoding_cache_stats"
 SERVICE_SIMULATE_REFUELING_EVENT = "simulate_refueling_event"
+SERVICE_CREATE_BACKUP = "create_backup"
+SERVICE_RESTORE_BACKUP = "restore_backup"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -182,6 +184,16 @@ SCHEMA_GET_GEOCODING_CACHE_STATS = vol.Schema({})
 SCHEMA_SIMULATE_REFUELING_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
     vol.Optional("include_missing_data", default=True): cv.boolean,
+})
+
+SCHEMA_CREATE_BACKUP = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+})
+
+SCHEMA_RESTORE_BACKUP = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("backup_file_path"): cv.string,
+    vol.Optional("force", default=False): cv.boolean,
 })
 
 
@@ -858,6 +870,117 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         if coordinator:
             await coordinator.async_request_refresh()
 
+    async def handle_create_backup(call: ServiceCall) -> ServiceResponse:
+        """Handle the create_backup service call.
+
+        Creates a backup of all user data for a config entry and saves it as a
+        JSON file in <config>/www/hafwcma_backups/.  The file path is returned
+        so the caller can download it via the HA web server.
+        """
+        from .utils.backup_manager import create_backup
+
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return {"success": False, "error": "Config entry not found"}
+
+        result = await create_backup(hass, entry)
+
+        if result["success"]:
+            from homeassistant.components import persistent_notification
+            vehicle_name = entry.data.get("vehicle_name", entry_id)
+            await persistent_notification.async_create(
+                hass,
+                f"✅ Backup created for **{vehicle_name}**.\n\n"
+                f"File: `{result['file_path']}`\n\n"
+                f"Download via Home Assistant: "
+                f"`/local/hafwcma_backups/{result['file_path'].split('/')[-1]}`",
+                title="haFWCMA Backup Created",
+                notification_id=f"hafwcma_backup_{entry_id}",
+            )
+
+        # Strip large data payload from service response to avoid HA size limits
+        return {
+            "success": result["success"],
+            "file_path": result.get("file_path", ""),
+            "error": result.get("error", ""),
+        }
+
+    async def handle_restore_backup(call: ServiceCall) -> ServiceResponse:
+        """Handle the restore_backup service call.
+
+        Restores user data from a backup file.  The backup must have been created
+        by haFWCMA and must pass compatibility checks before the restore proceeds.
+
+        Use ``force: true`` to proceed despite soft compatibility warnings
+        (hard errors always block the restore).
+        """
+        from .utils.backup_manager import restore_backup, check_restore_compatibility
+        import json as _json
+
+        entry_id = call.data["config_entry_id"]
+        backup_file_path = call.data["backup_file_path"]
+        force = call.data.get("force", False)
+
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return {"success": False, "error": "Config entry not found", "compatibility": {}}
+
+        result = await restore_backup(hass, entry, backup_file_path, force=force)
+
+        from homeassistant.components import persistent_notification
+        vehicle_name = entry.data.get("vehicle_name", entry_id)
+
+        if result["success"]:
+            compat = result.get("compatibility", {})
+            warnings_text = ""
+            if compat.get("warnings"):
+                warnings_text = "\n\n⚠️ Warnings:\n" + "\n".join(
+                    f"- {w}" for w in compat["warnings"]
+                )
+            await persistent_notification.async_create(
+                hass,
+                f"✅ Backup restored for **{vehicle_name}**.\n\n"
+                f"Backup version: `{compat.get('backup_app_version', 'unknown')}`\n"
+                f"Keys restored: `{', '.join(result.get('restored_keys', []))}`"
+                f"{warnings_text}\n\n"
+                "ℹ️ Please reload the integration (or restart Home Assistant) "
+                "to apply the restored data.",
+                title="haFWCMA Backup Restored",
+                notification_id=f"hafwcma_restore_{entry_id}",
+            )
+
+            # Trigger coordinator refresh so sensors pick up restored data
+            coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+            if coordinator:
+                await coordinator.async_request_refresh()
+        else:
+            compat = result.get("compatibility", {})
+            errors_text = result.get("error", "Unknown error")
+            breaking_text = ""
+            if compat.get("breaking_changes"):
+                breaking_text = "\n\n🚨 Breaking changes detected:\n" + "\n".join(
+                    f"- v{c['version']}: {c['description']}"
+                    for c in compat["breaking_changes"]
+                )
+            await persistent_notification.async_create(
+                hass,
+                f"❌ Backup restore FAILED for **{vehicle_name}**.\n\n"
+                f"Error: {errors_text}{breaking_text}",
+                title="haFWCMA Backup Restore Failed",
+                notification_id=f"hafwcma_restore_error_{entry_id}",
+            )
+
+        return {
+            "success": result["success"],
+            "error": result.get("error", ""),
+            "compatibility": result.get("compatibility", {}),
+            "restored_keys": result.get("restored_keys", []),
+        }
+
     
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_REFUEL_EVENT, handle_add_refuel_event, schema=SCHEMA_ADD_REFUEL_EVENT
@@ -897,6 +1020,12 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_SIMULATE_REFUELING_EVENT, handle_simulate_refueling_event, schema=SCHEMA_SIMULATE_REFUELING_EVENT
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_CREATE_BACKUP, handle_create_backup, schema=SCHEMA_CREATE_BACKUP, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_RESTORE_BACKUP, handle_restore_backup, schema=SCHEMA_RESTORE_BACKUP, supports_response=True
     )
     
     return True
