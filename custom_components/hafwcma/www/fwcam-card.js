@@ -95,9 +95,14 @@ class FWCAMCard extends HTMLElement {
       show_refueling_log: Object.prototype.hasOwnProperty.call(config, 'show_refueling_log') ? config.show_refueling_log : defaultShowValue,
       show_trip_log: Object.prototype.hasOwnProperty.call(config, 'show_trip_log') ? config.show_trip_log : defaultShowValue,
       show_vehicle_info: Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ? config.show_vehicle_info : defaultShowValue,
+      show_price_chart: Object.prototype.hasOwnProperty.call(config, 'show_price_chart') ? config.show_price_chart : true,
+      show_consumption_chart: Object.prototype.hasOwnProperty.call(config, 'show_consumption_chart') ? config.show_consumption_chart : true,
+      show_cheapest_stations: Object.prototype.hasOwnProperty.call(config, 'show_cheapest_stations') ? config.show_cheapest_stations : true,
+      show_top_destinations: Object.prototype.hasOwnProperty.call(config, 'show_top_destinations') ? config.show_top_destinations : true,
       show_controls: Object.prototype.hasOwnProperty.call(config, 'show_controls') ? config.show_controls : defaultShowValue,
       show_settings: Object.prototype.hasOwnProperty.call(config, 'show_settings') ? config.show_settings : defaultShowValue,
       show_backup: Object.prototype.hasOwnProperty.call(config, 'show_backup') ? config.show_backup : defaultShowValue,
+      section_order: Array.isArray(config.section_order) ? config.section_order : ['vehicle_info', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'],
       rows_per_page: config.rows_per_page || 10,
       refresh_interval: config.refresh_interval || 300,
       table_max_height: this.sanitizeCSSValue(config.table_max_height, '400px'),
@@ -930,16 +935,7 @@ class FWCAMCard extends HTMLElement {
         </div>
         
         <div class="card-content">
-          ${this._config.show_vehicle_info ? this.renderVehicleInfo() : ''}
-          ${this._config.show_vehicle_info ? this.renderPriceChart() : ''}
-          ${this._config.show_vehicle_info ? this.renderConsumptionChart() : ''}
-          ${this._config.show_vehicle_info ? this.renderTopCheapestStations() : ''}
-          ${this._config.show_controls ? this.renderControls() : ''}
-          ${this._config.show_settings ? this.renderSettings() : ''}
-          ${this._config.show_backup ? this.renderBackup() : ''}
-          ${this._config.show_refueling_log ? this.renderRefuelingLog(this._allRefuelings || [], lastRefueling) : ''}
-          ${this._config.show_trip_log ? this.renderTripLog(this._allTrips || []) : ''}
-          ${this._config.show_trip_log ? this.renderTopDestinations(this._allTrips || []) : ''}
+          ${this._config.section_order.map(name => this._renderSection(name, lastRefueling)).join('')}
         </div>
       </ha-card>
       ${this.renderDialog()}
@@ -951,6 +947,39 @@ class FWCAMCard extends HTMLElement {
     
     // Update last render timestamp only after successful render
     this._lastRender = Date.now();
+  }
+
+  /**
+   * Render a named section, respecting individual show_* flags.
+   * Used by render() to honour section_order config.
+   */
+  _renderSection(name, lastRefueling) {
+    switch (name) {
+      case 'vehicle_info':
+        if (!this._config.show_vehicle_info) return '';
+        return `
+          ${this.renderVehicleInfo()}
+          ${this._config.show_price_chart ? this.renderPriceChart() : ''}
+          ${this._config.show_consumption_chart ? this.renderConsumptionChart() : ''}
+          ${this._config.show_cheapest_stations ? this.renderTopCheapestStations() : ''}
+        `;
+      case 'controls':
+        return this._config.show_controls ? this.renderControls() : '';
+      case 'settings':
+        return this._config.show_settings ? this.renderSettings() : '';
+      case 'backup':
+        return this._config.show_backup ? this.renderBackup() : '';
+      case 'refueling_log':
+        return this._config.show_refueling_log ? this.renderRefuelingLog(this._allRefuelings || [], lastRefueling) : '';
+      case 'trip_log':
+        if (!this._config.show_trip_log) return '';
+        return `
+          ${this.renderTripLog(this._allTrips || [])}
+          ${this._config.show_top_destinations ? this.renderTopDestinations(this._allTrips || []) : ''}
+        `;
+      default:
+        return '';
+    }
   }
 
   /**
@@ -2290,6 +2319,42 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Estimate fuel consumption and cost for a trip.
+   * Uses actual fuel_consumed if available, otherwise estimates from distance
+   * and the average consumption rate from the consumption_history sensor
+   * (avg_consumption_l_per_100km attribute, unit: L/100km).
+   * Returns { liters, cost, estimated } where estimated=true means values are derived.
+   */
+  estimateTripCost(trip) {
+    const fuelPriceEntity = this.getEntityState(this._entities.fuel_price);
+    const fuelPrice = fuelPriceEntity ? parseFloat(fuelPriceEntity.state) : null;
+    if (!fuelPrice || isNaN(fuelPrice)) return { liters: null, cost: null, estimated: false };
+
+    if (trip.fuel_consumed != null) {
+      const liters = parseFloat(trip.fuel_consumed);
+      if (!isNaN(liters)) {
+        return { liters, cost: liters * fuelPrice, estimated: false };
+      }
+    }
+
+    if (trip.distance_km != null) {
+      const distKm = parseFloat(trip.distance_km);
+      if (!isNaN(distKm) && distKm > 0) {
+        const consumptionEntity = this.getEntityState(this._entities.consumption_history);
+        const avgConsumption = consumptionEntity
+          ? (consumptionEntity.attributes?.avg_consumption_l_per_100km ?? parseFloat(consumptionEntity.state))
+          : null;
+        if (avgConsumption != null && !isNaN(avgConsumption) && avgConsumption > 0) {
+          const liters = (avgConsumption / 100) * distKm;
+          return { liters, cost: liters * fuelPrice, estimated: true };
+        }
+      }
+    }
+
+    return { liters: null, cost: null, estimated: false };
+  }
+
+  /**
    * Render trip log section with filtering, sorting, pagination, and editing
    */
   renderTripLog(trips) {
@@ -2440,15 +2505,26 @@ class FWCAMCard extends HTMLElement {
                   Fuel (L)
                   ${this.renderTripSortIcon('fuel_consumed')}
                 </th>
+                <th>Cost (€)</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               ${paginatedTrips.length === 0 ? `
                 <tr>
-                  <td colspan="7" class="no-data">No trips match the current filters</td>
+                  <td colspan="8" class="no-data">No trips match the current filters</td>
                 </tr>
-              ` : paginatedTrips.map(trip => `
+              ` : paginatedTrips.map(trip => {
+                const costInfo = this.estimateTripCost(trip);
+                const costDisplay = costInfo.cost != null
+                  ? (costInfo.estimated
+                      ? `<span title="Estimated from avg. consumption">~${this.formatNumber(costInfo.cost, 2)}</span>`
+                      : this.formatNumber(costInfo.cost, 2))
+                  : '-';
+                const fuelDisplay = costInfo.liters != null && trip.fuel_consumed == null
+                  ? `<span title="Estimated from avg. consumption">~${this.formatNumber(costInfo.liters, 2)}</span>`
+                  : (trip.fuel_consumed != null ? this.formatNumber(trip.fuel_consumed, 2) : '-');
+                return `
                 <tr data-trip-id="${trip.trip_id}">
                   <td>${this.formatDateTime(trip.timestamp_end)}</td>
                   <td>${this.formatNumber(trip.distance_km, 1)}</td>
@@ -2474,7 +2550,8 @@ class FWCAMCard extends HTMLElement {
                       return `<span class="position-quality-badge position-quality-${pq}" title="${label}"><ha-icon icon="${icon}"></ha-icon> ${pq}</span>`;
                     })()}
                   </td>
-                  <td>${trip.fuel_consumed ? this.formatNumber(trip.fuel_consumed, 2) : '-'}</td>
+                  <td>${fuelDisplay}</td>
+                  <td>${costDisplay}</td>
                   <td class="actions">
                     <button class="action-button edit-button" 
                             data-action="edit-trip" 
@@ -2490,7 +2567,7 @@ class FWCAMCard extends HTMLElement {
                     </button>
                   </td>
                 </tr>
-              `).join('')}
+              `}).join('')}
             </tbody>
           </table>
         </div>
@@ -4927,12 +5004,19 @@ class FWCAMCard extends HTMLElement {
     return {
       entity: 'sensor.my_car_refueling_log',
       title: 'Fuel Watcher Car Advanced Manager',
-      show_refueling_log: true,
       show_vehicle_info: true,
+      show_price_chart: true,
+      show_consumption_chart: true,
+      show_cheapest_stations: true,
       show_controls: true,
       show_settings: true,
       show_backup: true,
-      rows_per_page: 10
+      show_refueling_log: true,
+      show_trip_log: true,
+      show_top_destinations: true,
+      section_order: ['vehicle_info', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'],
+      rows_per_page: 10,
+      refresh_interval: 300,
     };
   }
 }
