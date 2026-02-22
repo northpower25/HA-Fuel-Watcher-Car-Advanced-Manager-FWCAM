@@ -212,6 +212,9 @@ class _Anonymizer:
         e = copy.copy(event)
         e["station_name"] = self.station_name(e.get("station_name"))
         e["station_address"] = self.address(e.get("station_address"))
+        # Anonymize GPS position at time of refueling (reveals the fuel station location)
+        e["latitude"] = self.shift_lat(e.get("latitude"))
+        e["longitude"] = self.shift_lon(e.get("longitude"))
         return e
 
     def _anon_price_observation(self, obs: dict[str, Any]) -> dict[str, Any]:
@@ -488,8 +491,10 @@ async def create_debug_export(
             "so relative distances are preserved but absolute locations cannot "
             "be determined. Names, addresses and station information have been "
             "replaced with stable pseudonyms. API keys and credentials have been "
-            "redacted. The vehicle owner is solely responsible for reviewing this "
-            "file before sharing it."
+            "redacted. WARNING: The download filename shown by your browser may "
+            "still contain the real vehicle name (e.g. licence plate). Please "
+            "rename the file before sharing it. The vehicle owner is solely "
+            "responsible for reviewing this file before sharing it."
         ),
         "entry_id": anon_entry_id,
         "vehicle_name": anon_vehicle_name,
