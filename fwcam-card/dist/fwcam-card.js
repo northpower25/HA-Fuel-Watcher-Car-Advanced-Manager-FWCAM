@@ -1399,14 +1399,12 @@ class FWCAMCard extends HTMLElement {
       const configEntryId = this.getConfigEntryId();
       const result = await this._hass.callService('hafwcma', 'restore_backup', { config_entry_id: configEntryId, backup_file_path: filePath }, {}, true, true);
       if (result?.response?.success) {
-        const lang2 = this.getUserLanguage();
-        this._backupMessage = { type: 'success', text: lang2 === 'de' ? '✅ Backup wiederhergestellt. Bitte Integration neu laden.' : '✅ Backup restored. Please reload the integration.' };
+        this._backupMessage = { type: 'success', text: lang === 'de' ? '✅ Backup wiederhergestellt. Bitte Integration neu laden.' : '✅ Backup restored. Please reload the integration.' };
       } else {
         throw new Error(result?.response?.error || 'unknown error');
       }
     } catch (err) {
-      const lang2 = this.getUserLanguage();
-      this._backupMessage = { type: 'error', text: lang2 === 'de' ? `❌ Wiederherstellung fehlgeschlagen: ${err.message || err}` : `❌ Restore failed: ${err.message || err}` };
+      this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Wiederherstellung fehlgeschlagen: ${err.message || err}` : `❌ Restore failed: ${err.message || err}` };
     }
     this.render();
   }

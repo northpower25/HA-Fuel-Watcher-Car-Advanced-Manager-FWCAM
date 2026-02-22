@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -97,8 +98,6 @@ class BackupUploadView(HomeAssistantView):
                 c if c.isalnum() or c in "-_." else "_" for c in original_name
             )
         else:
-            from datetime import datetime, timezone
-
             ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             vehicle = backup_data.get("vehicle_name", "unknown")
             safe_vehicle = "".join(c if c.isalnum() or c in "-_" else "_" for c in vehicle)
