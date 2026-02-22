@@ -903,7 +903,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         if result["success"]:
             from homeassistant.components import persistent_notification
             vehicle_name = entry.data.get("vehicle_name", entry_id)
-            await persistent_notification.async_create(
+            persistent_notification.async_create(
                 hass,
                 f"✅ Backup created for **{vehicle_name}**.\n\n"
                 f"File: `{result['file_path']}`\n\n"
@@ -964,7 +964,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 warnings_text = "\n\n⚠️ Warnings:\n" + "\n".join(
                     f"- {w}" for w in compat["warnings"]
                 )
-            await persistent_notification.async_create(
+            persistent_notification.async_create(
                 hass,
                 f"✅ Backup restored for **{vehicle_name}**.\n\n"
                 f"Backup version: `{compat.get('backup_app_version', 'unknown')}`\n"
@@ -989,7 +989,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     f"- v{c['version']}: {c['description']}"
                     for c in compat["breaking_changes"]
                 )
-            await persistent_notification.async_create(
+            persistent_notification.async_create(
                 hass,
                 f"❌ Backup restore FAILED for **{vehicle_name}**.\n\n"
                 f"Error: {errors_text}{breaking_text}",
@@ -1029,7 +1029,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             stats = result.get("stats", {})
             stats_text = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in stats.items())
             download_url = result.get("download_url", "")
-            await persistent_notification.async_create(
+            persistent_notification.async_create(
                 hass,
                 f"✅ Anonymized debug export created for **{vehicle_name}**.\n\n"
                 f"📊 Exported: {stats_text}\n\n"
