@@ -1976,12 +1976,27 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         or nearby_cheap_stations_data.get("stations", [])
                     )
                     if stations_list and vehicle_lat and vehicle_lon:
-                        # Get average consumption from consumption history
+                        # Get average consumption from consumption history.
+                        # consumption_history is a nested dict with keys "today",
+                        # "last_week", "last_14_days", "last_month"; each sub-dict
+                        # carries "avg_consumption_l_per_100km".  Prefer longer
+                        # periods (more stable estimate) and fall back to shorter
+                        # ones, then to a previously computed prediction, then to
+                        # the built-in default.
                         avg_consumption = DEFAULT_AVG_CONSUMPTION  # Default from shared constant
                         if consumption_history:
-                            history_consumption = consumption_history.get("avg_consumption")
-                            if history_consumption and history_consumption > 0:
-                                avg_consumption = history_consumption
+                            for period_key in ("last_month", "last_14_days", "last_week", "today"):
+                                period_data = consumption_history.get(period_key) or {}
+                                history_consumption = period_data.get("avg_consumption_l_per_100km")
+                                if history_consumption and history_consumption > 0:
+                                    avg_consumption = history_consumption
+                                    break
+                        # Also try the cached consumption prediction as a fallback
+                        if avg_consumption == DEFAULT_AVG_CONSUMPTION and self.data:
+                            prev_prediction = self.data.get("consumption_prediction") or {}
+                            pred_rate = prev_prediction.get("avg_consumption_rate")
+                            if pred_rate and pred_rate > 0:
+                                avg_consumption = pred_rate
                         
                         try:
                             radius_comparison = await compare_stations_by_radius(
