@@ -1270,6 +1270,7 @@ class FWCAMCard extends HTMLElement {
       colActions:    { de: 'Aktionen', en: 'Actions' },
       downloadBtn:   { de: 'Herunterladen', en: 'Download' },
       restoreBtn:    { de: 'Wiederherstellen', en: 'Restore' },
+      deleteBtn:     { de: 'Löschen', en: 'Delete' },
       uploadTitle:   { de: 'Backup hochladen & wiederherstellen', en: 'Upload & Restore Backup' },
       uploadHint:    { de: 'Wähle eine haFWCMA-Backup-Datei (.json) von deinem Gerät aus.', en: 'Choose a haFWCMA backup file (.json) from your device.' },
       uploadBtn:     { de: 'Datei hochladen', en: 'Upload File' },
@@ -1300,6 +1301,9 @@ class FWCAMCard extends HTMLElement {
               </a>
               <button class="backup-restore-btn" data-action="restore-backup" data-file-path="${this._escHtml(b.file_path)}">
                 <ha-icon icon="mdi:restore"></ha-icon> ${_t('restoreBtn')}
+              </button>
+              <button class="backup-delete-btn" data-action="delete-backup" data-file-path="${this._escHtml(b.file_path)}">
+                <ha-icon icon="mdi:delete"></ha-icon> ${_t('deleteBtn')}
               </button>
             </td>
           </tr>`;
@@ -1405,6 +1409,28 @@ class FWCAMCard extends HTMLElement {
       }
     } catch (err) {
       this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Wiederherstellung fehlgeschlagen: ${err.message || err}` : `❌ Restore failed: ${err.message || err}` };
+    }
+    this.render();
+  }
+
+  async _handleBackupDelete(filePath) {
+    const lang = this.getUserLanguage();
+    const confirmMsg = lang === 'de'
+      ? `Backup-Datei löschen?\n\nDatei: ${filePath}\n\nDiese Aktion kann nicht rückgängig gemacht werden!`
+      : `Delete backup file?\n\nFile: ${filePath}\n\nThis action cannot be undone!`;
+    if (!confirm(confirmMsg)) return;
+    this._backupMessage = null;
+    this.render();
+    try {
+      const result = await this._hass.callService('hafwcma', 'delete_backup', { backup_file_path: filePath }, {}, true, true);
+      if (result?.response?.success) {
+        this._backupMessage = { type: 'success', text: lang === 'de' ? `✅ Backup gelöscht: ${result.response.filename}` : `✅ Backup deleted: ${result.response.filename}` };
+        await this._handleBackupRefresh();
+        return;
+      }
+      throw new Error(result?.response?.error || 'unknown error');
+    } catch (err) {
+      this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Löschen fehlgeschlagen: ${err.message || err}` : `❌ Delete failed: ${err.message || err}` };
     }
     this.render();
   }
@@ -2094,6 +2120,9 @@ class FWCAMCard extends HTMLElement {
     if (backupUploadBtn) backupUploadBtn.addEventListener('click', () => this._handleBackupUpload());
     this.shadowRoot.querySelectorAll('[data-action="restore-backup"]').forEach(btn => {
       btn.addEventListener('click', (e) => this._handleBackupRestore(e.currentTarget.dataset.filePath));
+    });
+    this.shadowRoot.querySelectorAll('[data-action="delete-backup"]').forEach(btn => {
+      btn.addEventListener('click', (e) => this._handleBackupDelete(e.currentTarget.dataset.filePath));
     });
   }
 
@@ -4471,6 +4500,8 @@ class FWCAMCard extends HTMLElement {
         .backup-dl-link:hover { background: var(--primary-color); color: white; }
         .backup-restore-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid #ff9800; border-radius: 4px; background: transparent; color: #ff9800; font-size: 13px; cursor: pointer; }
         .backup-restore-btn:hover { background: #ff9800; color: white; }
+        .backup-delete-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid #e53935; border-radius: 4px; background: transparent; color: #e53935; font-size: 13px; cursor: pointer; }
+        .backup-delete-btn:hover { background: #e53935; color: white; }
         .backup-upload-hint { font-size: 13px; color: var(--secondary-text-color); margin: 4px 0 10px 0; }
         .backup-upload-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
         .backup-file-input { flex: 1 1 220px; padding: 6px; border: 1px solid var(--divider-color); border-radius: 4px; background: var(--primary-background-color); color: var(--primary-text-color); font-size: 13px; }

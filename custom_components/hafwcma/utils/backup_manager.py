@@ -559,6 +559,67 @@ def _read_backup_file(file_path: str) -> dict[str, Any]:
         return json.load(fh)
 
 
+async def delete_backup(
+    hass: HomeAssistant,
+    file_path: str,
+    backup_dir: str | None = None,
+) -> dict[str, Any]:
+    """Delete a backup file from the backup directory.
+
+    Only files that reside inside the standard backup directory (or the
+    *backup_dir* override) and match the ``hafwcma_backup_*.json`` naming
+    pattern can be deleted.  Attempts to delete files outside that directory
+    are rejected to prevent path-traversal attacks.
+
+    Args:
+        hass:       Home Assistant instance.
+        file_path:  Absolute path to the backup file to delete.
+        backup_dir: Override for the backup directory.  Defaults to
+                    ``<config_dir>/www/hafwcma_backups/``.
+
+    Returns:
+        Dict with keys:
+        - ``success`` (bool)
+        - ``filename`` (str) – name of the deleted file
+        - ``error`` (str, only on failure)
+    """
+    if backup_dir is None:
+        backup_dir = str(Path(hass.config.path("www")) / "hafwcma_backups")
+
+    target = Path(file_path).resolve()
+    allowed_dir = Path(backup_dir).resolve()
+
+    # Security: ensure the target is inside the allowed directory
+    try:
+        target.relative_to(allowed_dir)
+    except ValueError:
+        return {
+            "success": False,
+            "error": f"File is not inside the backup directory: {file_path}",
+        }
+
+    # Security: only allow files matching the expected naming pattern
+    if not target.name.startswith("hafwcma_backup_") or not target.name.endswith(".json"):
+        return {
+            "success": False,
+            "error": "Only hafwcma_backup_*.json files can be deleted via this service.",
+        }
+
+    def _delete() -> None:
+        target.unlink()
+
+    try:
+        await hass.async_add_executor_job(_delete)
+    except FileNotFoundError:
+        return {"success": False, "error": f"File not found: {file_path}"}
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.error("Failed to delete backup file %s: %s", target, err)
+        return {"success": False, "error": f"Failed to delete backup file {target.name}: {err}"}
+
+    _LOGGER.info("Backup file deleted: %s", target)
+    return {"success": True, "filename": target.name}
+
+
 async def list_backups(
     hass: HomeAssistant,
     backup_dir: str | None = None,
