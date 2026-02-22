@@ -1258,6 +1258,48 @@ Erstellt CSV-Dateien in `/config/www/export/`:
 - `{entity}_history_{timestamp}.csv`
 - `{entity}_statistics_{timestamp}.csv`
 
+### 7.5 Backup & Wiederherstellung
+
+haFWCMA enthält ein eigenes Backup-System für alle Fahrzeugdaten.
+
+#### Backup erstellen
+
+**Via Button-Entität** (einfachste Methode):
+```
+button.<fahrzeugname>_create_backup  →  Aktivieren
+```
+Eine HA-Benachrichtigung erscheint mit der Download-URL.
+
+**Via Service-Aufruf:**
+- Service: `hafwcma.create_backup`
+- Parameter: `config_entry_id`
+
+Die Backup-Datei wird gespeichert unter:
+```
+/config/www/hafwcma_backups/hafwcma_backup_<fahrzeug>_<zeitstempel>.json
+```
+
+> 💡 **Tipp:** Sichere die Datei zusätzlich außerhalb von Home Assistant – sie wird
+> **nicht** von HA's eigenem Backup-System erfasst.
+
+#### Backup wiederherstellen
+
+1. Kopiere die Backup-Datei nach `/config/www/hafwcma_backups/` auf dem HA-Server.
+2. Rufe den Service `hafwcma.restore_backup` auf:
+   - `config_entry_id` – Eintrags-ID des Zielfahrzeugs
+   - `backup_file_path` – absoluter Pfad zur Backup-Datei
+3. Lade die Integration neu (**Einstellungen → Geräte & Dienste → Neu laden**).
+
+**Nach einer Neuinstallation:**
+1. Einrichtung (Config Flow) abschließen, um einen neuen Eintrag zu erstellen.
+2. Backup-Datei auf den HA-Server kopieren.
+3. `hafwcma.restore_backup` mit der neuen `config_entry_id` aufrufen.
+
+> ⚠️ Der Restore **überschreibt** vorhandene Daten vollständig – es findet keine
+> Duplikat-Erkennung statt.
+
+📖 **Ausführliche Anleitung:** [BACKUP_RESTORE_ANLEITUNG_DE.md](BACKUP_RESTORE_ANLEITUNG_DE.md)
+
 ---
 
 ## 8. Blueprints und Automationen

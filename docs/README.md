@@ -27,6 +27,8 @@ User-focused guides, tutorials, and reference materials for installing and using
 - **[FWCAM Card Visual Guide (EN)](user_docs/FWCAM_CARD_VISUAL_GUIDE.md)** - Visual guide for the custom Lovelace card
 - **[Geolocation Quick Start (EN)](user_docs/GEOLOCATION_QUICKSTART.md)** - Getting started with geolocation features
 - **[Geolocation Automation Examples (EN)](user_docs/GEOLOCATION_AUTOMATION_EXAMPLES.md)** - Example automations using geolocation
+- **[Backup & Restore Guide (EN)](user_docs/BACKUP_RESTORE_GUIDE.md)** - How to back up and restore your vehicle data
+- **[Backup & Wiederherstellung (DE)](user_docs/BACKUP_RESTORE_ANLEITUNG_DE.md)** - Fahrzeugdaten sichern und wiederherstellen
 
 ### Telegram Integration
 - **[Telegram Setup (EN)](user_docs/TELEGRAM_SETUP.md)** - Configure Telegram bot notifications

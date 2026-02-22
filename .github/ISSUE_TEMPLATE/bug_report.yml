@@ -155,7 +155,10 @@ body:
            (e.g. `http://homeassistant.local:8123/local/hafwcma_debug/hafwcma_debug_Vehicle_0001_....json`)
         4. **Review the file** before uploading — the anonymization is best-effort only
 
-        You can paste the file content here or attach it as a file upload.
+        **How to attach the file:**
+        - **Paste content**: Copy and paste the file content directly into this text box.
+        - **Drag & drop**: Drag the downloaded JSON file from your file manager and drop it
+          anywhere into this text box. GitHub will upload it and insert a link automatically.
 
         > ⚠️ You are responsible for verifying no personal data remains before sharing.
       render: json
