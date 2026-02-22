@@ -103,6 +103,7 @@ BREAKING_CHANGES_REGISTRY: dict[str, dict[str, Any]] = {}
 _BACKUP_DATA_KEYS: tuple[str, ...] = (
     # Core fuel data
     "tank_history",
+    "refueling_log",
     "odometer_history",
     "tank_level_history",
     "price_history",
@@ -461,6 +462,65 @@ async def restore_backup(
         if key in backup_snapshot:
             current_data[key] = backup_snapshot[key]
             restored_keys.append(key)
+
+    # Backward-compatibility: backups created before refueling_log was added to
+    # _BACKUP_DATA_KEYS only contain tank_history.  Rebuild a minimal refueling_log
+    # from tank_history so the FuelLog is not empty after restore.
+    if "refueling_log" not in backup_snapshot and current_data.get("tank_history"):
+        tank_history: list[dict[str, Any]] = current_data["tank_history"]
+        rebuilt: list[dict[str, Any]] = []
+        for idx, event in enumerate(tank_history, start=1):
+            rebuilt.append(
+                {
+                    "id": event.get("id", idx),
+                    "timestamp": event.get("timestamp"),
+                    "odometer_km": event.get("odometer_km"),
+                    "station_name": event.get("station_name"),
+                    "station_address": event.get("station_address"),
+                    "liters_refueled": event.get("liters_refueled"),
+                    "price_per_liter": event.get("price_per_liter"),
+                    "total_cost": event.get("total_cost"),
+                    "latitude": event.get("latitude"),
+                    "longitude": event.get("longitude"),
+                    "fuel_type": event.get("fuel_type"),
+                    "editable": True,
+                    "data_quality": event.get("data_quality", "manual"),
+                    "confidence": event.get("confidence", 1.0),
+                    "excluded_from_calculation": event.get(
+                        "excluded_from_calculation", False
+                    ),
+                    "exclusion_reason": event.get("exclusion_reason"),
+                    "telegram_notification_sent": event.get(
+                        "telegram_notification_sent", False
+                    ),
+                    "telegram_notification_timestamp": event.get(
+                        "telegram_notification_timestamp"
+                    ),
+                    "telegram_response_received": event.get(
+                        "telegram_response_received", False
+                    ),
+                    "telegram_response_timestamp": event.get(
+                        "telegram_response_timestamp"
+                    ),
+                    "telegram_response_type": event.get("telegram_response_type"),
+                    "telegram_response_raw": event.get("telegram_response_raw"),
+                    "telegram_response_parsed": event.get("telegram_response_parsed"),
+                    "telegram_photo_file_id": event.get("telegram_photo_file_id"),
+                    "telegram_voice_file_id": event.get("telegram_voice_file_id"),
+                    "telegram_message_id": event.get("telegram_message_id"),
+                }
+            )
+        current_data["refueling_log"] = rebuilt
+        # Ensure next_refuel_id is at least one beyond the highest rebuilt ID
+        current_data["next_refuel_id"] = max(
+            current_data.get("next_refuel_id", 1), len(rebuilt) + 1
+        )
+        restored_keys.append("refueling_log")
+        _LOGGER.info(
+            "Rebuilt refueling_log from tank_history for entry %s (%d entries)",
+            entry.entry_id,
+            len(rebuilt),
+        )
 
     # Stamp the restore event in the data so it's auditable
     current_data["last_backup_restore"] = {
