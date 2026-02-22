@@ -18,6 +18,14 @@ body:
         > anonymization or pseudonymization. **You are solely responsible for reviewing the
         > exported file before uploading it to GitHub.**
 
+  - type: checkboxes
+    id: not_duplicate
+    attributes:
+      label: "Duplicate check"
+      options:
+        - label: "I have searched for existing issues and this is not a duplicate"
+          required: true
+
   - type: textarea
     id: description
     attributes:
@@ -167,8 +175,6 @@ body:
     attributes:
       label: "Checklist"
       options:
-        - label: "I have searched for existing issues and this is not a duplicate"
-          required: true
         - label: "I have provided the haFWCMA and Home Assistant versions"
           required: true
         - label: "I understand that any uploaded data is my responsibility to review for personal information"
