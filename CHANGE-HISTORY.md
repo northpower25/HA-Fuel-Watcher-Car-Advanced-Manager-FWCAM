@@ -1,5 +1,82 @@
 # Change History
 
+## Version 0.2.0 (2026-02-22) - Major Feature Release
+
+### Highlights
+This release consolidates all pre-release improvements from v0.1.1 through v0.1.66 into a single stable release.
+
+### Added
+- **Automatic Trip Tracking**
+  - Start/stop detection based on odometer changes, with GPS position quality (`full`/`partial`/`none`)
+  - Trip recovery after HA restart via history backfill
+  - Cross-session trip position backfill from adjacent odometer readings
+  - Periodic background detection of missed trips
+  - New sensors: `Trip Log` and `Current Trip`
+  - New switch: `Trip Tracking`
+  - New buttons: `Import Historical Trip Data`, `Recalculate Trip Statistics`
+
+- **Near-vs-Far Station Cost Comparison**
+  - Compares cheapest near-radius station (default 10 km) with cheapest far-radius station (default 20 km)
+  - Accounts for extra fuel cost of the detour when computing savings
+  - Three dedicated station sensors: `Cheapest Station`, `Nearest Station`, `Far Station`
+  - New number entities: `Cheap Stations Radius`, `Cheap Near Stations Radius`, `Cheap Stations Count`
+  - `costsaving_far_vs_near_station` attribute on the Fuel Price sensor
+
+- **Bidirectional Telegram Communication**
+  - Multi-turn conversational dialog for logging refueling events via Telegram
+  - Smart parsing: liters, price per liter, station name, odometer
+  - Explicit refuel-ID matching; HTML-safe output
+
+- **Historical Data Import**
+  - Imports odometer history, tank level changes, and refueling events from the HA recorder
+  - Live progress indicator in the setup flow spinner; per-query timeout
+  - New button: `Import Historical Car Data`
+
+- **Zero-Config Sidebar Dashboard Panel**
+  - Registered via `panel_custom`; appears automatically after installation
+  - URL path `/hafwcma`; auto-discovers all configured vehicles
+
+- **Interactive Dashboard Charts**
+  - Daily fuel price line chart, weekday min/avg grouped bar chart
+  - TOP 5 cheapest stations, TOP 20 trip destinations
+  - Cheapest station display
+
+- **Weekday Driving Pattern Learning**
+  - Separate average daily km tracked per weekday (`avg_monday` … `avg_sunday`)
+
+- **WLTP / Initial Consumption Field**
+  - Required in the setup flow; used as bootstrap prediction value and trip import fuel fallback
+
+- **Additional Controls**
+  - New switches: `Proximity Alerts`, `Trip Tracking`
+  - New buttons: `Validate Refueling Events`, `Recalculate Trip Statistics`, `Import Historical Trip Data`
+  - New number entities: `Cheap Stations Radius`, `Cheap Near Stations Radius`, `Cheap Stations Count`, `Proximity Alert Distance`, `Min Tank Level For Alerts`
+
+### Changed
+- **Setup flow** expanded to include: vehicle features step, historical import step, finish-setup summary step
+- **Consumption prediction** now uses consumption-based math (km ÷ L/100km) instead of refueling interval averaging
+- **Rolling-window period labels** renamed: `today_*` → `last_24h_*`, `last_week_*` → `last_7_days_*`, `last_month_*` → `last_30_days_*`
+- **Sensor naming**: old `nearest_station` renamed to `cheapest_station`; new `nearest_station` is the physically closest station
+- **Radius configuration**: single `station_search_radius` replaced by `cheap_stations_radius`, `cheap_near_stations_radius`, and `cheap_stations_count`
+- `ConsumptionPredictionSensor` and `days_until_refuel` sensor now restore their last state after HA restart
+- Cost-saving calculation uses learned or WLTP consumption rate instead of hardcoded 7.0 L/100km
+
+### Fixed
+- Startup `AttributeError` / `NameError` / timezone-naive/aware comparison errors
+- Refueling detection: unit mismatch, impossible amounts, merge-window logic
+- Trip loss on HA restart: trips are now recovered from odometer history
+- Config flow spinner hang: resolved with per-query timeout and guaranteed preflight result
+- Lovelace card N/A values after browser refresh or HA restart
+
+### Breaking Changes
+- `sensor.[car]_nearest_station` → renamed to `sensor.[car]_cheapest_station`
+- Consumption history attributes: `today_*` / `last_week_*` / `last_month_*` → `last_24h_*` / `last_7_days_*` / `last_30_days_*`
+- `number.[car]_station_search_radius` → `number.[car]_cheap_stations_radius`
+
+See [RELEASE_NOTES_v0.2.0.md](RELEASE_NOTES_v0.2.0.md) for the full migration guide.
+
+---
+
 ## Version 0.0.95 (2026-02-15) - Bug Fix: Services.yaml Validation Error
 
 ### Fixed

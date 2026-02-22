@@ -201,10 +201,12 @@ For users who want a dedicated Lovelace dashboard with a custom layout, or for e
 3. Search for "Fuel Watcher Car Advanced Manager"
 4. Follow the configuration steps:
    - **Step 1**: Enter Tankerkönig API credentials and location
-   - **Step 2**: Configure vehicle details (name, tank capacity)
+   - **Step 2**: Configure vehicle details (name, tank capacity, fuel type, and WLTP / known consumption)
    - **Step 3**: (Optional) Link existing vehicle entities (odometer, tank level, range, position)
-   - **Step 4**: (Optional) Configure Telegram notifications
-   - **Step 5**: (Optional) Configure prediction engine thresholds
+   - **Step 4**: (Optional) Enable vehicle features (trip tracking, proximity alerts)
+   - **Step 5**: (Optional) Configure Telegram notifications
+   - **Step 6**: Configure prediction engine thresholds
+   - **Step 7**: One-time historical data import from the HA recorder (with live progress indicator)
 
 For detailed information about vehicle entity integration, see [Vehicle Entity Integration Guide](docs/user_docs/VEHICLE_ENTITIES.md).
 
@@ -212,23 +214,24 @@ For detailed information about vehicle entity integration, see [Vehicle Entity I
 
 After initial setup, you can modify these options:
 
-- **Search Radius**: Area to search for fuel stations (in km)
 - **Fuel Type**: E5, E10, or Diesel
 - **Tank Capacity**: Vehicle tank capacity in liters
+- **WLTP / Initial Consumption**: Known or manufacturer consumption (L/100km) – used as fallback before enough history is collected
+- **Station Radius Settings**:
+  - Far radius (`cheap_stations_radius`): outer search area for the cheapest station (default 20 km)
+  - Near radius (`cheap_near_stations_radius`): inner radius for the near-vs-far comparison (default 10 km)
+  - Max stations count (`cheap_stations_count`)
 - **Vehicle Entities**: Link to existing Home Assistant vehicle entities
-  - Odometer sensor (for consumption tracking)
+  - Odometer sensor (for consumption tracking and trip detection)
   - Tank level sensor (for refueling detection)
   - Range sensor (for consumption analysis)
-  - Position device tracker (for dynamic station search)
+  - Position device tracker (for dynamic station search and proximity alerts)
 - **Prediction Engine Settings**:
   - Price drop percent threshold (trigger refuel recommendation)
   - Price drop absolute threshold (in EUR)
   - Low fuel alert threshold (% of tank)
   - Critical fuel alert threshold (% of tank)
-  - Fallback daily kilometers (for range estimation)
-- **Telegram Settings**: Bot token and chat ID
-  - Range sensor (for consumption analysis)
-  - Position device tracker (for dynamic station search)
+  - Fallback daily kilometers per weekday (for range estimation)
 - **Telegram Settings**: Bot token and chat ID
 
 ## Usage
@@ -237,28 +240,48 @@ After initial setup, you can modify these options:
 
 The integration creates the following sensors for each configured vehicle:
 
-- **Fuel Price**: Current fuel price at nearest station
+- **Fuel Price**: Current fuel price at the best-value station (winner of near-vs-far comparison)
 - **Tank Level**: Current fuel level in liters
 - **Range**: Estimated driving range in kilometers
-- **Nearest Station**: Name and details of closest station
+- **Cheapest Station**: Best-value station from the near-vs-far cost comparison
+- **Nearest Station**: Physically closest open station
+- **Far Station**: Cheapest station in the outer search radius
+- **Nearby Cheap Stations**: List of up to 5 cheapest stations near the current vehicle position
 - **Days Until Refuel**: Predicted days until refueling needed (consumption prediction)
-- **Refueling Log**: Complete history of all refueling events with quality indicators (see [Refueling Log Guide](docs/REFUELING_LOG_GUIDE.md))
-- **Average Consumption History**: Historical average consumption with attributes for today, last week, last 14 days, and last month
+- **Refueling Log**: Complete history of all refueling events with quality indicators (see [Refueling Log Guide](docs/user_docs/REFUELING_LOG_GUIDE.md))
+- **Trip Log**: Full trip history with statistics, top-20 destinations, and historical import status
+- **Current Trip**: Live state of the trip currently in progress
+- **Average Consumption History**: Historical average consumption with rolling-window attributes for the last 24 hours, last 7 days, last 14 days, and last 30 days
 - **Average Consumption Forecast**: Forecasted average consumption with attributes for tomorrow, next week, next 14 days, and next month (currently uses the same prediction for all periods; future enhancements will add time-specific forecasting)
 - **Fuel Price API Debug**: API request/response debug information for fuel price queries
-- **Car Data Debug**: Vehicle data collection status and diagnostic information
+- **Car Data Debug**: Vehicle data collection status, historical import metadata, and diagnostic information
 
 ### Controls
 
-- **Test API Connection Button**: Manually test the fuel price API connection with detailed results
-- **Import Historical Data Button**: Import historical vehicle data from Home Assistant's recorder (odometer, tank level changes, past refuelings)
-- **Refresh Vehicle Data Button**: Manually fetch current vehicle data from configured entities
-- **Manual Refresh Switch**: Trigger immediate data refresh (API + vehicle data)
-- **Manual Prediction Switch**: Trigger immediate consumption/range prediction calculation on demand
-- **Search Radius Number**: Adjust the search radius (1-25 km) dynamically from the UI
-- **API Update Interval Number**: Configure how often the API is polled (1-60 minutes). Each update is automatically randomized by ±2% to prevent rate limiting when multiple instances access the API simultaneously.
-- **Consumption Min Data Points Number**: Configure minimum historical data points required for reliable predictions (2-50, default: 5)
-- **Consumption Prediction Interval Number**: Configure how often consumption predictions are recalculated (0.5-24 hours, default: 6)
+**Buttons**
+- **Test Fuelprice API Connection**: Manually test the fuel price API connection with detailed results
+- **Import Historical Car Data**: Import odometer, tank level history, and past refueling events from the HA recorder (90-day look-back)
+- **Import Historical Trip Data**: Import past trips from the HA recorder
+- **Recalculate Trip Statistics**: Recompute aggregated trip statistics from stored trip data
+- **Validate Refueling Events**: Re-run data quality checks on all stored refueling events
+- **Refresh Vehicle Data**: Manually fetch current vehicle entity states (odometer, tank level, etc.)
+- **Export Vehicle Data (Debug)**: Export raw vehicle data to HA logs for debugging
+
+**Switches**
+- **Fuel Price Refresh**: Trigger immediate API refresh (fuel prices + vehicle data)
+- **Consumption Prediction**: Trigger immediate consumption/range prediction recalculation
+- **Trip Tracking**: Enable or disable automatic trip tracking at runtime
+- **Proximity Alerts**: Enable or disable proximity-based station alerts
+
+**Number Entities**
+- **API Update Interval**: How often the API is polled (1–60 minutes). Updates are randomized by ±2% to prevent simultaneous API calls.
+- **Consumption Min Data Points**: Minimum historical data points required before switching from fallback to learned prediction (2–50, default: 5)
+- **Consumption Prediction Interval**: How often consumption predictions are recalculated (0.5–24 hours, default: 6)
+- **Cheap Stations Radius**: Outer radius for far-station comparison and the `Nearby Cheap Stations` search (km)
+- **Cheap Near Stations Radius**: Inner radius for the near-vs-far cost comparison (km)
+- **Cheap Stations Count**: Maximum number of stations to consider in radius queries
+- **Proximity Alert Distance**: Distance threshold for proximity-based alerts (km)
+- **Min Tank Level For Alerts**: Minimum tank level (%) below which alerts are triggered
 
 For detailed information about update frequencies, configuration options, and warnings about API limits and system load, see [Data Update Frequencies Guide](docs/user_docs/DATA_UPDATE_FREQUENCIES.md).
 
@@ -380,14 +403,55 @@ For detailed information about displaying and managing the refueling log, includ
 
 See the [Refueling Log Guide](docs/user_docs/REFUELING_LOG_GUIDE.md) (also available in [German](docs/user_docs/REFUELING_LOG_GUIDE_DE.md)).
 
-#### Nearest Station Sensor
+#### Cheapest Station Sensor
+The best-value station from the near-vs-far cost comparison. Previously called "Nearest Station".
 - `station_address`: Full address
-- `distance`: Distance in km
+- `distance_km`: Distance to station in km
 - `price`: Current fuel price
 - `last_update_timestamp`: When this station was last successfully fetched (ISO format)
 - `google_maps_url`: Navigation link for Google Maps
 - `apple_maps_url`: Navigation link for Apple Maps
 - `waze_url`: Navigation link for Waze
+
+#### Nearest Station Sensor
+The physically closest open station (regardless of price).
+- `station_address`: Full address
+- `distance`: Distance to station in km
+- `price`: Current fuel price
+- `last_update_timestamp`: When this station was last successfully fetched (ISO format)
+- `google_maps_url`: Navigation link for Google Maps
+- `apple_maps_url`: Navigation link for Apple Maps
+- `waze_url`: Navigation link for Waze
+
+#### Far Station Sensor
+The cheapest station in the outer search radius.
+- `station_address`: Full address
+- `distance_km`: Distance to station in km
+- `price`: Current fuel price
+- `last_update_timestamp`: When this station was last successfully fetched (ISO format)
+- `google_maps_url`: Navigation link for Google Maps
+- `apple_maps_url`: Navigation link for Apple Maps
+- `waze_url`: Navigation link for Waze
+
+#### Trip Log Sensor
+The sensor value is the total number of recorded trips. Attributes:
+- `trip_tracking_enabled`: Whether automatic trip tracking is active
+- `last_historical_import_timestamp`: When the last historical import was triggered
+- `last_historical_import_trips_detected`: Number of trips found in the last import
+- `total_trips`, `business_trips`, `private_trips`, `commute_trips`: Trip counts by category
+- `total_distance_km`, `total_fuel_consumed`, `total_fuel_cost`, `total_additional_costs`: Totals
+- `recent_trips`: Last 5 trips (for debugging; use the `get_all_trips` service for full history)
+- `top_trip_destinations`: Top 20 most-visited destinations aggregated from all trips
+
+#### Current Trip Sensor
+Shows the live state of the trip currently in progress.
+- `on_trip`: `true` when a trip is active
+- `timestamp_start`: Trip start time
+- `distance_km`: Distance driven so far (km)
+- `odometer_start`: Odometer reading at trip start
+- `start_latitude`, `start_longitude`: GPS coordinates at departure
+- `duration_minutes`: Elapsed trip time in minutes
+- `trip_tracking_enabled`: Whether trip tracking is active
 
 #### API Debug Sensor
 - `timestamp`: When the last API request was made
@@ -564,64 +628,78 @@ See [TODO.md](TODO.md) for the complete roadmap of fuel log features.
 
 ## Development Status
 
-This is an MVP (Minimum Viable Product) release. The following features are implemented:
+The following features are fully implemented and production-ready:
 
-- ✅ Config Flow and Options Flow
-- ✅ Tankerkönig API integration
+- ✅ Config Flow and Options Flow (multi-step wizard with historical import)
+- ✅ Tankerkönig API integration with randomized polling
 - ✅ Fuel price sensors with prediction attributes
 - ✅ **Vehicle entity integration** (odometer, tank level, range, position)
-- ✅ **Automatic refueling detection**
+- ✅ **Automatic refueling detection** with validation and quality scoring
 - ✅ **Real-time consumption tracking (L/100km)**
+- ✅ **Near-vs-far station cost comparison** with three dedicated station sensors
 - ✅ **Dynamic position-based station search**
-- ✅ **Prediction Engine with intelligent refuel recommendations**
-- ✅ **Machine learning for advanced predictions**
-- ✅ **Manual prediction trigger switch**
+- ✅ **Automatic trip tracking** with GPS quality, restart recovery, and cross-session backfill
+- ✅ **Historical data import** from HA recorder (odometer, trips, refueling events)
+- ✅ **Prediction Engine** with intelligent refuel recommendations
+- ✅ **Self-learning consumption prediction** with weekday/weekend pattern recognition
 - ✅ **Advanced consumption prediction engine** with confidence scoring
 - ✅ **Configurable prediction intervals and data requirements**
-- ✅ **Persistent storage for price and vehicle history**
-- ✅ **Self-learning driving pattern analysis**
-- ✅ **Price trend analysis and statistics**
-- ✅ **Configurable thresholds for personalized recommendations**
-- ✅ **Automatic fuel log with comprehensive refueling tracking**
-- ✅ **Average consumption history sensor** (today, week, 14 days, month)
+- ✅ **Persistent storage** for price, vehicle, and trip history
+- ✅ **Price trend analysis and statistics** (weekday patterns, rolling-window periods)
+- ✅ **Configurable thresholds** for personalized recommendations
+- ✅ **Automatic fuel log** with comprehensive refueling tracking
+- ✅ **Average consumption history sensor** (last 24h, 7 days, 14 days, 30 days)
 - ✅ **Average consumption forecast sensor** (tomorrow, week, 14 days, month)
-- ✅ Telegram notification system
+- ✅ **Automatic sidebar dashboard panel** via `panel_custom`
+- ✅ **Custom Lovelace card** (fwcam-card) with charts and management UI
+- ✅ **Bidirectional Telegram integration** for refueling event capture
+- ✅ Telegram notification system (price alerts, low tank, refuel recommendations)
 - ✅ Multi-language support (EN/DE)
+- ✅ Blueprints for common automations
 
 ### Planned Features
 
 See [TODO.md](TODO.md) for the complete roadmap.
 
-## ⚠️ Breaking Changes (v0.0.33)
+## ⚠️ Breaking Changes (v0.2.0)
 
-### Entity Renaming
+### Sensor Rename
 
-To improve clarity and user experience, the following entities have been renamed:
+The former `sensor.[car]_nearest_station` has been **renamed** to `sensor.[car]_cheapest_station`. A new `sensor.[car]_nearest_station` now represents the *physically closest* open station.
 
-| Old Entity ID | New Entity ID | Purpose |
-|--------------|---------------|---------|
-| `switch.[car]_manual_refresh` | `switch.[car]_fuel_price_refresh` | Manually refresh fuel prices |
-| `switch.[car]_manual_prediction` | `switch.[car]_consumption_prediction` | Manually update consumption prediction |
-| `number.[car]_search_radius` | `number.[car]_station_search_radius` | Set fuel station search radius |
+| Old Entity ID | New Entity ID | Change |
+|---|---|---|
+| `sensor.[car]_nearest_station` | `sensor.[car]_cheapest_station` | Now tracks the best-value station |
+| *(new)* | `sensor.[car]_nearest_station` | Physically closest open station |
+| *(new)* | `sensor.[car]_far_station` | Cheapest station in the outer radius |
 
-**Action Required:**
-- Update your automations, scripts, and dashboards to use the new entity IDs
-- The old entity IDs will no longer be available after upgrading
+**Action Required:** Update any automations, scripts, or dashboards that reference `sensor.[car]_nearest_station` to use `sensor.[car]_cheapest_station`.
 
-**Example Migration:**
-```yaml
-# Before
-- service: switch.turn_on
-  target:
-    entity_id: switch.my_car_manual_refresh
+### Consumption History Attribute Rename
 
-# After
-- service: switch.turn_on
-  target:
-    entity_id: switch.my_car_fuel_price_refresh
-```
+Rolling-window period attributes on `sensor.[car]_average_consumption_history` have been renamed for clarity:
 
-For detailed migration information, see [IMPLEMENTATION_SUMMARY_CUSTOM_CARD.md](docs/dev_docs/IMPLEMENTATION_SUMMARY_CUSTOM_CARD.md).
+| Old Attribute | New Attribute |
+|---|---|
+| `today_consumption` / `today_km` / … | `last_24h_consumption` / `last_24h_km` / … |
+| `last_week_consumption` / `last_week_km` / … | `last_7_days_consumption` / `last_7_days_km` / … |
+| `last_month_consumption` / `last_month_km` / … | `last_30_days_consumption` / `last_30_days_km` / … |
+
+The same rolling-window labels apply to `sensor.[car]_fuel_price` period statistics (`last_7_days_price`, `last_14_days_price`, `last_30_days_price`).
+
+**Action Required:** Update any templates or automations that use the old attribute names.
+
+### Radius Configuration Consolidation
+
+The single `number.[car]_station_search_radius` entity has been replaced by dedicated entities:
+
+| Old | New |
+|---|---|
+| `number.[car]_station_search_radius` | `number.[car]_cheap_stations_radius` (far radius) |
+| *(new)* | `number.[car]_cheap_near_stations_radius` (near comparison radius) |
+| *(new)* | `number.[car]_cheap_stations_count` |
+
+**Action Required:** Update any automations or scripts that use `number.[car]_station_search_radius`.
 
 ## Support
 
