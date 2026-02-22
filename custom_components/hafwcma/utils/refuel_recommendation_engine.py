@@ -223,8 +223,7 @@ async def compare_stations_by_radius(
     if cheapest_near:
         # Cost at near station
         distance_near = cheapest_near.get("distance_km", 0)
-        round_trip_near = distance_near * 2
-        fuel_consumed_near = (round_trip_near * avg_consumption) / 100.0
+        fuel_consumed_near = (distance_near * avg_consumption) / 100.0
         price_near = cheapest_near.get("price", 0)
         
         cost_fuel_near = fuel_to_purchase * price_near
@@ -233,8 +232,7 @@ async def compare_stations_by_radius(
         
         # Cost at far station
         distance_far = cheapest_far.get("distance_km", 0)
-        round_trip_far = distance_far * 2
-        fuel_consumed_far = (round_trip_far * avg_consumption) / 100.0
+        fuel_consumed_far = (distance_far * avg_consumption) / 100.0
         price_far = cheapest_far.get("price", 0)
         
         cost_fuel_far = fuel_to_purchase * price_far
@@ -254,7 +252,7 @@ async def compare_stations_by_radius(
             "latitude": cheapest_near.get("latitude") or cheapest_near.get("lat"),
             "longitude": cheapest_near.get("longitude") or cheapest_near.get("lng"),
             "navigation_urls": cheapest_near.get("navigation_urls"),
-            "round_trip_km": round(round_trip_near, 1),
+            "trip_km": round(distance_near, 1),
             "fuel_consumed": round(fuel_consumed_near, 2),
             "cost_fuel": round(cost_fuel_near, 2),
             "cost_trip": round(cost_trip_near, 2),
@@ -270,7 +268,7 @@ async def compare_stations_by_radius(
             "latitude": cheapest_far.get("latitude") or cheapest_far.get("lat"),
             "longitude": cheapest_far.get("longitude") or cheapest_far.get("lng"),
             "navigation_urls": cheapest_far.get("navigation_urls"),
-            "round_trip_km": round(round_trip_far, 1),
+            "trip_km": round(distance_far, 1),
             "fuel_consumed": round(fuel_consumed_far, 2),
             "cost_fuel": round(cost_fuel_far, 2),
             "cost_trip": round(cost_trip_far, 2),
@@ -315,8 +313,7 @@ async def compare_stations_by_radius(
         if nearest_station.get("id") != cheapest_overall.get("id"):
             # Cost at nearest station
             distance_near = nearest_station.get("distance_km", 0)
-            round_trip_near = distance_near * 2
-            fuel_consumed_near = (round_trip_near * avg_consumption) / 100.0
+            fuel_consumed_near = (distance_near * avg_consumption) / 100.0
             price_near = nearest_station.get("price", 0)
             
             cost_fuel_near = fuel_to_purchase * price_near
@@ -325,8 +322,7 @@ async def compare_stations_by_radius(
             
             # Cost at cheapest station
             distance_cheap = cheapest_overall.get("distance_km", 0)
-            round_trip_cheap = distance_cheap * 2
-            fuel_consumed_cheap = (round_trip_cheap * avg_consumption) / 100.0
+            fuel_consumed_cheap = (distance_cheap * avg_consumption) / 100.0
             price_cheap = cheapest_overall.get("price", 0)
             
             cost_fuel_cheap = fuel_to_purchase * price_cheap
@@ -342,7 +338,7 @@ async def compare_stations_by_radius(
                 "name": nearest_station.get("name"),
                 "distance_km": round(distance_near, 1),
                 "price": round(price_near, 3),
-                "round_trip_km": round(round_trip_near, 1),
+                "trip_km": round(distance_near, 1),
                 "fuel_consumed": round(fuel_consumed_near, 2),
                 "cost_fuel": round(cost_fuel_near, 2),
                 "cost_trip": round(cost_trip_near, 2),
@@ -353,7 +349,7 @@ async def compare_stations_by_radius(
                 "name": cheapest_overall.get("name"),
                 "distance_km": round(distance_cheap, 1),
                 "price": round(price_cheap, 3),
-                "round_trip_km": round(round_trip_cheap, 1),
+                "trip_km": round(distance_cheap, 1),
                 "fuel_consumed": round(fuel_consumed_cheap, 2),
                 "cost_fuel": round(cost_fuel_cheap, 2),
                 "cost_trip": round(cost_trip_cheap, 2),
