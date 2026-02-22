@@ -12,6 +12,14 @@ body:
         and evaluate the request effectively. The more context you provide, the easier
         it is to prioritize and implement the feature correctly.
 
+  - type: checkboxes
+    id: not_duplicate
+    attributes:
+      label: "Duplicate check"
+      options:
+        - label: "I have searched for existing feature requests and this is not a duplicate"
+          required: true
+
   - type: textarea
     id: summary
     attributes:
@@ -137,8 +145,6 @@ body:
     attributes:
       label: "Checklist"
       options:
-        - label: "I have searched for existing feature requests and this is not a duplicate"
-          required: true
         - label: "I have described the use case / problem, not just the solution"
           required: true
         - label: "I have listed any external dependencies this feature requires"
