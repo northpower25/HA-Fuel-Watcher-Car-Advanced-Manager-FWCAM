@@ -62,6 +62,7 @@ SERVICE_SIMULATE_REFUELING_EVENT = "simulate_refueling_event"
 SERVICE_CREATE_BACKUP = "create_backup"
 SERVICE_RESTORE_BACKUP = "restore_backup"
 SERVICE_LIST_BACKUPS = "list_backups"
+SERVICE_DELETE_BACKUP = "delete_backup"
 SERVICE_EXPORT_DEBUG_DATA = "export_debug_data"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
@@ -199,6 +200,10 @@ SCHEMA_RESTORE_BACKUP = vol.Schema({
 })
 
 SCHEMA_LIST_BACKUPS = vol.Schema({})
+
+SCHEMA_DELETE_BACKUP = vol.Schema({
+    vol.Required("backup_file_path"): cv.string,
+})
 
 SCHEMA_EXPORT_DEBUG_DATA = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -931,6 +936,19 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         backups = await list_backups(hass)
         return {"backups": backups}
 
+    async def handle_delete_backup(call: ServiceCall) -> ServiceResponse:
+        """Handle the delete_backup service call.
+
+        Deletes a single backup file from the backup directory.  Only files
+        inside <config>/www/hafwcma_backups/ that match the expected naming
+        pattern are allowed to be deleted.
+        """
+        from .utils.backup_manager import delete_backup
+
+        backup_file_path = call.data["backup_file_path"]
+        result = await delete_backup(hass, backup_file_path)
+        return result
+
     async def handle_restore_backup(call: ServiceCall) -> ServiceResponse:
         """Handle the restore_backup service call.
 
@@ -1100,6 +1118,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_LIST_BACKUPS, handle_list_backups, schema=SCHEMA_LIST_BACKUPS, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DELETE_BACKUP, handle_delete_backup, schema=SCHEMA_DELETE_BACKUP, supports_response=True
     )
     hass.services.async_register(
         DOMAIN, SERVICE_EXPORT_DEBUG_DATA, handle_export_debug_data, schema=SCHEMA_EXPORT_DEBUG_DATA, supports_response=True

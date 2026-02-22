@@ -568,6 +568,48 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Delete a backup file from the server via hafwcma.delete_backup.
+   * @param {string} filePath - Absolute path to the backup file on the server.
+   */
+  async _handleBackupDelete(filePath) {
+    const lang = this.getUserLanguage();
+    const confirmMsg = lang === 'de'
+      ? `Backup-Datei löschen?\n\nDatei: ${filePath}\n\nDiese Aktion kann nicht rückgängig gemacht werden!`
+      : `Delete backup file?\n\nFile: ${filePath}\n\nThis action cannot be undone!`;
+    if (!confirm(confirmMsg)) return;
+
+    this._backupMessage = null;
+    this.render();
+
+    try {
+      const result = await this._hass.callService(
+        'hafwcma', 'delete_backup',
+        { backup_file_path: filePath },
+        {}, true, true
+      );
+      if (result?.response?.success) {
+        this._backupMessage = {
+          type: 'success',
+          text: lang === 'de'
+            ? `✅ Backup gelöscht: ${result.response.filename}`
+            : `✅ Backup deleted: ${result.response.filename}`,
+        };
+        await this._handleBackupRefresh();
+        return;
+      }
+      throw new Error(result?.response?.error || 'unknown error');
+    } catch (err) {
+      this._backupMessage = {
+        type: 'error',
+        text: lang === 'de'
+          ? `❌ Löschen fehlgeschlagen: ${err.message || err}`
+          : `❌ Delete failed: ${err.message || err}`,
+      };
+    }
+    this.render();
+  }
+
+  /**
    * Upload a local backup file to the server via the HTTP upload endpoint,
    * then offer to restore it immediately.
    */
@@ -1469,6 +1511,7 @@ class FWCAMCard extends HTMLElement {
       colActions:     { de: 'Aktionen', en: 'Actions' },
       downloadBtn:    { de: 'Herunterladen', en: 'Download' },
       restoreBtn:     { de: 'Wiederherstellen', en: 'Restore' },
+      deleteBtn:      { de: 'Löschen', en: 'Delete' },
       uploadTitle:    { de: 'Backup hochladen & wiederherstellen', en: 'Upload & Restore Backup' },
       uploadHint:     { de: 'Wähle eine haFWCMA-Backup-Datei (.json) von deinem Gerät aus, um sie auf den Server hochzuladen.', en: 'Choose a haFWCMA backup file (.json) from your device to upload to the server.' },
       uploadBtn:      { de: 'Datei hochladen', en: 'Upload File' },
@@ -1502,6 +1545,9 @@ class FWCAMCard extends HTMLElement {
               </a>
               <button class="backup-restore-btn" data-action="restore-backup" data-file-path="${this._escHtml(b.file_path)}">
                 <ha-icon icon="mdi:restore"></ha-icon> ${_t('restoreBtn')}
+              </button>
+              <button class="backup-delete-btn" data-action="delete-backup" data-file-path="${this._escHtml(b.file_path)}">
+                <ha-icon icon="mdi:delete"></ha-icon> ${_t('deleteBtn')}
               </button>
             </td>
           </tr>`;
@@ -2232,6 +2278,13 @@ class FWCAMCard extends HTMLElement {
       btn.addEventListener('click', (e) => {
         const filePath = e.currentTarget.dataset.filePath;
         this._handleBackupRestore(filePath);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll('[data-action="delete-backup"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const filePath = e.currentTarget.dataset.filePath;
+        this._handleBackupDelete(filePath);
       });
     });
   }
@@ -4781,6 +4834,24 @@ class FWCAMCard extends HTMLElement {
 
         .backup-restore-btn:hover {
           background: #ff9800;
+          color: white;
+        }
+
+        .backup-delete-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 5px 10px;
+          border: 1px solid #e53935;
+          border-radius: 4px;
+          background: transparent;
+          color: #e53935;
+          font-size: 13px;
+          cursor: pointer;
+        }
+
+        .backup-delete-btn:hover {
+          background: #e53935;
           color: white;
         }
 

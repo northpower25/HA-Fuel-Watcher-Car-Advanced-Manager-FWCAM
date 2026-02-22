@@ -851,6 +851,23 @@ restore_backup:
       selector:
         boolean:
 
+delete_backup:
+  name: Delete Backup
+  description: >
+    Delete a single backup file from the backup directory
+    (<config>/www/hafwcma_backups/). Only files inside that directory that
+    match the hafwcma_backup_*.json naming pattern can be deleted.
+  fields:
+    backup_file_path:
+      name: Backup File Path
+      description: >
+        Absolute path to the backup JSON file to delete on the Home Assistant
+        server, e.g. /config/www/hafwcma_backups/hafwcma_backup_MyCar_20260101_120000.json
+      required: true
+      example: "/config/www/hafwcma_backups/hafwcma_backup_MyCar_20260101_120000.json"
+      selector:
+        text:
+
 export_debug_data:
   name: Export Anonymized Debug Data
   description: >
