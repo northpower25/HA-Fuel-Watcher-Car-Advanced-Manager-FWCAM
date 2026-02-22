@@ -5,7 +5,7 @@
 Der Kostenvergleich ermittelt, ob es sich lohnt, zu einer weiter entfernten aber günstigeren Tankstelle zu fahren. Dabei werden **alle relevanten Kosten** berücksichtigt:
 
 - **Kraftstoffpreis an der Tankstelle**
-- **Zusätzlich verbrauchter Kraftstoff** für die Anfahrt (einfache Strecke)
+- **Zusätzlich verbrauchter Kraftstoff** für die Hin- und Rückfahrt
 - **Zu tankende Menge** (leerer Tank wird berücksichtigt)
 
 ## Konfiguration
@@ -39,8 +39,8 @@ fuel_to_purchase = tank_capacity - current_tank_level
 
 #### 2. Kraftstoffverbrauch für Fahrt
 ```
-trip_km = station_distance_km
-fuel_consumed = (trip_km × avg_consumption) / 100
+round_trip_km = station_distance_km × 2
+fuel_consumed = (round_trip_km × avg_consumption) / 100
 ```
 
 **Datenquellen:**
@@ -90,37 +90,37 @@ savings_percent = (savings / total_cost_near) × 100
 
 **Tankstelle "Nah" (8 km entfernt):**
 - Preis: 1.589 €/L
-- Einfache Anfahrt: 8 km
-- Verbrauch für Fahrt: (8 × 7.0) / 100 = 0.56 L
+- Hin- und Rückfahrt: 16 km
+- Verbrauch für Fahrt: (16 × 7.0) / 100 = 1.12 L
 
 **Berechnung Tankstelle "Nah":**
 ```
 Zu tanken: 50 - 10 = 40 L
 Kosten Tanken: 40 × 1.589 = 63.56 €
-Kosten Fahrt: 0.56 × 1.589 = 0.89 €
-Gesamtkosten: 63.56 + 0.89 = 64.45 €
+Kosten Fahrt: 1.12 × 1.589 = 1.78 €
+Gesamtkosten: 63.56 + 1.78 = 65.34 €
 ```
 
 **Tankstelle "Fern" (14 km entfernt):**
 - Preis: 1.539 €/L
-- Einfache Anfahrt: 14 km
-- Verbrauch für Fahrt: (14 × 7.0) / 100 = 0.98 L
+- Hin- und Rückfahrt: 28 km
+- Verbrauch für Fahrt: (28 × 7.0) / 100 = 1.96 L
 
 **Berechnung Tankstelle "Fern":**
 ```
 Zu tanken: 40 L
 Kosten Tanken: 40 × 1.539 = 61.56 €
-Kosten Fahrt: 0.98 × 1.539 = 1.51 €
-Gesamtkosten: 61.56 + 1.51 = 63.07 €
+Kosten Fahrt: 1.96 × 1.539 = 3.02 €
+Gesamtkosten: 61.56 + 3.02 = 64.58 €
 ```
 
 **Ersparnis:**
 ```
-Ersparnis = 64.45 - 63.07 = 1.38 €
-Prozent = (1.38 / 64.45) × 100 = 2.1%
+Ersparnis = 65.34 - 64.58 = 0.76 €
+Prozent = (0.76 / 65.34) × 100 = 1.2%
 ```
 
-**Empfehlung:** Fahre zur ferneren Tankstelle und spare 1.38 €
+**Empfehlung:** Fahre zur ferneren Tankstelle und spare 0.76 €
 
 ## Status-Tabelle mit Praxisbeispielen
 
@@ -150,23 +150,23 @@ station_comparison:
     name: "JET Tankstelle"
     distance_km: 8.2
     price: 1.589
-    trip_km: 8.2
-    fuel_consumed: 0.57
+    round_trip_km: 16.4
+    fuel_consumed: 1.15
     cost_fuel: 63.56
-    cost_trip: 0.91
-    total_cost: 64.47
+    cost_trip: 1.83
+    total_cost: 65.39
   far:
     name: "ARAL Tankstelle"
     distance_km: 13.7
     price: 1.539
-    trip_km: 13.7
-    fuel_consumed: 0.96
-    cost_trip: 1.48
+    round_trip_km: 27.4
+    fuel_consumed: 1.92
+    cost_trip: 2.95
     cost_fuel: 61.56
-    total_cost: 63.04
-  savings: 1.43
-  savings_percent: 2.2
-  comparison_recommendation: "💰 Save €1.43 by driving to ARAL Tankstelle (13.7km away)"
+    total_cost: 64.51
+  savings: 0.88
+  savings_percent: 1.3
+  comparison_recommendation: "💰 Save €0.88 by driving to ARAL Tankstelle (13.7km away)"
   fuel_to_purchase: 40.0
 ```
 
@@ -274,7 +274,7 @@ content: |
 
 1. **Luftlinie vs. Straßenentfernung**: Die Entfernung wird als Luftlinie berechnet. Die tatsächliche Fahrtstrecke kann länger sein.
 
-2. **Anfahrtkosten (einfache Strecke)**: Die Berechnung berücksichtigt nur die einfache Anfahrt zur Tankstelle, da Fahrer typischerweise auf dem Weg zu einem Ziel tanken – nicht als separate Hin- und Rückfahrt.
+2. **Zeitersparnis nicht berücksichtigt**: Die Berechnung berücksichtigt nur monetäre Kosten, nicht die zusätzliche Fahrzeit.
 
 3. **Aktuelle Preise**: Preise werden alle 10 Minuten von der Tankerkönig API aktualisiert.
 
