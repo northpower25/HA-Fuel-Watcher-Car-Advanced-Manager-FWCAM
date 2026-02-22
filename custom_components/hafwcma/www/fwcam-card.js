@@ -1408,14 +1408,15 @@ class FWCAMCard extends HTMLElement {
 
   /**
    * Derive position quality string for a trip.
-   * Uses the stored position_quality field when available; falls back to
-   * inferring it from the presence of start/end coordinates.
+   * Always derives from actual coordinate presence so that backfilled
+   * coordinates are reflected correctly even when the stored position_quality
+   * field has not yet been updated.  Falls back to the stored field only when
+   * no coordinates are available at all.
    */
   getPositionQuality(trip) {
-    if (trip.position_quality) return trip.position_quality;
     if (trip.start_latitude != null && trip.end_latitude != null) return 'full';
     if (trip.start_latitude != null || trip.end_latitude != null) return 'partial';
-    return 'none';
+    return trip.position_quality || 'none';
   }
 
   /**

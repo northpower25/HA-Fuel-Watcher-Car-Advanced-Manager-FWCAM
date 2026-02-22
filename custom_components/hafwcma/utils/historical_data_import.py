@@ -2113,6 +2113,7 @@ async def backfill_stored_trip_positions(
         sorted_trips = sorted(trips, key=lambda t: t.get("timestamp_start", ""))
 
         backfilled = 0
+        quality_repaired = 0
         trips_needing_geocode: list[dict[str, Any]] = []
 
         for i, trip in enumerate(sorted_trips):
@@ -2126,6 +2127,10 @@ async def backfill_stored_trip_positions(
             )
 
             if not start_missing and not end_missing:
+                # Both coordinates present – repair stale position_quality if needed.
+                if trip.get("position_quality") != "full":
+                    trip["position_quality"] = "full"
+                    quality_repaired += 1
                 continue
 
             if start_missing and i > 0:
@@ -2193,13 +2198,19 @@ async def backfill_stored_trip_positions(
             if trip.get("position_backfilled"):
                 _refresh_trip_position_quality(trip)
 
-        if backfilled == 0:
+        if backfilled == 0 and quality_repaired == 0:
             return 0
 
-        _LOGGER.info(
-            "Cross-session position backfill: filled %d missing coordinate(s)",
-            backfilled,
-        )
+        if backfilled > 0:
+            _LOGGER.info(
+                "Cross-session position backfill: filled %d missing coordinate(s)",
+                backfilled,
+            )
+        if quality_repaired > 0:
+            _LOGGER.info(
+                "Cross-session position backfill: repaired position_quality for %d trip(s) that already had full coordinates",
+                quality_repaired,
+            )
 
         # Save updated trips.  The dict objects in sorted_trips are the same
         # references as in data["trips"], so modifications are already reflected.

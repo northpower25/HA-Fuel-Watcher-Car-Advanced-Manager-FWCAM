@@ -1564,6 +1564,33 @@ async def calculate_average_price(
 # Trip Tracking Storage
 # ---------------------------------------------------------------------------
 
+def _derive_position_quality(trip: dict[str, Any]) -> str:
+    """Return the position quality string for a trip based on its coordinates.
+    
+    Args:
+        trip: Trip dictionary containing optional start_latitude/longitude
+              and end_latitude/longitude fields.
+    
+    Returns:
+        "full" if both start and end coordinates are present,
+        "partial" if only one side has coordinates,
+        "none" if neither side has coordinates.
+    """
+    has_start = (
+        trip.get("start_latitude") is not None
+        and trip.get("start_longitude") is not None
+    )
+    has_end = (
+        trip.get("end_latitude") is not None
+        and trip.get("end_longitude") is not None
+    )
+    if has_start and has_end:
+        return "full"
+    if has_start or has_end:
+        return "partial"
+    return "none"
+
+
 async def add_trip(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -1609,6 +1636,10 @@ async def add_trip(
     now = dt_util.now().isoformat()
     trip_data.setdefault("created_at", now)
     trip_data.setdefault("updated_at", now)
+    
+    # Ensure position_quality is set based on coordinate availability.
+    if "position_quality" not in trip_data:
+        trip_data["position_quality"] = _derive_position_quality(trip_data)
     
     # Add trip to storage
     data["trips"].append(trip_data)
@@ -1693,6 +1724,11 @@ async def update_trip(
             
             # Apply updates
             trip.update(updates)
+            
+            # Refresh position_quality if any coordinate field was changed.
+            coord_fields = {"start_latitude", "start_longitude", "end_latitude", "end_longitude"}
+            if coord_fields.intersection(updates.keys()):
+                trip["position_quality"] = _derive_position_quality(trip)
             
             await save_data(hass, entry, data)
             return True
