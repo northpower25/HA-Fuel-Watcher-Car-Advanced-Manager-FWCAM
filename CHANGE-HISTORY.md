@@ -6,6 +6,17 @@
 This release consolidates all pre-release improvements from v0.1.1 through v0.1.66 into a single stable release.
 
 ### Added
+- **Backup & Restore**
+  - New button: `Create Backup` – creates a versioned JSON backup of all user data
+    (refueling events, trips, odometer history, price history, ML models, geocoding cache, etc.)
+    and saves it to `<config>/www/hafwcma_backups/` for easy download.
+  - New service: `hafwcma.create_backup` – programmatic backup creation, returns file path.
+  - New service: `hafwcma.restore_backup` – restores data from a backup file with automatic
+    compatibility checking; blocks the restore if breaking changes prevent safe migration and
+    warns the user about any version differences.
+  - Backup files include `app_version`, `data_model_version`, and `created_at` metadata so
+    that compatibility can be verified at restore time even after a fresh installation.
+
 - **Automatic Trip Tracking**
   - Start/stop detection based on odometer changes, with GPS position quality (`full`/`partial`/`none`)
   - Trip recovery after HA restart via history backfill
@@ -358,3 +369,84 @@ This is an MVP (Minimum Viable Product) release. All core features are implement
 - Removed: Removed features
 - Fixed: Bug fixes
 - Security: Security fixes
+
+---
+
+## Developer Guide: Handling Breaking Changes for Backup/Restore Compatibility
+
+> **Read this before making any changes to `utils/storage.py`.**
+
+The backup/restore system tracks a `data_model_version` integer and a
+`BREAKING_CHANGES_REGISTRY` dict (both in `utils/backup_manager.py`).  
+Users may run backups from **any** past version and restore to the current
+version after a fresh installation. You must ensure they are informed
+when this is unsafe.
+
+### What counts as a breaking change?
+
+A breaking change is any modification to `utils/storage.py` where:
+
+| Situation | Breaking? |
+|---|---|
+| Stored field **renamed or removed** | ✅ Yes |
+| Field **type or format** changes incompatibly (e.g. `str` → `dict`) | ✅ Yes |
+| New **required** fields added that cannot be derived from old data | ✅ Yes |
+| **Semantics** of an existing field change incompatibly | ✅ Yes |
+| New **optional** fields added with sensible defaults | ❌ No |
+| New data structures added **alongside** existing ones | ❌ No |
+| Bug fixes that don't alter the storage format | ❌ No |
+| Derived/cached data recalculated from raw records (`trip_statistics`, `geocoding_cache`, `weekday_consumption`) | ❌ No |
+
+### Steps when introducing a breaking change
+
+1. **Increment `CURRENT_DATA_MODEL_VERSION`** in `utils/backup_manager.py`.
+
+2. **Add an entry to `BREAKING_CHANGES_REGISTRY`**:
+
+   ```python
+   BREAKING_CHANGES_REGISTRY["X.Y.Z"] = {
+       "data_model_version": <new CURRENT_DATA_MODEL_VERSION>,
+       "description": "Brief user-facing description of what changed.",
+       "migration_hint": (
+           "Concrete advice for affected users, e.g.: "
+           "'Export your trips via the export_trips service BEFORE updating, "
+           "then re-import them manually after the fresh installation.'"
+       ),
+   }
+   ```
+
+   where `"X.Y.Z"` is the **app version** (from `manifest.json`) in which the
+   breaking change is introduced.
+
+3. **Update `manifest.json`** with the new version number.
+
+4. **Document the change** in this file under the relevant version section.
+
+### How the system uses this information
+
+When a user calls `hafwcma.restore_backup` (or presses the *Create Backup* button
+and then later restores), the system:
+
+- Compares `backup.app_version` with the currently installed version.
+- Looks up every `BREAKING_CHANGES_REGISTRY` entry whose version is **strictly
+  between** the backup version and the current version.
+- If any entry's `data_model_version` exceeds the backup's `data_model_version`,
+  the restore is **blocked** with a clear error message listing the breaking
+  changes and their `migration_hint` values.
+- Soft differences (same data model version, different app version) produce a
+  **warning** but do not block the restore.
+
+### Advice for users running older versions
+
+Users who have an older version installed and want to update should be advised to:
+
+1. Press the **Create Backup** button (or call `hafwcma.create_backup`) while
+   still on the old version.
+2. Check the HA notification for the download path.
+3. Download the backup file from `/local/hafwcma_backups/<filename>`.
+4. Update haFWCMA (or reinstall from scratch).
+5. Call `hafwcma.restore_backup` with the file path.
+
+If breaking changes exist between the old and new version, the restore will
+display an error explaining what changed and what migration steps are needed.
+Users can then follow the `migration_hint` to recover their data manually.

@@ -1,250 +1,253 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "Configure Fuel Price Provider",
-        "description": "Select your fuel price data provider and enter API credentials.\n\n{api_info}",
-        "data": {
-          "provider": "Fuel Price Provider (Select from dropdown)",
-          "api_key": "API Key (Get from Tankerkönig website)",
-          "radius": "Search Radius in km (e.g., 5.0)",
-          "fuel_type": "Fuel Type (Select from dropdown)",
-          "update_interval": "Update Interval in minutes (1-60, e.g., 5)"
+    "config": {
+        "step": {
+            "user": {
+                "title": "Configure Fuel Price Provider",
+                "description": "Select your fuel price data provider and enter API credentials.\n\n{api_info}",
+                "data": {
+                    "provider": "Fuel Price Provider (Select from dropdown)",
+                    "api_key": "API Key (Get from Tankerkönig website)",
+                    "radius": "Search Radius in km (e.g., 5.0)",
+                    "fuel_type": "Fuel Type (Select from dropdown)",
+                    "update_interval": "Update Interval in minutes (1-60, e.g., 5)"
+                },
+                "data_description": {
+                    "provider": "Choose your fuel price data provider",
+                    "api_key": "Enter your Tankerkönig API key",
+                    "radius": "Maximum distance to search for gas stations",
+                    "fuel_type": "Type of fuel your vehicle uses",
+                    "update_interval": "How often to check for price updates"
+                }
+            },
+            "vehicle": {
+                "title": "Configure Vehicle",
+                "description": "Enter your vehicle information.\n\n⚠️ **Both fields below are required.** The tank capacity and average consumption are critical for accurate fuel calculations and trip import. Please enter the values known for your specific vehicle (e.g., from the manual or WLTP data sheet).",
+                "data": {
+                    "vehicle_name": "Vehicle Name (e.g., 'My Car')",
+                    "tank_capacity": "Tank Capacity in Liters (e.g., 50.0 or 50,5)",
+                    "initial_consumption": "Average Fuel Consumption (L/100km, e.g. WLTP value, comma or dot as decimal separator)"
+                },
+                "data_description": {
+                    "vehicle_name": "A friendly name for your vehicle",
+                    "tank_capacity": "Total capacity of your fuel tank",
+                    "initial_consumption": "Your vehicle's average fuel consumption in liters per 100 km (e.g. the WLTP value from the manufacturer). This value is used as a fallback for trip fuel estimates when tank level data is unavailable or unreliable."
+                }
+            },
+            "vehicle_entities": {
+                "title": "Configure Vehicle Entities (Optional)",
+                "description": "Select existing Home Assistant entities for your vehicle data. These entities will be monitored for consumption tracking and refueling detection.",
+                "data": {
+                    "odometer_entity": "Odometer Sensor (km)",
+                    "tank_level_entity": "Tank Fill Level Sensor (in %)",
+                    "range_entity": "Remaining Range Sensor (km)",
+                    "position_entity": "Vehicle Position (Device Tracker)"
+                },
+                "data_description": {
+                    "odometer_entity": "Sensor showing total kilometers driven",
+                    "tank_level_entity": "Sensor showing fuel level as percentage (0-100%)",
+                    "range_entity": "Sensor showing remaining driving range in kilometers",
+                    "position_entity": "Device tracker for vehicle location"
+                }
+            },
+            "vehicle_features": {
+                "title": "Configure Vehicle Features",
+                "description": "**The following settings are required for the respective functions:**\n\n**Fuel Station Proximity Search during Trips** (`proximity_alerts_enabled`)\nRequired for: Automatic notifications when a cheap fuel station is nearby, and the Proximity Alert switch entity.\nNote: If your vehicle does not provide accurate position data during trips, the configured Home Assistant coordinates will be used as the location.\n\n**Trip Log including Position Tracking** (`trip_tracking_initial_enabled`)\nRequired for: Automatic trip log (Fahrtenbuch), trip statistics, and per-trip consumption analysis.\nNote: Please inform all users of the vehicle that location and movement data will be recorded.",
+                "data": {
+                    "proximity_alerts_enabled": "Enable Proximity Alerts for cheap fuel stations",
+                    "trip_tracking_initial_enabled": "Enable Trip Tracking (Fahrtenbuch)"
+                },
+                "data_description": {
+                    "proximity_alerts_enabled": "Required for: automatic notifications when a cheap station is near your vehicle, and the Proximity Alert switch entity",
+                    "trip_tracking_initial_enabled": "Required for: automatic trip logging (Fahrtenbuch), trip statistics, and per-trip consumption analysis"
+                }
+            },
+            "telegram": {
+                "title": "Configure Telegram Notifications (Optional)",
+                "description": "{telegram_info}",
+                "data": {
+                    "telegram_token": "Telegram Bot Token (Optional)",
+                    "telegram_chat_id": "Telegram Chat ID (Optional)"
+                },
+                "data_description": {
+                    "telegram_token": "Token from BotFather",
+                    "telegram_chat_id": "Your Telegram chat ID for notifications"
+                }
+            },
+            "prediction": {
+                "title": "Configure Prediction Engine (Optional)",
+                "description": "**Configure the prediction engine thresholds:**\n\nSet the conditions for price drop notifications and fuel level warnings, and provide default daily driving distances for consumption prediction when no historical data is available.",
+                "data": {
+                    "price_drop_percent_threshold": "Price Drop % Threshold (0-100, e.g., 2.0)",
+                    "price_drop_absolute_threshold": "Price Drop Absolute Threshold in EUR (min 0.01, e.g., 0.05)",
+                    "low_fuel_threshold": "Low Fuel Alert Threshold in km (e.g., 150)",
+                    "critical_fuel_threshold": "Critical Fuel Alert Threshold in km (e.g., 50)",
+                    "fallback_daily_km_monday": "Fallback Daily km - Monday (0-1000, e.g., 40)",
+                    "fallback_daily_km_tuesday": "Fallback Daily km - Tuesday (0-1000, e.g., 40)",
+                    "fallback_daily_km_wednesday": "Fallback Daily km - Wednesday (0-1000, e.g., 40)",
+                    "fallback_daily_km_thursday": "Fallback Daily km - Thursday (0-1000, e.g., 40)",
+                    "fallback_daily_km_friday": "Fallback Daily km - Friday (0-1000, e.g., 40)",
+                    "fallback_daily_km_saturday": "Fallback Daily km - Saturday (0-1000, e.g., 20)",
+                    "fallback_daily_km_sunday": "Fallback Daily km - Sunday (0-1000, e.g., 20)"
+                },
+                "data_description": {
+                    "price_drop_percent_threshold": "Notify when price drops by this percentage",
+                    "price_drop_absolute_threshold": "Notify when price drops by this amount in EUR",
+                    "low_fuel_threshold": "Alert when remaining range falls below this value in km",
+                    "critical_fuel_threshold": "Critical alert when remaining range falls below this value in km",
+                    "fallback_daily_km_monday": "Estimated daily driving distance for Monday",
+                    "fallback_daily_km_tuesday": "Estimated daily driving distance for Tuesday",
+                    "fallback_daily_km_wednesday": "Estimated daily driving distance for Wednesday",
+                    "fallback_daily_km_thursday": "Estimated daily driving distance for Thursday",
+                    "fallback_daily_km_friday": "Estimated daily driving distance for Friday",
+                    "fallback_daily_km_saturday": "Estimated daily driving distance for Saturday",
+                    "fallback_daily_km_sunday": "Estimated daily driving distance for Sunday"
+                }
+            },
+            "validate_api": {
+                "title": "API Connection Test",
+                "description": "Testing API connection with your credentials...\n\n{stations}\n\n{error_details}",
+                "data": {},
+                "data_description": {}
+            },
+            "validate_telegram": {
+                "title": "Telegram Connection Test",
+                "description": "Testing Telegram connection...\n\n{message}\n\n{error_details}",
+                "data": {},
+                "data_description": {}
+            },
+            "historical_import": {
+                "title": "Import Historical Vehicle Data",
+                "description": "**The following setting is required for immediate statistics:**\n\n**Import Historical Vehicle Data** (`import_historical_data`)\nImports up to 90 days of historical data from Home Assistant's recorder (odometer, tank level, refueling events, and trips).\n\n**What happens next?**\n- The import will start automatically in the background – either **5 minutes after this setup completes** (if Home Assistant is already running) or on the **next Home Assistant start**.\n- You will be notified via the Home Assistant message center (and optionally via Telegram) once the import is complete and what data was imported.\n- This process runs only **once** for this vehicle.\n- You can check the current status at any time in `sensor.[vehicle_name]_car_data_debug`.",
+                "data": {
+                    "import_historical_data": "Import historical vehicle data"
+                },
+                "data_description": {
+                    "import_historical_data": "Import up to 90 days of historical data from Home Assistant's recorder. Required for immediate consumption statistics, refueling detection and predictions."
+                }
+            }
         },
-        "data_description": {
-          "provider": "Choose your fuel price data provider",
-          "api_key": "Enter your Tankerkönig API key",
-          "radius": "Maximum distance to search for gas stations",
-          "fuel_type": "Type of fuel your vehicle uses",
-          "update_interval": "How often to check for price updates"
-        }
-      },
-      "vehicle": {
-        "title": "Configure Vehicle",
-        "description": "Enter your vehicle information.\n\n⚠️ **Both fields below are required.** The tank capacity and average consumption are critical for accurate fuel calculations and trip import. Please enter the values known for your specific vehicle (e.g., from the manual or WLTP data sheet).",
-        "data": {
-          "vehicle_name": "Vehicle Name (e.g., 'My Car')",
-          "tank_capacity": "Tank Capacity in Liters (e.g., 50.0 or 50,5)",
-          "initial_consumption": "Average Fuel Consumption (L/100km, e.g. WLTP value, comma or dot as decimal separator)"
+        "error": {
+            "invalid_api_key": "Invalid API key. Please check your Tankerkönig API key.",
+            "cannot_connect": "Failed to connect to Tankerkönig API",
+            "invalid_entity": "Entity does not exist in Home Assistant",
+            "not_device_tracker": "Position entity must be a device_tracker",
+            "entity_validation_failed": "Failed to validate entities. Please check your Home Assistant configuration.",
+            "api_test_failed": "API connection test failed. Please check your API key and try again. Note: You can modify API settings later in the integration options and test the connection using the 'Test API Connection' button entity.",
+            "telegram_test_failed": "Telegram connection test failed. Please check your bot token and chat ID. Note: You can modify Telegram settings later in the integration options.",
+            "unknown": "Unexpected error occurred",
+            "value_out_of_range": "Please enter a valid positive value"
         },
-        "data_description": {
-          "vehicle_name": "A friendly name for your vehicle",
-          "tank_capacity": "Total capacity of your fuel tank",
-          "initial_consumption": "Your vehicle's average fuel consumption in liters per 100 km (e.g. the WLTP value from the manufacturer). This value is used as a fallback for trip fuel estimates when tank level data is unavailable or unreliable."
+        "abort": {
+            "already_configured": "This integration is already configured"
         }
-      },
-      "vehicle_entities": {
-        "title": "Configure Vehicle Entities (Optional)",
-        "description": "Select existing Home Assistant entities for your vehicle data. These entities will be monitored for consumption tracking and refueling detection.",
-        "data": {
-          "odometer_entity": "Odometer Sensor (km)",
-          "tank_level_entity": "Tank Fill Level Sensor (in %)",
-          "range_entity": "Remaining Range Sensor (km)",
-          "position_entity": "Vehicle Position (Device Tracker)"
-        },
-        "data_description": {
-          "odometer_entity": "Sensor showing total kilometers driven",
-          "tank_level_entity": "Sensor showing fuel level as percentage (0-100%)",
-          "range_entity": "Sensor showing remaining driving range in kilometers",
-          "position_entity": "Device tracker for vehicle location"
-        }
-      },
-      "vehicle_features": {
-        "title": "Configure Vehicle Features",
-        "description": "**The following settings are required for the respective functions:**\n\n**Fuel Station Proximity Search during Trips** (`proximity_alerts_enabled`)\nRequired for: Automatic notifications when a cheap fuel station is nearby, and the Proximity Alert switch entity.\nNote: If your vehicle does not provide accurate position data during trips, the configured Home Assistant coordinates will be used as the location.\n\n**Trip Log including Position Tracking** (`trip_tracking_initial_enabled`)\nRequired for: Automatic trip log (Fahrtenbuch), trip statistics, and per-trip consumption analysis.\nNote: Please inform all users of the vehicle that location and movement data will be recorded.",
-        "data": {
-          "proximity_alerts_enabled": "Enable Proximity Alerts for cheap fuel stations",
-          "trip_tracking_initial_enabled": "Enable Trip Tracking (Fahrtenbuch)"
-        },
-        "data_description": {
-          "proximity_alerts_enabled": "Required for: automatic notifications when a cheap station is near your vehicle, and the Proximity Alert switch entity",
-          "trip_tracking_initial_enabled": "Required for: automatic trip logging (Fahrtenbuch), trip statistics, and per-trip consumption analysis"
-        }
-      },
-      "telegram": {
-        "title": "Configure Telegram Notifications (Optional)",
-        "description": "{telegram_info}",
-        "data": {
-          "telegram_token": "Telegram Bot Token (Optional)",
-          "telegram_chat_id": "Telegram Chat ID (Optional)"
-        },
-        "data_description": {
-          "telegram_token": "Token from BotFather",
-          "telegram_chat_id": "Your Telegram chat ID for notifications"
-        }
-      },
-      "prediction": {
-        "title": "Configure Prediction Engine (Optional)",
-        "description": "**Configure the prediction engine thresholds:**\n\nSet the conditions for price drop notifications and fuel level warnings, and provide default daily driving distances for consumption prediction when no historical data is available.",
-        "data": {
-          "price_drop_percent_threshold": "Price Drop % Threshold (0-100, e.g., 2.0)",
-          "price_drop_absolute_threshold": "Price Drop Absolute Threshold in EUR (min 0.01, e.g., 0.05)",
-          "low_fuel_threshold": "Low Fuel Alert Threshold in km (e.g., 150)",
-          "critical_fuel_threshold": "Critical Fuel Alert Threshold in km (e.g., 50)",
-          "fallback_daily_km_monday": "Fallback Daily km - Monday (0-1000, e.g., 40)",
-          "fallback_daily_km_tuesday": "Fallback Daily km - Tuesday (0-1000, e.g., 40)",
-          "fallback_daily_km_wednesday": "Fallback Daily km - Wednesday (0-1000, e.g., 40)",
-          "fallback_daily_km_thursday": "Fallback Daily km - Thursday (0-1000, e.g., 40)",
-          "fallback_daily_km_friday": "Fallback Daily km - Friday (0-1000, e.g., 40)",
-          "fallback_daily_km_saturday": "Fallback Daily km - Saturday (0-1000, e.g., 20)",
-          "fallback_daily_km_sunday": "Fallback Daily km - Sunday (0-1000, e.g., 20)"
-        },
-        "data_description": {
-          "price_drop_percent_threshold": "Notify when price drops by this percentage",
-          "price_drop_absolute_threshold": "Notify when price drops by this amount in EUR",
-          "low_fuel_threshold": "Alert when remaining range falls below this value in km",
-          "critical_fuel_threshold": "Critical alert when remaining range falls below this value in km",
-          "fallback_daily_km_monday": "Estimated daily driving distance for Monday",
-          "fallback_daily_km_tuesday": "Estimated daily driving distance for Tuesday",
-          "fallback_daily_km_wednesday": "Estimated daily driving distance for Wednesday",
-          "fallback_daily_km_thursday": "Estimated daily driving distance for Thursday",
-          "fallback_daily_km_friday": "Estimated daily driving distance for Friday",
-          "fallback_daily_km_saturday": "Estimated daily driving distance for Saturday",
-          "fallback_daily_km_sunday": "Estimated daily driving distance for Sunday"
-        }
-      },
-      "validate_api": {
-        "title": "API Connection Test",
-        "description": "Testing API connection with your credentials...\n\n{stations}\n\n{error_details}",
-        "data": {},
-        "data_description": {}
-      },
-      "validate_telegram": {
-        "title": "Telegram Connection Test",
-        "description": "Testing Telegram connection...\n\n{message}\n\n{error_details}",
-        "data": {},
-        "data_description": {}
-      },
-      "historical_import": {
-        "title": "Import Historical Vehicle Data",
-        "description": "**The following setting is required for immediate statistics:**\n\n**Import Historical Vehicle Data** (`import_historical_data`)\nImports up to 90 days of historical data from Home Assistant's recorder (odometer, tank level, refueling events, and trips).\n\n**What happens next?**\n- The import will start automatically in the background – either **5 minutes after this setup completes** (if Home Assistant is already running) or on the **next Home Assistant start**.\n- You will be notified via the Home Assistant message center (and optionally via Telegram) once the import is complete and what data was imported.\n- This process runs only **once** for this vehicle.\n- You can check the current status at any time in `sensor.[vehicle_name]_car_data_debug`.",
-        "data": {
-          "import_historical_data": "Import historical vehicle data"
-        },
-        "data_description": {
-          "import_historical_data": "Import up to 90 days of historical data from Home Assistant's recorder. Required for immediate consumption statistics, refueling detection and predictions."
-        }
-      }
     },
-    "error": {
-      "invalid_api_key": "Invalid API key. Please check your Tankerkönig API key.",
-      "cannot_connect": "Failed to connect to Tankerkönig API",
-      "invalid_entity": "Entity does not exist in Home Assistant",
-      "not_device_tracker": "Position entity must be a device_tracker",
-      "entity_validation_failed": "Failed to validate entities. Please check your Home Assistant configuration.",
-      "api_test_failed": "API connection test failed. Please check your API key and try again. Note: You can modify API settings later in the integration options and test the connection using the 'Test API Connection' button entity.",
-      "telegram_test_failed": "Telegram connection test failed. Please check your bot token and chat ID. Note: You can modify Telegram settings later in the integration options.",
-      "unknown": "Unexpected error occurred",
-      "value_out_of_range": "Please enter a valid positive value"
+    "options": {
+        "step": {
+            "init": {
+                "title": "haFWCMA Options",
+                "description": "Configure haFWCMA integration options",
+                "data": {
+                    "provider": "Fuel Price Provider (Select from dropdown)",
+                    "api_key": "API Key (Get from Tankerkönig website)",
+                    "update_interval": "Update Interval in minutes (1-60, e.g., 5)",
+                    "radius": "Search Radius in km (e.g., 5.0)",
+                    "fuel_type": "Fuel Type (Select from dropdown)",
+                    "tank_capacity": "Tank Capacity in Liters (e.g., 50.0 or 50,5)",
+                    "telegram_token": "Telegram Bot Token (Optional)",
+                    "telegram_chat_id": "Telegram Chat ID (Optional)",
+                    "odometer_entity": "Odometer Sensor (km)",
+                    "tank_level_entity": "Tank Fill Level Sensor (in %)",
+                    "range_entity": "Remaining Range Sensor (km)",
+                    "position_entity": "Vehicle Position (Device Tracker)",
+                    "price_drop_percent_threshold": "Price Drop % Threshold (0-100, e.g., 2.0)",
+                    "price_drop_absolute_threshold": "Price Drop Absolute Threshold in EUR (min 0.01, e.g., 0.05)",
+                    "low_fuel_threshold": "Low Fuel Alert Threshold in km (e.g., 150)",
+                    "critical_fuel_threshold": "Critical Fuel Alert Threshold in km (e.g., 50)",
+                    "fallback_daily_km_monday": "Fallback Daily km - Monday (0-1000, e.g., 40)",
+                    "fallback_daily_km_tuesday": "Fallback Daily km - Tuesday (0-1000, e.g., 40)",
+                    "fallback_daily_km_wednesday": "Fallback Daily km - Wednesday (0-1000, e.g., 40)",
+                    "fallback_daily_km_thursday": "Fallback Daily km - Thursday (0-1000, e.g., 40)",
+                    "fallback_daily_km_friday": "Fallback Daily km - Friday (0-1000, e.g., 40)",
+                    "fallback_daily_km_saturday": "Fallback Daily km - Saturday (0-1000, e.g., 20)",
+                    "fallback_daily_km_sunday": "Fallback Daily km - Sunday (0-1000, e.g., 20)",
+                    "initial_consumption": "Average Fuel Consumption (L/100km, comma or dot as decimal separator)"
+                },
+                "data_description": {
+                    "provider": "Choose your fuel price data provider",
+                    "api_key": "Enter your Tankerkönig API key",
+                    "update_interval": "How often to check for price updates",
+                    "radius": "Maximum distance to search for gas stations",
+                    "fuel_type": "Type of fuel your vehicle uses",
+                    "tank_capacity": "Total capacity of your fuel tank",
+                    "telegram_token": "Token from BotFather (@BotFather on Telegram)",
+                    "telegram_chat_id": "Your Telegram chat ID (get from @userinfobot)",
+                    "odometer_entity": "Sensor showing total kilometers driven",
+                    "tank_level_entity": "Sensor showing fuel level as percentage (0-100%)",
+                    "range_entity": "Sensor showing remaining driving range in kilometers",
+                    "position_entity": "Device tracker for vehicle location",
+                    "price_drop_percent_threshold": "Notify when price drops by this percentage",
+                    "price_drop_absolute_threshold": "Notify when price drops by this amount in EUR",
+                    "low_fuel_threshold": "Alert when remaining range falls below this value in km",
+                    "critical_fuel_threshold": "Critical alert when remaining range falls below this value in km",
+                    "fallback_daily_km_monday": "Estimated daily driving distance for Monday",
+                    "fallback_daily_km_tuesday": "Estimated daily driving distance for Tuesday",
+                    "fallback_daily_km_wednesday": "Estimated daily driving distance for Wednesday",
+                    "fallback_daily_km_thursday": "Estimated daily driving distance for Thursday",
+                    "fallback_daily_km_friday": "Estimated daily driving distance for Friday",
+                    "fallback_daily_km_saturday": "Estimated daily driving distance for Saturday",
+                    "fallback_daily_km_sunday": "Estimated daily driving distance for Sunday",
+                    "initial_consumption": "Your vehicle's average fuel consumption in liters per 100 km (e.g. the WLTP value). Used as a fallback for trip fuel estimates when tank level data is unavailable."
+                }
+            }
+        }
     },
-    "abort": {
-      "already_configured": "This integration is already configured"
+    "entity": {
+        "sensor": {
+            "fuel_price": {
+                "name": "Fuel Price"
+            },
+            "tank_level": {
+                "name": "Tank Level"
+            },
+            "range": {
+                "name": "Range"
+            },
+            "nearest_station": {
+                "name": "Nearest Station"
+            }
+        },
+        "button": {
+            "test_connection": {
+                "name": "Test API Connection"
+            },
+            "create_backup": {
+                "name": "Create Backup"
+            }
+        },
+        "switch": {
+            "fuel_price_refresh": {
+                "name": "Fuel Price Refresh"
+            },
+            "consumption_prediction": {
+                "name": "Consumption Prediction"
+            },
+            "proximity_alerts": {
+                "name": "Proximity Alerts"
+            },
+            "telegram_test": {
+                "name": "Telegram API Test"
+            }
+        },
+        "number": {
+            "api_update_interval": {
+                "name": "API Update Interval"
+            },
+            "consumption_min_data_points": {
+                "name": "Consumption Min Data Points"
+            },
+            "consumption_prediction_interval": {
+                "name": "Consumption Prediction Interval"
+            }
+        }
     }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "haFWCMA Options",
-        "description": "Configure haFWCMA integration options",
-        "data": {
-          "provider": "Fuel Price Provider (Select from dropdown)",
-          "api_key": "API Key (Get from Tankerkönig website)",
-          "update_interval": "Update Interval in minutes (1-60, e.g., 5)",
-          "radius": "Search Radius in km (e.g., 5.0)",
-          "fuel_type": "Fuel Type (Select from dropdown)",
-          "tank_capacity": "Tank Capacity in Liters (e.g., 50.0 or 50,5)",
-          "telegram_token": "Telegram Bot Token (Optional)",
-          "telegram_chat_id": "Telegram Chat ID (Optional)",
-          "odometer_entity": "Odometer Sensor (km)",
-          "tank_level_entity": "Tank Fill Level Sensor (in %)",
-          "range_entity": "Remaining Range Sensor (km)",
-          "position_entity": "Vehicle Position (Device Tracker)",
-          "price_drop_percent_threshold": "Price Drop % Threshold (0-100, e.g., 2.0)",
-          "price_drop_absolute_threshold": "Price Drop Absolute Threshold in EUR (min 0.01, e.g., 0.05)",
-          "low_fuel_threshold": "Low Fuel Alert Threshold in km (e.g., 150)",
-          "critical_fuel_threshold": "Critical Fuel Alert Threshold in km (e.g., 50)",
-          "fallback_daily_km_monday": "Fallback Daily km - Monday (0-1000, e.g., 40)",
-          "fallback_daily_km_tuesday": "Fallback Daily km - Tuesday (0-1000, e.g., 40)",
-          "fallback_daily_km_wednesday": "Fallback Daily km - Wednesday (0-1000, e.g., 40)",
-          "fallback_daily_km_thursday": "Fallback Daily km - Thursday (0-1000, e.g., 40)",
-          "fallback_daily_km_friday": "Fallback Daily km - Friday (0-1000, e.g., 40)",
-          "fallback_daily_km_saturday": "Fallback Daily km - Saturday (0-1000, e.g., 20)",
-          "fallback_daily_km_sunday": "Fallback Daily km - Sunday (0-1000, e.g., 20)",
-          "initial_consumption": "Average Fuel Consumption (L/100km, comma or dot as decimal separator)"
-        },
-        "data_description": {
-          "provider": "Choose your fuel price data provider",
-          "api_key": "Enter your Tankerkönig API key",
-          "update_interval": "How often to check for price updates",
-          "radius": "Maximum distance to search for gas stations",
-          "fuel_type": "Type of fuel your vehicle uses",
-          "tank_capacity": "Total capacity of your fuel tank",
-          "telegram_token": "Token from BotFather (@BotFather on Telegram)",
-          "telegram_chat_id": "Your Telegram chat ID (get from @userinfobot)",
-          "odometer_entity": "Sensor showing total kilometers driven",
-          "tank_level_entity": "Sensor showing fuel level as percentage (0-100%)",
-          "range_entity": "Sensor showing remaining driving range in kilometers",
-          "position_entity": "Device tracker for vehicle location",
-          "price_drop_percent_threshold": "Notify when price drops by this percentage",
-          "price_drop_absolute_threshold": "Notify when price drops by this amount in EUR",
-          "low_fuel_threshold": "Alert when remaining range falls below this value in km",
-          "critical_fuel_threshold": "Critical alert when remaining range falls below this value in km",
-          "fallback_daily_km_monday": "Estimated daily driving distance for Monday",
-          "fallback_daily_km_tuesday": "Estimated daily driving distance for Tuesday",
-          "fallback_daily_km_wednesday": "Estimated daily driving distance for Wednesday",
-          "fallback_daily_km_thursday": "Estimated daily driving distance for Thursday",
-          "fallback_daily_km_friday": "Estimated daily driving distance for Friday",
-          "fallback_daily_km_saturday": "Estimated daily driving distance for Saturday",
-          "fallback_daily_km_sunday": "Estimated daily driving distance for Sunday",
-          "initial_consumption": "Your vehicle's average fuel consumption in liters per 100 km (e.g. the WLTP value). Used as a fallback for trip fuel estimates when tank level data is unavailable."
-        }
-      }
-    }
-  },
-  "entity": {
-    "sensor": {
-      "fuel_price": {
-        "name": "Fuel Price"
-      },
-      "tank_level": {
-        "name": "Tank Level"
-      },
-      "range": {
-        "name": "Range"
-      },
-      "nearest_station": {
-        "name": "Nearest Station"
-      }
-    },
-    "button": {
-      "test_connection": {
-        "name": "Test API Connection"
-      }
-    },
-    "switch": {
-      "fuel_price_refresh": {
-        "name": "Fuel Price Refresh"
-      },
-      "consumption_prediction": {
-        "name": "Consumption Prediction"
-      },
-      "proximity_alerts": {
-        "name": "Proximity Alerts"
-      },
-      "telegram_test": {
-        "name": "Telegram API Test"
-      }
-    },
-    "number": {
-      "api_update_interval": {
-        "name": "API Update Interval"
-      },
-      "consumption_min_data_points": {
-        "name": "Consumption Min Data Points"
-      },
-      "consumption_prediction_interval": {
-        "name": "Consumption Prediction Interval"
-      }
-    }
-  }
 }

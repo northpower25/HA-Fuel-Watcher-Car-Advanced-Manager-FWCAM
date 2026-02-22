@@ -67,6 +67,7 @@ async def async_setup_entry(
         FuelPriceRefreshButton(coordinator, config_entry, vehicle_name),
         ConsumptionPredictionButton(coordinator, config_entry, vehicle_name),
         ExportVehicleDataButton(coordinator, config_entry, vehicle_name, hass),
+        CreateBackupButton(coordinator, config_entry, vehicle_name, hass),
     ]
     
     # Add TelegramTestButton if telegram is configured
@@ -1667,3 +1668,81 @@ class ExportVehicleDataButton(ButtonEntity):
             attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
         return attributes
+
+
+class CreateBackupButton(ButtonEntity):
+    """Button to create a data backup for this vehicle entry."""
+
+    _attr_icon = "mdi:database-export"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+        hass: HomeAssistant,
+    ) -> None:
+        """Initialize the button.
+
+        Args:
+            coordinator: Data update coordinator
+            config_entry: Config entry
+            vehicle_name: Name of the vehicle
+            hass: Home Assistant instance
+        """
+        self._coordinator = coordinator
+        self._config_entry = config_entry
+        self._hass = hass
+        self._attr_name = "Create Backup"
+        self._attr_unique_id = f"{config_entry.entry_id}_create_backup"
+        self._last_result: dict[str, Any] = {}
+
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    async def async_press(self) -> None:
+        """Handle button press – create a backup and notify the user."""
+        _LOGGER.info("Manual backup triggered for entry %s", self._config_entry.entry_id)
+
+        from .utils.backup_manager import create_backup
+        from homeassistant.components import persistent_notification
+
+        result = await create_backup(self._hass, self._config_entry)
+        self._last_result = {
+            "success": result["success"],
+            "file_path": result.get("file_path", ""),
+            "error": result.get("error", ""),
+            "timestamp": dt_util.now().isoformat(),
+        }
+
+        vehicle_name = self._config_entry.data.get("vehicle_name", self._config_entry.entry_id)
+
+        if result["success"]:
+            filename = result["file_path"].split("/")[-1]
+            await persistent_notification.async_create(
+                self._hass,
+                f"✅ Backup created for **{vehicle_name}**.\n\n"
+                f"File: `{result['file_path']}`\n\n"
+                f"Download: `/local/hafwcma_backups/{filename}`",
+                title="haFWCMA Backup Created",
+                notification_id=f"hafwcma_backup_{self._config_entry.entry_id}",
+            )
+            _LOGGER.info("Backup created: %s", result["file_path"])
+        else:
+            await persistent_notification.async_create(
+                self._hass,
+                f"❌ Backup failed for **{vehicle_name}**.\n\nError: {result.get('error', 'unknown')}",
+                title="haFWCMA Backup Failed",
+                notification_id=f"hafwcma_backup_error_{self._config_entry.entry_id}",
+            )
+            _LOGGER.error("Backup failed: %s", result.get("error"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with last backup result."""
+        return self._last_result.copy() if isinstance(self._last_result, dict) else {}
