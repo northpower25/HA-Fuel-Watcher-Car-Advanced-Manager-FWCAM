@@ -1,0 +1,175 @@
+name: "🐛 Bug Report"
+description: Report a bug or unexpected behavior in haFWCMA
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Thank you for taking the time to report a bug!
+
+        Please fill in as much detail as possible to help us reproduce and fix the issue efficiently.
+        If the issue is with a specific vehicle or sensor, attach an **anonymized debug export** (see below).
+
+        > ⚠️ **Privacy notice for debug data uploads:**
+        > The `export_debug_data` service creates an anonymized file where GPS coordinates
+        > are shifted by a random offset and names/addresses are replaced with pseudonyms.
+        > However, this is a **best-effort measure only** — it does **not** guarantee 100%
+        > anonymization or pseudonymization. **You are solely responsible for reviewing the
+        > exported file before uploading it to GitHub.**
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Bug Description"
+      description: "A clear and concise description of what the bug is."
+      placeholder: "When I do X, Y happens instead of Z."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps_to_reproduce
+    attributes:
+      label: "Steps to Reproduce"
+      description: "Step-by-step instructions to reproduce the bug."
+      placeholder: |
+        1. Go to '...'
+        2. Configure '...'
+        3. Observe '...'
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: "Expected Behavior"
+      description: "What did you expect to happen?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: "Actual Behavior"
+      description: "What actually happened?"
+    validations:
+      required: true
+
+  - type: input
+    id: hafwcma_version
+    attributes:
+      label: "haFWCMA Version"
+      description: "Version of haFWCMA (found in Settings → Integrations → haFWCMA or in manifest.json)"
+      placeholder: "e.g. 0.1.66"
+    validations:
+      required: true
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: "Home Assistant Version"
+      description: "Your Home Assistant version (Settings → About)"
+      placeholder: "e.g. 2025.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ha_installation_type
+    attributes:
+      label: "Home Assistant Installation Type"
+      options:
+        - "Home Assistant OS (HAOS)"
+        - "Home Assistant Container (Docker)"
+        - "Home Assistant Supervised"
+        - "Home Assistant Core"
+        - "Other"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: fuel_provider
+    attributes:
+      label: "Fuel Price Provider"
+      description: "Which fuel price provider are you using?"
+      options:
+        - "Tankerkönig (Germany)"
+        - "Other / Not applicable"
+        - "None configured"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: affected_features
+    attributes:
+      label: "Affected Feature(s)"
+      description: "Which feature(s) are affected by this bug? (Select all that apply)"
+      options:
+        - label: "Fuel price monitoring / Tankerkönig"
+        - label: "Vehicle tank level tracking"
+        - label: "Trip tracking / logbook"
+        - label: "Refueling event logging"
+        - label: "Telegram notifications"
+        - label: "Dashboard / frontend card"
+        - label: "Backup / restore"
+        - label: "Debug data export"
+        - label: "Sensors / binary sensors"
+        - label: "Services (HA service calls)"
+        - label: "Configuration / setup"
+        - label: "Other"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Relevant Log Output"
+      description: |
+        Paste relevant log entries here. Enable debug logging for haFWCMA in your `configuration.yaml`:
+        ```yaml
+        logger:
+          logs:
+            custom_components.hafwcma: debug
+        ```
+        Then reproduce the issue and copy the relevant lines from Settings → System → Logs.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: debug_export
+    attributes:
+      label: "Anonymized Debug Export"
+      description: |
+        If the bug involves vehicle data, trips, or sensor values, please attach an anonymized debug export.
+
+        **How to create one:**
+        1. Go to **Developer Tools → Services** in Home Assistant
+        2. Call service: `hafwcma.export_debug_data` with your `config_entry_id`
+        3. Download the generated file from the URL shown in the HA notification
+           (e.g. `http://homeassistant.local:8123/local/hafwcma_debug/hafwcma_debug_Vehicle_0001_....json`)
+        4. **Review the file** before uploading — the anonymization is best-effort only
+
+        You can paste the file content here or attach it as a file upload.
+
+        > ⚠️ You are responsible for verifying no personal data remains before sharing.
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: "Additional Context"
+      description: "Any other context, screenshots, or information that might be helpful."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Checklist"
+      options:
+        - label: "I have searched for existing issues and this is not a duplicate"
+          required: true
+        - label: "I have provided the haFWCMA and Home Assistant versions"
+          required: true
+        - label: "I understand that any uploaded data is my responsibility to review for personal information"
+          required: true

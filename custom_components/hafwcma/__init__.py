@@ -61,6 +61,7 @@ SERVICE_GET_GEOCODING_CACHE_STATS = "get_geocoding_cache_stats"
 SERVICE_SIMULATE_REFUELING_EVENT = "simulate_refueling_event"
 SERVICE_CREATE_BACKUP = "create_backup"
 SERVICE_RESTORE_BACKUP = "restore_backup"
+SERVICE_EXPORT_DEBUG_DATA = "export_debug_data"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -194,6 +195,10 @@ SCHEMA_RESTORE_BACKUP = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
     vol.Required("backup_file_path"): cv.string,
     vol.Optional("force", default=False): cv.boolean,
+})
+
+SCHEMA_EXPORT_DEBUG_DATA = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
 })
 
 
@@ -981,6 +986,54 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "restored_keys": result.get("restored_keys", []),
         }
 
+    async def handle_export_debug_data(call: ServiceCall) -> ServiceResponse:
+        """Handle the export_debug_data service call.
+
+        Creates an anonymized debug export of all integration data so that it
+        can be shared safely for bug reports.  The file is written to
+        <config>/www/hafwcma_debug/ and can be downloaded via the HA web server
+        at /local/hafwcma_debug/<filename>.
+        """
+        from .utils.debug_export import create_debug_export
+
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return {"success": False, "error": "Config entry not found"}
+
+        result = await create_debug_export(hass, entry)
+
+        if result["success"]:
+            from homeassistant.components import persistent_notification
+            vehicle_name = entry.data.get("vehicle_name", entry_id)
+            stats = result.get("stats", {})
+            stats_text = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in stats.items())
+            download_url = result.get("download_url", "")
+            await persistent_notification.async_create(
+                hass,
+                f"✅ Anonymized debug export created for **{vehicle_name}**.\n\n"
+                f"📊 Exported: {stats_text}\n\n"
+                f"📥 **Download URL:** `{download_url}`\n\n"
+                f"*(Open your Home Assistant URL + the path above in a browser to download)*\n\n"
+                f"⚠️ **Privacy notice:** GPS coordinates have been shifted by a "
+                f"consistent random offset and names/addresses replaced with "
+                f"pseudonyms. However, this anonymization is a best-effort measure "
+                f"and **does not guarantee 100% anonymization**. "
+                f"Please review the file before sharing it in a bug report.",
+                title="haFWCMA Debug Export Created",
+                notification_id=f"hafwcma_debug_export_{entry_id}",
+            )
+
+        return {
+            "success": result["success"],
+            "file_path": result.get("file_path", ""),
+            "download_url": result.get("download_url", ""),
+            "stats": result.get("stats", {}),
+            "error": result.get("error", ""),
+        }
+
     
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_REFUEL_EVENT, handle_add_refuel_event, schema=SCHEMA_ADD_REFUEL_EVENT
@@ -1026,6 +1079,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_RESTORE_BACKUP, handle_restore_backup, schema=SCHEMA_RESTORE_BACKUP, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_EXPORT_DEBUG_DATA, handle_export_debug_data, schema=SCHEMA_EXPORT_DEBUG_DATA, supports_response=True
     )
     
     return True

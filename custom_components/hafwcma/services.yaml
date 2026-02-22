@@ -842,3 +842,26 @@ restore_backup:
       example: false
       selector:
         boolean:
+
+export_debug_data:
+  name: Export Anonymized Debug Data
+  description: >
+    Create an anonymized debug export of all integration data for this vehicle
+    entry. GPS coordinates are shifted by a consistent random offset so that
+    relative distances are preserved but absolute positions cannot be determined.
+    Names, addresses and station information are replaced with stable pseudonyms.
+    API keys and credentials are fully redacted. The file is saved to
+    <config>/www/hafwcma_debug/ and can be downloaded via the Home Assistant web
+    server at /local/hafwcma_debug/<filename>.
+
+    ⚠️ Privacy disclaimer: This anonymization is a best-effort measure and does
+    NOT guarantee complete anonymization or pseudonymization. You are responsible
+    for reviewing the exported file before sharing it (e.g. in a bug report).
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:

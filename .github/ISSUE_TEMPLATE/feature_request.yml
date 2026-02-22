@@ -1,0 +1,145 @@
+name: "✨ Feature Request"
+description: Suggest a new feature or enhancement for haFWCMA
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Thank you for suggesting a new feature!
+
+        Please fill in as much detail as possible so we can understand your use case
+        and evaluate the request effectively. The more context you provide, the easier
+        it is to prioritize and implement the feature correctly.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: "Feature Summary"
+      description: "A clear and concise description of the feature you'd like to see."
+      placeholder: "I'd like haFWCMA to support..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem / Use Case"
+      description: |
+        What problem does this feature solve? Describe the use case or the pain point.
+        Is there something you currently cannot do, or something that is unnecessarily complicated?
+      placeholder: "Currently I have to... / I often find myself needing to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: "Proposed Solution"
+      description: |
+        How do you envision this feature working? Describe your ideal solution.
+        Feel free to include mockups, example configurations, or expected sensor/service behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives Considered"
+      description: "Have you considered any workarounds or alternative approaches? Why do they fall short?"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: affected_area
+    attributes:
+      label: "Feature Area"
+      description: "Which area(s) of haFWCMA does this feature relate to? (Select all that apply)"
+      options:
+        - label: "Fuel price monitoring / Tankerkönig integration"
+        - label: "Vehicle tank level tracking & forecasting"
+        - label: "Trip tracking / logbook"
+        - label: "Refueling event logging"
+        - label: "Telegram notifications"
+        - label: "Dashboard / frontend card"
+        - label: "Backup / restore"
+        - label: "Debug / diagnostics tooling"
+        - label: "Sensors / binary sensors / entities"
+        - label: "HA Services"
+        - label: "Configuration / setup flow"
+        - label: "New fuel price provider / data source"
+        - label: "Privacy / anonymization"
+        - label: "Reporting / statistics"
+        - label: "Other"
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: "Priority / Impact"
+      description: "How important is this feature for your daily use?"
+      options:
+        - "Nice to have — minor convenience improvement"
+        - "Useful — would noticeably improve my workflow"
+        - "Important — I need this to use the integration effectively"
+        - "Critical — the integration is not useful to me without this"
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: "Dependencies & Prerequisites"
+      description: |
+        Does this feature depend on anything external? Please list all dependencies:
+        - External APIs or services (e.g. a new fuel price provider, a mapping service)
+        - Home Assistant integrations that must be set up (e.g. `device_tracker`, `telegram_bot`)
+        - Hardware requirements (e.g. OBD adapter, GPS tracker)
+        - Specific vehicle data (e.g. OEM app / API, specific sensor entity)
+        - Minimum Home Assistant version
+        - Any other prerequisite configuration
+      placeholder: |
+        - Requires: XYZ API key (free/paid)
+        - Requires: Home Assistant >= 2025.x
+        - Requires: 'device_tracker' integration configured
+    validations:
+      required: false
+
+  - type: textarea
+    id: example_config
+    attributes:
+      label: "Example Configuration / Entity Output"
+      description: |
+        If applicable, show what the configuration YAML, service call, or sensor output
+        would look like for your proposed feature.
+      render: yaml
+    validations:
+      required: false
+
+  - type: input
+    id: hafwcma_version
+    attributes:
+      label: "haFWCMA Version (Current)"
+      description: "Version of haFWCMA you are currently running"
+      placeholder: "e.g. 0.1.66"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: "Additional Context"
+      description: "Any other context, links, or references that might help understand the request."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Checklist"
+      options:
+        - label: "I have searched for existing feature requests and this is not a duplicate"
+          required: true
+        - label: "I have described the use case / problem, not just the solution"
+          required: true
+        - label: "I have listed any external dependencies this feature requires"
+          required: true

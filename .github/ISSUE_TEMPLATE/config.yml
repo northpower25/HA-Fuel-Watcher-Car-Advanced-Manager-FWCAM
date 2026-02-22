@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/blob/main/README.md
+    about: Please read the documentation before opening an issue.
+  - name: 💬 Discussions
+    url: https://github.com/northpower25/HA-Fuel-Watcher-Car-Advanced-Manager-FWCAM/discussions
+    about: For questions and general discussion, please use GitHub Discussions.
