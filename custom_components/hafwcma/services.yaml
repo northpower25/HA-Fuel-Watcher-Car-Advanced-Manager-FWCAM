@@ -804,6 +804,14 @@ create_backup:
       selector:
         text:
 
+list_backups:
+  name: List Backups
+  description: >
+    List all haFWCMA backup files currently stored in the backup directory
+    (<config>/www/hafwcma_backups/). Returns metadata for each file so the
+    dashboard card can show available backups and offer one-click restore.
+
+
 restore_backup:
   name: Restore Backup
   description: >

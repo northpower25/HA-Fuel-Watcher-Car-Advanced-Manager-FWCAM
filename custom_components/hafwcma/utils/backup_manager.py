@@ -497,3 +497,79 @@ def _read_backup_file(file_path: str) -> dict[str, Any]:
     """Read and parse a backup JSON file (executor-safe)."""
     with open(file_path, encoding="utf-8") as fh:
         return json.load(fh)
+
+
+async def list_backups(
+    hass: HomeAssistant,
+    backup_dir: str | None = None,
+) -> list[dict[str, Any]]:
+    """List all available backup files in the backup directory.
+
+    Args:
+        hass:       Home Assistant instance.
+        backup_dir: Directory to scan.  Defaults to the standard backup dir.
+
+    Returns:
+        List of dicts with keys:
+        - ``filename``       (str)
+        - ``file_path``      (str) – absolute path on the server
+        - ``download_url``   (str) – relative URL for HA web server
+        - ``size_bytes``     (int)
+        - ``created_at``     (str) – ISO timestamp from backup metadata
+        - ``vehicle_name``   (str)
+        - ``app_version``    (str)
+        - ``entry_id``       (str)
+        - ``data_model_version`` (int)
+
+        Sorted newest-first by ``created_at``.
+    """
+    if backup_dir is None:
+        backup_dir = str(Path(hass.config.path("www")) / "hafwcma_backups")
+
+    def _scan_dir() -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        backup_path = Path(backup_dir)
+        if not backup_path.exists():
+            return result
+
+        for f in backup_path.glob("hafwcma_backup_*.json"):
+            try:
+                stat = f.stat()
+                try:
+                    with f.open(encoding="utf-8") as fh:
+                        data = json.load(fh)
+                    metadata: dict[str, Any] = {
+                        "vehicle_name": data.get("vehicle_name", ""),
+                        "app_version": data.get("app_version", ""),
+                        "entry_id": data.get("entry_id", ""),
+                        "created_at": data.get("created_at", ""),
+                        "data_model_version": int(data.get("data_model_version", 1)),
+                    }
+                except Exception:  # noqa: BLE001
+                    metadata = {
+                        "vehicle_name": "",
+                        "app_version": "",
+                        "entry_id": "",
+                        "created_at": "",
+                        "data_model_version": 1,
+                    }
+
+                result.append(
+                    {
+                        "filename": f.name,
+                        "file_path": str(f),
+                        "download_url": f"/local/hafwcma_backups/{f.name}",
+                        "size_bytes": stat.st_size,
+                        **metadata,
+                    }
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Sort newest-first (ISO timestamps compare correctly as strings)
+        result.sort(
+            key=lambda x: x.get("created_at") or x["filename"], reverse=True
+        )
+        return result
+
+    return await hass.async_add_executor_job(_scan_dir)

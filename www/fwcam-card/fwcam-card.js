@@ -56,6 +56,11 @@ class FWCAMCard extends HTMLElement {
     this._allRefuelings = [];
     // Rate limiting for Nominatim API (1 request per second)
     this._lastNominatimRequest = 0;
+    // State for backup/restore section
+    this._backupList = null;
+    this._backupLoading = false;
+    this._backupMessage = null;
+    this._backupUploadLoading = false;
   }
 
   /**
@@ -73,7 +78,8 @@ class FWCAMCard extends HTMLElement {
       Object.prototype.hasOwnProperty.call(config, 'show_trip_log') ||
       Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ||
       Object.prototype.hasOwnProperty.call(config, 'show_controls') ||
-      Object.prototype.hasOwnProperty.call(config, 'show_settings');
+      Object.prototype.hasOwnProperty.call(config, 'show_settings') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_backup');
     
     // If any show_* option is explicitly set, only show those explicitly enabled
     // If no show_* options are set, default all to true (backward compatibility)
@@ -91,6 +97,7 @@ class FWCAMCard extends HTMLElement {
       show_vehicle_info: Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ? config.show_vehicle_info : defaultShowValue,
       show_controls: Object.prototype.hasOwnProperty.call(config, 'show_controls') ? config.show_controls : defaultShowValue,
       show_settings: Object.prototype.hasOwnProperty.call(config, 'show_settings') ? config.show_settings : defaultShowValue,
+      show_backup: Object.prototype.hasOwnProperty.call(config, 'show_backup') ? config.show_backup : defaultShowValue,
       rows_per_page: config.rows_per_page || 10,
       refresh_interval: config.refresh_interval || 300,
       table_max_height: this.sanitizeCSSValue(config.table_max_height, '400px'),
@@ -690,6 +697,7 @@ class FWCAMCard extends HTMLElement {
           ${this._config.show_vehicle_info ? this.renderTopCheapestStations() : ''}
           ${this._config.show_controls ? this.renderControls() : ''}
           ${this._config.show_settings ? this.renderSettings() : ''}
+          ${this._config.show_backup ? this.renderBackup() : ''}
           ${this._config.show_refueling_log ? this.renderRefuelingLog(this._allRefuelings || [], lastRefueling) : ''}
           ${this._config.show_trip_log ? this.renderTripLog(this._allTrips || []) : ''}
           ${this._config.show_trip_log ? this.renderTopDestinations(this._allTrips || []) : ''}
@@ -1228,6 +1236,213 @@ class FWCAMCard extends HTMLElement {
         </div>
       </div>
     `;
+  }
+
+
+  /**
+   * Escape a string for safe insertion into HTML.
+   */
+  _escHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /**
+   * Render Backup & Restore section.
+   */
+  renderBackup() {
+    const lang = this.getUserLanguage();
+    const t = {
+      title:         { de: 'Backup & Wiederherstellung', en: 'Backup & Restore' },
+      createBtn:     { de: 'Backup erstellen', en: 'Create Backup' },
+      refreshBtn:    { de: 'Aktualisieren', en: 'Refresh List' },
+      serverBackups: { de: 'Verfügbare Backups auf dem Server', en: 'Available Server Backups' },
+      noBackups:     { de: 'Keine Backups gefunden.', en: 'No backups found.' },
+      loading:       { de: 'Lade...', en: 'Loading…' },
+      colFile:       { de: 'Dateiname', en: 'Filename' },
+      colVehicle:    { de: 'Fahrzeug', en: 'Vehicle' },
+      colDate:       { de: 'Erstellt am', en: 'Created' },
+      colSize:       { de: 'Größe', en: 'Size' },
+      colActions:    { de: 'Aktionen', en: 'Actions' },
+      downloadBtn:   { de: 'Herunterladen', en: 'Download' },
+      restoreBtn:    { de: 'Wiederherstellen', en: 'Restore' },
+      uploadTitle:   { de: 'Backup hochladen & wiederherstellen', en: 'Upload & Restore Backup' },
+      uploadHint:    { de: 'Wähle eine haFWCMA-Backup-Datei (.json) von deinem Gerät aus.', en: 'Choose a haFWCMA backup file (.json) from your device.' },
+      uploadBtn:     { de: 'Datei hochladen', en: 'Upload File' },
+      uploadLoading: { de: 'Wird hochgeladen...', en: 'Uploading…' },
+    };
+    const _t = (key) => (t[key][lang] || t[key]['en']);
+
+    let backupListHtml = '';
+    if (this._backupLoading) {
+      backupListHtml = `<p class="backup-loading">${_t('loading')}</p>`;
+    } else if (this._backupList === null) {
+      backupListHtml = `<p class="no-data">${lang === 'de' ? 'Klicke auf „Aktualisieren", um die Liste zu laden.' : 'Click "Refresh List" to load backups.'}</p>`;
+    } else if (this._backupList.length === 0) {
+      backupListHtml = `<p class="no-data">${_t('noBackups')}</p>`;
+    } else {
+      const rows = this._backupList.map(b => {
+        const sizeKb = b.size_bytes ? (b.size_bytes / 1024).toFixed(1) + ' KB' : '—';
+        const dateStr = b.created_at ? new Date(b.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US') : '—';
+        return `
+          <tr>
+            <td class="backup-filename">${this._escHtml(b.filename)}</td>
+            <td>${this._escHtml(b.vehicle_name || '—')}</td>
+            <td>${this._escHtml(dateStr)}</td>
+            <td>${this._escHtml(sizeKb)}</td>
+            <td class="backup-actions">
+              <a class="backup-dl-link" href="${this._escHtml(b.download_url)}" download="${this._escHtml(b.filename)}" target="_blank">
+                <ha-icon icon="mdi:download"></ha-icon> ${_t('downloadBtn')}
+              </a>
+              <button class="backup-restore-btn" data-action="restore-backup" data-file-path="${this._escHtml(b.file_path)}">
+                <ha-icon icon="mdi:restore"></ha-icon> ${_t('restoreBtn')}
+              </button>
+            </td>
+          </tr>`;
+      }).join('');
+      backupListHtml = `
+        <div class="table-container">
+          <table class="refueling-table backup-table">
+            <thead><tr>
+              <th>${_t('colFile')}</th><th>${_t('colVehicle')}</th>
+              <th>${_t('colDate')}</th><th>${_t('colSize')}</th>
+              <th>${_t('colActions')}</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    const msgHtml = this._backupMessage
+      ? `<div class="backup-msg backup-msg-${this._escHtml(this._backupMessage.type)}">${this._escHtml(this._backupMessage.text)}</div>`
+      : '';
+
+    return `
+      <div class="section">
+        <h3><ha-icon icon="mdi:backup-restore"></ha-icon> ${_t('title')}</h3>
+        ${msgHtml}
+        <div class="backup-toolbar">
+          <button class="control-button" data-action="backup-create">
+            <ha-icon icon="mdi:content-save"></ha-icon>
+            <span>${_t('createBtn')}</span>
+          </button>
+          <button class="control-button backup-refresh-btn" data-action="backup-refresh">
+            <ha-icon icon="mdi:refresh"></ha-icon>
+            <span>${_t('refreshBtn')}</span>
+          </button>
+        </div>
+        <h4>${_t('serverBackups')}</h4>
+        ${backupListHtml}
+        <h4>${_t('uploadTitle')}</h4>
+        <p class="backup-upload-hint">${_t('uploadHint')}</p>
+        <div class="backup-upload-row">
+          <input type="file" id="backup-file-input" accept=".json" class="backup-file-input">
+          <button class="control-button" data-action="backup-upload" ${this._backupUploadLoading ? 'disabled' : ''}>
+            <ha-icon icon="mdi:upload"></ha-icon>
+            <span>${this._backupUploadLoading ? _t('uploadLoading') : _t('uploadBtn')}</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Backup handlers
+  async _handleBackupCreate() {
+    this._backupMessage = null;
+    try {
+      const configEntryId = this.getConfigEntryId();
+      const result = await this._hass.callService('hafwcma', 'create_backup', { config_entry_id: configEntryId }, {}, true, true);
+      const lang = this.getUserLanguage();
+      if (result?.response?.success) {
+        const filename = (result.response.file_path || '').split('/').pop();
+        this._backupMessage = { type: 'success', text: lang === 'de' ? `✅ Backup erstellt: ${filename}` : `✅ Backup created: ${filename}` };
+        await this._handleBackupRefresh();
+        return;
+      }
+      throw new Error(result?.response?.error || 'unknown error');
+    } catch (err) {
+      const lang = this.getUserLanguage();
+      this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Backup fehlgeschlagen: ${err.message || err}` : `❌ Backup failed: ${err.message || err}` };
+    }
+    this.render();
+  }
+
+  async _handleBackupRefresh() {
+    this._backupLoading = true;
+    this.render();
+    try {
+      const result = await this._hass.callService('hafwcma', 'list_backups', {}, {}, true, true);
+      this._backupList = result?.response?.backups || [];
+    } catch (err) {
+      this._backupList = [];
+      const lang = this.getUserLanguage();
+      this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Backupliste konnte nicht geladen werden: ${err.message || err}` : `❌ Failed to load backup list: ${err.message || err}` };
+    } finally {
+      this._backupLoading = false;
+    }
+    this.render();
+  }
+
+  async _handleBackupRestore(filePath) {
+    const lang = this.getUserLanguage();
+    const confirmMsg = lang === 'de'
+      ? `Backup wiederherstellen?\n\nDatei: ${filePath}\n\nAlle aktuellen Daten werden überschrieben!`
+      : `Restore backup?\n\nFile: ${filePath}\n\nAll current data will be overwritten!`;
+    if (!confirm(confirmMsg)) return;
+    this._backupMessage = null;
+    this.render();
+    try {
+      const configEntryId = this.getConfigEntryId();
+      const result = await this._hass.callService('hafwcma', 'restore_backup', { config_entry_id: configEntryId, backup_file_path: filePath }, {}, true, true);
+      if (result?.response?.success) {
+        this._backupMessage = { type: 'success', text: lang === 'de' ? '✅ Backup wiederhergestellt. Bitte Integration neu laden.' : '✅ Backup restored. Please reload the integration.' };
+      } else {
+        throw new Error(result?.response?.error || 'unknown error');
+      }
+    } catch (err) {
+      this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Wiederherstellung fehlgeschlagen: ${err.message || err}` : `❌ Restore failed: ${err.message || err}` };
+    }
+    this.render();
+  }
+
+  async _handleBackupUpload() {
+    const fileInput = this.shadowRoot.getElementById('backup-file-input');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+      const lang = this.getUserLanguage();
+      alert(lang === 'de' ? 'Bitte wähle zuerst eine Backup-Datei aus.' : 'Please select a backup file first.');
+      return;
+    }
+    const file = fileInput.files[0];
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      const lang = this.getUserLanguage();
+      alert(lang === 'de' ? 'Nur JSON-Dateien sind erlaubt.' : 'Only JSON files are allowed.');
+      return;
+    }
+    this._backupUploadLoading = true;
+    this._backupMessage = null;
+    this.render();
+    try {
+      const formData = new FormData();
+      formData.append('file', file, file.name);
+      const response = await this._hass.fetchWithAuth('/api/hafwcma/upload_backup', { method: 'POST', body: formData });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || data.error || `HTTP ${response.status}`);
+      const lang = this.getUserLanguage();
+      this._backupMessage = { type: 'success', text: lang === 'de' ? `✅ Datei hochgeladen: ${data.filename}` : `✅ File uploaded: ${data.filename}` };
+      await this._handleBackupRefresh();
+      const restoreMsg = lang === 'de' ? `Datei erfolgreich hochgeladen.\n\nMöchtest du das Backup jetzt wiederherstellen?` : `File uploaded successfully.\n\nDo you want to restore this backup now?`;
+      if (confirm(restoreMsg)) await this._handleBackupRestore(data.file_path);
+    } catch (err) {
+      const lang = this.getUserLanguage();
+      this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Upload fehlgeschlagen: ${err.message || err}` : `❌ Upload failed: ${err.message || err}` };
+    } finally {
+      this._backupUploadLoading = false;
+    }
+    this.render();
   }
 
   /**
@@ -1869,6 +2084,17 @@ class FWCAMCard extends HTMLElement {
         }
       });
     }
+
+    // Backup & Restore buttons
+    const backupCreateBtn = this.shadowRoot.querySelector('[data-action="backup-create"]');
+    if (backupCreateBtn) backupCreateBtn.addEventListener('click', () => this._handleBackupCreate());
+    const backupRefreshBtn = this.shadowRoot.querySelector('[data-action="backup-refresh"]');
+    if (backupRefreshBtn) backupRefreshBtn.addEventListener('click', () => this._handleBackupRefresh());
+    const backupUploadBtn = this.shadowRoot.querySelector('[data-action="backup-upload"]');
+    if (backupUploadBtn) backupUploadBtn.addEventListener('click', () => this._handleBackupUpload());
+    this.shadowRoot.querySelectorAll('[data-action="restore-backup"]').forEach(btn => {
+      btn.addEventListener('click', (e) => this._handleBackupRestore(e.currentTarget.dataset.filePath));
+    });
   }
 
   /**
@@ -4235,6 +4461,25 @@ class FWCAMCard extends HTMLElement {
           white-space: nowrap;
           text-align: right;
         }
+
+        /* Backup & Restore section */
+        .backup-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+        .backup-toolbar .control-button { flex: 0 0 auto; padding: 10px 18px; flex-direction: row; gap: 8px; }
+        .backup-table .backup-filename { font-family: monospace; font-size: 12px; word-break: break-all; }
+        .backup-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .backup-dl-link { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid var(--primary-color); border-radius: 4px; color: var(--primary-color); text-decoration: none; font-size: 13px; cursor: pointer; }
+        .backup-dl-link:hover { background: var(--primary-color); color: white; }
+        .backup-restore-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid #ff9800; border-radius: 4px; background: transparent; color: #ff9800; font-size: 13px; cursor: pointer; }
+        .backup-restore-btn:hover { background: #ff9800; color: white; }
+        .backup-upload-hint { font-size: 13px; color: var(--secondary-text-color); margin: 4px 0 10px 0; }
+        .backup-upload-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .backup-file-input { flex: 1 1 220px; padding: 6px; border: 1px solid var(--divider-color); border-radius: 4px; background: var(--primary-background-color); color: var(--primary-text-color); font-size: 13px; }
+        .backup-upload-row .control-button { flex: 0 0 auto; padding: 10px 18px; flex-direction: row; gap: 6px; }
+        .backup-loading { color: var(--secondary-text-color); font-style: italic; padding: 8px 0; }
+        .backup-msg { padding: 10px 14px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; }
+        .backup-msg-success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+        .backup-msg-error { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
+        .section h4 { margin: 16px 0 8px 0; font-size: 15px; font-weight: 600; color: var(--secondary-text-color); }
       </style>
     `;
   }
@@ -4250,6 +4495,7 @@ class FWCAMCard extends HTMLElement {
       show_vehicle_info: true,
       show_controls: true,
       show_settings: true,
+      show_backup: true,
       rows_per_page: 10
     };
   }

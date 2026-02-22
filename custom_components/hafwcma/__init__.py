@@ -61,6 +61,7 @@ SERVICE_GET_GEOCODING_CACHE_STATS = "get_geocoding_cache_stats"
 SERVICE_SIMULATE_REFUELING_EVENT = "simulate_refueling_event"
 SERVICE_CREATE_BACKUP = "create_backup"
 SERVICE_RESTORE_BACKUP = "restore_backup"
+SERVICE_LIST_BACKUPS = "list_backups"
 SERVICE_EXPORT_DEBUG_DATA = "export_debug_data"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
@@ -197,6 +198,8 @@ SCHEMA_RESTORE_BACKUP = vol.Schema({
     vol.Optional("force", default=False): cv.boolean,
 })
 
+SCHEMA_LIST_BACKUPS = vol.Schema({})
+
 SCHEMA_EXPORT_DEBUG_DATA = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
 })
@@ -321,7 +324,11 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     
     # Register the dashboard as a sidebar panel (panel_custom)
     await _register_dashboard_panel(hass)
-    
+
+    # Register the backup upload HTTP view (authenticated REST endpoint used by the card)
+    from .backup_http_views import BackupUploadView
+    hass.http.register_view(BackupUploadView())
+
     # Register services
     async def handle_add_refuel_event(call: ServiceCall) -> None:
         """Handle the add_refuel_event service call."""
@@ -913,6 +920,17 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "error": result.get("error", ""),
         }
 
+    async def handle_list_backups(call: ServiceCall) -> ServiceResponse:
+        """Handle the list_backups service call.
+
+        Scans the standard backup directory and returns metadata for every
+        haFWCMA backup file found.
+        """
+        from .utils.backup_manager import list_backups
+
+        backups = await list_backups(hass)
+        return {"backups": backups}
+
     async def handle_restore_backup(call: ServiceCall) -> ServiceResponse:
         """Handle the restore_backup service call.
 
@@ -1079,6 +1097,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_RESTORE_BACKUP, handle_restore_backup, schema=SCHEMA_RESTORE_BACKUP, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_LIST_BACKUPS, handle_list_backups, schema=SCHEMA_LIST_BACKUPS, supports_response=True
     )
     hass.services.async_register(
         DOMAIN, SERVICE_EXPORT_DEBUG_DATA, handle_export_debug_data, schema=SCHEMA_EXPORT_DEBUG_DATA, supports_response=True

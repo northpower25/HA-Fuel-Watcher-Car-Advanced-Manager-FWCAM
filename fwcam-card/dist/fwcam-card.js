@@ -56,6 +56,11 @@ class FWCAMCard extends HTMLElement {
     this._allRefuelings = [];
     // Rate limiting for Nominatim API (1 request per second)
     this._lastNominatimRequest = 0;
+    // State for backup/restore section
+    this._backupList = null;
+    this._backupLoading = false;
+    this._backupMessage = null;
+    this._backupUploadLoading = false;
   }
 
   /**
@@ -73,7 +78,8 @@ class FWCAMCard extends HTMLElement {
       Object.prototype.hasOwnProperty.call(config, 'show_trip_log') ||
       Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ||
       Object.prototype.hasOwnProperty.call(config, 'show_controls') ||
-      Object.prototype.hasOwnProperty.call(config, 'show_settings');
+      Object.prototype.hasOwnProperty.call(config, 'show_settings') ||
+      Object.prototype.hasOwnProperty.call(config, 'show_backup');
     
     // If any show_* option is explicitly set, only show those explicitly enabled
     // If no show_* options are set, default all to true (backward compatibility)
@@ -91,6 +97,7 @@ class FWCAMCard extends HTMLElement {
       show_vehicle_info: Object.prototype.hasOwnProperty.call(config, 'show_vehicle_info') ? config.show_vehicle_info : defaultShowValue,
       show_controls: Object.prototype.hasOwnProperty.call(config, 'show_controls') ? config.show_controls : defaultShowValue,
       show_settings: Object.prototype.hasOwnProperty.call(config, 'show_settings') ? config.show_settings : defaultShowValue,
+      show_backup: Object.prototype.hasOwnProperty.call(config, 'show_backup') ? config.show_backup : defaultShowValue,
       rows_per_page: config.rows_per_page || 10,
       refresh_interval: config.refresh_interval || 300,
       table_max_height: this.sanitizeCSSValue(config.table_max_height, '400px'),
@@ -214,16 +221,6 @@ class FWCAMCard extends HTMLElement {
   getEntityState(entityId) {
     if (!this._hass || !entityId) return null;
     return this._hass.states[entityId];
-  }
-
-  /**
-   * Get state value of an entity, returning null for unavailable/unknown states
-   */
-  getEntityStateValue(entityId) {
-    const entity = this.getEntityState(entityId);
-    if (!entity) return null;
-    if (entity.state === 'unavailable' || entity.state === 'unknown') return null;
-    return entity.state;
   }
 
   /**
@@ -700,6 +697,7 @@ class FWCAMCard extends HTMLElement {
           ${this._config.show_vehicle_info ? this.renderTopCheapestStations() : ''}
           ${this._config.show_controls ? this.renderControls() : ''}
           ${this._config.show_settings ? this.renderSettings() : ''}
+          ${this._config.show_backup ? this.renderBackup() : ''}
           ${this._config.show_refueling_log ? this.renderRefuelingLog(this._allRefuelings || [], lastRefueling) : ''}
           ${this._config.show_trip_log ? this.renderTripLog(this._allTrips || []) : ''}
           ${this._config.show_trip_log ? this.renderTopDestinations(this._allTrips || []) : ''}
@@ -723,8 +721,12 @@ class FWCAMCard extends HTMLElement {
     const fuelPrice = this.getEntityState(this._entities.fuel_price);
     const tankLevel = this.getEntityState(this._entities.tank_level);
     const range = this.getEntityState(this._entities.range);
-    const nearestStation = this.getEntityStateValue(this._entities.nearest_station);
-    const cheapestStation = this.getEntityStateValue(this._entities.cheapest_station);
+    const nearestStationEntity = this.getEntityState(this._entities.nearest_station);
+    const nearestStation = nearestStationEntity && nearestStationEntity.state !== 'unavailable' && nearestStationEntity.state !== 'unknown'
+      ? nearestStationEntity.state : null;
+    const cheapestStationEntity = this.getEntityState(this._entities.cheapest_station);
+    const cheapestStation = cheapestStationEntity && cheapestStationEntity.state !== 'unavailable' && cheapestStationEntity.state !== 'unknown'
+      ? cheapestStationEntity.state : null;
     const daysUntilRefuel = this.getEntityState(this._entities.days_until_refuel);
 
     const fuelPriceVal = this._formatValueOrNA(fuelPrice ? this.formatNumber(fuelPrice.state, 3, '€/L') : null);
@@ -947,6 +949,7 @@ class FWCAMCard extends HTMLElement {
    * Render fuel price history chart section using weekday patterns.
    */
   renderPriceChart() {
+    const last14Price = attrs.last_14_days_price;
     const last14Trend = attrs.last_14_days_trend || '';
     const last30Price = attrs.last_30_days_price;
     const trendIcon = last14Trend === 'up' ? '↑' : last14Trend === 'down' ? '↓' : '→';
@@ -1233,6 +1236,213 @@ class FWCAMCard extends HTMLElement {
         </div>
       </div>
     `;
+  }
+
+
+  /**
+   * Escape a string for safe insertion into HTML.
+   */
+  _escHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /**
+   * Render Backup & Restore section.
+   */
+  renderBackup() {
+    const lang = this.getUserLanguage();
+    const t = {
+      title:         { de: 'Backup & Wiederherstellung', en: 'Backup & Restore' },
+      createBtn:     { de: 'Backup erstellen', en: 'Create Backup' },
+      refreshBtn:    { de: 'Aktualisieren', en: 'Refresh List' },
+      serverBackups: { de: 'Verfügbare Backups auf dem Server', en: 'Available Server Backups' },
+      noBackups:     { de: 'Keine Backups gefunden.', en: 'No backups found.' },
+      loading:       { de: 'Lade...', en: 'Loading…' },
+      colFile:       { de: 'Dateiname', en: 'Filename' },
+      colVehicle:    { de: 'Fahrzeug', en: 'Vehicle' },
+      colDate:       { de: 'Erstellt am', en: 'Created' },
+      colSize:       { de: 'Größe', en: 'Size' },
+      colActions:    { de: 'Aktionen', en: 'Actions' },
+      downloadBtn:   { de: 'Herunterladen', en: 'Download' },
+      restoreBtn:    { de: 'Wiederherstellen', en: 'Restore' },
+      uploadTitle:   { de: 'Backup hochladen & wiederherstellen', en: 'Upload & Restore Backup' },
+      uploadHint:    { de: 'Wähle eine haFWCMA-Backup-Datei (.json) von deinem Gerät aus.', en: 'Choose a haFWCMA backup file (.json) from your device.' },
+      uploadBtn:     { de: 'Datei hochladen', en: 'Upload File' },
+      uploadLoading: { de: 'Wird hochgeladen...', en: 'Uploading…' },
+    };
+    const _t = (key) => (t[key][lang] || t[key]['en']);
+
+    let backupListHtml = '';
+    if (this._backupLoading) {
+      backupListHtml = `<p class="backup-loading">${_t('loading')}</p>`;
+    } else if (this._backupList === null) {
+      backupListHtml = `<p class="no-data">${lang === 'de' ? 'Klicke auf „Aktualisieren", um die Liste zu laden.' : 'Click "Refresh List" to load backups.'}</p>`;
+    } else if (this._backupList.length === 0) {
+      backupListHtml = `<p class="no-data">${_t('noBackups')}</p>`;
+    } else {
+      const rows = this._backupList.map(b => {
+        const sizeKb = b.size_bytes ? (b.size_bytes / 1024).toFixed(1) + ' KB' : '—';
+        const dateStr = b.created_at ? new Date(b.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US') : '—';
+        return `
+          <tr>
+            <td class="backup-filename">${this._escHtml(b.filename)}</td>
+            <td>${this._escHtml(b.vehicle_name || '—')}</td>
+            <td>${this._escHtml(dateStr)}</td>
+            <td>${this._escHtml(sizeKb)}</td>
+            <td class="backup-actions">
+              <a class="backup-dl-link" href="${this._escHtml(b.download_url)}" download="${this._escHtml(b.filename)}" target="_blank">
+                <ha-icon icon="mdi:download"></ha-icon> ${_t('downloadBtn')}
+              </a>
+              <button class="backup-restore-btn" data-action="restore-backup" data-file-path="${this._escHtml(b.file_path)}">
+                <ha-icon icon="mdi:restore"></ha-icon> ${_t('restoreBtn')}
+              </button>
+            </td>
+          </tr>`;
+      }).join('');
+      backupListHtml = `
+        <div class="table-container">
+          <table class="refueling-table backup-table">
+            <thead><tr>
+              <th>${_t('colFile')}</th><th>${_t('colVehicle')}</th>
+              <th>${_t('colDate')}</th><th>${_t('colSize')}</th>
+              <th>${_t('colActions')}</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    const msgHtml = this._backupMessage
+      ? `<div class="backup-msg backup-msg-${this._escHtml(this._backupMessage.type)}">${this._escHtml(this._backupMessage.text)}</div>`
+      : '';
+
+    return `
+      <div class="section">
+        <h3><ha-icon icon="mdi:backup-restore"></ha-icon> ${_t('title')}</h3>
+        ${msgHtml}
+        <div class="backup-toolbar">
+          <button class="control-button" data-action="backup-create">
+            <ha-icon icon="mdi:content-save"></ha-icon>
+            <span>${_t('createBtn')}</span>
+          </button>
+          <button class="control-button backup-refresh-btn" data-action="backup-refresh">
+            <ha-icon icon="mdi:refresh"></ha-icon>
+            <span>${_t('refreshBtn')}</span>
+          </button>
+        </div>
+        <h4>${_t('serverBackups')}</h4>
+        ${backupListHtml}
+        <h4>${_t('uploadTitle')}</h4>
+        <p class="backup-upload-hint">${_t('uploadHint')}</p>
+        <div class="backup-upload-row">
+          <input type="file" id="backup-file-input" accept=".json" class="backup-file-input">
+          <button class="control-button" data-action="backup-upload" ${this._backupUploadLoading ? 'disabled' : ''}>
+            <ha-icon icon="mdi:upload"></ha-icon>
+            <span>${this._backupUploadLoading ? _t('uploadLoading') : _t('uploadBtn')}</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Backup handlers
+  async _handleBackupCreate() {
+    this._backupMessage = null;
+    try {
+      const configEntryId = this.getConfigEntryId();
+      const result = await this._hass.callService('hafwcma', 'create_backup', { config_entry_id: configEntryId }, {}, true, true);
+      const lang = this.getUserLanguage();
+      if (result?.response?.success) {
+        const filename = (result.response.file_path || '').split('/').pop();
+        this._backupMessage = { type: 'success', text: lang === 'de' ? `✅ Backup erstellt: ${filename}` : `✅ Backup created: ${filename}` };
+        await this._handleBackupRefresh();
+        return;
+      }
+      throw new Error(result?.response?.error || 'unknown error');
+    } catch (err) {
+      const lang = this.getUserLanguage();
+      this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Backup fehlgeschlagen: ${err.message || err}` : `❌ Backup failed: ${err.message || err}` };
+    }
+    this.render();
+  }
+
+  async _handleBackupRefresh() {
+    this._backupLoading = true;
+    this.render();
+    try {
+      const result = await this._hass.callService('hafwcma', 'list_backups', {}, {}, true, true);
+      this._backupList = result?.response?.backups || [];
+    } catch (err) {
+      this._backupList = [];
+      const lang = this.getUserLanguage();
+      this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Backupliste konnte nicht geladen werden: ${err.message || err}` : `❌ Failed to load backup list: ${err.message || err}` };
+    } finally {
+      this._backupLoading = false;
+    }
+    this.render();
+  }
+
+  async _handleBackupRestore(filePath) {
+    const lang = this.getUserLanguage();
+    const confirmMsg = lang === 'de'
+      ? `Backup wiederherstellen?\n\nDatei: ${filePath}\n\nAlle aktuellen Daten werden überschrieben!`
+      : `Restore backup?\n\nFile: ${filePath}\n\nAll current data will be overwritten!`;
+    if (!confirm(confirmMsg)) return;
+    this._backupMessage = null;
+    this.render();
+    try {
+      const configEntryId = this.getConfigEntryId();
+      const result = await this._hass.callService('hafwcma', 'restore_backup', { config_entry_id: configEntryId, backup_file_path: filePath }, {}, true, true);
+      if (result?.response?.success) {
+        this._backupMessage = { type: 'success', text: lang === 'de' ? '✅ Backup wiederhergestellt. Bitte Integration neu laden.' : '✅ Backup restored. Please reload the integration.' };
+      } else {
+        throw new Error(result?.response?.error || 'unknown error');
+      }
+    } catch (err) {
+      this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Wiederherstellung fehlgeschlagen: ${err.message || err}` : `❌ Restore failed: ${err.message || err}` };
+    }
+    this.render();
+  }
+
+  async _handleBackupUpload() {
+    const fileInput = this.shadowRoot.getElementById('backup-file-input');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+      const lang = this.getUserLanguage();
+      alert(lang === 'de' ? 'Bitte wähle zuerst eine Backup-Datei aus.' : 'Please select a backup file first.');
+      return;
+    }
+    const file = fileInput.files[0];
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      const lang = this.getUserLanguage();
+      alert(lang === 'de' ? 'Nur JSON-Dateien sind erlaubt.' : 'Only JSON files are allowed.');
+      return;
+    }
+    this._backupUploadLoading = true;
+    this._backupMessage = null;
+    this.render();
+    try {
+      const formData = new FormData();
+      formData.append('file', file, file.name);
+      const response = await this._hass.fetchWithAuth('/api/hafwcma/upload_backup', { method: 'POST', body: formData });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || data.error || `HTTP ${response.status}`);
+      const lang = this.getUserLanguage();
+      this._backupMessage = { type: 'success', text: lang === 'de' ? `✅ Datei hochgeladen: ${data.filename}` : `✅ File uploaded: ${data.filename}` };
+      await this._handleBackupRefresh();
+      const restoreMsg = lang === 'de' ? `Datei erfolgreich hochgeladen.\n\nMöchtest du das Backup jetzt wiederherstellen?` : `File uploaded successfully.\n\nDo you want to restore this backup now?`;
+      if (confirm(restoreMsg)) await this._handleBackupRestore(data.file_path);
+    } catch (err) {
+      const lang = this.getUserLanguage();
+      this._backupMessage = { type: 'error', text: lang === 'de' ? `❌ Upload fehlgeschlagen: ${err.message || err}` : `❌ Upload failed: ${err.message || err}` };
+    } finally {
+      this._backupUploadLoading = false;
+    }
+    this.render();
   }
 
   /**
@@ -1874,6 +2084,17 @@ class FWCAMCard extends HTMLElement {
         }
       });
     }
+
+    // Backup & Restore buttons
+    const backupCreateBtn = this.shadowRoot.querySelector('[data-action="backup-create"]');
+    if (backupCreateBtn) backupCreateBtn.addEventListener('click', () => this._handleBackupCreate());
+    const backupRefreshBtn = this.shadowRoot.querySelector('[data-action="backup-refresh"]');
+    if (backupRefreshBtn) backupRefreshBtn.addEventListener('click', () => this._handleBackupRefresh());
+    const backupUploadBtn = this.shadowRoot.querySelector('[data-action="backup-upload"]');
+    if (backupUploadBtn) backupUploadBtn.addEventListener('click', () => this._handleBackupUpload());
+    this.shadowRoot.querySelectorAll('[data-action="restore-backup"]').forEach(btn => {
+      btn.addEventListener('click', (e) => this._handleBackupRestore(e.currentTarget.dataset.filePath));
+    });
   }
 
   /**
@@ -2187,15 +2408,13 @@ class FWCAMCard extends HTMLElement {
                 <div class="form-row">
                   <label for="trip-start-latitude">
                     Latitude
-                    <input type="text" id="trip-start-latitude" name="start_latitude" 
-                           inputmode="decimal" placeholder="Optional" 
-                           title="Enter latitude (e.g., 50.000000 or 50,000000)">
+                    <input type="number" id="trip-start-latitude" name="start_latitude" 
+                           step="0.000001" min="-90" max="90" placeholder="Optional">
                   </label>
                   <label for="trip-start-longitude">
                     Longitude
-                    <input type="text" id="trip-start-longitude" name="start_longitude" 
-                           inputmode="decimal" placeholder="Optional" 
-                           title="Enter longitude (e.g., 10.000000 or 10,000000)">
+                    <input type="number" id="trip-start-longitude" name="start_longitude" 
+                           step="0.000001" min="-180" max="180" placeholder="Optional">
                   </label>
                 </div>
                 <div class="form-row" style="margin-top: 8px;">
@@ -2233,15 +2452,13 @@ class FWCAMCard extends HTMLElement {
                 <div class="form-row">
                   <label for="trip-end-latitude">
                     Latitude
-                    <input type="text" id="trip-end-latitude" name="end_latitude" 
-                           inputmode="decimal" placeholder="Optional" 
-                           title="Enter latitude (e.g., 51.000000 or 51,000000)">
+                    <input type="number" id="trip-end-latitude" name="end_latitude" 
+                           step="0.000001" min="-90" max="90" placeholder="Optional">
                   </label>
                   <label for="trip-end-longitude">
                     Longitude
-                    <input type="text" id="trip-end-longitude" name="end_longitude" 
-                           inputmode="decimal" placeholder="Optional" 
-                           title="Enter longitude (e.g., 11.000000 or 11,000000)">
+                    <input type="number" id="trip-end-longitude" name="end_longitude" 
+                           step="0.000001" min="-180" max="180" placeholder="Optional">
                   </label>
                 </div>
                 <div class="form-row" style="margin-top: 8px;">
@@ -2418,7 +2635,6 @@ class FWCAMCard extends HTMLElement {
                     <option value="manual">Manual</option>
                     <option value="auto_detected">Auto Detected</option>
                     <option value="historical_import">Historical Import</option>
-                    <option value="ai_processed">AI Processed</option>
                   </select>
                 </label>
                 <label for="confidence">
@@ -2426,33 +2642,6 @@ class FWCAMCard extends HTMLElement {
                   <input type="number" id="confidence" name="confidence" 
                          min="0" max="1" step="0.1" value="1.0">
                 </label>
-              </div>
-
-              <!-- Telegram Response Section (shown only if available) -->
-              <div id="telegram-response-section" class="form-section" style="display: none;">
-                <h3 style="margin-top: 20px; margin-bottom: 10px; border-top: 2px solid var(--primary-color); padding-top: 15px;">
-                  📱 Telegram Response
-                </h3>
-                <div class="form-row">
-                  <label for="telegram_response_raw" style="flex: 1;">
-                    User Message
-                    <textarea id="telegram_response_raw" name="telegram_response_raw" 
-                              rows="4" readonly 
-                              style="background-color: var(--disabled-color, #f5f5f5); resize: vertical;"></textarea>
-                  </label>
-                  <label for="telegram_response_parsed_display" style="flex: 1; margin-left: 10px;">
-                    AI Recognized Data
-                    <textarea id="telegram_response_parsed_display" 
-                              rows="4" readonly 
-                              style="background-color: var(--disabled-color, #f5f5f5); resize: vertical;"></textarea>
-                  </label>
-                </div>
-                <div class="form-row">
-                  <small style="color: var(--secondary-text-color); font-style: italic;">
-                    Response Type: <span id="telegram_response_type">-</span> | 
-                    Received: <span id="telegram_response_timestamp">-</span>
-                  </small>
-                </div>
               </div>
 
               <div class="dialog-footer">
@@ -2560,43 +2749,6 @@ class FWCAMCard extends HTMLElement {
     this.shadowRoot.getElementById('fuel_type').value = event.fuel_type || '';
     this.shadowRoot.getElementById('data_quality').value = event.data_quality || 'manual';
     this.shadowRoot.getElementById('confidence').value = event.confidence !== undefined ? event.confidence : 1.0;
-    
-    // Populate Telegram response fields if available
-    const telegramSection = this.shadowRoot.getElementById('telegram-response-section');
-    if (event.telegram_response_received && event.telegram_response_raw) {
-      telegramSection.style.display = 'block';
-      
-      // Set raw message
-      this.shadowRoot.getElementById('telegram_response_raw').value = event.telegram_response_raw || '';
-      
-      // Format parsed data for display
-      let parsedDisplay = '';
-      if (event.telegram_response_parsed && typeof event.telegram_response_parsed === 'object') {
-        parsedDisplay = JSON.stringify(event.telegram_response_parsed, null, 2);
-      } else if (event.telegram_response_parsed) {
-        parsedDisplay = String(event.telegram_response_parsed);
-      } else {
-        parsedDisplay = 'No structured data parsed';
-      }
-      this.shadowRoot.getElementById('telegram_response_parsed_display').value = parsedDisplay;
-      
-      // Set metadata
-      this.shadowRoot.getElementById('telegram_response_type').textContent = 
-        event.telegram_response_type || 'unknown';
-      
-      if (event.telegram_response_timestamp) {
-        try {
-          const responseDate = new Date(event.telegram_response_timestamp);
-          this.shadowRoot.getElementById('telegram_response_timestamp').textContent = 
-            responseDate.toLocaleString();
-        } catch (e) {
-          this.shadowRoot.getElementById('telegram_response_timestamp').textContent = 
-            event.telegram_response_timestamp;
-        }
-      }
-    } else {
-      telegramSection.style.display = 'none';
-    }
     
     // Setup auto-calculation for total cost
     this._setupCostCalculation();
@@ -3447,18 +3599,10 @@ class FWCAMCard extends HTMLElement {
     const nameField = this.shadowRoot.getElementById(isStart ? 'trip-start-name' : 'trip-end-name');
     const addressField = this.shadowRoot.getElementById(isStart ? 'trip-start-address' : 'trip-end-address');
     
-    // Get raw values and normalize decimal separator
+    // Normalize decimal separator: replace comma with dot for proper parsing
     // This handles locale-specific input (e.g., German: 50,000000 -> 50.000000)
-    const latRaw = latField?.value || '';
-    const lonRaw = lonField?.value || '';
-    const lat = parseFloat(latRaw.replace(',', '.'));
-    const lon = parseFloat(lonRaw.replace(',', '.'));
-    
-    console.log('[FWCAM Card] Reverse geocoding:', { 
-      raw: `${latRaw}, ${lonRaw}`, 
-      parsed: `${lat}, ${lon}`,
-      isStart 
-    });
+    const lat = parseFloat((latField?.value || '').replace(',', '.'));
+    const lon = parseFloat((lonField?.value || '').replace(',', '.'));
     
     // Validate coordinates
     if (isNaN(lat) || isNaN(lon)) {
@@ -3493,9 +3637,7 @@ class FWCAMCard extends HTMLElement {
           longitude: lon,
           use_cache: true
         },
-        {},     // target
-        true,   // notifyOnError
-        true    // returnResponse
+        {return_response: true}
       );
       
       if (result && result.response) {
@@ -4319,6 +4461,25 @@ class FWCAMCard extends HTMLElement {
           white-space: nowrap;
           text-align: right;
         }
+
+        /* Backup & Restore section */
+        .backup-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+        .backup-toolbar .control-button { flex: 0 0 auto; padding: 10px 18px; flex-direction: row; gap: 8px; }
+        .backup-table .backup-filename { font-family: monospace; font-size: 12px; word-break: break-all; }
+        .backup-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .backup-dl-link { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid var(--primary-color); border-radius: 4px; color: var(--primary-color); text-decoration: none; font-size: 13px; cursor: pointer; }
+        .backup-dl-link:hover { background: var(--primary-color); color: white; }
+        .backup-restore-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid #ff9800; border-radius: 4px; background: transparent; color: #ff9800; font-size: 13px; cursor: pointer; }
+        .backup-restore-btn:hover { background: #ff9800; color: white; }
+        .backup-upload-hint { font-size: 13px; color: var(--secondary-text-color); margin: 4px 0 10px 0; }
+        .backup-upload-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .backup-file-input { flex: 1 1 220px; padding: 6px; border: 1px solid var(--divider-color); border-radius: 4px; background: var(--primary-background-color); color: var(--primary-text-color); font-size: 13px; }
+        .backup-upload-row .control-button { flex: 0 0 auto; padding: 10px 18px; flex-direction: row; gap: 6px; }
+        .backup-loading { color: var(--secondary-text-color); font-style: italic; padding: 8px 0; }
+        .backup-msg { padding: 10px 14px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; }
+        .backup-msg-success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+        .backup-msg-error { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
+        .section h4 { margin: 16px 0 8px 0; font-size: 15px; font-weight: 600; color: var(--secondary-text-color); }
       </style>
     `;
   }
@@ -4334,6 +4495,7 @@ class FWCAMCard extends HTMLElement {
       show_vehicle_info: true,
       show_controls: true,
       show_settings: true,
+      show_backup: true,
       rows_per_page: 10
     };
   }
