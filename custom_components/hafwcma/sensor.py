@@ -3149,6 +3149,34 @@ class FarStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             # Legacy fallback for old data format without station_far key
             if radius_comparison.get("has_comparison"):
                 return radius_comparison.get("cheapest_station") or {}
+        # Fallback: find cheapest station in the outer ring from nearby_cheap_stations_data.
+        # This handles cases where radius_comparison is unavailable (e.g. tank level not
+        # configured, or tank is full) but geolocation data is present.
+        if self.coordinator.data:
+            nearby_data = self.coordinator.data.get("nearby_cheap_stations") or {}
+            stations = nearby_data.get("all_stations") or nearby_data.get("stations") or []
+            if stations:
+                options = self.coordinator.config_entry.options
+                near_radius = options.get(
+                    CONF_CHEAP_NEAR_STATIONS_RADIUS, DEFAULT_CHEAP_NEAR_STATIONS_RADIUS
+                )
+                outer_stations = [
+                    s for s in stations if s.get("distance_km", 0) > near_radius
+                ]
+                if outer_stations:
+                    cheapest_outer = min(
+                        outer_stations, key=lambda s: s.get("price", float("inf"))
+                    )
+                    _lat = cheapest_outer.get("latitude")
+                    _lon = cheapest_outer.get("longitude")
+                    return {
+                        "name": cheapest_outer.get("name"),
+                        "distance_km": cheapest_outer.get("distance_km"),
+                        "price": cheapest_outer.get("price"),
+                        "address": cheapest_outer.get("address"),
+                        "latitude": _lat if _lat is not None else cheapest_outer.get("lat"),
+                        "longitude": _lon if _lon is not None else cheapest_outer.get("lng"),
+                    }
         return {}
 
     @property
