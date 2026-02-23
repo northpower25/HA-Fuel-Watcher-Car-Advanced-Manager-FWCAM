@@ -215,6 +215,7 @@ class FWCAMCard extends HTMLElement {
       range: `sensor.${baseName}_range`,
       nearest_station: `sensor.${baseName}_nearest_station`,
       cheapest_station: `sensor.${baseName}_cheapest_station`,
+      far_station: `sensor.${baseName}_far_station`,
       api_debug: `sensor.${baseName}_api_debug`,
       days_until_refuel: `sensor.${baseName}_days_until_refuel`,
       consumption_history: `sensor.${baseName}_average_consumption_history`,
@@ -1537,25 +1538,84 @@ class FWCAMCard extends HTMLElement {
         fillOpacity: 0.05,
       }).addTo(map);
 
-      // Nearby cheap station markers
-      const nearbyEntity = this.getEntityState(this._entities.nearby_cheap_stations);
-      const stations = nearbyEntity?.attributes?.stations || [];
+      // Resolve special station names (state = station name)
+      const cheapestName = this.getEntityStateValue(this._entities.cheapest_station);
+      const nearestName = this.getEntityStateValue(this._entities.nearest_station);
+      const farName = this.getEntityStateValue(this._entities.far_station);
 
-      const stationIcon = L.divIcon({
-        html: '<div style="font-size:20px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">⛽</div>',
+      // Build a merged station list: start with nearby_cheap_stations, then append
+      // nearest/far/cheapest stations that have coordinates but are not already listed.
+      const nearbyEntity = this.getEntityState(this._entities.nearby_cheap_stations);
+      const radiusStations = nearbyEntity?.attributes?.stations || [];
+
+      // Helper: extract lat/lon from a station object
+      const _stationCoords = s => ({
+        lat: parseFloat(s.lat ?? s.latitude),
+        lon: parseFloat(s.lon ?? s.lng ?? s.longitude),
+      });
+
+      // Deduplicate by name: build merged list starting from radius stations
+      const seenNames = new Set();
+      const allStations = [];
+      for (const s of radiusStations) {
+        const n = s.name || '';
+        if (n) seenNames.add(n);
+        allStations.push(s);
+      }
+
+      // Append special sensors (nearest / far / cheapest) if they have coordinates and
+      // are not already in the radius list
+      const specialEntities = [
+        this._entities.nearest_station,
+        this._entities.far_station,
+        this._entities.cheapest_station,
+      ];
+      for (const entityId of specialEntities) {
+        const ent = this.getEntityState(entityId);
+        if (!ent || ent.state === 'unavailable' || ent.state === 'unknown') continue;
+        const name = ent.state;
+        if (seenNames.has(name)) continue;
+        const lat = parseFloat(ent.attributes?.latitude);
+        const lon = parseFloat(ent.attributes?.longitude);
+        if (!isNaN(lat) && !isNaN(lon)) {
+          seenNames.add(name);
+          allStations.push({
+            name,
+            lat,
+            longitude: lon,
+            price: ent.attributes?.price ?? null,
+            distance_km: ent.attributes?.distance ?? null,
+          });
+        }
+      }
+
+      // Color-coded icon factory
+      const _makeStationIcon = color => L.divIcon({
+        html: `<div style="font-size:20px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));color:${color}">⛽</div>`,
         className: '',
         iconSize: [24, 24],
         iconAnchor: [12, 12],
       });
 
-      stations.forEach(s => {
-        const lat = parseFloat(s.lat ?? s.latitude);
-        const lon = parseFloat(s.lon ?? s.lng ?? s.longitude);
-        if (isNaN(lat) || isNaN(lon)) return;
+      allStations.forEach(s => {
+        const coords = _stationCoords(s);
+        if (isNaN(coords.lat) || isNaN(coords.lon)) return;
         const name = this._escHtml(s.name || 'Station');
         const price = typeof s.price === 'number' ? `${s.price.toFixed(3)} €/L` : '—';
         const dist = typeof s.distance_km === 'number' ? `${s.distance_km.toFixed(1)} km` : (typeof s.distance === 'number' ? `${s.distance.toFixed(1)} km` : '');
-        L.marker([lat, lon], { icon: stationIcon })
+
+        // Determine marker color:
+        // green  = cheapest station
+        // yellow = nearest or far station (when not the cheapest)
+        // gray   = all other stations in radius
+        let color = '#9e9e9e'; // gray
+        if (cheapestName && s.name === cheapestName) {
+          color = '#4caf50'; // green
+        } else if ((nearestName && s.name === nearestName) || (farName && s.name === farName)) {
+          color = '#ffc107'; // yellow/amber
+        }
+
+        L.marker([coords.lat, coords.lon], { icon: _makeStationIcon(color) })
           .addTo(map)
           .bindPopup(`<b>${name}</b><br>${price}${dist ? `<br>${dist}` : ''}`);
       });

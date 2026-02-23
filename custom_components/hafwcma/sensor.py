@@ -2927,10 +2927,12 @@ class CheapestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 if staleness_warning:
                     attributes["data_staleness_warning"] = staleness_warning
             
-            # Add navigation links if station has coordinates
+            # Add coordinates and navigation links if station has coordinates
             lat = station.get("latitude")
             lon = station.get("longitude")
             if lat and lon:
+                attributes["latitude"] = lat
+                attributes["longitude"] = lon
                 attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
                 attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
                 attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
@@ -3043,19 +3045,21 @@ class NearestStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 ATTR_PRICE: station.get("price"),
             }
             
-            # Add navigation links
+            # Add coordinates and navigation links
+            lat = station.get("latitude")
+            lon = station.get("longitude")
+            if lat and lon:
+                attributes["latitude"] = lat
+                attributes["longitude"] = lon
             nav_urls = station.get("navigation_urls")
             if nav_urls:
                 attributes["google_maps_url"] = nav_urls.get("google_maps")
                 attributes["apple_maps_url"] = nav_urls.get("apple_maps")
                 attributes["waze_url"] = nav_urls.get("waze")
-            else:
-                lat = station.get("latitude")
-                lon = station.get("longitude")
-                if lat and lon:
-                    attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
-                    attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
-                    attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+            elif lat and lon:
+                attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+                attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
+                attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
             
             # Add timestamp of last successful station fetch
             last_station_timestamp = self.coordinator.data.get("last_station_timestamp")
@@ -3170,19 +3174,21 @@ class FarStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 ATTR_PRICE: station.get("price"),
             }
             
-            # Add navigation links
+            # Add coordinates and navigation links
+            lat = station.get("latitude")
+            lon = station.get("longitude")
+            if lat and lon:
+                attributes["latitude"] = lat
+                attributes["longitude"] = lon
             nav_urls = station.get("navigation_urls")
             if nav_urls:
                 attributes["google_maps_url"] = nav_urls.get("google_maps")
                 attributes["apple_maps_url"] = nav_urls.get("apple_maps")
                 attributes["waze_url"] = nav_urls.get("waze")
-            else:
-                lat = station.get("latitude")
-                lon = station.get("longitude")
-                if lat and lon:
-                    attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
-                    attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
-                    attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+            elif lat and lon:
+                attributes["google_maps_url"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+                attributes["apple_maps_url"] = f"https://maps.apple.com/?q={lat},{lon}"
+                attributes["waze_url"] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
             
             # Add timestamp of last successful station fetch
             last_station_timestamp = self.coordinator.data.get("last_station_timestamp")
