@@ -4505,14 +4505,14 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes.
         
-        Returns top 5 cheapest stations for debugging.
+        Returns top 10 cheapest stations for debugging.
         Use geolocation features or services for complete station list.
         
         Attributes are ordered according to FWCAM standard structure:
         1. Core metadata (data_source, location info)
         2. Configuration (radius, max stations)
         3. Config & documentation
-        4. Mass data (limited to 5 stations)
+        4. Mass data (limited to 10 stations)
         """
         if not self.coordinator.data:
             return {}
@@ -4554,14 +4554,14 @@ class NearbyCheapStationsSensor(CoordinatorEntity, SensorEntity):
             attributes[ATTR_ENTITY_DEPENDENCIES] = metadata.get("dependencies_info")
             attributes[ATTR_ENTITY_DOCUMENTATION_URL] = metadata.get("documentation_url")
         
-        # 4. Mass data (LIMITED to 5 stations)
-        # Get top 5 cheapest stations only for debugging
+        # 4. Mass data (LIMITED to 10 stations)
+        # Get top 10 cheapest stations only for debugging
         all_stations = nearby_data.get("stations", [])
         # Use heapq for efficient top-N selection without full sort
-        if len(all_stations) <= 5:
+        if len(all_stations) <= 10:
             attributes["stations"] = sorted(all_stations, key=lambda x: x.get("price", float('inf')))
         else:
-            attributes["stations"] = heapq.nsmallest(5, all_stations, key=lambda x: x.get("price", float('inf')))
+            attributes["stations"] = heapq.nsmallest(10, all_stations, key=lambda x: x.get("price", float('inf')))
         
         return attributes
     

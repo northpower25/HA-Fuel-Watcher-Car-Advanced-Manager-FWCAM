@@ -1589,13 +1589,20 @@ class FWCAMCard extends HTMLElement {
         }
       }
 
-      // Color-coded icon factory
-      const _makeStationIcon = color => L.divIcon({
-        html: `<div style="font-size:20px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));color:${color}">⛽</div>`,
-        className: '',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-      });
+      // PNG icon factory – uses the gas-station PNG assets served from the
+      // integration's www directory (/hafwcma_local/).
+      const _iconCache = {};
+      const _makeStationIcon = key => {
+        if (!_iconCache[key]) {
+          _iconCache[key] = L.icon({
+            iconUrl: `/hafwcma_local/small_${key}_gazstation.png`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -32],
+          });
+        }
+        return _iconCache[key];
+      };
 
       allStations.forEach(s => {
         const coords = _stationCoords(s);
@@ -1604,18 +1611,18 @@ class FWCAMCard extends HTMLElement {
         const price = typeof s.price === 'number' ? `${s.price.toFixed(3)} €/L` : '—';
         const dist = typeof s.distance_km === 'number' ? `${s.distance_km.toFixed(1)} km` : (typeof s.distance === 'number' ? `${s.distance.toFixed(1)} km` : '');
 
-        // Determine marker color:
+        // Determine marker icon:
         // green  = cheapest station
         // yellow = nearest or far station (when not the cheapest)
-        // gray   = all other stations in radius
-        let color = '#9e9e9e'; // gray
+        // red    = all other stations in radius
+        let iconKey = 'red';
         if (cheapestName && s.name === cheapestName) {
-          color = '#4caf50'; // green
+          iconKey = 'green';
         } else if ((nearestName && s.name === nearestName) || (farName && s.name === farName)) {
-          color = '#ffc107'; // yellow/amber
+          iconKey = 'yellow';
         }
 
-        L.marker([coords.lat, coords.lon], { icon: _makeStationIcon(color) })
+        L.marker([coords.lat, coords.lon], { icon: _makeStationIcon(iconKey) })
           .addTo(map)
           .bindPopup(`<b>${name}</b><br>${price}${dist ? `<br>${dist}` : ''}`);
       });
