@@ -2328,14 +2328,6 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
-   * Handle trip filter change
-   */
-  handleTripFilterChange(category) {
-    this._tripCategoryFilter = category;
-    this.render();
-  }
-
-  /**
    * Clear trip filters
    */
   clearTripFilters() {
