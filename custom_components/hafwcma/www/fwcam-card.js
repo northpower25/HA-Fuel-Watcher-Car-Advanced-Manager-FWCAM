@@ -26,6 +26,7 @@ const SERVICE_CALL_REFRESH_DELAY_MS = 1000;
 const DEFAULT_TANK_CAPACITY_LITERS = 99.99;
 const DEFAULT_DAILY_DISTANCE_KM = 40.0;
 const MAX_AUTOCOMPLETE_SUGGESTIONS = 10;
+const DEFAULT_SECTION_ORDER = ['vehicle_info', 'price_chart', 'consumption_chart', 'cheapest_stations', 'map', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'];
 
 class FWCAMCard extends HTMLElement {
   constructor() {
@@ -61,6 +62,9 @@ class FWCAMCard extends HTMLElement {
     this._backupLoading = false;
     this._backupMessage = null;      // { type: 'success'|'error', text: string }
     this._backupUploadLoading = false;
+    // State for layout edit mode (drag & drop section reordering)
+    this._editLayoutMode = false;
+    this._dragSrcSection = null;
   }
 
   /**
@@ -99,16 +103,30 @@ class FWCAMCard extends HTMLElement {
       show_consumption_chart: Object.prototype.hasOwnProperty.call(config, 'show_consumption_chart') ? config.show_consumption_chart : true,
       show_cheapest_stations: Object.prototype.hasOwnProperty.call(config, 'show_cheapest_stations') ? config.show_cheapest_stations : true,
       show_top_destinations: Object.prototype.hasOwnProperty.call(config, 'show_top_destinations') ? config.show_top_destinations : true,
+      show_map: Object.prototype.hasOwnProperty.call(config, 'show_map') ? config.show_map : true,
       show_controls: Object.prototype.hasOwnProperty.call(config, 'show_controls') ? config.show_controls : defaultShowValue,
       show_settings: Object.prototype.hasOwnProperty.call(config, 'show_settings') ? config.show_settings : defaultShowValue,
       show_backup: Object.prototype.hasOwnProperty.call(config, 'show_backup') ? config.show_backup : defaultShowValue,
-      section_order: Array.isArray(config.section_order) ? config.section_order : ['vehicle_info', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'],
+      section_order: Array.isArray(config.section_order) ? config.section_order : [...DEFAULT_SECTION_ORDER],
       rows_per_page: config.rows_per_page || 10,
       refresh_interval: config.refresh_interval || 300,
       table_max_height: this.sanitizeCSSValue(config.table_max_height, '400px'),
       table_min_width: this.sanitizeCSSValue(config.table_min_width, '100%'),
       ...config
     };
+    // Restore persisted section order from localStorage (user drag & drop customisation)
+    // Only applies when the user has NOT explicitly set section_order in their YAML config
+    if (!Array.isArray(config.section_order)) {
+      try {
+        const stored = localStorage.getItem(`fwcam_section_order_${config.entity}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            this._config.section_order = parsed;
+          }
+        }
+      } catch (_e) { /* ignore storage errors */ }
+    }
     // Ensure first render happens immediately
     this._lastRender = 0;
     this.findEntities();
@@ -203,6 +221,7 @@ class FWCAMCard extends HTMLElement {
       consumption_forecast: `sensor.${baseName}_average_consumption_forecast`,
       trip_log_sensor: `sensor.${baseName}_trip_log`,
       current_trip: `sensor.${baseName}_current_trip`,
+      nearby_cheap_stations: `sensor.${baseName}_nearby_cheap_stations`,
       // Switches
       fuel_price_refresh: `switch.${baseName}_fuel_price_refresh`,
       consumption_prediction: `switch.${baseName}_consumption_prediction`,
@@ -211,6 +230,8 @@ class FWCAMCard extends HTMLElement {
       update_interval: `number.${baseName}_update_interval`,
       consumption_min_data_points: `number.${baseName}_consumption_min_data_points`,
       consumption_prediction_interval: `number.${baseName}_consumption_prediction_interval`,
+      cheap_stations_radius: `number.${baseName}_cheap_stations_radius`,
+      cheap_stations_count: `number.${baseName}_cheap_stations_count`,
       // Buttons
       test_connection: `button.${baseName}_test_connection`,
       import_historical_data: `button.${baseName}_import_historical_data`,
@@ -932,10 +953,13 @@ class FWCAMCard extends HTMLElement {
       <ha-card>
         <div class="card-header">
           <div class="name">${this._config.title}</div>
+          <button class="edit-layout-btn${this._editLayoutMode ? ' active' : ''}" data-action="toggle-edit-layout" title="${this._editLayoutMode ? 'Done editing layout' : 'Edit layout (drag & drop sections)'}">
+            ${this._editLayoutMode ? '✅ Done' : '✏️ Edit Layout'}
+          </button>
         </div>
         
         <div class="card-content">
-          ${this._config.section_order.map(name => this._renderSection(name, lastRefueling)).join('')}
+          ${this._config.section_order.map(name => this._renderSectionWrapper(name, lastRefueling)).join('')}
         </div>
       </ha-card>
       ${this.renderDialog()}
@@ -945,8 +969,41 @@ class FWCAMCard extends HTMLElement {
 
     this.attachEventListeners();
     
+    // Initialize Leaflet map if map section is visible
+    if (this._config.show_map && this._config.section_order.includes('map')) {
+      this._initLeafletMap();
+    }
+    
     // Update last render timestamp only after successful render
     this._lastRender = Date.now();
+  }
+
+  /**
+   * Wrap a section in a draggable container when in edit layout mode.
+   */
+  _renderSectionWrapper(name, lastRefueling) {
+    const content = this._renderSection(name, lastRefueling);
+    if (!content) return '';
+    if (this._editLayoutMode) {
+      const sectionLabels = {
+        vehicle_info: '🚗 Vehicle Info',
+        price_chart: '⛽ Fuel Price Development',
+        consumption_chart: '📊 Consumption',
+        cheapest_stations: '🏆 Top 5 Cheapest Stations',
+        map: '🗺️ Map',
+        controls: '🎛️ Controls',
+        settings: '⚙️ Settings',
+        backup: '💾 Backup',
+        refueling_log: '📋 Refueling Log',
+        trip_log: '🛣️ Trip Log',
+      };
+      const label = sectionLabels[name] || name;
+      return `<div class="drag-section" draggable="true" data-section="${name}">
+        <div class="drag-handle" title="Drag to reorder">⠿ ${label}</div>
+        ${content}
+      </div>`;
+    }
+    return content;
   }
 
   /**
@@ -954,15 +1011,27 @@ class FWCAMCard extends HTMLElement {
    * Used by render() to honour section_order config.
    */
   _renderSection(name, lastRefueling) {
+    // Determine if the three sub-sections are separately present in section_order
+    const hasStandalonePriceChart = this._config.section_order.includes('price_chart');
+    const hasStandaloneConsumption = this._config.section_order.includes('consumption_chart');
+    const hasStandaloneCheapest = this._config.section_order.includes('cheapest_stations');
     switch (name) {
       case 'vehicle_info':
         if (!this._config.show_vehicle_info) return '';
         return `
           ${this.renderVehicleInfo()}
-          ${this._config.show_price_chart ? this.renderPriceChart() : ''}
-          ${this._config.show_consumption_chart ? this.renderConsumptionChart() : ''}
-          ${this._config.show_cheapest_stations ? this.renderTopCheapestStations() : ''}
+          ${(!hasStandalonePriceChart && this._config.show_price_chart) ? this.renderPriceChart() : ''}
+          ${(!hasStandaloneConsumption && this._config.show_consumption_chart) ? this.renderConsumptionChart() : ''}
+          ${(!hasStandaloneCheapest && this._config.show_cheapest_stations) ? this.renderTopCheapestStations() : ''}
         `;
+      case 'price_chart':
+        return this._config.show_price_chart ? this.renderPriceChart() : '';
+      case 'consumption_chart':
+        return this._config.show_consumption_chart ? this.renderConsumptionChart() : '';
+      case 'cheapest_stations':
+        return this._config.show_cheapest_stations ? this.renderTopCheapestStations() : '';
+      case 'map':
+        return this._config.show_map ? this.renderStationsMap() : '';
       case 'controls':
         return this._config.show_controls ? this.renderControls() : '';
       case 'settings':
@@ -1358,6 +1427,164 @@ class FWCAMCard extends HTMLElement {
         </div>
       </div>
     `;
+  }
+
+  /**
+   * Render interactive map section showing vehicle position and nearby stations.
+   * Uses Leaflet.js loaded from CDN for interactive zoom/pan.
+   */
+  renderStationsMap() {
+    const nearbyEntity = this.getEntityState(this._entities.nearby_cheap_stations);
+    const vehicleLat = nearbyEntity?.attributes?.vehicle_latitude;
+    const vehicleLon = nearbyEntity?.attributes?.vehicle_longitude;
+    const radiusEntity = this.getEntityState(this._entities.cheap_stations_radius);
+    const radiusKm = radiusEntity ? parseFloat(radiusEntity.state) : 5;
+
+    if (!vehicleLat || !vehicleLon) {
+      return `
+        <div class="section">
+          <h3>🗺️ Map</h3>
+          <div class="no-data">
+            <p>No vehicle position available. Enable geolocation in the integration settings.</p>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="section">
+        <h3>🗺️ Map</h3>
+        <div id="fwcam-stations-map" style="height: 350px; border-radius: 8px; overflow: hidden; background: #e0e0e0;"
+             data-lat="${parseFloat(vehicleLat)}" data-lon="${parseFloat(vehicleLon)}" data-radius="${isNaN(radiusKm) ? 5 : radiusKm}">
+          <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#757575;">
+            Loading map…
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Ensure Leaflet CSS is injected into the shadow root.
+   */
+  _ensureLeafletCSS() {
+    if (!this.shadowRoot.querySelector('#fwcam-leaflet-css')) {
+      const link = document.createElement('link');
+      link.id = 'fwcam-leaflet-css';
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      this.shadowRoot.appendChild(link);
+    }
+  }
+
+  /**
+   * Initialize the Leaflet map in the shadow DOM container.
+   * Loads Leaflet JS from CDN if not already present.
+   */
+  _initLeafletMap() {
+    const mapContainer = this.shadowRoot.getElementById('fwcam-stations-map');
+    if (!mapContainer) return;
+
+    // Inject Leaflet CSS into shadow root for proper styling
+    this._ensureLeafletCSS();
+
+    const doInit = () => {
+      // Prevent double-initialization
+      if (mapContainer._fwcamLeafletMap) {
+        mapContainer._fwcamLeafletMap.remove();
+        mapContainer._fwcamLeafletMap = null;
+      }
+
+      const vehicleLat = parseFloat(mapContainer.dataset.lat);
+      const vehicleLon = parseFloat(mapContainer.dataset.lon);
+      const radiusKm = parseFloat(mapContainer.dataset.radius) || 5;
+
+      if (isNaN(vehicleLat) || isNaN(vehicleLon)) return;
+
+      // Clear loading placeholder
+      mapContainer.innerHTML = '';
+
+      // Initialize Leaflet map
+      /* global L */
+      const map = L.map(mapContainer, {
+        zoomControl: true,
+        attributionControl: true,
+      }).setView([vehicleLat, vehicleLon], 13);
+
+      // OpenStreetMap tiles
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      }).addTo(map);
+
+      // Vehicle marker (blue car icon via divIcon)
+      const vehicleIcon = L.divIcon({
+        html: '<div style="font-size:24px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">🚗</div>',
+        className: '',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      });
+      L.marker([vehicleLat, vehicleLon], { icon: vehicleIcon, zIndexOffset: 1000 })
+        .addTo(map)
+        .bindPopup('<b>Vehicle Position</b>');
+
+      // Search radius circle
+      L.circle([vehicleLat, vehicleLon], {
+        radius: radiusKm * 1000,
+        color: '#03a9f4',
+        weight: 2,
+        fillColor: '#03a9f4',
+        fillOpacity: 0.05,
+      }).addTo(map);
+
+      // Nearby cheap station markers
+      const nearbyEntity = this.getEntityState(this._entities.nearby_cheap_stations);
+      const stations = nearbyEntity?.attributes?.stations || [];
+
+      const stationIcon = L.divIcon({
+        html: '<div style="font-size:20px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">⛽</div>',
+        className: '',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      });
+
+      stations.forEach(s => {
+        const lat = parseFloat(s.lat ?? s.latitude);
+        const lon = parseFloat(s.lon ?? s.lng ?? s.longitude);
+        if (isNaN(lat) || isNaN(lon)) return;
+        const name = this._escHtml(s.name || 'Station');
+        const price = typeof s.price === 'number' ? `${s.price.toFixed(3)} €/L` : '—';
+        const dist = typeof s.distance_km === 'number' ? `${s.distance_km.toFixed(1)} km` : (typeof s.distance === 'number' ? `${s.distance.toFixed(1)} km` : '');
+        L.marker([lat, lon], { icon: stationIcon })
+          .addTo(map)
+          .bindPopup(`<b>${name}</b><br>${price}${dist ? `<br>${dist}` : ''}`);
+      });
+
+      // Fit map to radius bounds
+      const degLat = radiusKm / 111.0;
+      const degLon = radiusKm / (111.0 * Math.cos(vehicleLat * Math.PI / 180));
+      map.fitBounds([
+        [vehicleLat - degLat, vehicleLon - degLon],
+        [vehicleLat + degLat, vehicleLon + degLon],
+      ]);
+
+      // Store map instance to allow cleanup on re-render
+      mapContainer._fwcamLeafletMap = map;
+    };
+
+    if (typeof L !== 'undefined') {
+      doInit();
+    } else if (!document.getElementById('fwcam-leaflet-js')) {
+      // Load Leaflet JS globally once
+      const script = document.createElement('script');
+      script.id = 'fwcam-leaflet-js';
+      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      script.onload = () => doInit();
+      document.head.appendChild(script);
+    } else {
+      // Script is loading — wait for it
+      document.getElementById('fwcam-leaflet-js').addEventListener('load', () => doInit(), { once: true });
+    }
   }
 
   /**
@@ -2111,6 +2338,59 @@ class FWCAMCard extends HTMLElement {
    * Attach event listeners to interactive elements
    */
   attachEventListeners() {
+    // Edit Layout toggle button
+    const editLayoutBtn = this.shadowRoot.querySelector('[data-action="toggle-edit-layout"]');
+    if (editLayoutBtn) {
+      editLayoutBtn.addEventListener('click', () => {
+        this._editLayoutMode = !this._editLayoutMode;
+        this.forceRender();
+      });
+    }
+
+    // Drag & drop for section reordering (edit layout mode)
+    if (this._editLayoutMode) {
+      this.shadowRoot.querySelectorAll('.drag-section').forEach(el => {
+        el.addEventListener('dragstart', (e) => {
+          this._dragSrcSection = el.dataset.section;
+          e.dataTransfer.effectAllowed = 'move';
+          el.style.opacity = '0.5';
+        });
+        el.addEventListener('dragend', () => {
+          el.style.opacity = '';
+        });
+        el.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          el.style.borderTop = '3px solid var(--primary-color)';
+        });
+        el.addEventListener('dragleave', () => {
+          el.style.borderTop = '';
+        });
+        el.addEventListener('drop', (e) => {
+          e.preventDefault();
+          el.style.borderTop = '';
+          const src = this._dragSrcSection;
+          const dst = el.dataset.section;
+          if (src && dst && src !== dst) {
+            const order = [...this._config.section_order];
+            const srcIdx = order.indexOf(src);
+            const dstIdx = order.indexOf(dst);
+            if (srcIdx !== -1 && dstIdx !== -1) {
+              order.splice(srcIdx, 1);
+              order.splice(dstIdx, 0, src);
+              this._config.section_order = order;
+              // Persist order to localStorage for this card's entity
+              try {
+                localStorage.setItem(`fwcam_section_order_${this._config.entity}`, JSON.stringify(order));
+              } catch (_e) { /* ignore */ }
+              this.forceRender();
+            }
+          }
+          this._dragSrcSection = null;
+        });
+      });
+    }
+
     // Control buttons
     this.shadowRoot.querySelectorAll('.control-button').forEach(button => {
       button.addEventListener('click', (e) => {
@@ -4105,6 +4385,45 @@ class FWCAMCard extends HTMLElement {
           color: var(--primary-text-color);
         }
 
+        .edit-layout-btn {
+          padding: 6px 14px;
+          border: 1px solid var(--primary-color);
+          border-radius: 20px;
+          background: transparent;
+          color: var(--primary-color);
+          font-size: 13px;
+          cursor: pointer;
+          transition: background 0.15s, color 0.15s;
+          white-space: nowrap;
+        }
+        .edit-layout-btn:hover, .edit-layout-btn.active {
+          background: var(--primary-color);
+          color: var(--text-primary-color, #fff);
+        }
+
+        .drag-section {
+          border-radius: 8px;
+          transition: opacity 0.15s, border-top 0.1s;
+          cursor: default;
+        }
+        .drag-section[draggable="true"] {
+          cursor: grab;
+        }
+        .drag-handle {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 12px;
+          background: var(--secondary-background-color, #f5f5f5);
+          border-radius: 6px;
+          margin-bottom: 4px;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--secondary-text-color);
+          user-select: none;
+          cursor: grab;
+        }
+
         .card-content {
           display: flex;
           flex-direction: column;
@@ -5008,13 +5327,14 @@ class FWCAMCard extends HTMLElement {
       show_price_chart: true,
       show_consumption_chart: true,
       show_cheapest_stations: true,
+      show_map: true,
       show_controls: true,
       show_settings: true,
       show_backup: true,
       show_refueling_log: true,
       show_trip_log: true,
       show_top_destinations: true,
-      section_order: ['vehicle_info', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'],
+      section_order: [...DEFAULT_SECTION_ORDER],
       rows_per_page: 10,
       refresh_interval: 300,
     };
