@@ -1043,10 +1043,10 @@ class FWCAMCard extends HTMLElement {
         return this._config.show_refueling_log ? this.renderRefuelingLog(this._allRefuelings || [], lastRefueling) : '';
       case 'trip_log':
         if (!this._config.show_trip_log) return '';
-        return `
+        return `<div data-fwcam-section="trip_log">
           ${this.renderTripLog(this._allTrips || [])}
           ${this._config.show_top_destinations ? this.renderTopDestinations(this._allTrips || []) : ''}
-        `;
+        </div>`;
       default:
         return '';
     }
@@ -2255,7 +2255,7 @@ class FWCAMCard extends HTMLElement {
       this._tripSortColumn = column;
       this._tripSortDirection = column === 'timestamp_end' ? 'desc' : 'asc';
     }
-    this.render();
+    this._updateTripLogSection();
   }
 
   /**
@@ -2276,7 +2276,7 @@ class FWCAMCard extends HTMLElement {
     this._tripFilterDateFrom = '';
     this._tripFilterDateTo = '';
     this._tripCurrentPage = 1;
-    this.render();
+    this._updateTripLogSection();
   }
   
   /**
@@ -2393,7 +2393,7 @@ class FWCAMCard extends HTMLElement {
       this._tripFilterDateTo = value;
     }
     this._tripCurrentPage = 1; // Reset to first page when filter changes
-    this.render();
+    this._updateTripLogSection();
   }
   
   /**
@@ -2405,8 +2405,76 @@ class FWCAMCard extends HTMLElement {
     } else if (direction === 'prev') {
       this._tripCurrentPage = Math.max(1, this._tripCurrentPage - 1);
     }
-    this.render();
+    this._updateTripLogSection();
   }
+
+  /**
+   * Update only the trip log section in-place without a full card re-render.
+   * Preserves scroll position by avoiding full shadow DOM replacement.
+   * Event delegation listeners set up by attachEventListeners() remain active
+   * on the container element and handle all interactions automatically.
+   */
+  _updateTripLogSection() {
+    const container = this.shadowRoot.querySelector('[data-fwcam-section="trip_log"]');
+    if (!container) {
+      // Fallback to full render if the wrapper is not in the DOM yet
+      this.render();
+      return;
+    }
+    container.innerHTML = `
+      ${this.renderTripLog(this._allTrips || [])}
+      ${this._config.show_top_destinations ? this.renderTopDestinations(this._allTrips || []) : ''}
+    `;
+  }
+
+  /**
+   * Attach event listeners to the trip log section container using event delegation.
+   * Called once per full render. Because listeners are on the persistent container
+   * element (not on its children), they remain active across partial DOM updates
+   * performed by _updateTripLogSection().
+   */
+  _attachTripLogEventListeners(root) {
+    // Guard against double-registration on the same container element
+    if (root._fwcamTripListenersAttached) return;
+    root._fwcamTripListenersAttached = true;
+
+    root.addEventListener('click', (e) => {
+      const actionEl = e.target.closest('[data-action]');
+      if (actionEl) {
+        const action = actionEl.dataset.action;
+        const tripId = actionEl.dataset.tripId;
+        if (action === 'edit-trip') {
+          this.showEditTripDialog(tripId);
+        } else if (action === 'delete-trip') {
+          this.deleteTrip(tripId);
+        } else if (action === 'add-trip') {
+          this.showAddTripDialog();
+        } else if (action === 'clear-trip-filters') {
+          this.clearTripFilters();
+        } else if (action === 'trip-prev-page') {
+          this.handleTripPagination('prev');
+        } else if (action === 'trip-next-page') {
+          this.handleTripPagination('next');
+        }
+        return;
+      }
+      const sortHeader = e.target.closest('.sortable[data-sort-type="trip"]');
+      if (sortHeader) {
+        this.handleTripSort(sortHeader.dataset.sortColumn);
+      }
+    });
+
+    root.addEventListener('change', (e) => {
+      const filterEl = e.target.closest('.filter-select, .filter-date');
+      if (!filterEl) return;
+      const filterType = filterEl.dataset.filter;
+      const value = filterEl.value;
+      if (filterType && filterType.startsWith('trip-')) {
+        this.handleTripFilterChange(filterType, value);
+      }
+    });
+  }
+
 
   /**
    * Attach event listeners to interactive elements
@@ -2488,26 +2556,21 @@ class FWCAMCard extends HTMLElement {
       });
     });
 
-    // Refueling log and trip log action buttons
+    // Refueling log action buttons
     this.shadowRoot.querySelectorAll('.action-button').forEach(button => {
       button.addEventListener('click', (e) => {
         const action = e.currentTarget.dataset.action;
         const eventId = e.currentTarget.dataset.eventId;
-        const tripId = e.currentTarget.dataset.tripId;
         
         if (action === 'edit') {
           this.showEditDialog(eventId);
         } else if (action === 'delete') {
           this.deleteRefuelingEvent(eventId);
-        } else if (action === 'edit-trip') {
-          this.showEditTripDialog(tripId);
-        } else if (action === 'delete-trip') {
-          this.deleteTrip(tripId);
         }
       });
     });
 
-    // Add event button (refueling and trips)
+    // Add event button (refueling)
     const addButton = this.shadowRoot.querySelector('[data-action="add-event"]');
     if (addButton) {
       addButton.addEventListener('click', () => {
@@ -2515,40 +2578,24 @@ class FWCAMCard extends HTMLElement {
       });
     }
 
-    const addTripButton = this.shadowRoot.querySelector('[data-action="add-trip"]');
-    if (addTripButton) {
-      addTripButton.addEventListener('click', () => {
-        this.showAddTripDialog();
-      });
-    }
-
-    // Sort column headers (refueling and trips)
-    this.shadowRoot.querySelectorAll('.sortable').forEach(header => {
+    // Sort column headers (refueling only; trip sort is handled by trip log event delegation)
+    this.shadowRoot.querySelectorAll('.sortable:not([data-sort-type="trip"])').forEach(header => {
       header.addEventListener('click', (e) => {
         const column = e.currentTarget.dataset.sortColumn;
-        const sortType = e.currentTarget.dataset.sortType; // 'trip' or undefined for refueling
-        if (sortType === 'trip') {
-          this.handleTripSort(column);
-        } else {
-          this.handleSort(column);
-        }
+        this.handleSort(column);
       });
     });
 
-    // Filter dropdowns and date inputs (refueling and trips)
-    this.shadowRoot.querySelectorAll('.filter-select, .filter-date').forEach(input => {
+    // Filter dropdowns and date inputs (refueling only; trip filters handled by trip log event delegation)
+    this.shadowRoot.querySelectorAll('.filter-select:not([data-filter^="trip-"]), .filter-date:not([data-filter^="trip-"])').forEach(input => {
       input.addEventListener('change', (e) => {
         const filterType = e.target.dataset.filter;
         const value = e.target.value;
-        if (filterType && filterType.startsWith('trip-')) {
-          this.handleTripFilterChange(filterType, value);
-        } else {
-          this.handleFilterChange(filterType, value);
-        }
+        this.handleFilterChange(filterType, value);
       });
     });
 
-    // Clear filters button (refueling and trips)
+    // Clear filters button (refueling)
     const clearFiltersButton = this.shadowRoot.querySelector('[data-action="clear-filters"]');
     if (clearFiltersButton) {
       clearFiltersButton.addEventListener('click', () => {
@@ -2556,26 +2603,10 @@ class FWCAMCard extends HTMLElement {
       });
     }
 
-    const clearTripFiltersButton = this.shadowRoot.querySelector('[data-action="clear-trip-filters"]');
-    if (clearTripFiltersButton) {
-      clearTripFiltersButton.addEventListener('click', () => {
-        this.clearTripFilters();
-      });
-    }
-
-    // Trip pagination buttons
-    const tripPrevButton = this.shadowRoot.querySelector('[data-action="trip-prev-page"]');
-    if (tripPrevButton) {
-      tripPrevButton.addEventListener('click', () => {
-        this.handleTripPagination('prev');
-      });
-    }
-
-    const tripNextButton = this.shadowRoot.querySelector('[data-action="trip-next-page"]');
-    if (tripNextButton) {
-      tripNextButton.addEventListener('click', () => {
-        this.handleTripPagination('next');
-      });
+    // Trip log event delegation (pagination, sort, filter, add/edit/delete trip)
+    const tripLogContainer = this.shadowRoot.querySelector('[data-fwcam-section="trip_log"]');
+    if (tripLogContainer) {
+      this._attachTripLogEventListeners(tripLogContainer);
     }
 
     // Dialog close buttons
