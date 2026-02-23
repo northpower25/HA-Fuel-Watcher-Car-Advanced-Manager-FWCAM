@@ -26,6 +26,7 @@ const SERVICE_CALL_REFRESH_DELAY_MS = 1000;
 const DEFAULT_TANK_CAPACITY_LITERS = 99.99;
 const DEFAULT_DAILY_DISTANCE_KM = 40.0;
 const MAX_AUTOCOMPLETE_SUGGESTIONS = 10;
+const DEFAULT_SECTION_ORDER = ['vehicle_info', 'price_chart', 'consumption_chart', 'cheapest_stations', 'map', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'];
 
 class FWCAMCard extends HTMLElement {
   constructor() {
@@ -106,7 +107,7 @@ class FWCAMCard extends HTMLElement {
       show_controls: Object.prototype.hasOwnProperty.call(config, 'show_controls') ? config.show_controls : defaultShowValue,
       show_settings: Object.prototype.hasOwnProperty.call(config, 'show_settings') ? config.show_settings : defaultShowValue,
       show_backup: Object.prototype.hasOwnProperty.call(config, 'show_backup') ? config.show_backup : defaultShowValue,
-      section_order: Array.isArray(config.section_order) ? config.section_order : ['vehicle_info', 'price_chart', 'consumption_chart', 'cheapest_stations', 'map', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'],
+      section_order: Array.isArray(config.section_order) ? config.section_order : [...DEFAULT_SECTION_ORDER],
       rows_per_page: config.rows_per_page || 10,
       refresh_interval: config.refresh_interval || 300,
       table_max_height: this.sanitizeCSSValue(config.table_max_height, '400px'),
@@ -191,17 +192,6 @@ class FWCAMCard extends HTMLElement {
     
     console.warn(`Invalid CSS value '${value}', using default '${defaultValue}'`);
     return defaultValue;
-  }
-
-  /**
-   * Escape HTML special characters to prevent XSS.
-   */
-  _escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
   }
 
   /**
@@ -1562,7 +1552,7 @@ class FWCAMCard extends HTMLElement {
         const lat = parseFloat(s.lat ?? s.latitude);
         const lon = parseFloat(s.lon ?? s.lng ?? s.longitude);
         if (isNaN(lat) || isNaN(lon)) return;
-        const name = this._escapeHtml(s.name || 'Station');
+        const name = this._escHtml(s.name || 'Station');
         const price = typeof s.price === 'number' ? `${s.price.toFixed(3)} €/L` : '—';
         const dist = typeof s.distance_km === 'number' ? `${s.distance_km.toFixed(1)} km` : (typeof s.distance === 'number' ? `${s.distance.toFixed(1)} km` : '');
         L.marker([lat, lon], { icon: stationIcon })
@@ -5344,7 +5334,7 @@ class FWCAMCard extends HTMLElement {
       show_refueling_log: true,
       show_trip_log: true,
       show_top_destinations: true,
-      section_order: ['vehicle_info', 'price_chart', 'consumption_chart', 'cheapest_stations', 'map', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'],
+      section_order: [...DEFAULT_SECTION_ORDER],
       rows_per_page: 10,
       refresh_interval: 300,
     };
