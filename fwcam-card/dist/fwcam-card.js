@@ -1589,12 +1589,13 @@ class FWCAMCard extends HTMLElement {
         }
       }
 
-      // Color-coded icon factory
+      // Color-coded icon factory – uses an inline SVG map-pin so the fill color
+      // is always respected (emoji characters ignore CSS color on most browsers).
       const _makeStationIcon = color => L.divIcon({
-        html: `<div style="font-size:20px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));color:${color}">⛽</div>`,
+        html: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="28" viewBox="0 0 20 28" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))"><path d="M10 0C4.5 0 0 4.5 0 10c0 7.5 10 18 10 18S20 17.5 20 10C20 4.5 15.5 0 10 0z" fill="${color}" stroke="rgba(0,0,0,0.25)" stroke-width="1"/><circle cx="10" cy="10" r="4" fill="white" fill-opacity="0.85"/></svg>`,
         className: '',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
+        iconSize: [20, 28],
+        iconAnchor: [10, 28],
       });
 
       allStations.forEach(s => {
