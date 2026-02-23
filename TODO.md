@@ -601,8 +601,24 @@ hafwcma_diagnostics_20260214_142500.zip
   - [ ] Automatically map extracted data to correct fields
   - [ ] Confirmation and editing workflow via chat
 - [ ] **Receipt OCR/AI analysis**: Scan fuel receipts using AI
-  - [ ] Image upload via Telegram or Home Assistant
-  - [ ] OCR extraction of key data (station, amount, price, date/time)
+  - [ ] Image/PDF upload via Telegram or FuelLog edit dialog (drag & drop / file picker)
+  - [ ] Backup & restore support for uploaded receipt files
+  - [ ] OCR extraction of key data (station, amount, price, date/time, litre quantity)
+  - [ ] Document quality assessment + per-field confidence scoring
+  - [ ] Raw OCR output + parsed result stored per refueling record
+  - [ ] Pre-fill FuelLog edit form with recognised values (similar to Telegram dialog)
+  - [ ] Receipt preview window in UI
+  - [ ] **Local OCR engines** (preferred, open-source, no cloud dependency):
+    - PaddleOCR (Apache 2.0) — best choice, layout & table recognition, Python API, runs on RPi/x86
+    - DocTR (Apache 2.0) — Transformer-OCR, excellent layout recognition
+    - EasyOCR (Apache 2.0) — simpler fallback option
+    - See `docs/dev_docs/OCR_RECEIPT_SCANNING.md` for detailed comparison & setup guide
+  - [ ] **Cloud OCR engines** (configurable via API key in Config/Options Flow):
+    - Google Cloud Vision / Document AI
+    - Microsoft Azure Cognitive Services (Receipt API)
+    - AWS Textract
+    - See `docs/dev_docs/OCR_RECEIPT_SCANNING.md` for API key setup instructions
+  - [ ] Config/Options Flow: add OCR engine selector + API key fields for cloud services
   - [ ] AI validation and correction of extracted data
   - [ ] Automatic population of refueling record
 - [ ] **Statistics and reporting**:

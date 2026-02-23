@@ -1704,7 +1704,7 @@ class FWCAMCard extends HTMLElement {
     // Aggregate destinations
     const destMap = new Map();
     for (const trip of trips) {
-      let dest = trip.end_address || null;
+      let dest = trip.end_name || trip.end_address || null;
       if (!dest && trip.end_latitude != null && trip.end_longitude != null) {
         const lat = parseFloat(trip.end_latitude);
         const lon = parseFloat(trip.end_longitude);

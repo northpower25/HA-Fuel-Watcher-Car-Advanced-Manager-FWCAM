@@ -1704,6 +1704,38 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                     if "notes" not in trip_data_item:
                                         trip_data_item["notes"] = "Auto-recovered from odometer history after system restart"
                                     
+                                    # Try to compute fuel_consumed from tank_level_history
+                                    # when it wasn't available during odometer-based recovery
+                                    if trip_data_item.get("fuel_consumed") is None:
+                                        tank_level_history = data.get("tank_level_history", [])
+                                        dist_km = trip_data_item.get("distance_km", 0)
+                                        ts_start_str = trip_data_item.get("timestamp_start")
+                                        ts_end_str = trip_data_item.get("timestamp_end")
+                                        if (tank_level_history and dist_km and
+                                                dist_km > 0 and ts_start_str and ts_end_str):
+                                            try:
+                                                from .utils.vehicle_tracker import compute_fuel_consumed_from_history
+                                                ts_start = dt_util.parse_datetime(ts_start_str)
+                                                ts_end = dt_util.parse_datetime(ts_end_str)
+                                                if ts_start and ts_end:
+                                                    if ts_start.tzinfo is None:
+                                                        ts_start = dt_util.as_local(ts_start)
+                                                    if ts_end.tzinfo is None:
+                                                        ts_end = dt_util.as_local(ts_end)
+                                                    computed = compute_fuel_consumed_from_history(
+                                                        tank_level_history, ts_start, ts_end
+                                                    )
+                                                    if computed is not None:
+                                                        trip_data_item["fuel_consumed"] = computed
+                                                        trip_data_item["consumption_rate"] = (
+                                                            (computed / dist_km) * 100
+                                                        )
+                                            except Exception as fc_err:
+                                                _LOGGER.debug(
+                                                    "Error computing fuel_consumed for recovered trip: %s",
+                                                    fc_err,
+                                                )
+                                    
                                     # Add trip to storage
                                     data["trips"].append(trip_data_item)
                                     
@@ -1768,6 +1800,40 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     # Calculate costs
                     fuel_consumed = trip_data.get("fuel_consumed")
                     distance_km = trip_data.get("distance_km", 0)
+                    
+                    # If fuel_consumed is not available from the snapshot, try to compute it
+                    # retroactively from tank_level_history using the trip's timestamps.
+                    if fuel_consumed is None and distance_km and distance_km > 0:
+                        tank_level_history = data.get("tank_level_history", [])
+                        ts_start_str = trip_data.get("timestamp_start")
+                        ts_end_str = trip_data.get("timestamp_end")
+                        if tank_level_history and ts_start_str and ts_end_str:
+                            try:
+                                from .utils.vehicle_tracker import compute_fuel_consumed_from_history
+                                ts_start = dt_util.parse_datetime(ts_start_str)
+                                ts_end = dt_util.parse_datetime(ts_end_str)
+                                if ts_start and ts_end:
+                                    if ts_start.tzinfo is None:
+                                        ts_start = dt_util.as_local(ts_start)
+                                    if ts_end.tzinfo is None:
+                                        ts_end = dt_util.as_local(ts_end)
+                                    computed = compute_fuel_consumed_from_history(
+                                        tank_level_history, ts_start, ts_end
+                                    )
+                                    if computed is not None:
+                                        fuel_consumed = computed
+                                        trip_data["fuel_consumed"] = fuel_consumed
+                                        trip_data["consumption_rate"] = (
+                                            (fuel_consumed / distance_km) * 100
+                                        )
+                                        _LOGGER.debug(
+                                            "Retroactively computed fuel_consumed=%.2fL for trip from history",
+                                            fuel_consumed,
+                                        )
+                            except Exception as fc_err:
+                                _LOGGER.debug(
+                                    "Error computing fuel_consumed retroactively: %s", fc_err
+                                )
                     
                     # Calculate fuel cost
                     fuel_cost = 0.0
