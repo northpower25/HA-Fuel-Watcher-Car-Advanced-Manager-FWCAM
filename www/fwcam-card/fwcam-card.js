@@ -36,11 +36,12 @@ class FWCAMCard extends HTMLElement {
     this._hass = null;
     this._entities = {};
     this._lastRender = 0;
-    // State for refueling table sorting and filtering
+    // State for refueling table sorting, filtering, and pagination
     this._sortColumn = 'timestamp';
     this._sortDirection = 'desc';
     this._filterYear = '';
     this._filterMonth = '';
+    this._refuelingCurrentPage = 1;
     // State for trip table sorting, filtering, and pagination
     this._tripSortColumn = 'timestamp_end';
     this._tripSortDirection = 'desc';
@@ -270,8 +271,34 @@ class FWCAMCard extends HTMLElement {
       if (service.includes('trip') || service.includes('refuel')) {
         this._invalidateDataCache();
       }
-      // Force render after service calls to show immediate feedback
-      setTimeout(() => this.forceRender(), SERVICE_CALL_REFRESH_DELAY_MS);
+      // Partial section update for trip/refuel services; full re-render for others
+      if (service.includes('trip')) {
+        setTimeout(async () => {
+          try {
+            const trips = await this.fetchAllTrips();
+            this._allTrips = trips;
+            this._allTripsFetched = true;
+          } catch (err) {
+            console.error('[FWCAM Card] Error refreshing trips after service call:', err);
+          }
+          this._updateTripLogSection();
+        }, SERVICE_CALL_REFRESH_DELAY_MS);
+      } else if (service.includes('refuel')) {
+        setTimeout(async () => {
+          try {
+            const refuelings = await this.fetchAllRefuelings();
+            this._allRefuelings = refuelings;
+            this._recentEvents = refuelings.slice(0, 10);
+            this._allRefuelingsFetched = true;
+          } catch (err) {
+            console.error('[FWCAM Card] Error refreshing refuelings after service call:', err);
+          }
+          this._updateRefuelingLogSection();
+        }, SERVICE_CALL_REFRESH_DELAY_MS);
+      } else {
+        // Force render after other service calls to show immediate feedback
+        setTimeout(() => this.forceRender(), SERVICE_CALL_REFRESH_DELAY_MS);
+      }
     });
   }
 
@@ -906,6 +933,9 @@ class FWCAMCard extends HTMLElement {
     const recentEvents = refuelingEntity?.attributes?.recent_events || [];
     const lastRefueling = refuelingEntity?.attributes?.last_refueling || null;
     
+    // Store lastRefueling for use in partial section updates
+    this._lastRefueling = lastRefueling;
+    
     // Store events for dialog access (use recent for now, fetch all when needed)
     this._recentEvents = recentEvents;
     // Only reset _allRefuelings if we haven't fetched all refuelings yet
@@ -1040,7 +1070,10 @@ class FWCAMCard extends HTMLElement {
       case 'backup':
         return this._config.show_backup ? this.renderBackup() : '';
       case 'refueling_log':
-        return this._config.show_refueling_log ? this.renderRefuelingLog(this._allRefuelings || [], lastRefueling) : '';
+        if (!this._config.show_refueling_log) return '';
+        return `<div data-fwcam-section="refueling_log">
+          ${this.renderRefuelingLog(this._allRefuelings || [], this._lastRefueling || null)}
+        </div>`;
       case 'trip_log':
         if (!this._config.show_trip_log) return '';
         return `<div data-fwcam-section="trip_log">
@@ -1936,7 +1969,7 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
-   * Render refueling log section with inline editing, sorting, and filtering
+   * Render refueling log section with inline editing, sorting, filtering, and pagination
    */
   renderRefuelingLog(events, lastRefueling) {
     // Apply filtering
@@ -1944,6 +1977,17 @@ class FWCAMCard extends HTMLElement {
     
     // Apply sorting
     const sortedEvents = this.sortEvents(filteredEvents);
+    
+    // Calculate pagination
+    const rowsPerPage = this._config.rows_per_page || 10;
+    const totalPages = Math.ceil(sortedEvents.length / rowsPerPage);
+    const currentPage = Math.min(this._refuelingCurrentPage, Math.max(1, totalPages));
+    this._refuelingCurrentPage = currentPage; // Ensure page is within bounds
+    this._refuelingTotalPages = totalPages; // Track for bounds-checking in event handler
+    
+    const startIndex = (currentPage - 1) * rowsPerPage;
+    const endIndex = startIndex + rowsPerPage;
+    const paginatedEvents = sortedEvents.slice(startIndex, endIndex);
     
     // Get unique years and months for filter dropdowns
     const years = this.getUniqueYears(events);
@@ -2001,7 +2045,9 @@ class FWCAMCard extends HTMLElement {
             </button>
           ` : ''}
           <div class="filter-info">
-            Showing ${sortedEvents.length} of ${events.length} events
+            Showing ${Math.min(endIndex, sortedEvents.length)} of ${sortedEvents.length} events
+            ${sortedEvents.length !== events.length ? ` (filtered from ${events.length} total)` : ''}
+            ${!this._allRefuelingsFetched ? ` <span style="color: var(--secondary-text-color); font-size: 12px;">(loading all events...)</span>` : ''}
           </div>
         </div>
 
@@ -2010,32 +2056,32 @@ class FWCAMCard extends HTMLElement {
             <thead>
               <tr>
                 <th class="sortable ${this._sortColumn === 'timestamp' ? 'sorted-' + this._sortDirection : ''}" 
-                    data-sort-column="timestamp">
+                    data-sort-column="timestamp" data-sort-type="refueling">
                   Date/Time
                   ${this.renderSortIcon('timestamp')}
                 </th>
                 <th class="sortable ${this._sortColumn === 'odometer_km' ? 'sorted-' + this._sortDirection : ''}" 
-                    data-sort-column="odometer_km">
+                    data-sort-column="odometer_km" data-sort-type="refueling">
                   Odometer (km)
                   ${this.renderSortIcon('odometer_km')}
                 </th>
                 <th class="sortable ${this._sortColumn === 'liters_refueled' ? 'sorted-' + this._sortDirection : ''}" 
-                    data-sort-column="liters_refueled">
+                    data-sort-column="liters_refueled" data-sort-type="refueling">
                   Liters
                   ${this.renderSortIcon('liters_refueled')}
                 </th>
                 <th class="sortable ${this._sortColumn === 'price_per_liter' ? 'sorted-' + this._sortDirection : ''}" 
-                    data-sort-column="price_per_liter">
+                    data-sort-column="price_per_liter" data-sort-type="refueling">
                   Price/L (€)
                   ${this.renderSortIcon('price_per_liter')}
                 </th>
                 <th class="sortable ${this._sortColumn === 'total_cost' ? 'sorted-' + this._sortDirection : ''}" 
-                    data-sort-column="total_cost">
+                    data-sort-column="total_cost" data-sort-type="refueling">
                   Total (€)
                   ${this.renderSortIcon('total_cost')}
                 </th>
                 <th class="sortable ${this._sortColumn === 'station_name' ? 'sorted-' + this._sortDirection : ''}" 
-                    data-sort-column="station_name">
+                    data-sort-column="station_name" data-sort-type="refueling">
                   Station
                   ${this.renderSortIcon('station_name')}
                 </th>
@@ -2045,11 +2091,11 @@ class FWCAMCard extends HTMLElement {
               </tr>
             </thead>
             <tbody>
-              ${sortedEvents.length === 0 ? `
+              ${paginatedEvents.length === 0 ? `
                 <tr>
                   <td colspan="9" class="no-data">No refueling events match the current filters</td>
                 </tr>
-              ` : sortedEvents.slice(0, this._config.rows_per_page).map(event => `
+              ` : paginatedEvents.map(event => `
                 <tr data-event-id="${event.id}">
                   <td>${this.formatDateTime(event.timestamp)}</td>
                   <td>${event.odometer_km || 'N/A'}</td>
@@ -2086,6 +2132,26 @@ class FWCAMCard extends HTMLElement {
             </tbody>
           </table>
         </div>
+
+        ${totalPages > 1 ? `
+          <div class="pagination-controls">
+            <button class="pagination-button" 
+                    data-action="refueling-prev-page" 
+                    ${currentPage === 1 ? 'disabled' : ''}>
+              <ha-icon icon="mdi:chevron-left"></ha-icon>
+              Previous
+            </button>
+            <span class="pagination-info">
+              Page ${currentPage} of ${totalPages} (${startIndex + 1}-${Math.min(endIndex, sortedEvents.length)} of ${sortedEvents.length})
+            </span>
+            <button class="pagination-button" 
+                    data-action="refueling-next-page" 
+                    ${currentPage === totalPages ? 'disabled' : ''}>
+              Next
+              <ha-icon icon="mdi:chevron-right"></ha-icon>
+            </button>
+          </div>
+        ` : ''}
 
         <button class="add-event-button" data-action="add-event">
           <ha-icon icon="mdi:plus"></ha-icon>
@@ -2219,7 +2285,8 @@ class FWCAMCard extends HTMLElement {
       this._sortColumn = column;
       this._sortDirection = column === 'timestamp' ? 'desc' : 'asc';
     }
-    this.render();
+    this._refuelingCurrentPage = 1;
+    this._updateRefuelingLogSection();
   }
 
   /**
@@ -2231,7 +2298,8 @@ class FWCAMCard extends HTMLElement {
     } else if (filterType === 'month') {
       this._filterMonth = value;
     }
-    this.render();
+    this._refuelingCurrentPage = 1;
+    this._updateRefuelingLogSection();
   }
 
   /**
@@ -2240,7 +2308,8 @@ class FWCAMCard extends HTMLElement {
   clearFilters() {
     this._filterYear = '';
     this._filterMonth = '';
-    this.render();
+    this._refuelingCurrentPage = 1;
+    this._updateRefuelingLogSection();
   }
 
   /**
@@ -2475,6 +2544,73 @@ class FWCAMCard extends HTMLElement {
     });
   }
 
+  /**
+   * Update only the refueling log section in-place without a full card re-render.
+   * Preserves scroll position by avoiding full shadow DOM replacement.
+   * Event delegation listeners set up by attachEventListeners() remain active
+   * on the container element and handle all interactions automatically.
+   */
+  _updateRefuelingLogSection() {
+    const container = this.shadowRoot.querySelector('[data-fwcam-section="refueling_log"]');
+    if (!container) {
+      // Fallback to full render if the wrapper is not in the DOM yet
+      this.render();
+      return;
+    }
+    container.innerHTML = this.renderRefuelingLog(this._allRefuelings || [], this._lastRefueling || null);
+  }
+
+  /**
+   * Attach event listeners to the refueling log section container using event delegation.
+   * Called once per full render. Because listeners are on the persistent container
+   * element (not on its children), they remain active across partial DOM updates
+   * performed by _updateRefuelingLogSection().
+   */
+  _attachRefuelingLogEventListeners(root) {
+    // Guard against double-registration on the same container element
+    if (root._fwcamRefuelingListenersAttached) return;
+    root._fwcamRefuelingListenersAttached = true;
+
+    root.addEventListener('click', (e) => {
+      const actionEl = e.target.closest('[data-action]');
+      if (actionEl) {
+        const action = actionEl.dataset.action;
+        const eventId = actionEl.dataset.eventId;
+        if (action === 'edit') {
+          this.showEditDialog(eventId);
+        } else if (action === 'delete') {
+          this.deleteRefuelingEvent(eventId);
+        } else if (action === 'add-event') {
+          this.showAddDialog();
+        } else if (action === 'clear-filters') {
+          this.clearFilters();
+        } else if (action === 'refueling-prev-page') {
+          this._refuelingCurrentPage = Math.max(1, this._refuelingCurrentPage - 1);
+          this._updateRefuelingLogSection();
+        } else if (action === 'refueling-next-page') {
+          const maxPage = this._refuelingTotalPages || 1;
+          this._refuelingCurrentPage = Math.min(maxPage, this._refuelingCurrentPage + 1);
+          this._updateRefuelingLogSection();
+        }
+        return;
+      }
+      const sortHeader = e.target.closest('.sortable[data-sort-type="refueling"]');
+      if (sortHeader) {
+        this.handleSort(sortHeader.dataset.sortColumn);
+      }
+    });
+
+    root.addEventListener('change', (e) => {
+      const filterEl = e.target.closest('.filter-select');
+      if (!filterEl) return;
+      const filterType = filterEl.dataset.filter;
+      const value = filterEl.value;
+      if (filterType && !filterType.startsWith('trip-')) {
+        this.handleFilterChange(filterType, value);
+      }
+    });
+  }
+
 
   /**
    * Attach event listeners to interactive elements
@@ -2556,51 +2692,10 @@ class FWCAMCard extends HTMLElement {
       });
     });
 
-    // Refueling log action buttons
-    this.shadowRoot.querySelectorAll('.action-button').forEach(button => {
-      button.addEventListener('click', (e) => {
-        const action = e.currentTarget.dataset.action;
-        const eventId = e.currentTarget.dataset.eventId;
-        
-        if (action === 'edit') {
-          this.showEditDialog(eventId);
-        } else if (action === 'delete') {
-          this.deleteRefuelingEvent(eventId);
-        }
-      });
-    });
-
-    // Add event button (refueling)
-    const addButton = this.shadowRoot.querySelector('[data-action="add-event"]');
-    if (addButton) {
-      addButton.addEventListener('click', () => {
-        this.showAddDialog();
-      });
-    }
-
-    // Sort column headers (refueling only; trip sort is handled by trip log event delegation)
-    this.shadowRoot.querySelectorAll('.sortable:not([data-sort-type="trip"])').forEach(header => {
-      header.addEventListener('click', (e) => {
-        const column = e.currentTarget.dataset.sortColumn;
-        this.handleSort(column);
-      });
-    });
-
-    // Filter dropdowns and date inputs (refueling only; trip filters handled by trip log event delegation)
-    this.shadowRoot.querySelectorAll('.filter-select:not([data-filter^="trip-"]), .filter-date:not([data-filter^="trip-"])').forEach(input => {
-      input.addEventListener('change', (e) => {
-        const filterType = e.target.dataset.filter;
-        const value = e.target.value;
-        this.handleFilterChange(filterType, value);
-      });
-    });
-
-    // Clear filters button (refueling)
-    const clearFiltersButton = this.shadowRoot.querySelector('[data-action="clear-filters"]');
-    if (clearFiltersButton) {
-      clearFiltersButton.addEventListener('click', () => {
-        this.clearFilters();
-      });
+    // Refueling log event delegation (pagination, sort, filter, add/edit/delete)
+    const refuelingLogContainer = this.shadowRoot.querySelector('[data-fwcam-section="refueling_log"]');
+    if (refuelingLogContainer) {
+      this._attachRefuelingLogEventListeners(refuelingLogContainer);
     }
 
     // Trip log event delegation (pagination, sort, filter, add/edit/delete trip)
@@ -2621,16 +2716,6 @@ class FWCAMCard extends HTMLElement {
     if (refuelForm) {
       refuelForm.addEventListener('submit', (e) => {
         this.handleFormSubmit(e);
-      });
-    }
-
-    // Close dialog on background click
-    const dialogOverlay = this.shadowRoot.getElementById('refuel-dialog');
-    if (dialogOverlay) {
-      dialogOverlay.addEventListener('click', (e) => {
-        if (e.target === dialogOverlay) {
-          this.closeDialog();
-        }
       });
     }
 
@@ -2660,16 +2745,6 @@ class FWCAMCard extends HTMLElement {
           this.handleTripFormSubmit();
         });
       }
-    }
-
-    // Close trip dialog on background click
-    const tripDialogOverlay = this.shadowRoot.getElementById('trip-dialog');
-    if (tripDialogOverlay) {
-      tripDialogOverlay.addEventListener('click', (e) => {
-        if (e.target === tripDialogOverlay) {
-          this.closeTripDialog();
-        }
-      });
     }
 
     // Backup & Restore buttons
@@ -3897,10 +3972,6 @@ class FWCAMCard extends HTMLElement {
       // Close dialog
       this.closeTripDialog();
       
-      // Refresh the card after a short delay
-      setTimeout(() => {
-        this.render();
-      }, SERVICE_CALL_REFRESH_DELAY_MS);
     } catch (error) {
       console.error('Error submitting trip:', error);
       const lang = this.getUserLanguage();
@@ -3972,14 +4043,6 @@ class FWCAMCard extends HTMLElement {
       
       // Close dialog
       this.closeDialog();
-      
-      // Refresh the card after a short delay
-      setTimeout(() => {
-        this._lastRender = 0; // Force re-render
-        if (this._hass) {
-          this.render();
-        }
-      }, SERVICE_CALL_REFRESH_DELAY_MS);
       
     } catch (error) {
       alert(`Error saving refueling event: ${error.message}`);
