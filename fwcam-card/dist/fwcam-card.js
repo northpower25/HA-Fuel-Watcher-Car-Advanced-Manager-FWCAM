@@ -1589,14 +1589,20 @@ class FWCAMCard extends HTMLElement {
         }
       }
 
-      // Color-coded icon factory – uses an inline SVG map-pin so the fill color
-      // is always respected (emoji characters ignore CSS color on most browsers).
-      const _makeStationIcon = color => L.divIcon({
-        html: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="28" viewBox="0 0 20 28" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))"><path d="M10 0C4.5 0 0 4.5 0 10c0 7.5 10 18 10 18S20 17.5 20 10C20 4.5 15.5 0 10 0z" fill="${color}" stroke="rgba(0,0,0,0.25)" stroke-width="1"/><circle cx="10" cy="10" r="4" fill="white" fill-opacity="0.85"/></svg>`,
-        className: '',
-        iconSize: [20, 28],
-        iconAnchor: [10, 28],
-      });
+      // PNG icon factory – uses the gas-station PNG assets served from the
+      // integration's www directory (/hafwcma_local/).
+      const _iconCache = {};
+      const _makeStationIcon = key => {
+        if (!_iconCache[key]) {
+          _iconCache[key] = L.icon({
+            iconUrl: `/hafwcma_local/small_${key}_gazstation.png`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -32],
+          });
+        }
+        return _iconCache[key];
+      };
 
       allStations.forEach(s => {
         const coords = _stationCoords(s);
@@ -1605,18 +1611,18 @@ class FWCAMCard extends HTMLElement {
         const price = typeof s.price === 'number' ? `${s.price.toFixed(3)} €/L` : '—';
         const dist = typeof s.distance_km === 'number' ? `${s.distance_km.toFixed(1)} km` : (typeof s.distance === 'number' ? `${s.distance.toFixed(1)} km` : '');
 
-        // Determine marker color:
+        // Determine marker icon:
         // green  = cheapest station
         // yellow = nearest or far station (when not the cheapest)
-        // gray   = all other stations in radius
-        let color = '#9e9e9e'; // gray
+        // red    = all other stations in radius
+        let iconKey = 'red';
         if (cheapestName && s.name === cheapestName) {
-          color = '#4caf50'; // green
+          iconKey = 'green';
         } else if ((nearestName && s.name === nearestName) || (farName && s.name === farName)) {
-          color = '#ffc107'; // yellow/amber
+          iconKey = 'yellow';
         }
 
-        L.marker([coords.lat, coords.lon], { icon: _makeStationIcon(color) })
+        L.marker([coords.lat, coords.lon], { icon: _makeStationIcon(iconKey) })
           .addTo(map)
           .bindPopup(`<b>${name}</b><br>${price}${dist ? `<br>${dist}` : ''}`);
       });
