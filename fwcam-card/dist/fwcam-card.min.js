@@ -1454,7 +1454,7 @@ class FWCAMCard extends HTMLElement {
     return `
       <div class="section">
         <h3>🗺️ Map</h3>
-        <div id="fwcam-stations-map" style="height: 350px; border-radius: 8px; overflow: hidden; background: #e0e0e0;"
+        <div id="fwcam-stations-map" style="width: 100%; aspect-ratio: 1 / 1; border-radius: 8px; overflow: hidden; background: #e0e0e0;"
              data-lat="${parseFloat(vehicleLat)}" data-lon="${parseFloat(vehicleLon)}" data-radius="${isNaN(radiusKm) ? 5 : radiusKm}">
           <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#757575;">
             Loading map…
@@ -1560,13 +1560,20 @@ class FWCAMCard extends HTMLElement {
           .bindPopup(`<b>${name}</b><br>${price}${dist ? `<br>${dist}` : ''}`);
       });
 
-      // Fit map to radius bounds
+      // Fit map to radius bounds, centered on vehicle position
       const degLat = radiusKm / 111.0;
       const degLon = radiusKm / (111.0 * Math.cos(vehicleLat * Math.PI / 180));
-      map.fitBounds([
+      const radiusBounds = [
         [vehicleLat - degLat, vehicleLon - degLon],
         [vehicleLat + degLat, vehicleLon + degLon],
-      ]);
+      ];
+      map.fitBounds(radiusBounds);
+
+      // Ensure map fills the full container width after shadow-DOM and card layout is finalised.
+      setTimeout(() => {
+        map.invalidateSize();
+        map.fitBounds(radiusBounds);
+      }, 50);
 
       // Store map instance to allow cleanup on re-render
       mapContainer._fwcamLeafletMap = map;
