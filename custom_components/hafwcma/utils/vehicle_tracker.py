@@ -408,9 +408,12 @@ class TripTracker:
             self._trip_start_snapshot.tank_level is not None
             and snapshot.tank_level is not None
         ):
-            fuel_consumed = self._trip_start_snapshot.tank_level - snapshot.tank_level
-            if fuel_consumed > 0 and distance_km > 0:
-                consumption_rate = (fuel_consumed / distance_km) * 100  # L/100km
+            raw_consumed = self._trip_start_snapshot.tank_level - snapshot.tank_level
+            # Only store positive values; negative means a refueling occurred during the trip
+            if raw_consumed > 0:
+                fuel_consumed = raw_consumed
+                if distance_km > 0:
+                    consumption_rate = (fuel_consumed / distance_km) * 100  # L/100km
         
         duration = snapshot.timestamp - self._trip_start_snapshot.timestamp
         
@@ -760,3 +763,68 @@ def detect_missed_refuelings_from_history(
         previous_point = current_point
     
     return detected_refuelings
+
+
+def compute_fuel_consumed_from_history(
+    tank_level_history: list[dict[str, Any]],
+    trip_start: datetime,
+    trip_end: datetime,
+) -> float | None:
+    """Compute fuel consumed during a trip from tank level history.
+
+    Finds the tank level reading closest to (and at or before) trip start and the
+    reading closest to (and at or before) trip end, then returns the difference.
+
+    Returns None if data is insufficient, timestamps cannot be parsed, or the
+    level did not decrease (i.e. a refueling occurred during the trip).
+
+    Args:
+        tank_level_history: List of {ts: str, value: float, ...} observations.
+        trip_start: Trip start datetime (timezone-aware).
+        trip_end: Trip end datetime (timezone-aware).
+
+    Returns:
+        Fuel consumed in litres (positive float) or None.
+    """
+    if not tank_level_history:
+        return None
+
+    # Parse history entries into (datetime, float) pairs
+    parsed: list[tuple[datetime, float]] = []
+    for entry in tank_level_history:
+        ts_str = entry.get("ts")
+        val = entry.get("value")
+        if not ts_str or val is None:
+            continue
+        try:
+            ts = dt_util.parse_datetime(ts_str)
+            if ts is None:
+                continue
+            if ts.tzinfo is None:
+                ts = dt_util.as_local(ts)
+            parsed.append((ts, float(val)))
+        except (ValueError, TypeError):
+            continue
+
+    if not parsed:
+        return None
+
+    parsed.sort(key=lambda x: x[0])
+
+    # Find last recorded level at or before trip_start
+    level_at_start: float | None = None
+    for ts, val in parsed:
+        if ts <= trip_start:
+            level_at_start = val
+
+    # Find last recorded level at or before trip_end
+    level_at_end: float | None = None
+    for ts, val in parsed:
+        if ts <= trip_end:
+            level_at_end = val
+
+    if level_at_start is None or level_at_end is None:
+        return None
+
+    consumed = level_at_start - level_at_end
+    return consumed if consumed > 0 else None
