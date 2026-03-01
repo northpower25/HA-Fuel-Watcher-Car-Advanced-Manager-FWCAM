@@ -10,10 +10,14 @@ This file provides an overview of all available documentation for the Fuel Watch
 - **[DOKUMENTATION_DE.md](DOKUMENTATION_DE.md)** - Vollständige deutsche Dokumentation
 - **[BLUEPRINTS_DE.md](BLUEPRINTS_DE.md)** - Blueprint-Dokumentation und Anleitungen
 - **[HACS_INSTALLATION_DE.md](HACS_INSTALLATION_DE.md)** - HACS-Installationsanleitung
+- **[docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_DE.md](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_DE.md)** - Freematics ONE+ Einrichtungsanleitung
+- **[docs/user_docs/TRACCAR_INTEGRATION_DE.md](docs/user_docs/TRACCAR_INTEGRATION_DE.md)** - Traccar-Integration mit haFWCMA
 
 ### 🇬🇧 English Documentation
 - **[README.md](README.md)** - Main documentation and quick start
 - **[HACS_INSTALLATION.md](HACS_INSTALLATION.md)** - HACS installation guide
+- **[docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md)** - Freematics ONE+ Setup Guide
+- **[docs/user_docs/TRACCAR_INTEGRATION_EN.md](docs/user_docs/TRACCAR_INTEGRATION_EN.md)** - Traccar Integration with haFWCMA
 
 ---
 
@@ -44,6 +48,17 @@ This file provides an overview of all available documentation for the Fuel Watch
    - [Geolocation Concept (EN)](docs/GEOLOCATION_CONCEPT_EN.md)
    - [API Documentation](docs/API.md)
    - [Data Storage](docs/DATA_STORAGE.md)
+
+### Freematics ONE+ & GPS Tracking
+
+5. **Freematics ONE+ Setup**
+   - [Freematics ONE+ Setup Guide (EN)](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md)
+   - [Freematics ONE+ Einrichtungsanleitung (DE)](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_DE.md)
+   - [Flash Tool Concept (Developer)](docs/dev_docs/FREEMATICS_FLASH_TOOL_CONCEPT.md)
+
+6. **Traccar GPS Server**
+   - [Traccar Integration Guide (EN)](docs/user_docs/TRACCAR_INTEGRATION_EN.md)
+   - [Traccar-Integrations-Anleitung (DE)](docs/user_docs/TRACCAR_INTEGRATION_DE.md)
 
 ### Automation & Blueprints
 
@@ -88,8 +103,14 @@ This file provides an overview of all available documentation for the Fuel Watch
 3. [docs/VEHICLE_ENTITIES.md](docs/VEHICLE_ENTITIES.md) - Connect your vehicle
 4. [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md) - Optional: Telegram setup
 
+**With Freematics ONE+ hardware:**
+1. [docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md) - Complete setup guide
+2. [docs/user_docs/TRACCAR_INTEGRATION_EN.md](docs/user_docs/TRACCAR_INTEGRATION_EN.md) - Traccar GPS server setup
+
 **German users:**
 1. [DOKUMENTATION_DE.md](DOKUMENTATION_DE.md) - Komplett-Anleitung
+2. [docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_DE.md](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_DE.md) - Freematics ONE+ Einrichtung
+3. [docs/user_docs/TRACCAR_INTEGRATION_DE.md](docs/user_docs/TRACCAR_INTEGRATION_DE.md) - Traccar-Einrichtung
 
 ### For Automation Enthusiasts
 **Blueprint resources:**
@@ -105,6 +126,7 @@ This file provides an overview of all available documentation for the Fuel Watch
 4. [docs/API.md](docs/API.md) - API documentation
 5. [docs/DATA_STORAGE.md](docs/DATA_STORAGE.md) - Storage schema
 6. [docs/TRIP_TRACKING_CONCEPT.md](docs/TRIP_TRACKING_CONCEPT.md) - Trip tracking architecture
+7. [docs/dev_docs/FREEMATICS_FLASH_TOOL_CONCEPT.md](docs/dev_docs/FREEMATICS_FLASH_TOOL_CONCEPT.md) - Flash Tool concept & spec
 
 ### For Troubleshooters
 **Problem-solving resources:**
@@ -149,6 +171,12 @@ This file provides an overview of all available documentation for the Fuel Watch
 - [docs/TELEGRAM_REFUELING_BOT.md](docs/TELEGRAM_REFUELING_BOT.md)
 - [docs/TELEGRAM_REFUELING_BOT_DE.md](docs/TELEGRAM_REFUELING_BOT_DE.md)
 
+### Freematics ONE+ & GPS Tracking
+- [docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md)
+- [docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_DE.md](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_DE.md)
+- [docs/user_docs/TRACCAR_INTEGRATION_EN.md](docs/user_docs/TRACCAR_INTEGRATION_EN.md)
+- [docs/user_docs/TRACCAR_INTEGRATION_DE.md](docs/user_docs/TRACCAR_INTEGRATION_DE.md)
+
 ### Technical
 - [docs/API.md](docs/API.md)
 - [docs/DATA_STORAGE.md](docs/DATA_STORAGE.md)
@@ -159,6 +187,7 @@ This file provides an overview of all available documentation for the Fuel Watch
 - [docs/dev_docs/ENTITY_ATTRIBUTES_GUIDELINES.md](docs/dev_docs/ENTITY_ATTRIBUTES_GUIDELINES.md)
 - [docs/dev_docs/ATTRIBUTE_STRUCTURE_IMPLEMENTATION_SUMMARY.md](docs/dev_docs/ATTRIBUTE_STRUCTURE_IMPLEMENTATION_SUMMARY.md)
 - [docs/dev_docs/DEVELOPER_NOTES.md](docs/dev_docs/DEVELOPER_NOTES.md)
+- [docs/dev_docs/FREEMATICS_FLASH_TOOL_CONCEPT.md](docs/dev_docs/FREEMATICS_FLASH_TOOL_CONCEPT.md)
 
 ### Troubleshooting
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
@@ -215,6 +244,12 @@ This file provides an overview of all available documentation for the Fuel Watch
 **...understand what each entity does?**
 → [docs/ENTITIES.md](docs/ENTITIES.md)
 
+**...set up Freematics ONE+?**
+→ [docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md) or [DE](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_DE.md)
+
+**...set up Traccar?**
+→ [docs/user_docs/TRACCAR_INTEGRATION_EN.md](docs/user_docs/TRACCAR_INTEGRATION_EN.md) or [DE](docs/user_docs/TRACCAR_INTEGRATION_DE.md)
+
 ### "What is..."
 
 **...the complete feature list?**
@@ -242,6 +277,9 @@ This file provides an overview of all available documentation for the Fuel Watch
 | Refueling Guide | ✅ REFUELING_LOG_GUIDE_DE.md | ✅ REFUELING_LOG_GUIDE.md |
 | Geolocation | ✅ GEOLOCATION_CONCEPT.md | ✅ GEOLOCATION_CONCEPT_EN.md |
 | Troubleshooting | ✅ TELEGRAM_TROUBLESHOOTING_DE.md | ✅ TELEGRAM_TROUBLESHOOTING_EN.md |
+| Freematics ONE+ Setup | ✅ FREEMATICS_ONE_PLUS_SETUP_DE.md | ✅ FREEMATICS_ONE_PLUS_SETUP_EN.md |
+| Traccar Integration | ✅ TRACCAR_INTEGRATION_DE.md | ✅ TRACCAR_INTEGRATION_EN.md |
+| Flash Tool Concept | – | ✅ FREEMATICS_FLASH_TOOL_CONCEPT.md |
 
 ---
 
@@ -266,6 +304,6 @@ Found an error or want to improve documentation?
 
 ---
 
-**Last Updated**: 2024-02-17  
-**Documentation Version**: 1.0.0  
+**Last Updated**: 2026-03-01  
+**Documentation Version**: 1.1.0  
 **Integration Version**: See [manifest.json](custom_components/hafwcma/manifest.json)
