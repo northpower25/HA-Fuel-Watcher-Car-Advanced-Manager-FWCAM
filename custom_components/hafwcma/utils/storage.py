@@ -1591,6 +1591,123 @@ def _derive_position_quality(trip: dict[str, Any]) -> str:
     return "none"
 
 
+def _derive_quality_level(trip: dict[str, Any]) -> str:
+    """Derive GoBD quality level for a trip.
+
+    Quality levels:
+        A – Complete: odometer start+end, timestamps, GPS both sides, fuel data, driver
+        B – Mostly complete: odometer + timestamps; missing GPS or fuel or driver
+        C – Partial: odometer present but multiple fields missing
+        D – Odometer-only: only odometer change recorded, almost everything else missing
+
+    Args:
+        trip: Trip dictionary
+
+    Returns:
+        Quality level string: "A", "B", "C", or "D"
+    """
+    has_odometer_start = trip.get("odometer_start") is not None
+    has_odometer_end = trip.get("odometer_end") is not None
+    has_time_start = bool(trip.get("timestamp_start"))
+    has_time_end = bool(trip.get("timestamp_end"))
+    has_gps = _derive_position_quality(trip) == "full"
+    has_fuel = trip.get("fuel_consumed") is not None or trip.get("fuel_level_start") is not None
+    has_driver = bool(trip.get("driver"))
+
+    if (has_odometer_start and has_odometer_end and has_time_start and has_time_end
+            and has_gps and has_fuel and has_driver):
+        return "A"
+    if has_odometer_start and has_odometer_end and has_time_start and has_time_end:
+        return "B"
+    if has_odometer_start and has_odometer_end:
+        return "C"
+    return "D"
+
+
+def _derive_consumption_source(trip: dict[str, Any]) -> str | None:
+    """Derive how the consumption value was determined.
+
+    Returns:
+        "direct"     – measured from both odometer change and tank-level delta
+        "historical" – inferred from adjacent trip tank levels
+        "estimated"  – calculated from average consumption and distance
+        None         – no consumption data available
+    """
+    fuel_consumed = trip.get("fuel_consumed")
+    if fuel_consumed is None:
+        return None
+    source = trip.get("consumption_source")
+    if source in ("direct", "historical", "estimated"):
+        return source
+    # Heuristic: if we have fuel levels on both sides the value is direct
+    if trip.get("fuel_level_start") is not None and trip.get("fuel_level_end") is not None:
+        return "direct"
+    # Otherwise treat as estimated
+    return "estimated"
+
+
+PLAUSIBILITY_THRESHOLD_PCT = 5.0  # Max % deviation from avg consumption before flagging
+
+
+def _check_consumption_plausibility(
+    trip: dict[str, Any],
+    avg_consumption_l_per_100km: float | None,
+) -> dict[str, Any]:
+    """Check fuel consumption for plausibility against the fleet average.
+
+    If the average consumption is known and the trip's consumption deviates
+    more than 5 % from it the trip is flagged with a deviation note.
+
+    Args:
+        trip: Trip dictionary (may include distance_km and fuel_consumed)
+        avg_consumption_l_per_100km: Fleet/history average in L/100 km
+
+    Returns:
+        Dict with keys:
+            plausible (bool | None): True/False/None when unknown
+            deviation_pct (float | None): % deviation from average
+    """
+    result: dict[str, Any] = {"plausible": None, "deviation_pct": None}
+    distance_km = trip.get("distance_km") or 0.0
+    fuel_consumed = trip.get("fuel_consumed")
+    if fuel_consumed is None or distance_km <= 0 or not avg_consumption_l_per_100km:
+        return result
+    trip_rate = (fuel_consumed / distance_km) * 100  # L/100 km
+    deviation_pct = ((trip_rate - avg_consumption_l_per_100km) / avg_consumption_l_per_100km) * 100
+    result["deviation_pct"] = round(deviation_pct, 1)
+    result["plausible"] = abs(deviation_pct) <= PLAUSIBILITY_THRESHOLD_PCT
+    return result
+
+
+def _append_change_log(
+    trip: dict[str, Any],
+    changed_by: str,
+    changes: dict[str, Any],
+    action: str = "update",
+) -> None:
+    """Append an immutable audit entry to the trip's change_log list.
+
+    This implements the GoBD requirement for a revision-safe audit trail
+    that records who changed what and when.
+
+    Args:
+        trip: Trip dictionary to mutate in-place
+        changed_by: User / system actor performing the change
+        changes: Dict of field name → new value pairs that were changed
+        action: Human-readable action label (e.g. "update", "finalize", "delete_gap_fill")
+    """
+    from homeassistant.util import dt as dt_util
+    if "change_log" not in trip:
+        trip["change_log"] = []
+    entry = {
+        "ts": dt_util.now().isoformat(),
+        "by": changed_by,
+        "action": action,
+        "fields": changes,
+    }
+    trip["change_log"].append(entry)
+
+
 async def add_trip(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -1640,7 +1757,26 @@ async def add_trip(
     # Ensure position_quality is set based on coordinate availability.
     if "position_quality" not in trip_data:
         trip_data["position_quality"] = _derive_position_quality(trip_data)
-    
+
+    # Derive GoBD quality level (A/B/C/D)
+    if "quality_level" not in trip_data:
+        trip_data["quality_level"] = _derive_quality_level(trip_data)
+
+    # Derive consumption source label
+    if "consumption_source" not in trip_data:
+        trip_data["consumption_source"] = _derive_consumption_source(trip_data)
+
+    # Initialize GoBD finalization fields
+    trip_data.setdefault("finalized", False)
+    trip_data.setdefault("finalized_by", None)
+    trip_data.setdefault("finalized_at", None)
+
+    # Initialize driver field (required for GoBD)
+    trip_data.setdefault("driver", None)
+
+    # Initialize append-only audit/change log
+    trip_data.setdefault("change_log", [])
+
     # Add trip to storage
     data["trips"].append(trip_data)
     
@@ -1700,6 +1836,7 @@ async def update_trip(
     entry: ConfigEntry,
     trip_id: int,
     updates: dict[str, Any],
+    changed_by: str = "system",
 ) -> bool:
     """Update an existing trip.
     
@@ -1708,6 +1845,7 @@ async def update_trip(
         entry: Config entry
         trip_id: ID of the trip to update
         updates: Dictionary of fields to update
+        changed_by: User or system actor performing the update (for audit log)
         
     Returns:
         True if trip was found and updated, False otherwise
@@ -1721,18 +1859,78 @@ async def update_trip(
         if trip.get("trip_id") == trip_id:
             # Update timestamp
             trip["updated_at"] = dt_util.now().isoformat()
+
+            # Record which fields are actually changing for the audit log
+            changed_fields = {k: v for k, v in updates.items() if trip.get(k) != v}
+
+            # Apply updates (guard finalized trips from further odometer changes)
+            if trip.get("finalized"):
+                # Odometer fields are locked on finalized trips to protect the km history
+                odometer_fields = {"odometer_start", "odometer_end", "distance_km"}
+                updates = {k: v for k, v in updates.items() if k not in odometer_fields}
             
-            # Apply updates
             trip.update(updates)
             
-            # Refresh position_quality if any coordinate field was changed.
+            # Refresh derived fields
             coord_fields = {"start_latitude", "start_longitude", "end_latitude", "end_longitude"}
             if coord_fields.intersection(updates.keys()):
                 trip["position_quality"] = _derive_position_quality(trip)
+
+            # Refresh quality level whenever any data field changes
+            trip["quality_level"] = _derive_quality_level(trip)
+
+            # Refresh consumption_source if relevant fields changed
+            consumption_fields = {"fuel_consumed", "fuel_level_start", "fuel_level_end", "consumption_source"}
+            if consumption_fields.intersection(updates.keys()):
+                if "consumption_source" not in updates:
+                    trip["consumption_source"] = _derive_consumption_source(trip)
+
+            # Append audit entry if anything actually changed
+            if changed_fields:
+                _append_change_log(trip, changed_by, changed_fields, action="update")
             
             await save_data(hass, entry, data)
             return True
     
+    return False
+
+
+async def finalize_trip(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    trip_id: int,
+    finalized_by: str,
+) -> bool:
+    """Mark a trip as finalized (GoBD-compliant immutable confirmation).
+
+    Once finalized, odometer fields cannot be changed via update_trip.
+
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        trip_id: ID of the trip to finalize
+        finalized_by: User performing the finalization
+
+    Returns:
+        True if trip was found and finalized, False otherwise
+    """
+    from homeassistant.util import dt as dt_util
+
+    data = await load_data(hass, entry)
+    trips = data.get("trips", [])
+
+    for trip in trips:
+        if trip.get("trip_id") == trip_id:
+            now = dt_util.now().isoformat()
+            trip["finalized"] = True
+            trip["finalized_by"] = finalized_by
+            trip["finalized_at"] = now
+            trip["updated_at"] = now
+            _append_change_log(trip, finalized_by, {}, action="finalize")
+            await save_data(hass, entry, data)
+            _LOGGER.info("Trip #%d finalized by %s", trip_id, finalized_by)
+            return True
+
     return False
 
 
@@ -1784,6 +1982,73 @@ async def delete_trip(
             category = removed_trip.get("category", "private")
             category_key = f"{category}_trips"
             stats[category_key] = max(0, (stats.get(category_key) or 0) - 1)
+
+            # ---------------------------------------------------------------
+            # GoBD odometer continuity: if the deleted trip had valid odometer
+            # data AND the neighbouring trips leave a gap, insert a placeholder
+            # trip to keep the km history unbroken.
+            # ---------------------------------------------------------------
+            odo_start = removed_trip.get("odometer_start")
+            odo_end = removed_trip.get("odometer_end")
+            if odo_start is not None and odo_end is not None and odo_end > odo_start:
+                # Check whether any remaining trip already covers this interval
+                gap_covered = any(
+                    (t.get("odometer_start") is not None
+                     and t.get("odometer_end") is not None
+                     and t["odometer_start"] <= odo_start
+                     and t["odometer_end"] >= odo_end)
+                    for t in data["trips"]
+                )
+                if not gap_covered:
+                    from homeassistant.util import dt as dt_util
+                    now_str = dt_util.now().isoformat()
+                    gap_id = data.get("next_trip_id", 1)
+                    data["next_trip_id"] = gap_id + 1
+                    gap_trip: dict[str, Any] = {
+                        "trip_id": gap_id,
+                        "odometer_start": odo_start,
+                        "odometer_end": odo_end,
+                        "distance_km": round(odo_end - odo_start, 2),
+                        "timestamp_start": removed_trip.get("timestamp_start"),
+                        "timestamp_end": removed_trip.get("timestamp_end"),
+                        "category": "private",
+                        "data_quality": "gap_fill",
+                        "quality_level": "D",
+                        "finalized": False,
+                        "finalized_by": None,
+                        "finalized_at": None,
+                        "driver": None,
+                        "fuel_consumed": None,
+                        "consumption_source": None,
+                        "position_quality": "none",
+                        "created_at": now_str,
+                        "updated_at": now_str,
+                        "notes": (
+                            f"Auto-generated gap-fill after trip #{trip_id} was deleted. "
+                            "Odometer continuity preserved (GoBD)."
+                        ),
+                        "change_log": [{
+                            "ts": now_str,
+                            "by": "system",
+                            "action": "gap_fill",
+                            "fields": {"deleted_trip_id": trip_id},
+                        }],
+                    }
+                    data["trips"].append(gap_trip)
+                    stats["total_trips"] = (stats.get("total_trips") or 0) + 1
+                    stats["total_distance_km"] = (
+                        (stats.get("total_distance_km") or 0.0) + gap_trip["distance_km"]
+                    )
+                    stats["private_trips"] = (stats.get("private_trips") or 0) + 1
+                    _LOGGER.info(
+                        "Inserted gap-fill trip #%d (%.1f km, odo %.1f→%.1f) "
+                        "after deleting trip #%d to preserve odometer continuity.",
+                        gap_id,
+                        gap_trip["distance_km"],
+                        odo_start,
+                        odo_end,
+                        trip_id,
+                    )
             
             await save_data(hass, entry, data)
             return True
@@ -1806,6 +2071,56 @@ async def get_trip_patterns(
     """
     data = await load_data(hass, entry)
     return data.get("trip_patterns", [])
+
+
+async def get_pending_trips(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    older_than_hours: int = 24,
+) -> list[dict[str, Any]]:
+    """Return unfinalized trips that are older than *older_than_hours*.
+
+    These are the trips that need manual review and finalization to meet
+    GoBD requirements.
+
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        older_than_hours: Age threshold in hours (default 24)
+
+    Returns:
+        List of trip dicts sorted by timestamp_end ascending (oldest first)
+    """
+    from datetime import timedelta
+    from homeassistant.util import dt as dt_util
+
+    data = await load_data(hass, entry)
+    now = dt_util.now()
+    cutoff = now - timedelta(hours=older_than_hours)
+    pending = []
+    for trip in data.get("trips", []):
+        if trip.get("finalized"):
+            continue
+        ts_end_str = trip.get("timestamp_end")
+        if not ts_end_str:
+            # No end time recorded – treat as pending
+            pending.append(trip)
+            continue
+        try:
+            ts_end = dt_util.parse_datetime(ts_end_str)
+            if ts_end is None:
+                pending.append(trip)
+                continue
+            if ts_end.tzinfo is None:
+                ts_end = dt_util.as_local(ts_end)
+            if ts_end <= cutoff:
+                pending.append(trip)
+        except Exception:
+            pending.append(trip)
+
+    # Sort oldest first so the user sees the oldest unresolved trip at the top
+    pending.sort(key=lambda t: t.get("timestamp_end", ""))
+    return pending
 
 
 async def add_trip_pattern(

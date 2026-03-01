@@ -52,6 +52,7 @@ SERVICE_DELETE_REFUEL_EVENT = "delete_refuel_event"
 SERVICE_ADD_TRIP = "add_trip"
 SERVICE_EDIT_TRIP = "edit_trip"
 SERVICE_DELETE_TRIP = "delete_trip"
+SERVICE_FINALIZE_TRIP = "finalize_trip"
 SERVICE_CREATE_PATTERN = "create_pattern"
 SERVICE_EXPORT_TRIPS = "export_trips"
 SERVICE_GET_ALL_TRIPS = "get_all_trips"
@@ -106,6 +107,7 @@ SCHEMA_ADD_TRIP = vol.Schema({
     vol.Required("distance_km"): vol.Coerce(float),
     vol.Optional("category"): vol.In(["business", "private", "commute"]),
     vol.Optional("purpose"): cv.string,
+    vol.Optional("driver"): cv.string,
     vol.Optional("fuel_consumed"): vol.Coerce(float),
     vol.Optional("additional_costs"): vol.Coerce(float),
     vol.Optional("odometer_start"): vol.Coerce(float),
@@ -127,6 +129,7 @@ SCHEMA_EDIT_TRIP = vol.Schema({
     vol.Required("trip_id"): vol.Coerce(int),
     vol.Optional("category"): vol.In(["business", "private", "commute"]),
     vol.Optional("purpose"): cv.string,
+    vol.Optional("driver"): cv.string,
     vol.Optional("additional_costs"): vol.Coerce(float),
     vol.Optional("notes"): cv.string,
     vol.Optional("odometer_start"): vol.Coerce(float),
@@ -144,6 +147,11 @@ SCHEMA_EDIT_TRIP = vol.Schema({
 })
 
 SCHEMA_DELETE_TRIP = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("trip_id"): vol.Coerce(int),
+})
+
+SCHEMA_FINALIZE_TRIP = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
     vol.Required("trip_id"): vol.Coerce(int),
 })
@@ -456,6 +464,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "distance_km": call.data["distance_km"],
             "category": call.data.get("category", "private"),
             "purpose": call.data.get("purpose"),
+            "driver": call.data.get("driver"),
             "fuel_consumed": call.data.get("fuel_consumed"),
             "additional_costs": call.data.get("additional_costs", 0.0),
             "odometer_start": call.data.get("odometer_start"),
@@ -513,7 +522,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             if k not in ["config_entry_id", "trip_id"] and v is not None
         }
         
-        success = await update_trip(hass, entry, trip_id, updates)
+        success = await update_trip(hass, entry, trip_id, updates, changed_by="ha_service")
         if success:
             _LOGGER.info("Updated trip ID %s", trip_id)
             
@@ -564,6 +573,35 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         else:
             _LOGGER.error("Trip ID %s not found", trip_id)
         
+        # Trigger coordinator refresh
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+
+    async def handle_finalize_trip(call: ServiceCall) -> None:
+        """Handle the finalize_trip service call (GoBD)."""
+        from .utils.storage import finalize_trip
+
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+
+        trip_id = call.data["trip_id"]
+        # Use the HA user name if available, otherwise fall back to "ha_user"
+        try:
+            user = call.context.user_id or "ha_user"
+        except Exception:
+            user = "ha_user"
+
+        success = await finalize_trip(hass, entry, trip_id, finalized_by=user)
+        if success:
+            _LOGGER.info("Finalized trip ID %s by %s", trip_id, user)
+        else:
+            _LOGGER.error("Trip ID %s not found for finalization", trip_id)
+
         # Trigger coordinator refresh
         coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
         if coordinator:
@@ -1088,6 +1126,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_DELETE_TRIP, handle_delete_trip, schema=SCHEMA_DELETE_TRIP
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_FINALIZE_TRIP, handle_finalize_trip, schema=SCHEMA_FINALIZE_TRIP
     )
     hass.services.async_register(
         DOMAIN, SERVICE_CREATE_PATTERN, handle_create_pattern, schema=SCHEMA_CREATE_PATTERN

@@ -131,6 +131,10 @@ MAX_TANK_PERCENTAGE = 100.0
 DEFAULT_HISTORICAL_IMPORT_TIMESTAMP = None
 DEFAULT_HISTORICAL_IMPORT_TYPE = "none"
 
+# GoBD pending-trip notification constants
+PENDING_TRIP_NOTIFY_COOLDOWN_HOURS = 6.0  # Notify at most every 6 hours
+PENDING_TRIP_NOTIFY_THRESHOLD_HOURS = 24   # Trips older than 24 h trigger notification
+
 # State restoration and data staleness constants
 DATA_STALENESS_THRESHOLD_HOURS = 1  # Hours before showing staleness warning
 STATE_RESTORED_DATA_SOURCE = "restored_from_previous_state"  # Data source marker for restored state
@@ -362,6 +366,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         self._last_consumption_prediction = None  # Store last consumption prediction time
         self._last_missed_trip_check = None  # Track when we last checked for missed trips
         self._last_missed_refueling_check = None  # Track when we last checked for missed refuelings
+        self._last_pending_trip_notify = None  # Track when we last notified about pending trips
         self._proximity_tracker = ProximityTracker(
             cooldown_seconds=GEOLOCATION_ALERT_COOLDOWN,
             hysteresis_factor=GEOLOCATION_HYSTERESIS_FACTOR,
@@ -918,6 +923,43 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 )
             else:
                 _LOGGER.debug("No missed trips found in odometer history")
+
+            # ---------------------------------------------------------------
+            # GoBD: Also fill any odometer gaps between existing trips.
+            # This ensures there are no unexplained km jumps in the history.
+            # ---------------------------------------------------------------
+            try:
+                from .utils.vehicle_tracker import detect_odometer_gaps_between_trips
+                existing_trips = data.get("trips", [])
+                gap_trips = detect_odometer_gaps_between_trips(
+                    existing_trips,
+                    min_gap_km=trip_config.get("min_trip_distance_km", 0.5),
+                )
+                if gap_trips:
+                    if "trips" not in data:
+                        data["trips"] = []
+                    next_id = data.get("next_trip_id", 1)
+                    now_str = now.isoformat()
+                    for gap_trip in gap_trips:
+                        gap_trip["trip_id"] = next_id
+                        next_id += 1
+                        gap_trip.setdefault("created_at", now_str)
+                        gap_trip.setdefault("updated_at", now_str)
+                        if "change_log" not in gap_trip:
+                            gap_trip["change_log"] = []
+                        data["trips"].append(gap_trip)
+                        _LOGGER.info(
+                            "Gap-fill trip #%d created: %.1f km (odo %.1f→%.1f)",
+                            gap_trip["trip_id"],
+                            gap_trip.get("distance_km", 0),
+                            gap_trip.get("odometer_start", 0),
+                            gap_trip.get("odometer_end", 0),
+                        )
+                    data["next_trip_id"] = next_id
+                    await storage.save_data(self.hass, self.config_entry, data)
+                    await recalculate_trip_statistics(self.hass, self.config_entry)
+            except Exception as gap_err:
+                _LOGGER.debug("Error during odometer gap-fill check: %s", gap_err)
             
             # Update last check timestamp
             self._last_missed_trip_check = now
@@ -1038,6 +1080,75 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             
         except Exception as err:
             _LOGGER.warning("Error checking for missed refuelings: %s", err)
+
+    async def _notify_pending_trips(self) -> None:
+        """Send a Telegram notification listing trips that are older than 24 h and not finalized.
+
+        The check runs at most once every 6 hours to avoid notification spam.
+        """
+        from homeassistant.util import dt as dt_util
+
+        now = dt_util.now()
+        if self._last_pending_trip_notify is not None:
+            hours_since = (now - self._last_pending_trip_notify).total_seconds() / 3600
+            if hours_since < PENDING_TRIP_NOTIFY_COOLDOWN_HOURS:
+                return
+
+        try:
+            from .utils.storage import get_pending_trips
+            pending = await get_pending_trips(
+                self.hass, self.config_entry, older_than_hours=PENDING_TRIP_NOTIFY_THRESHOLD_HOURS
+            )
+
+            if not pending:
+                self._last_pending_trip_notify = now
+                return
+
+            # Build notification message
+            lines = [
+                f"🚗 *haFWCMA – {len(pending)} Fahrt(en) zur Überprüfung ausstehend*",
+                "",
+            ]
+            for trip in pending[:10]:  # Cap at 10 entries to keep message readable
+                ts_end = trip.get("timestamp_end", "?")
+                dist = trip.get("distance_km")
+                quality = trip.get("quality_level", "?")
+                trip_id = trip.get("trip_id", "?")
+                dist_str = f"{dist:.1f} km" if dist is not None else "? km"
+                lines.append(
+                    f"• Fahrt #{trip_id}: {ts_end[:16] if ts_end and ts_end != '?' else '?'} "
+                    f"| {dist_str} | Qualität: {quality}"
+                )
+            if len(pending) > 10:
+                lines.append(f"… und {len(pending) - 10} weitere.")
+            lines += [
+                "",
+                "Bitte Fahrtenbuch im Dashboard überprüfen und Fahrten finalisieren (GoBD).",
+            ]
+            message = "\n".join(lines)
+
+            # Send via Telegram if configured
+            telegram_handler = (
+                self.hass.data.get("hafwcma", {})
+                .get(self.config_entry.entry_id, {})
+                .get("telegram_handler")
+            )
+            if telegram_handler and hasattr(telegram_handler, "_send_telegram_message"):
+                await telegram_handler._send_telegram_message(message)
+                _LOGGER.info(
+                    "Sent pending-trips Telegram notification: %d trip(s) pending finalization",
+                    len(pending),
+                )
+            else:
+                _LOGGER.debug(
+                    "%d trip(s) pending finalization but Telegram not available",
+                    len(pending),
+                )
+
+            self._last_pending_trip_notify = now
+
+        except Exception as err:
+            _LOGGER.warning("Error during pending trip notification: %s", err)
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -1823,6 +1934,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                     if computed is not None:
                                         fuel_consumed = computed
                                         trip_data["fuel_consumed"] = fuel_consumed
+                                        trip_data["consumption_source"] = "historical"
                                         trip_data["consumption_rate"] = (
                                             (fuel_consumed / distance_km) * 100
                                         )
@@ -1864,6 +1976,15 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         "category": "private",  # Default category
                         "is_manual": False,
                     })
+
+                    # Label how consumption was determined (for GoBD transparency)
+                    if fuel_consumed is not None:
+                        fl_start = trip_data.get("fuel_level_start")
+                        fl_end = trip_data.get("fuel_level_end")
+                        if fl_start is not None and fl_end is not None:
+                            trip_data["consumption_source"] = "direct"
+                        else:
+                            trip_data["consumption_source"] = "historical"
                     
                     # Geocode addresses if enabled and coordinates available
                     if trip_config.get("auto_geocode", True):
@@ -1984,6 +2105,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             await self._check_for_missed_refuelings()
         except Exception as err:
             _LOGGER.warning("Error in periodic missed refueling check: %s", err)
+
+        # Periodically notify via Telegram about trips pending finalization (GoBD)
+        try:
+            await self._notify_pending_trips()
+        except Exception as err:
+            _LOGGER.warning("Error in pending trip notification: %s", err)
         
         # Build data structure
         # Calculate tank_level_liters from vehicle data
