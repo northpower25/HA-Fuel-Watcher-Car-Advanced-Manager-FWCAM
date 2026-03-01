@@ -297,6 +297,13 @@ add_trip:
       example: "Client meeting"
       selector:
         text:
+    driver:
+      name: Driver
+      description: Name of the driver (required for GoBD compliance)
+      required: false
+      example: "Max Mustermann"
+      selector:
+        text:
     fuel_consumed:
       name: Fuel Consumed
       description: Fuel consumed during trip in liters
@@ -449,6 +456,13 @@ edit_trip:
       example: "Client meeting"
       selector:
         text:
+    driver:
+      name: Driver
+      description: Name of the driver (required for GoBD compliance)
+      required: false
+      example: "Max Mustermann"
+      selector:
+        text:
     additional_costs:
       name: Additional Costs
       description: Additional costs like tolls or parking in EUR
@@ -554,7 +568,7 @@ edit_trip:
 
 delete_trip:
   name: Delete Trip
-  description: Delete a trip from the logbook
+  description: Delete a trip from the logbook. If the trip has valid odometer data, a gap-fill placeholder trip is automatically inserted to preserve odometer continuity (GoBD).
   fields:
     config_entry_id:
       name: Config Entry ID
@@ -566,6 +580,31 @@ delete_trip:
     trip_id:
       name: Trip ID
       description: ID of the trip to delete
+      required: true
+      example: 42
+      selector:
+        number:
+          min: 1
+          max: 100000
+          step: 1
+
+finalize_trip:
+  name: Finalize Trip (GoBD)
+  description: >
+    Mark a trip as finalized for GoBD compliance. Once finalized, the odometer
+    fields are locked and cannot be changed. All changes are recorded in the
+    immutable audit log. The current HA user is recorded as the finalizing person.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    trip_id:
+      name: Trip ID
+      description: ID of the trip to finalize
       required: true
       example: 42
       selector:

@@ -628,6 +628,77 @@ def detect_missed_trips_from_history(
     return detected_trips
 
 
+def detect_odometer_gaps_between_trips(
+    existing_trips: list[dict[str, Any]],
+    min_gap_km: float = 0.5,
+) -> list[dict[str, Any]]:
+    """Detect odometer gaps between existing trips and return gap-fill trip records.
+
+    Iterates through trips sorted by odometer_end and checks whether consecutive
+    trips have an unaccounted odometer gap (i.e. the next trip's odometer_start is
+    larger than the previous trip's odometer_end by more than *min_gap_km*).
+
+    For each gap a minimal placeholder trip dict is returned that can be persisted
+    to storage by the caller.  Callers should assign trip IDs and timestamps.
+
+    Args:
+        existing_trips: List of trip dicts that already have odometer_start/end.
+        min_gap_km: Minimum gap size to trigger a gap-fill record (default 0.5 km).
+
+    Returns:
+        List of gap-fill trip dicts (without trip_id; caller must assign).
+    """
+    # Keep only trips with valid odometer data
+    odo_trips = [
+        t for t in existing_trips
+        if t.get("odometer_start") is not None and t.get("odometer_end") is not None
+    ]
+    if not odo_trips:
+        return []
+
+    # Sort by odometer start value
+    odo_trips.sort(key=lambda t: t.get("odometer_start", 0))
+
+    gap_fills: list[dict[str, Any]] = []
+    for i in range(len(odo_trips) - 1):
+        trip_a = odo_trips[i]
+        trip_b = odo_trips[i + 1]
+        gap = trip_b.get("odometer_start", 0) - trip_a.get("odometer_end", 0)
+        if gap >= min_gap_km:
+            gap_fills.append({
+                "odometer_start": round(trip_a["odometer_end"], 1),
+                "odometer_end": round(trip_b["odometer_start"], 1),
+                "distance_km": round(gap, 2),
+                "timestamp_start": trip_a.get("timestamp_end"),
+                "timestamp_end": trip_b.get("timestamp_start"),
+                "category": "private",
+                "data_quality": "odometer_gap_fill",
+                "quality_level": "D",
+                "finalized": False,
+                "finalized_by": None,
+                "finalized_at": None,
+                "driver": None,
+                "fuel_consumed": None,
+                "consumption_source": None,
+                "position_quality": "none",
+                "confidence": RECOVERED_TRIP_CONFIDENCE,
+                "notes": (
+                    f"Auto-generated: odometer gap of {gap:.1f} km between "
+                    f"trip ending at odo {trip_a['odometer_end']:.1f} and "
+                    f"trip starting at odo {trip_b['odometer_start']:.1f}."
+                ),
+                "change_log": [],
+            })
+            _LOGGER.info(
+                "Detected odometer gap of %.1f km between odo %.1f and %.1f",
+                gap,
+                trip_a["odometer_end"],
+                trip_b["odometer_start"],
+            )
+
+    return gap_fills
+
+
 def detect_missed_refuelings_from_history(
     tank_level_history: list[dict[str, Any]],
     existing_refuel_timestamps: set[datetime],

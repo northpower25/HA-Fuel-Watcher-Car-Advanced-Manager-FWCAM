@@ -490,6 +490,24 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Finalize a trip (GoBD)
+   */
+  finalizeTrip(tripId) {
+    const lang = this.getUserLanguage();
+    const confirmMessages = {
+      de: 'Fahrt finalisieren? Kilometerstände können danach nicht mehr geändert werden (GoBD).',
+      en: 'Finalize trip? Odometer values cannot be changed afterwards (GoBD).'
+    };
+    const message = confirmMessages[lang] || confirmMessages['en'];
+    if (confirm(message)) {
+      this.callService('hafwcma', 'finalize_trip', {
+        config_entry_id: this.getConfigEntryId(),
+        trip_id: tripId
+      });
+    }
+  }
+
+  /**
    * Delete a trip
    */
   deleteTrip(tripId) {
@@ -2508,6 +2526,8 @@ class FWCAMCard extends HTMLElement {
           this.showEditTripDialog(tripId);
         } else if (action === 'delete-trip') {
           this.deleteTrip(tripId);
+        } else if (action === 'finalize-trip') {
+          this.finalizeTrip(parseInt(tripId));
         } else if (action === 'add-trip') {
           this.showAddTripDialog();
         } else if (action === 'clear-trip-filters') {
@@ -2871,9 +2891,38 @@ class FWCAMCard extends HTMLElement {
     const hasActiveFilters = this._tripCategoryFilter || this._tripFilterYear || 
                              this._tripFilterMonth || this._tripFilterDateFrom || this._tripFilterDateTo;
 
+    // Count pending (unfinalized) trips older than 24 hours for the workbook banner
+    const now = new Date();
+    const cutoff24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const pendingCount = trips.filter(t => {
+      if (t.finalized) return false;
+      if (!t.timestamp_end) return true;
+      try { return new Date(t.timestamp_end) <= cutoff24h; } catch(e) { return true; }
+    }).length;
+    const lang = this.getUserLanguage();
+    const pendingBannerText = {
+      de: `<strong>${pendingCount}</strong> Fahrt(en) warten auf Finalisierung (GoBD – älter als 24h)`,
+      en: `<strong>${pendingCount}</strong> trip(s) pending finalization (GoBD – older than 24 h)`
+    }[lang] || `<strong>${pendingCount}</strong> trip(s) pending finalization (GoBD)`;
+
     return `
       <div class="section">
         <h3>Trip Log</h3>
+        ${pendingCount > 0 ? `
+          <div class="pending-trips-banner" style="
+            background: var(--warning-color, #ff9800);
+            color: var(--text-primary-color, #fff);
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          ">
+            <ha-icon icon="mdi:clipboard-alert"></ha-icon>
+            <span>${pendingBannerText}</span>
+          </div>
+        ` : ''}
         
         <div class="filter-controls">
           <label>
@@ -2951,7 +3000,7 @@ class FWCAMCard extends HTMLElement {
                   ${this.renderTripSortIcon('category')}
                 </th>
                 <th>Purpose</th>
-                <th>Quality</th>
+                <th>GoBD</th>
                 <th class="sortable ${sortColumn === 'fuel_consumed' ? 'sorted-' + sortDirection : ''}" 
                     data-sort-column="fuel_consumed" data-sort-type="trip">
                   Fuel (L)
@@ -2976,8 +3025,15 @@ class FWCAMCard extends HTMLElement {
                 const fuelDisplay = costInfo.liters != null && trip.fuel_consumed == null
                   ? `<span title="Estimated from avg. consumption">~${this.formatNumber(costInfo.liters, 2)}</span>`
                   : (trip.fuel_consumed != null ? this.formatNumber(trip.fuel_consumed, 2) : '-');
+                // GoBD quality level indicator
+                const qlColors = { A: '#4caf50', B: '#8bc34a', C: '#ff9800', D: '#f44336' };
+                const ql = trip.quality_level || '?';
+                const qlColor = qlColors[ql] || '#9e9e9e';
+                const isFinalized = !!trip.finalized;
+                const consumptionSrcMap = { direct: '🔵', historical: '🟡', estimated: '🟠' };
+                const consumptionSrcIcon = consumptionSrcMap[trip.consumption_source] || '';
                 return `
-                <tr data-trip-id="${trip.trip_id}">
+                <tr data-trip-id="${trip.trip_id}" style="${isFinalized ? 'opacity:0.85;' : ''}">
                   <td>${this.formatDateTime(trip.timestamp_end)}</td>
                   <td>${this.formatNumber(trip.distance_km, 1)}</td>
                   <td>
@@ -2985,26 +3041,38 @@ class FWCAMCard extends HTMLElement {
                       ${(trip.category || 'private').charAt(0).toUpperCase() + (trip.category || 'private').slice(1)}
                     </span>
                   </td>
-                  <td>${trip.purpose || '-'}</td>
+                  <td>${trip.purpose || '-'}${trip.driver ? `<br><small style="color:var(--secondary-text-color)">👤 ${trip.driver}</small>` : ''}</td>
                   <td>
-                    <span class="quality-badge quality-${trip.data_quality || 'manual'}">
+                    <span title="GoBD Qualitätsstufe: A=vollständig, B=weitgehend, C=partiell, D=nur Odometer"
+                          style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${qlColor};color:#fff;text-align:center;font-weight:bold;font-size:12px;line-height:20px;">${ql}</span>
+                    ${isFinalized
+                      ? `<span title="Finalisiert: ${trip.finalized_at ? trip.finalized_at.slice(0,10) : '?'} von ${trip.finalized_by || '?'}" style="color:#4caf50;margin-left:4px;">✓</span>`
+                      : `<span title="Nicht finalisiert" style="color:#ff9800;margin-left:4px;">⏳</span>`}
+                    <br>
+                    <span class="quality-badge quality-${trip.data_quality || 'manual'}" style="font-size:10px;">
                       ${trip.data_quality || 'manual'}
                     </span>
-                    <br>
-                    <span class="confidence-badge confidence-${this.getConfidenceLevel(trip.confidence !== undefined ? trip.confidence : 1.0)}">
-                      ${Math.round((trip.confidence !== undefined ? trip.confidence : 1.0) * 100)}%
-                    </span>
+                    ${consumptionSrcIcon ? `<span title="Verbrauchsquelle: ${trip.consumption_source}" style="margin-left:2px;">${consumptionSrcIcon}</span>` : ''}
                     <br>
                     ${(() => {
                       const pq = this.getPositionQuality(trip);
                       const icon = pq === 'full' ? 'mdi:map-marker' : pq === 'partial' ? 'mdi:map-marker-alert' : 'mdi:map-marker-off';
                       const label = pq === 'full' ? 'GPS: full' : pq === 'partial' ? 'GPS: partial' : 'GPS: none';
-                      return `<span class="position-quality-badge position-quality-${pq}" title="${label}"><ha-icon icon="${icon}"></ha-icon> ${pq}</span>`;
+                      return `<span class="position-quality-badge position-quality-${pq}" title="${label}"><ha-icon icon="${icon}"></ha-icon></span>`;
                     })()}
                   </td>
                   <td>${fuelDisplay}</td>
                   <td>${costDisplay}</td>
                   <td class="actions">
+                    ${!isFinalized ? `
+                      <button class="action-button" 
+                              data-action="finalize-trip" 
+                              data-trip-id="${trip.trip_id}"
+                              title="Finalisieren (GoBD)"
+                              style="color:#4caf50;">
+                        <ha-icon icon="mdi:check-circle-outline"></ha-icon>
+                      </button>
+                    ` : ''}
                     <button class="action-button edit-button" 
                             data-action="edit-trip" 
                             data-trip-id="${trip.trip_id}"
@@ -3234,6 +3302,14 @@ class FWCAMCard extends HTMLElement {
                     Purpose
                     <input type="text" id="trip-purpose" name="purpose" 
                            placeholder="Optional" list="purpose-suggestions">
+                  </label>
+                </div>
+
+                <div class="form-row full-width">
+                  <label for="trip-driver">
+                    Driver / Fahrer <small style="color:var(--warning-color,#ff9800);">GoBD</small>
+                    <input type="text" id="trip-driver" name="driver" 
+                           placeholder="Driver name / Name des Fahrers">
                   </label>
                 </div>
                 
@@ -3807,6 +3883,9 @@ class FWCAMCard extends HTMLElement {
     this.shadowRoot.getElementById('trip-distance').value = trip.distance_km || '';
     this.shadowRoot.getElementById('trip-category').value = trip.category || 'private';
     this.shadowRoot.getElementById('trip-purpose').value = trip.purpose || '';
+    // Driver field (GoBD)
+    const driverEl = this.shadowRoot.getElementById('trip-driver');
+    if (driverEl) driverEl.value = trip.driver || '';
     this.shadowRoot.getElementById('trip-fuel-consumed').value = trip.fuel_consumed || '';
     this.shadowRoot.getElementById('trip-additional-costs').value = trip.additional_costs || 0;
     this.shadowRoot.getElementById('trip-notes').value = trip.notes || '';
@@ -3891,6 +3970,9 @@ class FWCAMCard extends HTMLElement {
     // Add optional fields if provided
     if (formData.get('purpose')) {
       serviceData.purpose = formData.get('purpose');
+    }
+    if (formData.get('driver')) {
+      serviceData.driver = formData.get('driver');
     }
     if (formData.get('additional_costs')) {
       // Normalize decimal separator for proper parsing
