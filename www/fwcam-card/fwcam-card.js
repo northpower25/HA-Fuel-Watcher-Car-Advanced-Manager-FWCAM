@@ -66,6 +66,14 @@ class FWCAMCard extends HTMLElement {
     // State for layout edit mode (drag & drop section reordering)
     this._editLayoutMode = false;
     this._dragSrcSection = null;
+    // Re-render when the browser tab becomes visible again to avoid blank screen
+    this._visibilityChangeHandler = () => {
+      if (document.visibilityState === 'visible' && this._hass && this._config.entity) {
+        this._lastRender = 0;
+        this.render();
+      }
+    };
+    document.addEventListener('visibilitychange', this._visibilityChangeHandler);
   }
 
   /**
@@ -526,8 +534,71 @@ class FWCAMCard extends HTMLElement {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Backup & Restore handlers
+  /**
+   * Send Telegram notification for a trip
+   */
+  sendTripNotification(tripId) {
+    this.callService('hafwcma', 'send_trip_notification', {
+      config_entry_id: this.getConfigEntryId(),
+      trip_id: tripId
+    });
+  }
+
+  /**
+   * Show dialog to merge two trips
+   */
+  showMergeTripDialog(tripId) {
+    const lang = this.getUserLanguage();
+    const promptMsg = {
+      de: `Fahrt #${tripId} zusammenführen.\nBitte die ID der zweiten Fahrt eingeben:`,
+      en: `Merge trip #${tripId}.\nEnter the ID of the second trip:`
+    }[lang] || `Merge trip #${tripId}. Enter the ID of the second trip:`;
+    const input = prompt(promptMsg);
+    if (!input) return;
+    const otherId = parseInt(input.trim(), 10);
+    if (!otherId || isNaN(otherId)) return;
+    const confirmMsg = {
+      de: `Fahrten #${tripId} und #${otherId} zusammenführen? Beide werden durch eine neue Fahrt ersetzt.`,
+      en: `Merge trips #${tripId} and #${otherId}? Both will be replaced by a new combined trip.`
+    }[lang] || `Merge trips #${tripId} and #${otherId}?`;
+    if (!confirm(confirmMsg)) return;
+    this.callService('hafwcma', 'merge_trips', {
+      config_entry_id: this.getConfigEntryId(),
+      trip_id_1: tripId,
+      trip_id_2: otherId
+    });
+  }
+
+  /**
+   * Show dialog to split a trip
+   */
+  showSplitTripDialog(tripId) {
+    const lang = this.getUserLanguage();
+    const trip = (this._allTrips || []).find(t => t.trip_id === tripId);
+    const totalKm = trip ? trip.distance_km : null;
+    const hintTotal = totalKm != null
+      ? ({ de: ` (gesamt: ${totalKm} km)`, en: ` (total: ${totalKm} km)` }[lang] || ` (total: ${totalKm} km)`)
+      : '';
+    const promptMsg = {
+      de: `Fahrt #${tripId} teilen${hintTotal}.\nKilometer für den ersten Teil eingeben:`,
+      en: `Split trip #${tripId}${hintTotal}.\nEnter distance in km for the first part:`
+    }[lang] || `Split trip #${tripId}. Enter km for first part:`;
+    const input = prompt(promptMsg);
+    if (!input) return;
+    const splitKm = parseFloat(input.replace(',', '.'));
+    if (!splitKm || isNaN(splitKm) || splitKm <= 0) return;
+    if (totalKm != null && splitKm >= totalKm) {
+      alert({ de: `Teilstrecke muss kleiner als ${totalKm} km sein.`, en: `Split distance must be less than ${totalKm} km.` }[lang] || `Split distance must be < ${totalKm} km.`);
+      return;
+    }
+    this.callService('hafwcma', 'split_trip', {
+      config_entry_id: this.getConfigEntryId(),
+      trip_id: tripId,
+      split_distance_km: splitKm
+    });
+  }
+
+
   // ---------------------------------------------------------------------------
 
   /**
@@ -2528,6 +2599,12 @@ class FWCAMCard extends HTMLElement {
           this.deleteTrip(tripId);
         } else if (action === 'finalize-trip') {
           this.finalizeTrip(parseInt(tripId));
+        } else if (action === 'send-trip-notification') {
+          this.sendTripNotification(parseInt(tripId));
+        } else if (action === 'merge-trip') {
+          this.showMergeTripDialog(parseInt(tripId));
+        } else if (action === 'split-trip') {
+          this.showSplitTripDialog(parseInt(tripId));
         } else if (action === 'add-trip') {
           this.showAddTripDialog();
         } else if (action === 'clear-trip-filters') {
@@ -2994,6 +3071,7 @@ class FWCAMCard extends HTMLElement {
                   Distance (km)
                   ${this.renderTripSortIcon('distance_km')}
                 </th>
+                <th title="Odometer start → end (km)">Odo Start/End</th>
                 <th class="sortable ${sortColumn === 'category' ? 'sorted-' + sortDirection : ''}" 
                     data-sort-column="category" data-sort-type="trip">
                   Category
@@ -3013,7 +3091,7 @@ class FWCAMCard extends HTMLElement {
             <tbody>
               ${paginatedTrips.length === 0 ? `
                 <tr>
-                  <td colspan="8" class="no-data">No trips match the current filters</td>
+                  <td colspan="9" class="no-data">No trips match the current filters</td>
                 </tr>
               ` : paginatedTrips.map(trip => {
                 const costInfo = this.estimateTripCost(trip);
@@ -3030,12 +3108,19 @@ class FWCAMCard extends HTMLElement {
                 const ql = trip.quality_level || '?';
                 const qlColor = qlColors[ql] || '#9e9e9e';
                 const isFinalized = !!trip.finalized;
+                const modifiedAfterFinalization = !!trip.modified_after_finalization;
                 const consumptionSrcMap = { direct: '🔵', historical: '🟡', estimated: '🟠' };
                 const consumptionSrcIcon = consumptionSrcMap[trip.consumption_source] || '';
+                // Odometer display
+                const odoStart = trip.odometer_start != null ? this.formatNumber(trip.odometer_start, 0) : '–';
+                const odoEnd = trip.odometer_end != null ? this.formatNumber(trip.odometer_end, 0) : '–';
+                const odoDisplay = `<span style="white-space:nowrap;font-size:12px;">${odoStart}<br>↓ ${odoEnd}</span>`;
+                const hasTelegram = !!(this._hass && this._config && this.getConfigEntryId());
                 return `
                 <tr data-trip-id="${trip.trip_id}" style="${isFinalized ? 'opacity:0.85;' : ''}">
                   <td>${this.formatDateTime(trip.timestamp_end)}</td>
                   <td>${this.formatNumber(trip.distance_km, 1)}</td>
+                  <td>${odoDisplay}</td>
                   <td>
                     <span class="category-badge category-${trip.category || 'private'}">
                       ${(trip.category || 'private').charAt(0).toUpperCase() + (trip.category || 'private').slice(1)}
@@ -3048,6 +3133,7 @@ class FWCAMCard extends HTMLElement {
                     ${isFinalized
                       ? `<span title="Finalisiert: ${trip.finalized_at ? trip.finalized_at.slice(0,10) : '?'} von ${trip.finalized_by || '?'}" style="color:#4caf50;margin-left:4px;">✓</span>`
                       : `<span title="Nicht finalisiert" style="color:#ff9800;margin-left:4px;">⏳</span>`}
+                    ${modifiedAfterFinalization ? `<span title="Nach Finalisierung geändert / Modified after finalization" style="color:#f44336;margin-left:4px;font-size:11px;">✎</span>` : ''}
                     <br>
                     <span class="quality-badge quality-${trip.data_quality || 'manual'}" style="font-size:10px;">
                       ${trip.data_quality || 'manual'}
@@ -3073,6 +3159,29 @@ class FWCAMCard extends HTMLElement {
                         <ha-icon icon="mdi:check-circle-outline"></ha-icon>
                       </button>
                     ` : ''}
+                    ${hasTelegram ? `
+                      <button class="action-button"
+                              data-action="send-trip-notification"
+                              data-trip-id="${trip.trip_id}"
+                              title="Telegram-Nachricht senden / Send Telegram notification"
+                              style="color:#0088cc;">
+                        <ha-icon icon="mdi:send"></ha-icon>
+                      </button>
+                    ` : ''}
+                    <button class="action-button"
+                            data-action="merge-trip"
+                            data-trip-id="${trip.trip_id}"
+                            title="Fahrten zusammenführen / Merge trips"
+                            style="color:#7b1fa2;">
+                      <ha-icon icon="mdi:call-merge"></ha-icon>
+                    </button>
+                    <button class="action-button"
+                            data-action="split-trip"
+                            data-trip-id="${trip.trip_id}"
+                            title="Fahrt teilen / Split trip"
+                            style="color:#0277bd;">
+                      <ha-icon icon="mdi:call-split"></ha-icon>
+                    </button>
                     <button class="action-button edit-button" 
                             data-action="edit-trip" 
                             data-trip-id="${trip.trip_id}"

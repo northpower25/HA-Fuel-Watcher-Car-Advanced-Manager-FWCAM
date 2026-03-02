@@ -613,6 +613,101 @@ finalize_trip:
           max: 100000
           step: 1
 
+merge_trips:
+  name: Merge Trips
+  description: >
+    Merge two trips into a single combined trip. The earlier trip's start and
+    the later trip's end become the merged trip's start/end. Distance and fuel
+    are summed. Both source trips are removed and replaced by the new merged trip.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    trip_id_1:
+      name: Trip ID 1
+      description: ID of the first trip to merge
+      required: true
+      example: 42
+      selector:
+        number:
+          min: 1
+          max: 100000
+          step: 1
+    trip_id_2:
+      name: Trip ID 2
+      description: ID of the second trip to merge
+      required: true
+      example: 43
+      selector:
+        number:
+          min: 1
+          max: 100000
+          step: 1
+
+split_trip:
+  name: Split Trip
+  description: >
+    Split a trip into two trips at a given distance. The first part covers
+    split_distance_km; the second covers the remainder. Odometer values are
+    recalculated proportionally when available.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    trip_id:
+      name: Trip ID
+      description: ID of the trip to split
+      required: true
+      example: 42
+      selector:
+        number:
+          min: 1
+          max: 100000
+          step: 1
+    split_distance_km:
+      name: Split Distance (km)
+      description: Distance in km for the first part (must be > 0 and < total distance)
+      required: true
+      example: 25.0
+      selector:
+        number:
+          min: 0.1
+          max: 99999
+          step: 0.1
+          unit_of_measurement: "km"
+
+send_trip_notification:
+  name: Send Trip Notification
+  description: >
+    Send a Telegram message with the details of a specific trip, including any
+    missing data fields that still need to be filled in.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    trip_id:
+      name: Trip ID
+      description: ID of the trip to send notification for
+      required: true
+      example: 42
+      selector:
+        number:
+          min: 1
+          max: 100000
+          step: 1
+
 create_pattern:
   name: Create Trip Pattern
   description: Create a trip pattern for automatic classification
