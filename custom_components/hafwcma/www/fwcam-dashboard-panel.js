@@ -100,6 +100,9 @@ class FWCAMDashboardPanel extends HTMLElement {
       // Re-render so the card gets properly configured.
       this._render();
     }
+    // Keep ha-menu-button in sync with latest hass so it can toggle sidebar
+    const menuBtn = this.shadowRoot && this.shadowRoot.querySelector('ha-menu-button');
+    if (menuBtn) menuBtn.hass = hass;
   }
 
   _selectVehicle(entityId) {
@@ -130,12 +133,13 @@ class FWCAMDashboardPanel extends HTMLElement {
       .panel-header {
         display: flex;
         align-items: center;
-        padding: 12px 16px;
+        padding: 0 4px 0 0;
         background-color: var(--app-header-background-color, var(--primary-color));
         color: var(--app-header-text-color, #fff);
+        min-height: 48px;
       }
       .panel-header-icon {
-        margin-right: 10px;
+        margin-right: 8px;
         --mdc-icon-size: 24px;
         color: inherit;
       }
@@ -144,6 +148,7 @@ class FWCAMDashboardPanel extends HTMLElement {
         font-size: 1.2rem;
         font-weight: 500;
         line-height: 1;
+        flex: 1;
       }
       .vehicle-tabs {
         display: flex;
@@ -209,6 +214,7 @@ class FWCAMDashboardPanel extends HTMLElement {
       this.shadowRoot.innerHTML = `
         <style>${styles}</style>
         <div class="panel-header">
+          <ha-menu-button></ha-menu-button>
           <ha-icon class="panel-header-icon" icon="mdi:gas-station"></ha-icon>
           <h1>Fuel Watcher</h1>
         </div>
@@ -221,6 +227,9 @@ class FWCAMDashboardPanel extends HTMLElement {
           </p>
         </div>
       `;
+      // Attach hass to menu button
+      const menuBtn = this.shadowRoot.querySelector('ha-menu-button');
+      if (menuBtn) menuBtn.hass = this._hass;
       this._card = null;
       return;
     }
@@ -245,6 +254,7 @@ class FWCAMDashboardPanel extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>${styles}</style>
       <div class="panel-header">
+        <ha-menu-button></ha-menu-button>
         <ha-icon class="panel-header-icon" icon="mdi:gas-station"></ha-icon>
         <h1>Fuel Watcher</h1>
       </div>
@@ -253,6 +263,10 @@ class FWCAMDashboardPanel extends HTMLElement {
         <${FWCAM_CARD_ELEMENT}></${FWCAM_CARD_ELEMENT}>
       </div>
     `;
+
+    // Attach hass to the ha-menu-button so it can toggle the sidebar
+    const menuBtn = this.shadowRoot.querySelector('ha-menu-button');
+    if (menuBtn) menuBtn.hass = this._hass;
 
     // --- Attach tab click listeners ---
     this.shadowRoot.querySelectorAll(".vehicle-tab").forEach((tab) => {

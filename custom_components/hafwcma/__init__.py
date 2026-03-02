@@ -53,6 +53,9 @@ SERVICE_ADD_TRIP = "add_trip"
 SERVICE_EDIT_TRIP = "edit_trip"
 SERVICE_DELETE_TRIP = "delete_trip"
 SERVICE_FINALIZE_TRIP = "finalize_trip"
+SERVICE_MERGE_TRIPS = "merge_trips"
+SERVICE_SPLIT_TRIP = "split_trip"
+SERVICE_SEND_TRIP_NOTIFICATION = "send_trip_notification"
 SERVICE_CREATE_PATTERN = "create_pattern"
 SERVICE_EXPORT_TRIPS = "export_trips"
 SERVICE_GET_ALL_TRIPS = "get_all_trips"
@@ -152,6 +155,23 @@ SCHEMA_DELETE_TRIP = vol.Schema({
 })
 
 SCHEMA_FINALIZE_TRIP = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("trip_id"): vol.Coerce(int),
+})
+
+SCHEMA_MERGE_TRIPS = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("trip_id_1"): vol.Coerce(int),
+    vol.Required("trip_id_2"): vol.Coerce(int),
+})
+
+SCHEMA_SPLIT_TRIP = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("trip_id"): vol.Coerce(int),
+    vol.Required("split_distance_km"): vol.Coerce(float),
+})
+
+SCHEMA_SEND_TRIP_NOTIFICATION = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
     vol.Required("trip_id"): vol.Coerce(int),
 })
@@ -606,7 +626,139 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
         if coordinator:
             await coordinator.async_request_refresh()
-    
+
+    async def handle_merge_trips(call: ServiceCall) -> None:
+        """Handle the merge_trips service call."""
+        from .utils.storage import merge_trips
+
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+
+        try:
+            user = call.context.user_id or "ha_user"
+        except Exception:
+            user = "ha_user"
+
+        new_id = await merge_trips(
+            hass, entry,
+            call.data["trip_id_1"],
+            call.data["trip_id_2"],
+            merged_by=user,
+        )
+        if new_id is None:
+            _LOGGER.error("merge_trips: one or both trip IDs not found (%s, %s)", call.data["trip_id_1"], call.data["trip_id_2"])
+        else:
+            _LOGGER.info("Merged trips #%s and #%s into #%s", call.data["trip_id_1"], call.data["trip_id_2"], new_id)
+
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+
+    async def handle_split_trip(call: ServiceCall) -> None:
+        """Handle the split_trip service call."""
+        from .utils.storage import split_trip
+
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+
+        try:
+            user = call.context.user_id or "ha_user"
+        except Exception:
+            user = "ha_user"
+
+        result = await split_trip(
+            hass, entry,
+            call.data["trip_id"],
+            call.data["split_distance_km"],
+            split_by=user,
+        )
+        if result is None:
+            _LOGGER.error("split_trip: trip #%s not found or split distance invalid", call.data["trip_id"])
+        else:
+            _LOGGER.info("Split trip #%s into #%s and #%s", call.data["trip_id"], result[0], result[1])
+
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+
+    async def handle_send_trip_notification(call: ServiceCall) -> None:
+        """Handle the send_trip_notification service call – sends trip details via Telegram."""
+        from .utils.storage import get_trips
+
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+
+        if not entry:
+            _LOGGER.error("Config entry %s not found", entry_id)
+            return
+
+        trip_id = call.data["trip_id"]
+        trips = await get_trips(hass, entry)
+        trip = next((t for t in trips if t.get("trip_id") == trip_id), None)
+
+        if trip is None:
+            _LOGGER.error("send_trip_notification: trip #%s not found", trip_id)
+            return
+
+        telegram_token = entry.data.get("telegram_token", "")
+        telegram_chat_id = entry.data.get("telegram_chat_id", "")
+        if not telegram_token or not telegram_chat_id:
+            _LOGGER.warning("Telegram not configured – cannot send trip notification for #%s", trip_id)
+            return
+
+        # Build a concise HTML message with trip details
+        vehicle_name = entry.data.get("vehicle_name", "Vehicle")
+        cat = (trip.get("category") or "private").capitalize()
+        dist = f"{trip.get('distance_km', '?')} km"
+        odo_start = trip.get("odometer_start")
+        odo_end = trip.get("odometer_end")
+        odo_str = (
+            f"{odo_start} → {odo_end} km" if odo_start is not None and odo_end is not None
+            else str(odo_start or odo_end or "–")
+        )
+        driver = trip.get("driver") or "–"
+        purpose = trip.get("purpose") or "–"
+        ts_start = (trip.get("timestamp_start") or "")[:16].replace("T", " ")
+        ts_end = (trip.get("timestamp_end") or "")[:16].replace("T", " ")
+        finalized = "✅ Yes" if trip.get("finalized") else "⏳ No"
+        missing = []
+        if not trip.get("driver"):
+            missing.append("driver")
+        if not trip.get("purpose"):
+            missing.append("purpose")
+        if trip.get("odometer_start") is None or trip.get("odometer_end") is None:
+            missing.append("odometer")
+        missing_str = ", ".join(missing) if missing else "none"
+
+        message = (
+            f"🚗 <b>{vehicle_name} – Trip #{trip_id}</b>\n"
+            f"📅 {ts_start} → {ts_end}\n"
+            f"📏 Distance: {dist}   |   Odometer: {odo_str}\n"
+            f"🏷 Category: {cat}   |   Purpose: {purpose}\n"
+            f"👤 Driver: {driver}\n"
+            f"GoBD finalized: {finalized}\n"
+            f"⚠️ Missing data: {missing_str}"
+        )
+
+        try:
+            from .messaging.telegram import TelegramNotifier
+            await TelegramNotifier(
+                bot_token=telegram_token,
+                chat_id=telegram_chat_id,
+                hass=hass,
+            ).send_html(message)
+            _LOGGER.info("Sent Telegram trip notification for trip #%s", trip_id)
+        except Exception as err:
+            _LOGGER.error("Failed to send Telegram trip notification for #%s: %s", trip_id, err)
+
     async def handle_create_pattern(call: ServiceCall) -> None:
         """Handle the create_pattern service call."""
         from .utils.storage import add_trip_pattern
@@ -1129,6 +1281,15 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_FINALIZE_TRIP, handle_finalize_trip, schema=SCHEMA_FINALIZE_TRIP
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_MERGE_TRIPS, handle_merge_trips, schema=SCHEMA_MERGE_TRIPS
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SPLIT_TRIP, handle_split_trip, schema=SCHEMA_SPLIT_TRIP
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SEND_TRIP_NOTIFICATION, handle_send_trip_notification, schema=SCHEMA_SEND_TRIP_NOTIFICATION
     )
     hass.services.async_register(
         DOMAIN, SERVICE_CREATE_PATTERN, handle_create_pattern, schema=SCHEMA_CREATE_PATTERN

@@ -1868,7 +1868,10 @@ async def update_trip(
                 # Odometer fields are locked on finalized trips to protect the km history
                 odometer_fields = {"odometer_start", "odometer_end", "distance_km"}
                 updates = {k: v for k, v in updates.items() if k not in odometer_fields}
-            
+                # Mark that this finalized trip was modified afterwards
+                if updates:
+                    trip["modified_after_finalization"] = True
+
             trip.update(updates)
             
             # Refresh derived fields
@@ -2054,6 +2057,280 @@ async def delete_trip(
             return True
     
     return False
+
+
+async def merge_trips(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    trip_id_1: int,
+    trip_id_2: int,
+    merged_by: str = "ha_user",
+) -> int | None:
+    """Merge two trips into one combined trip.
+
+    The earlier trip's start and the later trip's end form the merged trip.
+    Distance and fuel are summed. The earlier trip is replaced by the merged
+    trip; the later trip is removed.
+
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        trip_id_1: ID of the first trip
+        trip_id_2: ID of the second trip
+        merged_by: User performing the merge
+
+    Returns:
+        New trip ID of the merged trip, or None if one/both trips were not found
+    """
+    from homeassistant.util import dt as dt_util
+
+    data = await load_data(hass, entry)
+    trips = data.get("trips", [])
+
+    t1 = next((t for t in trips if t.get("trip_id") == trip_id_1), None)
+    t2 = next((t for t in trips if t.get("trip_id") == trip_id_2), None)
+
+    if t1 is None or t2 is None:
+        return None
+
+    # Determine chronological order
+    ts1 = t1.get("timestamp_start") or t1.get("timestamp_end") or ""
+    ts2 = t2.get("timestamp_start") or t2.get("timestamp_end") or ""
+    earlier, later = (t1, t2) if ts1 <= ts2 else (t2, t1)
+
+    now_str = dt_util.now().isoformat()
+    next_id = data.get("next_trip_id", 1)
+    data["next_trip_id"] = next_id + 1
+
+    merged_distance = (earlier.get("distance_km") or 0.0) + (later.get("distance_km") or 0.0)
+    merged_fuel = None
+    if earlier.get("fuel_consumed") is not None or later.get("fuel_consumed") is not None:
+        merged_fuel = (earlier.get("fuel_consumed") or 0.0) + (later.get("fuel_consumed") or 0.0)
+
+    merged_trip: dict[str, Any] = {
+        "trip_id": next_id,
+        "timestamp_start": earlier.get("timestamp_start"),
+        "timestamp_end": later.get("timestamp_end"),
+        "distance_km": round(merged_distance, 2),
+        "category": earlier.get("category") or later.get("category") or "private",
+        "purpose": earlier.get("purpose") or later.get("purpose"),
+        "driver": earlier.get("driver") or later.get("driver"),
+        "fuel_consumed": merged_fuel,
+        "additional_costs": (earlier.get("additional_costs") or 0.0) + (later.get("additional_costs") or 0.0),
+        "odometer_start": earlier.get("odometer_start"),
+        "odometer_end": later.get("odometer_end"),
+        "start_latitude": earlier.get("start_latitude"),
+        "start_longitude": earlier.get("start_longitude"),
+        "start_name": earlier.get("start_name"),
+        "start_address": earlier.get("start_address"),
+        "end_latitude": later.get("end_latitude"),
+        "end_longitude": later.get("end_longitude"),
+        "end_name": later.get("end_name"),
+        "end_address": later.get("end_address"),
+        "data_quality": "manual",
+        "finalized": False,
+        "finalized_by": None,
+        "finalized_at": None,
+        "created_at": now_str,
+        "updated_at": now_str,
+        "notes": f"Merged from trips #{earlier['trip_id']} and #{later['trip_id']}",
+        "change_log": [{
+            "ts": now_str,
+            "by": merged_by,
+            "action": "merge",
+            "fields": {"source_trip_ids": [earlier["trip_id"], later["trip_id"]]},
+        }],
+    }
+    merged_trip["position_quality"] = _derive_position_quality(merged_trip)
+    merged_trip["quality_level"] = _derive_quality_level(merged_trip)
+    merged_trip["consumption_source"] = _derive_consumption_source(merged_trip)
+
+    # Remove both source trips and add merged trip
+    data["trips"] = [t for t in trips if t.get("trip_id") not in (trip_id_1, trip_id_2)]
+    data["trips"].append(merged_trip)
+
+    # Update statistics: subtract both, add merged
+    stats = data.setdefault("trip_statistics", {
+        "total_trips": 0, "total_distance_km": 0.0, "total_fuel_consumed": 0.0,
+        "total_fuel_cost": 0.0, "total_additional_costs": 0.0,
+        "business_trips": 0, "private_trips": 0, "commute_trips": 0,
+    })
+    for removed in (earlier, later):
+        stats["total_trips"] = max(0, (stats.get("total_trips") or 0) - 1)
+        stats["total_distance_km"] = max(0.0, (stats.get("total_distance_km") or 0.0) - (removed.get("distance_km") or 0.0))
+        stats["total_fuel_consumed"] = max(0.0, (stats.get("total_fuel_consumed") or 0.0) - (removed.get("fuel_consumed") or 0.0))
+        cat_key = f"{removed.get('category', 'private')}_trips"
+        stats[cat_key] = max(0, (stats.get(cat_key) or 0) - 1)
+
+    stats["total_trips"] = (stats.get("total_trips") or 0) + 1
+    stats["total_distance_km"] = (stats.get("total_distance_km") or 0.0) + merged_trip["distance_km"]
+    if merged_fuel:
+        stats["total_fuel_consumed"] = (stats.get("total_fuel_consumed") or 0.0) + merged_fuel
+    cat_key = f"{merged_trip['category']}_trips"
+    stats[cat_key] = (stats.get(cat_key) or 0) + 1
+
+    await save_data(hass, entry, data)
+    _LOGGER.info("Merged trips #%d and #%d into new trip #%d", trip_id_1, trip_id_2, next_id)
+    return next_id
+
+
+async def split_trip(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    trip_id: int,
+    split_distance_km: float,
+    split_by: str = "ha_user",
+) -> tuple[int, int] | None:
+    """Split a trip into two trips at a given distance.
+
+    The first trip covers split_distance_km; the second covers the remainder.
+    Odometer values are recalculated if available.
+
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        trip_id: ID of the trip to split
+        split_distance_km: Distance for the first part in km (must be > 0 and < total distance)
+        split_by: User performing the split
+
+    Returns:
+        Tuple of (trip_id_part1, trip_id_part2), or None if trip not found or split invalid
+    """
+    from homeassistant.util import dt as dt_util
+    import datetime
+
+    data = await load_data(hass, entry)
+    trips = data.get("trips", [])
+
+    original = next((t for t in trips if t.get("trip_id") == trip_id), None)
+    if original is None:
+        return None
+
+    total_distance = original.get("distance_km") or 0.0
+    if split_distance_km <= 0 or split_distance_km >= total_distance:
+        return None
+
+    remainder_km = round(total_distance - split_distance_km, 2)
+    split_distance_km = round(split_distance_km, 2)
+    ratio = split_distance_km / total_distance
+
+    # Estimate split timestamp proportionally between start and end
+    split_ts: str | None = None
+    try:
+        ts_start = datetime.datetime.fromisoformat(original["timestamp_start"])
+        ts_end = datetime.datetime.fromisoformat(original["timestamp_end"])
+        delta = ts_end - ts_start
+        split_ts = (ts_start + datetime.timedelta(seconds=delta.total_seconds() * ratio)).isoformat()
+    except Exception:
+        split_ts = original.get("timestamp_start")
+
+    now_str = dt_util.now().isoformat()
+    id1 = data.get("next_trip_id", 1)
+    id2 = id1 + 1
+    data["next_trip_id"] = id2 + 1
+
+    odo_start = original.get("odometer_start")
+    odo_end = original.get("odometer_end")
+    odo_mid = round(odo_start + split_distance_km, 2) if odo_start is not None else None
+
+    fuel_total = original.get("fuel_consumed")
+    fuel1 = round(fuel_total * ratio, 4) if fuel_total is not None else None
+    fuel2 = round(fuel_total - fuel1, 4) if fuel1 is not None else None
+
+    base = {
+        "category": original.get("category", "private"),
+        "purpose": original.get("purpose"),
+        "driver": original.get("driver"),
+        "data_quality": "manual",
+        "finalized": False,
+        "finalized_by": None,
+        "finalized_at": None,
+        "created_at": now_str,
+        "updated_at": now_str,
+    }
+
+    part1: dict[str, Any] = {
+        **base,
+        "trip_id": id1,
+        "timestamp_start": original.get("timestamp_start"),
+        "timestamp_end": split_ts,
+        "distance_km": split_distance_km,
+        "odometer_start": odo_start,
+        "odometer_end": odo_mid,
+        "start_latitude": original.get("start_latitude"),
+        "start_longitude": original.get("start_longitude"),
+        "start_name": original.get("start_name"),
+        "start_address": original.get("start_address"),
+        "end_latitude": None,
+        "end_longitude": None,
+        "end_name": None,
+        "end_address": None,
+        "fuel_consumed": fuel1,
+        "additional_costs": round((original.get("additional_costs") or 0.0) * ratio, 4),
+        "notes": f"Part 1 of 2 – split from trip #{trip_id}",
+        "change_log": [{
+            "ts": now_str, "by": split_by, "action": "split",
+            "fields": {"source_trip_id": trip_id, "part": 1},
+        }],
+    }
+    part2: dict[str, Any] = {
+        **base,
+        "trip_id": id2,
+        "timestamp_start": split_ts,
+        "timestamp_end": original.get("timestamp_end"),
+        "distance_km": remainder_km,
+        "odometer_start": odo_mid,
+        "odometer_end": odo_end,
+        "start_latitude": None,
+        "start_longitude": None,
+        "start_name": None,
+        "start_address": None,
+        "end_latitude": original.get("end_latitude"),
+        "end_longitude": original.get("end_longitude"),
+        "end_name": original.get("end_name"),
+        "end_address": original.get("end_address"),
+        "fuel_consumed": fuel2,
+        "additional_costs": round((original.get("additional_costs") or 0.0) * (1 - ratio), 4),
+        "notes": f"Part 2 of 2 – split from trip #{trip_id}",
+        "change_log": [{
+            "ts": now_str, "by": split_by, "action": "split",
+            "fields": {"source_trip_id": trip_id, "part": 2},
+        }],
+    }
+
+    for part in (part1, part2):
+        part["position_quality"] = _derive_position_quality(part)
+        part["quality_level"] = _derive_quality_level(part)
+        part["consumption_source"] = _derive_consumption_source(part)
+
+    # Remove original trip and add two new ones
+    data["trips"] = [t for t in trips if t.get("trip_id") != trip_id]
+    data["trips"].extend([part1, part2])
+
+    # Update statistics: subtract original, add both parts
+    stats = data.setdefault("trip_statistics", {
+        "total_trips": 0, "total_distance_km": 0.0, "total_fuel_consumed": 0.0,
+        "total_fuel_cost": 0.0, "total_additional_costs": 0.0,
+        "business_trips": 0, "private_trips": 0, "commute_trips": 0,
+    })
+    stats["total_trips"] = max(0, (stats.get("total_trips") or 0) - 1)
+    stats["total_distance_km"] = max(0.0, (stats.get("total_distance_km") or 0.0) - (original.get("distance_km") or 0.0))
+    if original.get("fuel_consumed"):
+        stats["total_fuel_consumed"] = max(0.0, (stats.get("total_fuel_consumed") or 0.0) - original["fuel_consumed"])
+    orig_cat_key = f"{original.get('category', 'private')}_trips"
+    stats[orig_cat_key] = max(0, (stats.get(orig_cat_key) or 0) - 1)
+
+    for part in (part1, part2):
+        stats["total_trips"] = (stats.get("total_trips") or 0) + 1
+        stats["total_distance_km"] = (stats.get("total_distance_km") or 0.0) + part["distance_km"]
+        if part.get("fuel_consumed"):
+            stats["total_fuel_consumed"] = (stats.get("total_fuel_consumed") or 0.0) + part["fuel_consumed"]
+        cat_key = f"{part['category']}_trips"
+        stats[cat_key] = (stats.get(cat_key) or 0) + 1
+
+    await save_data(hass, entry, data)
+    _LOGGER.info("Split trip #%d into #%d (%.1f km) and #%d (%.1f km)", trip_id, id1, split_distance_km, id2, remainder_km)
+    return (id1, id2)
 
 
 async def get_trip_patterns(
