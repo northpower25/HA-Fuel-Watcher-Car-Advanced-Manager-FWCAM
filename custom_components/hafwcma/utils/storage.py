@@ -2235,7 +2235,7 @@ async def split_trip(
 
     fuel_total = original.get("fuel_consumed")
     fuel1 = round(fuel_total * ratio, 4) if fuel_total is not None else None
-    fuel2 = round(fuel_total - fuel1, 4) if fuel_total is not None else None
+    fuel2 = round(fuel_total - fuel1, 4) if fuel1 is not None else None
 
     base = {
         "category": original.get("category", "private"),

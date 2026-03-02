@@ -759,7 +759,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         except Exception as err:
             _LOGGER.error("Failed to send Telegram trip notification for #%s: %s", trip_id, err)
 
-
+    async def handle_create_pattern(call: ServiceCall) -> None:
         """Handle the create_pattern service call."""
         from .utils.storage import add_trip_pattern
         from homeassistant.util import dt as dt_util

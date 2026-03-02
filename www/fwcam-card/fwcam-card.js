@@ -184,6 +184,15 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Remove document-level event listeners when the card is removed from the DOM
+   */
+  disconnectedCallback() {
+    if (this._visibilityChangeHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityChangeHandler);
+    }
+  }
+
+  /**
    * Sanitize CSS value to prevent injection
    * Only allows positive numbers with safe CSS units
    */
@@ -201,6 +210,19 @@ class FWCAMCard extends HTMLElement {
     
     console.warn(`Invalid CSS value '${value}', using default '${defaultValue}'`);
     return defaultValue;
+  }
+
+  /**
+   * Escape a string for safe HTML interpolation
+   */
+  _esc(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   /**
@@ -3126,7 +3148,7 @@ class FWCAMCard extends HTMLElement {
                       ${(trip.category || 'private').charAt(0).toUpperCase() + (trip.category || 'private').slice(1)}
                     </span>
                   </td>
-                  <td>${trip.purpose || '-'}${trip.driver ? `<br><small style="color:var(--secondary-text-color)">👤 ${trip.driver}</small>` : ''}</td>
+                  <td>${this._esc(trip.purpose) || '-'}${trip.driver ? `<br><small style="color:var(--secondary-text-color)">👤 ${this._esc(trip.driver)}</small>` : ''}</td>
                   <td>
                     <span title="GoBD Qualitätsstufe: A=vollständig, B=weitgehend, C=partiell, D=nur Odometer"
                           style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${qlColor};color:#fff;text-align:center;font-weight:bold;font-size:12px;line-height:20px;">${ql}</span>

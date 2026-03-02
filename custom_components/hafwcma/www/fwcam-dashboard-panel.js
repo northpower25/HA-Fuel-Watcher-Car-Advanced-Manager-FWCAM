@@ -214,7 +214,7 @@ class FWCAMDashboardPanel extends HTMLElement {
       this.shadowRoot.innerHTML = `
         <style>${styles}</style>
         <div class="panel-header">
-          <ha-menu-button .hass=${JSON.stringify(null)} slot="navigationIcon"></ha-menu-button>
+          <ha-menu-button></ha-menu-button>
           <ha-icon class="panel-header-icon" icon="mdi:gas-station"></ha-icon>
           <h1>Fuel Watcher</h1>
         </div>
