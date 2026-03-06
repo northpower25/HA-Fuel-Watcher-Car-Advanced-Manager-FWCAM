@@ -16,7 +16,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CURRENCY_EURO, UnitOfLength
+from homeassistant.const import CURRENCY_EURO, PERCENTAGE, UnitOfLength
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -2542,6 +2542,7 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = f"{CURRENCY_EURO}/L"
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_has_entity_name = True
 
     def __init__(
@@ -2799,7 +2800,8 @@ class FuelPriceSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 class TankLevelSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Sensor showing current tank level."""
 
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:gas-station"
     _attr_has_entity_name = True
 
