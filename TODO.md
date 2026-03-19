@@ -118,6 +118,26 @@
 
 ---
 
+## 🎯 Neu: Routen-Korridor Tankstellensuche / New: Route Corridor Station Search (In Planung / In Planning)
+
+### Konzept erstellt / Concept Created ✅
+- [x] **Routenfunktion mit Tankstellensuche entlang eines Korridors** – Umfassendes bilinguales Konzeptdokument erstellt
+  - Siehe / See `docs/dev_docs/ROUTE_CORRIDOR_STATION_SEARCH_CONCEPT.md` (DE/EN)
+  - **Status:** Konzept – keine Umsetzung gestartet / Concept – awaiting review before implementation
+  - **Aufwand / Effort:** ~60-80 Stunden für MVP (Phase 1-3)
+  - **Geplante Funktionen / Features planned:**
+    - Routeneingabe mit Ziel + Zwischenzielen über Dashboard, Telegram-Bot oder HA-Automation
+    - Korridor-Polygon-Berechnung um die Route (konfigurierbare Breite, Standard 5 km)
+    - Tankstopp-Prognose (Tankstand + Verbrauch → Stopppunkt auf der Route)
+    - Tankstellen-Filterung nach Korridor + Ranking nach effektivem Preis (Listenpreis + Umwegkosten)
+    - Telegram-Benachrichtigungen: Routenstart-Tankplan, günstigere Station im Korridor, Reichweitenwarnung
+    - Proaktive Preis-Überwachung während der Fahrt (konfigurierbar alle 5 Minuten)
+    - Mehrfach-Tankstopp-Planung für lange Routen
+    - Preisvorhersage-Integration
+    - Öffnungszeiten-Bewusstsein
+
+---
+
 ## 🎯 New: Geolocation Feature (In Planning)
 
 ### Konzept erstellt / Concept Created ✅
