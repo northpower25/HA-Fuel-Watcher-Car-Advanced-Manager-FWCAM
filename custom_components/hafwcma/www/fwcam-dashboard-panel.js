@@ -23,10 +23,43 @@ class FWCAMDashboardPanel extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._hass = null;
     this._panel = null;
+    this._narrow = false;
     this._selectedEntityId = null;
     this._vehicles = [];
     this._card = null;
     this._lastVehicleKey = "";
+    this._visibilityHandler = null;
+  }
+
+  /**
+   * Called when the element is added to the DOM.
+   * Registers the Page Visibility listener so the panel can recover
+   * from a blank/black state when the user switches back to this tab.
+   */
+  connectedCallback() {
+    this._visibilityHandler = () => {
+      if (!document.hidden && this._hass) {
+        this._recoverIfBlank();
+      }
+    };
+    document.addEventListener("visibilitychange", this._visibilityHandler);
+
+    // If hass was already set before we were connected, ensure the panel
+    // is rendered (handles re-attachment to the DOM after a navigation).
+    if (this._hass && !this.shadowRoot.querySelector(FWCAM_CARD_ELEMENT)) {
+      this._render();
+    }
+  }
+
+  /**
+   * Called when the element is removed from the DOM.
+   * Cleans up the Page Visibility listener to avoid memory leaks.
+   */
+  disconnectedCallback() {
+    if (this._visibilityHandler) {
+      document.removeEventListener("visibilitychange", this._visibilityHandler);
+      this._visibilityHandler = null;
+    }
   }
 
   /**
@@ -63,6 +96,19 @@ class FWCAMDashboardPanel extends HTMLElement {
   }
 
   /**
+   * HA sets `narrow` on panel_custom elements to indicate mobile/narrow mode.
+   * Forwarding it to ha-menu-button makes the hamburger icon visible and
+   * functional in the HA Companion App.
+   */
+  set narrow(narrow) {
+    this._narrow = narrow;
+    const menuBtn = this.shadowRoot && this.shadowRoot.querySelector("ha-menu-button");
+    if (menuBtn) {
+      menuBtn.narrow = narrow;
+    }
+  }
+
+  /**
    * Scan hass.states for sensor.*_refueling_log entities created by FWCAM.
    */
   _discoverVehicles(hass) {
@@ -93,16 +139,40 @@ class FWCAMDashboardPanel extends HTMLElement {
   }
 
   _updateCardHass(hass) {
-    if (this._card) {
+    // Use isConnected to detect a stale reference caused by shadow DOM replacement
+    // (e.g. after tab switching, page hide/show, or navigation in the Companion App).
+    if (this._card && this._card.isConnected) {
       this._card.hass = hass;
     } else if (customElements.get(FWCAM_CARD_ELEMENT)) {
-      // fwcam-card is now registered (was not yet when _render() first ran).
-      // Re-render so the card gets properly configured.
+      // fwcam-card is now registered (was not yet when _render() first ran),
+      // or the card element was lost – re-render to restore the panel.
       this._render();
+      return;
     }
     // Keep ha-menu-button in sync with latest hass so it can toggle sidebar
-    const menuBtn = this.shadowRoot && this.shadowRoot.querySelector('ha-menu-button');
-    if (menuBtn) menuBtn.hass = hass;
+    const menuBtn = this.shadowRoot && this.shadowRoot.querySelector("ha-menu-button");
+    if (menuBtn) {
+      menuBtn.hass = hass;
+      menuBtn.narrow = this._narrow;
+    }
+  }
+
+  /**
+   * Recover from a blank/black panel state that can occur when the user
+   * switches browser tabs or the Companion App goes to the background.
+   * Checks whether the shadow DOM still contains meaningful content and
+   * forces a full re-render when the panel appears empty.
+   */
+  _recoverIfBlank() {
+    const hasCard = this.shadowRoot && this.shadowRoot.querySelector(FWCAM_CARD_ELEMENT);
+    const cardConnected = hasCard && hasCard.isConnected;
+    if (!cardConnected) {
+      this._card = null;
+      this._render();
+    } else if (this._card && !this._card.isConnected) {
+      this._card = null;
+      this._render();
+    }
   }
 
   _selectVehicle(entityId) {
@@ -229,7 +299,10 @@ class FWCAMDashboardPanel extends HTMLElement {
       `;
       // Attach hass to menu button
       const menuBtn = this.shadowRoot.querySelector('ha-menu-button');
-      if (menuBtn) menuBtn.hass = this._hass;
+      if (menuBtn) {
+        menuBtn.hass = this._hass;
+        menuBtn.narrow = this._narrow;
+      }
       this._card = null;
       return;
     }
@@ -266,7 +339,10 @@ class FWCAMDashboardPanel extends HTMLElement {
 
     // Attach hass to the ha-menu-button so it can toggle the sidebar
     const menuBtn = this.shadowRoot.querySelector('ha-menu-button');
-    if (menuBtn) menuBtn.hass = this._hass;
+    if (menuBtn) {
+      menuBtn.hass = this._hass;
+      menuBtn.narrow = this._narrow;
+    }
 
     // --- Attach tab click listeners ---
     this.shadowRoot.querySelectorAll(".vehicle-tab").forEach((tab) => {
