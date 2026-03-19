@@ -16,6 +16,9 @@
 const PANEL_ELEMENT_NAME = "fwcam-dashboard-panel";
 const REFUELING_LOG_SUFFIX = "_refueling_log";
 const FWCAM_CARD_ELEMENT = "fwcam-card";
+const ROUTENPLANUNG_ELEMENT = "fwcam-routenplanung-card";
+const VIEW_VEHICLE = "vehicle";
+const VIEW_ROUTENPLANUNG = "routenplanung";
 
 class FWCAMDashboardPanel extends HTMLElement {
   constructor() {
@@ -27,6 +30,7 @@ class FWCAMDashboardPanel extends HTMLElement {
     this._selectedEntityId = null;
     this._vehicles = [];
     this._card = null;
+    this._activeView = VIEW_VEHICLE;
     this._lastVehicleKey = "";
     this._visibilityHandler = null;
   }
@@ -46,7 +50,8 @@ class FWCAMDashboardPanel extends HTMLElement {
 
     // If hass was already set before we were connected, ensure the panel
     // is rendered (handles re-attachment to the DOM after a navigation).
-    if (this._hass && !this.shadowRoot.querySelector(FWCAM_CARD_ELEMENT)) {
+    if (this._hass && !this.shadowRoot.querySelector(FWCAM_CARD_ELEMENT) &&
+        !this.shadowRoot.querySelector(ROUTENPLANUNG_ELEMENT)) {
       this._render();
     }
   }
@@ -143,8 +148,11 @@ class FWCAMDashboardPanel extends HTMLElement {
     // (e.g. after tab switching, page hide/show, or navigation in the Companion App).
     if (this._card && this._card.isConnected) {
       this._card.hass = hass;
-    } else if (customElements.get(FWCAM_CARD_ELEMENT)) {
-      // fwcam-card is now registered (was not yet when _render() first ran),
+    } else if (
+      (this._activeView === VIEW_VEHICLE && customElements.get(FWCAM_CARD_ELEMENT)) ||
+      (this._activeView === VIEW_ROUTENPLANUNG && customElements.get(ROUTENPLANUNG_ELEMENT))
+    ) {
+      // The active card element is now registered (was not yet when _render() first ran),
       // or the card element was lost – re-render to restore the panel.
       this._render();
       return;
@@ -164,8 +172,10 @@ class FWCAMDashboardPanel extends HTMLElement {
    * forces a full re-render when the panel appears empty.
    */
   _recoverIfBlank() {
-    const hasCard = this.shadowRoot && this.shadowRoot.querySelector(FWCAM_CARD_ELEMENT);
-    const cardConnected = hasCard && hasCard.isConnected;
+    const activeElement = this._activeView === VIEW_ROUTENPLANUNG
+      ? this.shadowRoot && this.shadowRoot.querySelector(ROUTENPLANUNG_ELEMENT)
+      : this.shadowRoot && this.shadowRoot.querySelector(FWCAM_CARD_ELEMENT);
+    const cardConnected = activeElement && activeElement.isConnected;
     if (!cardConnected) {
       this._card = null;
       this._render();
@@ -176,8 +186,15 @@ class FWCAMDashboardPanel extends HTMLElement {
   }
 
   _selectVehicle(entityId) {
-    if (this._selectedEntityId === entityId) return;
+    if (this._activeView === VIEW_VEHICLE && this._selectedEntityId === entityId) return;
+    this._activeView = VIEW_VEHICLE;
     this._selectedEntityId = entityId;
+    this._render();
+  }
+
+  _selectRoutenplanung() {
+    if (this._activeView === VIEW_ROUTENPLANUNG) return;
+    this._activeView = VIEW_ROUTENPLANUNG;
     this._render();
   }
 
@@ -247,6 +264,26 @@ class FWCAMDashboardPanel extends HTMLElement {
         background-color: var(--primary-color, #03a9f4);
         color: var(--text-primary-color, #fff);
       }
+      .routenplanung-tab {
+        padding: 6px 18px;
+        border-radius: 20px;
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-family: inherit;
+        background-color: var(--secondary-background-color, #f5f5f5);
+        color: var(--primary-text-color, #212121);
+        border: none;
+        transition: background-color 0.15s, color 0.15s;
+        outline: none;
+        margin-left: auto;
+      }
+      .routenplanung-tab:hover {
+        background-color: var(--primary-color-light, #e3f2fd);
+      }
+      .routenplanung-tab.selected {
+        background-color: var(--primary-color, #03a9f4);
+        color: var(--text-primary-color, #fff);
+      }
       .panel-content {
         padding: 16px;
         max-width: 1400px;
@@ -307,22 +344,33 @@ class FWCAMDashboardPanel extends HTMLElement {
       return;
     }
 
-    // --- Vehicle tabs (only when more than one vehicle) ---
-    const tabsHtml =
-      this._vehicles.length > 1
-        ? `<div class="vehicle-tabs">
-            ${this._vehicles
-              .map(
-                (v) => `
-                <button
-                  class="vehicle-tab${this._selectedEntityId === v.entityId ? " selected" : ""}"
-                  data-entity-id="${this._escapeHtml(v.entityId)}"
-                >${this._escapeHtml(v.displayName)}</button>
-              `
-              )
-              .join("")}
-           </div>`
-        : "";
+    // --- Vehicle tabs (vehicle selection + Routenplanung tab) ---
+    const vehicleTabsHtml = this._vehicles.length > 1
+      ? this._vehicles
+          .map(
+            (v) => `
+            <button
+              class="vehicle-tab${this._activeView === VIEW_VEHICLE && this._selectedEntityId === v.entityId ? " selected" : ""}"
+              data-entity-id="${this._escapeHtml(v.entityId)}"
+            >${this._escapeHtml(v.displayName)}</button>
+          `
+          )
+          .join("")
+      : "";
+
+    const tabsHtml = `
+      <div class="vehicle-tabs">
+        ${vehicleTabsHtml}
+        <button
+          class="routenplanung-tab${this._activeView === VIEW_ROUTENPLANUNG ? " selected" : ""}"
+          data-view="routenplanung"
+        >🗺️ Routenplanung</button>
+      </div>`;
+
+    // --- Determine which card element to render ---
+    const cardElementTag = this._activeView === VIEW_ROUTENPLANUNG
+      ? ROUTENPLANUNG_ELEMENT
+      : FWCAM_CARD_ELEMENT;
 
     this.shadowRoot.innerHTML = `
       <style>${styles}</style>
@@ -333,7 +381,7 @@ class FWCAMDashboardPanel extends HTMLElement {
       </div>
       ${tabsHtml}
       <div class="panel-content">
-        <${FWCAM_CARD_ELEMENT}></${FWCAM_CARD_ELEMENT}>
+        <${cardElementTag}></${cardElementTag}>
       </div>
     `;
 
@@ -344,15 +392,21 @@ class FWCAMDashboardPanel extends HTMLElement {
       menuBtn.narrow = this._narrow;
     }
 
-    // --- Attach tab click listeners ---
+    // --- Attach vehicle tab click listeners ---
     this.shadowRoot.querySelectorAll(".vehicle-tab").forEach((tab) => {
       tab.addEventListener("click", () =>
         this._selectVehicle(tab.dataset.entityId)
       );
     });
 
-    // --- Configure the fwcam-card ---
-    this._card = this.shadowRoot.querySelector(FWCAM_CARD_ELEMENT);
+    // --- Attach Routenplanung tab click listener ---
+    const routenplanungBtn = this.shadowRoot.querySelector(".routenplanung-tab");
+    if (routenplanungBtn) {
+      routenplanungBtn.addEventListener("click", () => this._selectRoutenplanung());
+    }
+
+    // --- Configure the active card ---
+    this._card = this.shadowRoot.querySelector(cardElementTag);
     if (this._card) {
       const vehicle =
         this._vehicles.find((v) => v.entityId === this._selectedEntityId) ||
@@ -363,9 +417,9 @@ class FWCAMDashboardPanel extends HTMLElement {
           title: vehicle.displayName,
         });
       } catch (err) {
-        // fwcam-card may not be defined yet (race condition on first load).
+        // Card may not be defined yet (race condition on first load).
         // hass setter will retry via _updateCardHass on next update.
-        console.warn("[FWCAM] fwcam-card not ready yet, will retry on next hass update:", err);
+        console.warn(`[FWCAM] ${cardElementTag} not ready yet, will retry on next hass update:`, err);
         this._card = null;
         return;
       }
