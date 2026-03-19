@@ -87,6 +87,20 @@ from .const import (
     GEOLOCATION_ALERT_COOLDOWN,
     GEOLOCATION_HYSTERESIS_FACTOR,
     PROVIDER_TANKERKONIG,
+    ATTR_ROUTE_DESTINATION,
+    ATTR_ROUTE_WAYPOINTS,
+    ATTR_ROUTE_TOTAL_DISTANCE_KM,
+    ATTR_ROUTE_POLYLINE,
+    ATTR_ROUTE_CORRIDOR_WIDTH_KM,
+    ATTR_PREDICTED_STOP_LAT,
+    ATTR_PREDICTED_STOP_LON,
+    ATTR_KM_REMAINING_TO_STOP,
+    ATTR_SAFETY_BUFFER_PCT,
+    ATTR_EFFECTIVE_TOTAL_COST,
+    ATTR_DETOUR_KM,
+    ATTR_PRICE_PER_LITRE,
+    ATTR_EFFECTIVE_PRICE,
+    ATTR_SEARCH_WINDOW_KM,
 )
 from .entity_metadata import get_entity_metadata
 from .providers.tankerkonig import TankerkoenigProvider
@@ -300,6 +314,10 @@ async def async_setup_entry(
         NearbyCheapStationsSensor(coordinator, config_entry, vehicle_name),
         TripLogSensor(coordinator, config_entry, vehicle_name),
         CurrentTripSensor(coordinator, config_entry, vehicle_name),
+        ActiveRouteSensor(coordinator, config_entry, vehicle_name),
+        PredictedFuelStopSensor(coordinator, config_entry, vehicle_name),
+        CorridorBestStationSensor(coordinator, config_entry, vehicle_name),
+        CorridorStationsSensor(coordinator, config_entry, vehicle_name),
     ]
 
     # Add entities immediately - they will start in unavailable state
@@ -5069,3 +5087,258 @@ class CurrentTripSensor(CoordinatorEntity, SensorEntity):
         return self.coordinator.last_update_success
 
 
+
+# ── Route Corridor Sensors ────────────────────────────────────────────────────
+
+class ActiveRouteSensor(CoordinatorEntity, SensorEntity):
+    """Sensor reporting the active navigation route.
+
+    State: "active" when a route is set, "inactive" otherwise.
+    Attributes expose the destination, waypoints, distance and a truncated
+    route polyline (max 100 points to stay within HA attribute limits).
+    """
+
+    _attr_icon = "mdi:map-marker-path"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Active Route"
+        self._attr_unique_id = f"{config_entry.entry_id}_active_route"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> str:
+        """Return 'active' when a route is set, 'inactive' otherwise."""
+        if self.coordinator.data is None:
+            return "inactive"
+        route_data = self.coordinator.data.get("route_data") or {}
+        return "active" if route_data.get("is_active") else "inactive"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return route details as attributes."""
+        if self.coordinator.data is None:
+            return {}
+        route_data = self.coordinator.data.get("route_data") or {}
+        polyline = route_data.get("route_polyline", [])
+        # Truncate polyline to 100 points to avoid hitting HA attribute limits
+        if len(polyline) > 100:
+            step = max(1, len(polyline) // 100)
+            polyline = polyline[::step][:100]
+        return {
+            ATTR_ROUTE_DESTINATION: route_data.get("destination"),
+            ATTR_ROUTE_WAYPOINTS: route_data.get("waypoints", []),
+            ATTR_ROUTE_TOTAL_DISTANCE_KM: route_data.get("total_distance_km"),
+            ATTR_ROUTE_POLYLINE: polyline,
+            ATTR_ROUTE_CORRIDOR_WIDTH_KM: route_data.get("corridor_width_km", 5),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class PredictedFuelStopSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the predicted fuel stop position along the route.
+
+    State: distance remaining to the predicted fuel stop in km, or None
+    when no route is active.
+    """
+
+    _attr_icon = "mdi:gas-station-outline"
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Predicted Fuel Stop"
+        self._attr_unique_id = f"{config_entry.entry_id}_predicted_fuel_stop"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        """Return km remaining to the predicted fuel stop."""
+        if self.coordinator.data is None:
+            return None
+        fuel_stop = (self.coordinator.data.get("route_data") or {}).get("fuel_stop") or {}
+        km = fuel_stop.get("km_remaining_to_stop")
+        if km is None:
+            return None
+        try:
+            return round(float(km), 1)
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return predicted position and buffer details."""
+        if self.coordinator.data is None:
+            return {}
+        fuel_stop = (self.coordinator.data.get("route_data") or {}).get("fuel_stop") or {}
+        return {
+            ATTR_PREDICTED_STOP_LAT: fuel_stop.get("predicted_lat"),
+            ATTR_PREDICTED_STOP_LON: fuel_stop.get("predicted_lon"),
+            ATTR_KM_REMAINING_TO_STOP: fuel_stop.get("km_remaining_to_stop"),
+            ATTR_SAFETY_BUFFER_PCT: fuel_stop.get("safety_buffer_pct"),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class CorridorBestStationSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the best (lowest effective price) station in the corridor.
+
+    State: effective price EUR/l, or None when no corridor search has run.
+    """
+
+    _attr_icon = "mdi:star-circle"
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = f"{CURRENCY_EURO}/L"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Corridor Best Station"
+        self._attr_unique_id = f"{config_entry.entry_id}_corridor_best_station"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the effective price per litre of the best corridor station."""
+        if self.coordinator.data is None:
+            return None
+        station = (self.coordinator.data.get("route_data") or {}).get("best_corridor_station")
+        if not station:
+            return None
+        try:
+            return round(float(station["effective_price_eur_per_l"]), 4)
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return full best-station details including navigation URLs."""
+        if self.coordinator.data is None:
+            return {}
+        station = (self.coordinator.data.get("route_data") or {}).get("best_corridor_station")
+        if not station:
+            return {}
+        nav = station.get("navigation_urls") or {}
+        return {
+            "station_name": station.get("name"),
+            "station_address": station.get("address"),
+            "station_lat": station.get("lat") or station.get("latitude"),
+            "station_lon": station.get("lng") or station.get("longitude"),
+            ATTR_PRICE_PER_LITRE: station.get("price"),
+            ATTR_DETOUR_KM: station.get("detour_km"),
+            ATTR_EFFECTIVE_TOTAL_COST: station.get("total_cost_eur"),
+            ATTR_EFFECTIVE_PRICE: station.get("effective_price_eur_per_l"),
+            "google_maps_url": nav.get("google_maps"),
+            "waze_url": nav.get("waze"),
+            "apple_maps_url": nav.get("apple_maps"),
+            "last_notified_at": station.get("last_notified_at"),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class CorridorStationsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing all ranked stations found in the route corridor.
+
+    State: number of corridor stations found.
+    Attributes contain the Top-N station list and search parameters.
+    """
+
+    _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Corridor Stations"
+        self._attr_unique_id = f"{config_entry.entry_id}_corridor_stations"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of stations found in the corridor."""
+        if self.coordinator.data is None:
+            return 0
+        stations = (self.coordinator.data.get("route_data") or {}).get(
+            "corridor_stations", []
+        )
+        return len(stations) if stations else 0
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return station list and corridor search parameters."""
+        if self.coordinator.data is None:
+            return {
+                "stations": [],
+                ATTR_ROUTE_CORRIDOR_WIDTH_KM: None,
+                ATTR_SEARCH_WINDOW_KM: None,
+            }
+        route_data = self.coordinator.data.get("route_data") or {}
+        return {
+            "stations": route_data.get("corridor_stations", []),
+            ATTR_ROUTE_CORRIDOR_WIDTH_KM: route_data.get("corridor_width_km"),
+            ATTR_SEARCH_WINDOW_KM: route_data.get("search_window_km"),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success

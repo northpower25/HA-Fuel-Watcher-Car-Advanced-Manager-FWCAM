@@ -49,7 +49,9 @@ class TelegramNotifier(MessageService):
         self._use_ha_service = (
             hass is not None and "telegram_bot" in hass.config.components
         )
-        
+        # Track which API error components have already been notified this trip
+        self._reported_errors: set[str] = set()
+
         # Store which method is being used
         self.telegram_method = (
             TELEGRAM_METHOD_INTEGRATION if self._use_ha_service else TELEGRAM_METHOD_DIRECT_API
@@ -222,3 +224,200 @@ class TelegramNotifier(MessageService):
         )
 
         return await self.send_message(message, parse_mode="html", **kwargs)
+
+    async def send_route_started(
+        self,
+        destination: str,
+        total_distance_km: float | None,
+        predicted_stop_km: float | None,
+        best_station: dict | None,
+        top_stations: list[dict],
+        corridor_km: float = 5,
+        safety_buffer_pct: float = 15,
+    ) -> bool:
+        """Send a route-started notification matching the concept doc format.
+
+        Resets the per-trip error deduplication set so that each new route
+        starts with a clean slate.
+
+        Args:
+            destination: Human-readable destination string.
+            total_distance_km: Total route distance in km, or None.
+            predicted_stop_km: Distance to predicted fuel stop in km, or None.
+            best_station: Best corridor station dict (may be None on route start).
+            top_stations: List of top corridor station dicts.
+            corridor_km: Corridor half-width in km.
+            safety_buffer_pct: Fuel safety buffer percentage.
+
+        Returns:
+            True if the message was sent successfully.
+        """
+        self._reported_errors = set()
+
+        dist_str = f"{total_distance_km:.0f} km" if total_distance_km is not None else "?"
+        lines = [
+            "🗺️ <b>Route aktiviert!</b>",
+            f"📍 Ziel: <b>{html.escape(destination)}</b> ({dist_str})",
+        ]
+
+        if predicted_stop_km is not None:
+            lines.append(f"⛽ Prognose Tankstopp bei: ~{predicted_stop_km:.0f} km")
+
+        if best_station:
+            nav = best_station.get("navigation_urls") or {}
+            lines += [
+                "",
+                "🏆 <b>Empfohlene Tankstelle im Korridor:</b>",
+                f"   {html.escape(str(best_station.get('name', 'N/A')))}",
+                f"   💰 {best_station.get('price', 'N/A')} €/l",
+                f"   📏 Umweg: {best_station.get('detour_km', 0)} km",
+                f"   💶 Effektiver Preis: {best_station.get('effective_price_eur_per_l', 'N/A')} €/l (inkl. Umweg)",
+            ]
+            google_url = nav.get("google_maps")
+            if google_url:
+                lines.append(f"   🗺️ <a href=\"{google_url}\">Google Maps</a>")
+
+        if top_stations:
+            lines += ["", "📋 <b>Weitere Optionen im Korridor:</b>"]
+            for i, st in enumerate(top_stations[1:3], start=2):
+                detour = st.get("detour_km", 0)
+                detour_str = f"{detour} km Umweg" if detour else "direkt an Route"
+                lines.append(
+                    f"   {i}. {html.escape(str(st.get('name', 'N/A')))} – "
+                    f"{st.get('price', 'N/A')} €/l ({detour_str})"
+                )
+
+        lines += [
+            "",
+            f"⚙️ Korridor: {corridor_km} km | Sicherheitspuffer: {safety_buffer_pct}%",
+        ]
+
+        return await self.send_message("\n".join(lines), parse_mode="html")
+
+    async def send_cheaper_station_alert(
+        self,
+        new_station: dict,
+        old_price: float,
+        distance_to_station_km: float | None,
+        savings_40l: float | None,
+        fuel_type: str = "E10",
+    ) -> bool:
+        """Send a notification when a cheaper corridor station is found.
+
+        Args:
+            new_station: New (cheaper) station dict with price, name, etc.
+            old_price: Previous best station price per litre.
+            distance_to_station_km: Approximate distance ahead to new station.
+            savings_40l: Estimated savings for a 40 L fill-up.
+            fuel_type: Fuel type label (default "E10").
+
+        Returns:
+            True if sent successfully.
+        """
+        nav = new_station.get("navigation_urls") or {}
+        new_price = new_station.get("price", 0)
+        delta = old_price - new_price
+        detour_km = new_station.get("detour_km", 0)
+        eff_price = new_station.get("effective_price_eur_per_l", new_price)
+
+        lines = [
+            "💡 <b>Günstigere Tankstelle im Korridor!</b>",
+            "",
+            f"NEU: <b>{html.escape(str(new_station.get('name', 'N/A')))}</b>",
+            f"   💰 {fuel_type}: {new_price:.3f} €/l (↓ {delta:.3f} €/l günstiger!)",
+            f"   📏 Umweg: {detour_km} km",
+            f"   💶 Effektiv: {eff_price:.3f} €/l",
+        ]
+        if distance_to_station_km is not None:
+            lines.append(f"   📍 Liegt in ~{distance_to_station_km:.0f} km")
+        nav_parts = []
+        if nav.get("google_maps"):
+            nav_parts.append(f"<a href=\"{nav['google_maps']}\">Google Maps</a>")
+        if nav.get("waze"):
+            nav_parts.append(f"<a href=\"{nav['waze']}\">Waze</a>")
+        if nav.get("apple_maps"):
+            nav_parts.append(f"<a href=\"{nav['apple_maps']}\">Apple Maps</a>")
+        if nav_parts:
+            lines.append(f"   🗺️ {' | '.join(nav_parts)}")
+
+        lines += [
+            "",
+            f"Bisherige Empfehlung: {old_price:.3f} €/l",
+        ]
+        if savings_40l is not None:
+            lines.append(f"Ersparnis für Volltankung (40 L): ~{savings_40l:.2f} €")
+
+        return await self.send_message("\n".join(lines), parse_mode="html")
+
+    async def send_range_warning(
+        self,
+        range_km: float,
+        nearest_recommended_station: dict | None,
+        fuel_type: str = "E10",
+    ) -> bool:
+        """Send a low-range warning notification.
+
+        Args:
+            range_km: Estimated remaining range in km.
+            nearest_recommended_station: Nearest station to refuel at (may be None).
+            fuel_type: Fuel type label.
+
+        Returns:
+            True if sent successfully.
+        """
+        lines = [
+            "⚠️ <b>Reichweitenwarnung!</b>",
+            f"Tank reicht noch für ~{range_km:.0f} km.",
+        ]
+
+        if nearest_recommended_station:
+            nav = nearest_recommended_station.get("navigation_urls") or {}
+            detour_km = nearest_recommended_station.get("detour_km", 0)
+            price = nearest_recommended_station.get("price", "N/A")
+            name = nearest_recommended_station.get("name", "N/A")
+            dist_ahead = nearest_recommended_station.get("distance_km", "?")
+            lines += [
+                f"Nächste empfohlene Tankstelle: {dist_ahead} km entfernt.",
+                "",
+                f"JETZT TANKEN: <b>{html.escape(str(name))}</b>",
+                f"   💰 {fuel_type}: {price} €/l | 📏 {detour_km} km Umweg",
+            ]
+            if nav.get("google_maps"):
+                lines.append(f"   🗺️ <a href=\"{nav['google_maps']}\">Google Maps</a>")
+
+        return await self.send_message("\n".join(lines), parse_mode="html")
+
+    async def send_route_api_error(
+        self,
+        component: str,
+        error_message: str,
+    ) -> bool:
+        """Send an API error notification – at most once per component per trip.
+
+        Uses ``_reported_errors`` to deduplicate: if the same *component* has
+        already been reported during this trip the message is suppressed and
+        ``False`` is returned without sending.
+
+        Calling :meth:`send_route_started` resets the deduplication set so
+        that a new trip starts clean.
+
+        Args:
+            component: Component/provider that failed (e.g. "OSRM", "TankerKönig").
+            error_message: Human-readable error description.
+
+        Returns:
+            True if the message was sent, False if suppressed or on error.
+        """
+        if component in self._reported_errors:
+            _LOGGER.debug(
+                "Suppressing duplicate API error notification for component '%s'", component
+            )
+            return False
+
+        self._reported_errors.add(component)
+        message = (
+            f"⚠️ <b>Route Planner – API Error</b>\n\n"
+            f"Component: <code>{html.escape(component)}</code>\n"
+            f"Error: {html.escape(error_message)}"
+        )
+        return await self.send_message(message, parse_mode="html")

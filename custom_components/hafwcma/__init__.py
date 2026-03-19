@@ -68,6 +68,8 @@ SERVICE_RESTORE_BACKUP = "restore_backup"
 SERVICE_LIST_BACKUPS = "list_backups"
 SERVICE_DELETE_BACKUP = "delete_backup"
 SERVICE_EXPORT_DEBUG_DATA = "export_debug_data"
+SERVICE_SET_ROUTE = "set_route"
+SERVICE_CANCEL_ROUTE = "cancel_route"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -234,6 +236,19 @@ SCHEMA_DELETE_BACKUP = vol.Schema({
 })
 
 SCHEMA_EXPORT_DEBUG_DATA = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+})
+
+SCHEMA_SET_ROUTE = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("destination"): cv.string,
+    vol.Optional("waypoints", default=[]): vol.All(cv.ensure_list, [cv.string]),
+    vol.Optional("corridor_width_km", default=5.0): vol.Coerce(float),
+    vol.Optional("routing_provider", default="osrm"): cv.string,
+    vol.Optional("google_api_key", default=""): cv.string,
+})
+
+SCHEMA_CANCEL_ROUTE = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
 })
 
@@ -1327,7 +1342,199 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     hass.services.async_register(
         DOMAIN, SERVICE_EXPORT_DEBUG_DATA, handle_export_debug_data, schema=SCHEMA_EXPORT_DEBUG_DATA, supports_response=True
     )
-    
+
+    async def handle_set_route(call: ServiceCall) -> ServiceResponse:
+        """Handle the set_route service call.
+
+        Geocodes the destination (and any waypoints), fetches the route
+        polyline from the configured provider, persists the route in the
+        RoutePlanner instance and coordinator.data, and sends a Telegram
+        notification on success.
+
+        Returns:
+            ServiceResponse with ``success``, ``route`` (dict) and ``error``.
+        """
+        from .utils.route_planner import RoutePlanner
+
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if not entry:
+            _LOGGER.error("set_route: config entry %s not found", entry_id)
+            return {"success": False, "route": None, "error": "Config entry not found"}
+
+        destination_str = call.data["destination"]
+        waypoint_strings: list[str] = call.data.get("waypoints", [])
+        corridor_width_km: float = call.data.get("corridor_width_km", 5.0)
+        routing_provider: str = call.data.get("routing_provider", "osrm")
+        google_api_key: str = call.data.get("google_api_key", "")
+
+        # Retrieve or create the RoutePlanner for this entry
+        if "route_planner" not in hass.data[DOMAIN][entry_id]:
+            hass.data[DOMAIN][entry_id]["route_planner"] = RoutePlanner()
+        route_planner: RoutePlanner = hass.data[DOMAIN][entry_id]["route_planner"]
+
+        # Geocode destination
+        dest_coords = await route_planner.async_geocode_address(hass, destination_str)
+        if dest_coords is None:
+            return {
+                "success": False,
+                "route": None,
+                "error": f"Could not geocode destination: {destination_str}",
+            }
+
+        # Geocode waypoints
+        waypoint_coords: list[tuple[float, float]] = []
+        for wp_str in waypoint_strings:
+            wp_coords = await route_planner.async_geocode_address(hass, wp_str)
+            if wp_coords is None:
+                _LOGGER.warning("set_route: could not geocode waypoint '%s', skipping", wp_str)
+                continue
+            waypoint_coords.append(wp_coords)
+
+        # Determine origin – use vehicle position if available, fall back to HA location
+        coordinator = hass.data[DOMAIN][entry_id].get("coordinator")
+        origin_coords: tuple[float, float] | None = None
+        if coordinator and coordinator.data:
+            vehicle_data = coordinator.data.get("vehicle_data") or {}
+            vlat = vehicle_data.get("latitude") or vehicle_data.get("lat")
+            vlon = vehicle_data.get("longitude") or vehicle_data.get("lon")
+            if vlat and vlon:
+                origin_coords = (float(vlat), float(vlon))
+        if origin_coords is None:
+            origin_coords = (hass.config.latitude, hass.config.longitude)
+
+        # Fetch route
+        route_result = await route_planner.async_calculate_route(
+            hass,
+            origin=origin_coords,
+            destination=dest_coords,
+            waypoints=waypoint_coords or None,
+            provider=routing_provider,
+            api_key=google_api_key or None,
+        )
+
+        if not route_result or not route_result.get("polyline"):
+            return {
+                "success": False,
+                "route": None,
+                "error": "Routing provider returned no route",
+            }
+
+        route_data = {
+            "is_active": True,
+            "destination": destination_str,
+            "waypoints": waypoint_strings,
+            "corridor_width_km": corridor_width_km,
+            "routing_provider": routing_provider,
+            "total_distance_km": round(route_result["distance_km"], 2),
+            "duration_s": route_result.get("duration_s", 0),
+            "route_polyline": route_result["polyline"],
+            "fuel_stop": {},
+            "best_corridor_station": None,
+            "corridor_stations": [],
+        }
+
+        await route_planner.async_set_route(route_data)
+
+        # Persist into coordinator data so sensors update immediately
+        if coordinator and coordinator.data is not None:
+            coordinator.data["route_data"] = route_data
+            coordinator.async_update_listeners()
+
+        # Send Telegram notification
+        telegram_token = entry.data.get("telegram_token", "")
+        telegram_chat_id = entry.data.get("telegram_chat_id", "")
+        if telegram_token and telegram_chat_id:
+            try:
+                from .messaging.telegram import TelegramNotifier
+                notifier = TelegramNotifier(
+                    bot_token=telegram_token,
+                    chat_id=telegram_chat_id,
+                    hass=hass,
+                )
+                await notifier.send_route_started(
+                    destination=destination_str,
+                    total_distance_km=route_data["total_distance_km"],
+                    predicted_stop_km=None,
+                    best_station=None,
+                    top_stations=[],
+                    corridor_km=corridor_width_km,
+                    safety_buffer_pct=15,
+                )
+            except Exception as tg_err:
+                _LOGGER.warning("set_route: Telegram notification failed: %s", tg_err)
+
+        # Fire HA event
+        hass.bus.async_fire(
+            f"{DOMAIN}_route_started",
+            {
+                "entry_id": entry_id,
+                "destination": destination_str,
+                "total_distance_km": route_data["total_distance_km"],
+            },
+        )
+
+        return {"success": True, "route": route_data, "error": ""}
+
+    async def handle_cancel_route(call: ServiceCall) -> ServiceResponse:
+        """Handle the cancel_route service call.
+
+        Clears the active route from the RoutePlanner and coordinator.data.
+
+        Returns:
+            ServiceResponse with ``success`` key.
+        """
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if not entry:
+            _LOGGER.error("cancel_route: config entry %s not found", entry_id)
+            return {"success": False}
+
+        route_planner = hass.data[DOMAIN].get(entry_id, {}).get("route_planner")
+        if route_planner:
+            await route_planner.async_cancel_route()
+
+        coordinator = hass.data[DOMAIN].get(entry_id, {}).get("coordinator")
+        if coordinator and coordinator.data is not None:
+            coordinator.data["route_data"] = {
+                "is_active": False,
+                "destination": None,
+                "waypoints": [],
+                "route_polyline": [],
+                "total_distance_km": None,
+                "fuel_stop": {},
+                "best_corridor_station": None,
+                "corridor_stations": [],
+            }
+            coordinator.async_update_listeners()
+
+        # Send Telegram notification
+        telegram_token = entry.data.get("telegram_token", "")
+        telegram_chat_id = entry.data.get("telegram_chat_id", "")
+        if telegram_token and telegram_chat_id:
+            try:
+                from .messaging.telegram import TelegramNotifier
+                notifier = TelegramNotifier(
+                    bot_token=telegram_token,
+                    chat_id=telegram_chat_id,
+                    hass=hass,
+                )
+                await notifier.send_message(
+                    "🗺️ Route cancelled.\n\nCorridor station search is now inactive."
+                )
+            except Exception as tg_err:
+                _LOGGER.warning("cancel_route: Telegram notification failed: %s", tg_err)
+
+        hass.bus.async_fire(f"{DOMAIN}_route_cancelled", {"entry_id": entry_id})
+        return {"success": True}
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_ROUTE, handle_set_route, schema=SCHEMA_SET_ROUTE, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_CANCEL_ROUTE, handle_cancel_route, schema=SCHEMA_CANCEL_ROUTE, supports_response=True
+    )
+
     return True
 
 

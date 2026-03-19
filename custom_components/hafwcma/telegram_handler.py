@@ -26,9 +26,13 @@ _LOGGER = logging.getLogger(__name__)
 CMD_REFUEL = "/refuel"
 CMD_STATUS = "/status"
 CMD_HELP = "/help"
+CMD_ROUTE = "/route"
+CMD_ROUTE_STATUS = "/routestatus"
+CMD_ROUTE_CANCEL = "/routecancel"
+CMD_CORRIDOR = "/corridor"
 
 # All supported commands
-SUPPORTED_COMMANDS = [CMD_REFUEL, CMD_STATUS, CMD_HELP]
+SUPPORTED_COMMANDS = [CMD_REFUEL, CMD_STATUS, CMD_HELP, CMD_ROUTE, CMD_ROUTE_STATUS, CMD_ROUTE_CANCEL, CMD_CORRIDOR]
 
 
 class TelegramEventHandler:
@@ -133,6 +137,14 @@ class TelegramEventHandler:
             self.hass.async_create_task(self._handle_status_command(event_data))
         elif command == CMD_REFUEL:
             self.hass.async_create_task(self._handle_refuel_command(event_data, args))
+        elif command == CMD_ROUTE:
+            self.hass.async_create_task(self._handle_route_command(event_data, args))
+        elif command == CMD_ROUTE_STATUS:
+            self.hass.async_create_task(self._handle_routestatus_command(event_data))
+        elif command == CMD_ROUTE_CANCEL:
+            self.hass.async_create_task(self._handle_routecancel_command(event_data))
+        elif command == CMD_CORRIDOR:
+            self.hass.async_create_task(self._handle_corridor_command(event_data, args))
         else:
             # Unknown command
             self.hass.async_create_task(
@@ -196,6 +208,11 @@ class TelegramEventHandler:
             f"{CMD_HELP} - Show this help message\n"
             f"{CMD_STATUS} - Show current vehicle and fuel status\n"
             f"{CMD_REFUEL} - Log a refueling event (coming soon)\n\n"
+            "<b>🗺️ Route Commands</b>\n"
+            f"{CMD_ROUTE} &lt;destination&gt; - Start a route to destination\n"
+            f"{CMD_ROUTE_STATUS} - Show current route status\n"
+            f"{CMD_ROUTE_CANCEL} - Cancel active route\n"
+            f"{CMD_CORRIDOR} [km] - Change corridor width (e.g. /corridor 10)\n\n"
             "<i>More features coming soon!</i>"
         )
         
@@ -282,3 +299,186 @@ class TelegramEventHandler:
             )
         except Exception as err:
             _LOGGER.error("Failed to send Telegram message: %s", err)
+
+    async def _handle_route_command(
+        self,
+        event_data: dict[str, Any],
+        args: list[str],
+    ) -> None:
+        """Handle /route <destination> command.
+
+        Joins all args as the destination string and calls hafwcma.set_route.
+
+        Args:
+            event_data: Event data from Telegram.
+            args: Command arguments (words after /route).
+        """
+        if not args:
+            await self._send_telegram_message(
+                f"ℹ️ Usage: <code>{CMD_ROUTE} &lt;destination&gt;</code>\n"
+                f"Example: <code>{CMD_ROUTE} München Hauptbahnhof</code>"
+            )
+            return
+
+        destination = " ".join(args)
+        entry_id = self.config_entry.entry_id
+
+        await self._send_telegram_message(
+            f"🗺️ Setting route to <b>{html.escape(destination)}</b>…"
+        )
+
+        try:
+            result = await self.hass.services.async_call(
+                DOMAIN,
+                "set_route",
+                {"config_entry_id": entry_id, "destination": destination},
+                blocking=True,
+                return_response=True,
+            )
+            if result and result.get("success"):
+                km = result.get("route", {}).get("total_distance_km", "?")
+                await self._send_telegram_message(
+                    f"✅ Route set!\n"
+                    f"📍 Destination: <b>{html.escape(destination)}</b>\n"
+                    f"📏 Distance: {km} km\n\n"
+                    f"Use {CMD_ROUTE_STATUS} to check corridor station recommendations."
+                )
+            else:
+                error = result.get("error", "Unknown error") if result else "No response"
+                await self._send_telegram_message(
+                    f"❌ Could not set route: {html.escape(str(error))}"
+                )
+        except Exception as err:
+            _LOGGER.error("Error in _handle_route_command: %s", err)
+            await self._send_telegram_message(
+                f"❌ Error setting route: {html.escape(str(err))}"
+            )
+
+    async def _handle_routestatus_command(self, event_data: dict[str, Any]) -> None:
+        """Handle /routestatus command.
+
+        Shows the active route, predicted fuel stop, and best corridor station.
+
+        Args:
+            event_data: Event data from Telegram.
+        """
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+        route_data: dict[str, Any] = {}
+        if coordinator and hasattr(coordinator, "data") and coordinator.data:
+            route_data = coordinator.data.get("route_data") or {}
+
+        if not route_data.get("is_active"):
+            await self._send_telegram_message(
+                "ℹ️ No active route.\n\n"
+                f"Start one with: <code>{CMD_ROUTE} &lt;destination&gt;</code>"
+            )
+            return
+
+        lines = ["🗺️ <b>Active Route</b>\n"]
+        lines.append(f"📍 Destination: <b>{html.escape(str(route_data.get('destination', 'N/A')))}</b>")
+        lines.append(f"📏 Distance: {route_data.get('total_distance_km', 'N/A')} km")
+        lines.append(f"⚙️ Corridor: {route_data.get('corridor_width_km', 5)} km wide")
+
+        fuel_stop = route_data.get("fuel_stop") or {}
+        if fuel_stop.get("km_remaining_to_stop") is not None:
+            lines.append(f"\n⛽ <b>Predicted Fuel Stop</b>")
+            lines.append(f"   ~{fuel_stop['km_remaining_to_stop']} km ahead")
+
+        best = route_data.get("best_corridor_station")
+        if best:
+            nav = best.get("navigation_urls") or {}
+            lines.append(f"\n🏆 <b>Best Corridor Station</b>")
+            lines.append(f"   {html.escape(str(best.get('name', 'Unknown')))}")
+            lines.append(f"   💰 {best.get('price', 'N/A')} €/l")
+            lines.append(f"   📏 Detour: {best.get('detour_km', 0)} km")
+            lines.append(f"   💶 Effective: {best.get('effective_price_eur_per_l', 'N/A')} €/l")
+            if nav.get("google_maps"):
+                lines.append(f"   🗺️ <a href=\"{nav['google_maps']}\">Google Maps</a>")
+
+        corridor_stations: list[dict] = route_data.get("corridor_stations", [])
+        if len(corridor_stations) > 1:
+            lines.append(f"\n📋 <b>Other Corridor Stations</b>")
+            for i, st in enumerate(corridor_stations[1:4], start=2):
+                lines.append(
+                    f"   {i}. {html.escape(str(st.get('name', 'N/A')))} – "
+                    f"{st.get('price', 'N/A')} €/l "
+                    f"({st.get('detour_km', 0)} km detour)"
+                )
+
+        await self._send_telegram_message("\n".join(lines))
+
+    async def _handle_routecancel_command(self, event_data: dict[str, Any]) -> None:
+        """Handle /routecancel command.
+
+        Cancels the active route via hafwcma.cancel_route service.
+
+        Args:
+            event_data: Event data from Telegram.
+        """
+        entry_id = self.config_entry.entry_id
+        try:
+            await self.hass.services.async_call(
+                DOMAIN,
+                "cancel_route",
+                {"config_entry_id": entry_id},
+                blocking=True,
+                return_response=True,
+            )
+            await self._send_telegram_message(
+                "✅ Route cancelled. Corridor station search is now inactive."
+            )
+        except Exception as err:
+            _LOGGER.error("Error in _handle_routecancel_command: %s", err)
+            await self._send_telegram_message(
+                f"❌ Error cancelling route: {html.escape(str(err))}"
+            )
+
+    async def _handle_corridor_command(
+        self,
+        event_data: dict[str, Any],
+        args: list[str],
+    ) -> None:
+        """Handle /corridor [km] command – update the corridor search width.
+
+        Args:
+            event_data: Event data from Telegram.
+            args: Command arguments; first element should be a number (km).
+        """
+        if not args:
+            coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+            current_width = 5
+            if coordinator and hasattr(coordinator, "data") and coordinator.data:
+                current_width = (coordinator.data.get("route_data") or {}).get(
+                    "corridor_width_km", 5
+                )
+            await self._send_telegram_message(
+                f"ℹ️ Current corridor width: <b>{current_width} km</b>\n\n"
+                f"To change it: <code>{CMD_CORRIDOR} &lt;km&gt;</code>\n"
+                f"Example: <code>{CMD_CORRIDOR} 10</code>"
+            )
+            return
+
+        try:
+            new_width = float(args[0])
+            if new_width <= 0 or new_width > 50:
+                raise ValueError("out of range")
+        except (ValueError, IndexError):
+            await self._send_telegram_message(
+                "❌ Invalid corridor width. Please provide a number between 1 and 50 km."
+            )
+            return
+
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+        if coordinator and hasattr(coordinator, "data") and coordinator.data:
+            route_data = coordinator.data.get("route_data")
+            if route_data:
+                route_data["corridor_width_km"] = new_width
+                entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+                route_planner = entry_data.get("route_planner")
+                if route_planner and route_planner.active_route:
+                    route_planner.active_route["corridor_width_km"] = new_width
+                coordinator.async_update_listeners()
+
+        await self._send_telegram_message(
+            f"✅ Corridor width updated to <b>{new_width} km</b>."
+        )

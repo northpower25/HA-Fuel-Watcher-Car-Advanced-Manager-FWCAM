@@ -26,7 +26,7 @@ const SERVICE_CALL_REFRESH_DELAY_MS = 1000;
 const DEFAULT_TANK_CAPACITY_LITERS = 99.99;
 const DEFAULT_DAILY_DISTANCE_KM = 40.0;
 const MAX_AUTOCOMPLETE_SUGGESTIONS = 10;
-const DEFAULT_SECTION_ORDER = ['vehicle_info', 'price_chart', 'consumption_chart', 'cheapest_stations', 'map', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'];
+const DEFAULT_SECTION_ORDER = ['vehicle_info', 'price_chart', 'consumption_chart', 'cheapest_stations', 'map', 'route_planner', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'];
 
 class FWCAMCard extends HTMLElement {
   constructor() {
@@ -113,6 +113,7 @@ class FWCAMCard extends HTMLElement {
       show_cheapest_stations: Object.prototype.hasOwnProperty.call(config, 'show_cheapest_stations') ? config.show_cheapest_stations : true,
       show_top_destinations: Object.prototype.hasOwnProperty.call(config, 'show_top_destinations') ? config.show_top_destinations : true,
       show_map: Object.prototype.hasOwnProperty.call(config, 'show_map') ? config.show_map : true,
+      show_route_planner: config.show_route_planner !== false,
       show_controls: Object.prototype.hasOwnProperty.call(config, 'show_controls') ? config.show_controls : defaultShowValue,
       show_settings: Object.prototype.hasOwnProperty.call(config, 'show_settings') ? config.show_settings : defaultShowValue,
       show_backup: Object.prototype.hasOwnProperty.call(config, 'show_backup') ? config.show_backup : defaultShowValue,
@@ -254,6 +255,11 @@ class FWCAMCard extends HTMLElement {
       trip_log_sensor: `sensor.${baseName}_trip_log`,
       current_trip: `sensor.${baseName}_current_trip`,
       nearby_cheap_stations: `sensor.${baseName}_nearby_cheap_stations`,
+      // Route corridor sensors
+      active_route: `sensor.${baseName}_active_route`,
+      predicted_fuel_stop: `sensor.${baseName}_predicted_fuel_stop`,
+      corridor_best_station: `sensor.${baseName}_corridor_best_station`,
+      corridor_stations: `sensor.${baseName}_corridor_stations`,
       // Switches
       fuel_price_refresh: `switch.${baseName}_fuel_price_refresh`,
       consumption_prediction: `switch.${baseName}_consumption_prediction`,
@@ -848,6 +854,72 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Handle Route Planner – Start Route button click.
+   * Reads form values and calls hafwcma.set_route service.
+   */
+  async _handleRouteStart() {
+    const destinationEl = this.shadowRoot.getElementById('route-destination-input');
+    const waypointsEl = this.shadowRoot.getElementById('route-waypoints-input');
+    const corridorEl = this.shadowRoot.getElementById('route-corridor-input');
+    const providerEl = this.shadowRoot.getElementById('route-provider-select');
+    const googleKeyEl = this.shadowRoot.getElementById('route-google-key-input');
+
+    const destination = destinationEl ? destinationEl.value.trim() : '';
+    if (!destination) {
+      alert('Please enter a destination.');
+      return;
+    }
+
+    const waypointsRaw = waypointsEl ? waypointsEl.value.trim() : '';
+    const waypoints = waypointsRaw
+      ? waypointsRaw.split(',').map(w => w.trim()).filter(Boolean)
+      : [];
+    const corridorWidth = corridorEl ? (parseFloat(corridorEl.value) || 5) : 5;
+    const provider = providerEl ? providerEl.value : 'osrm';
+    const googleApiKey = googleKeyEl ? googleKeyEl.value.trim() : '';
+
+    const entryId = this._config.entity
+      ? this._hass.states[this._config.entity]?.attributes?.entry_id || ''
+      : '';
+
+    const serviceData = {
+      config_entry_id: entryId,
+      destination,
+      waypoints,
+      corridor_width_km: corridorWidth,
+      routing_provider: provider,
+    };
+    if (googleApiKey) {
+      serviceData.google_api_key = googleApiKey;
+    }
+
+    try {
+      await this.callService('hafwcma', 'set_route', serviceData);
+      this.forceRender();
+    } catch (err) {
+      console.error('FWCAM: set_route failed', err);
+      alert(`Could not start route: ${err.message || err}`);
+    }
+  }
+
+  /**
+   * Handle Route Planner – Cancel Route button click.
+   * Calls hafwcma.cancel_route service.
+   */
+  async _handleRouteCancel() {
+    const entryId = this._config.entity
+      ? this._hass.states[this._config.entity]?.attributes?.entry_id || ''
+      : '';
+    try {
+      await this.callService('hafwcma', 'cancel_route', { config_entry_id: entryId });
+      this.forceRender();
+    } catch (err) {
+      console.error('FWCAM: cancel_route failed', err);
+      alert(`Could not cancel route: ${err.message || err}`);
+    }
+  }
+
+  /**
    * Get tank capacity from config
    */
   getTankCapacity() {
@@ -1133,6 +1205,7 @@ class FWCAMCard extends HTMLElement {
         consumption_chart: '📊 Consumption',
         cheapest_stations: '🏆 Top 5 Cheapest Stations',
         map: '🗺️ Map',
+        route_planner: '🗺️ Route Planner',
         controls: '🎛️ Controls',
         settings: '⚙️ Settings',
         backup: '💾 Backup',
@@ -1174,6 +1247,8 @@ class FWCAMCard extends HTMLElement {
         return this._config.show_cheapest_stations ? this.renderTopCheapestStations() : '';
       case 'map':
         return this._config.show_map ? this.renderStationsMap() : '';
+      case 'route_planner':
+        return this._config.show_route_planner ? this.renderRoutePlanner() : '';
       case 'controls':
         return this._config.show_controls ? this.renderControls() : '';
       case 'settings':
@@ -1870,6 +1945,166 @@ class FWCAMCard extends HTMLElement {
             <tbody>${rows}</tbody>
           </table>
         </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render the Route Corridor Station Search section.
+   *
+   * Shows a form to set/cancel a route and displays the active route status,
+   * predicted fuel stop, best corridor station and top-3 station list.
+   */
+  renderRoutePlanner() {
+    const activeRouteEntity = this.getEntityState(this._entities.active_route);
+    const predictedFuelStopEntity = this.getEntityState(this._entities.predicted_fuel_stop);
+    const corridorBestEntity = this.getEntityState(this._entities.corridor_best_station);
+    const corridorStationsEntity = this.getEntityState(this._entities.corridor_stations);
+
+    const isActive = activeRouteEntity && activeRouteEntity.state === 'active';
+    const routeAttrs = activeRouteEntity ? (activeRouteEntity.attributes || {}) : {};
+    const fuelStopAttrs = predictedFuelStopEntity ? (predictedFuelStopEntity.attributes || {}) : {};
+    const bestAttrs = corridorBestEntity ? (corridorBestEntity.attributes || {}) : {};
+    const corridorAttrs = corridorStationsEntity ? (corridorStationsEntity.attributes || {}) : {};
+    const topStations = corridorAttrs.stations || [];
+
+    const activeStatusHtml = isActive ? `
+      <div class="info-grid" style="margin-top:0.5rem;">
+        <div class="info-item">
+          <span class="info-label">Destination</span>
+          <span class="info-value">${this._esc(routeAttrs.destination || '—')}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Distance</span>
+          <span class="info-value">${routeAttrs.total_distance_km != null ? routeAttrs.total_distance_km + ' km' : '—'}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Corridor Width</span>
+          <span class="info-value">${routeAttrs.corridor_width_km != null ? routeAttrs.corridor_width_km + ' km' : '—'}</span>
+        </div>
+        ${predictedFuelStopEntity && predictedFuelStopEntity.state && predictedFuelStopEntity.state !== 'unknown' && predictedFuelStopEntity.state !== 'unavailable' ? `
+        <div class="info-item">
+          <span class="info-label">Predicted Fuel Stop</span>
+          <span class="info-value">~${this._esc(predictedFuelStopEntity.state)} km ahead</span>
+        </div>` : ''}
+      </div>
+    ` : '';
+
+    const bestStationHtml = (isActive && corridorBestEntity && corridorBestEntity.state && corridorBestEntity.state !== 'unknown' && corridorBestEntity.state !== 'unavailable') ? `
+      <div style="margin-top:0.75rem;padding:0.5rem;background:var(--secondary-background-color,#f5f5f5);border-radius:6px;">
+        <div style="font-weight:600;margin-bottom:0.25rem;">🏆 Best Corridor Station</div>
+        <div class="info-grid" style="margin:0;">
+          <div class="info-item">
+            <span class="info-label">Station</span>
+            <span class="info-value">${this._esc(bestAttrs.station_name || '—')}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Price</span>
+            <span class="info-value">${bestAttrs.price_per_litre != null ? bestAttrs.price_per_litre + ' €/l' : '—'}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Detour</span>
+            <span class="info-value">${bestAttrs.detour_km != null ? bestAttrs.detour_km + ' km' : '—'}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Effective Price</span>
+            <span class="info-value">${bestAttrs.effective_price_eur_per_l != null ? bestAttrs.effective_price_eur_per_l + ' €/l' : '—'}</span>
+          </div>
+        </div>
+        <div style="margin-top:0.4rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+          ${bestAttrs.google_maps_url ? `<a href="${this._esc(bestAttrs.google_maps_url)}" target="_blank" rel="noopener" style="font-size:0.8rem;">🗺️ Google Maps</a>` : ''}
+          ${bestAttrs.waze_url ? `<a href="${this._esc(bestAttrs.waze_url)}" target="_blank" rel="noopener" style="font-size:0.8rem;">🚗 Waze</a>` : ''}
+          ${bestAttrs.apple_maps_url ? `<a href="${this._esc(bestAttrs.apple_maps_url)}" target="_blank" rel="noopener" style="font-size:0.8rem;">🍎 Apple Maps</a>` : ''}
+        </div>
+      </div>
+    ` : '';
+
+    const topStationsHtml = (isActive && topStations.length > 1) ? `
+      <div style="margin-top:0.75rem;">
+        <div style="font-weight:600;margin-bottom:0.25rem;">📋 Top Corridor Stations</div>
+        <table style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+          <thead><tr style="text-align:left;border-bottom:1px solid var(--divider-color,#ccc);">
+            <th style="padding:2px 4px;">#</th>
+            <th style="padding:2px 4px;">Station</th>
+            <th style="padding:2px 4px;">Price</th>
+            <th style="padding:2px 4px;">Detour</th>
+            <th style="padding:2px 4px;">Eff. Price</th>
+          </tr></thead>
+          <tbody>
+            ${topStations.slice(0, 3).map((st, i) => `
+              <tr style="border-bottom:1px solid var(--divider-color,#eee);">
+                <td style="padding:2px 4px;">${i + 1}</td>
+                <td style="padding:2px 4px;">${this._esc(st.name || '—')}</td>
+                <td style="padding:2px 4px;">${st.price != null ? st.price + ' €/l' : '—'}</td>
+                <td style="padding:2px 4px;">${st.detour_km != null ? st.detour_km + ' km' : '—'}</td>
+                <td style="padding:2px 4px;">${st.effective_price_eur_per_l != null ? st.effective_price_eur_per_l + ' €/l' : '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    ` : '';
+
+    return `
+      <div class="section" data-fwcam-section="route_planner">
+        <h3>🗺️ Route Planner</h3>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.85rem;font-weight:500;">Destination</label>
+          <input id="route-destination-input" type="text" class="setting-input"
+            placeholder="e.g. München Hauptbahnhof"
+            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+
+          <label style="font-size:0.85rem;font-weight:500;">Waypoints <small style="font-weight:normal;">(optional, comma-separated)</small></label>
+          <input id="route-waypoints-input" type="text" class="setting-input"
+            placeholder="e.g. Augsburg, Ingolstadt"
+            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+
+          <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
+            <div style="flex:1;min-width:120px;">
+              <label style="font-size:0.85rem;font-weight:500;">Corridor Width (km)</label>
+              <input id="route-corridor-input" type="number" class="setting-input"
+                min="1" max="50" step="1" value="5"
+                style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+            </div>
+            <div style="flex:1;min-width:140px;">
+              <label style="font-size:0.85rem;font-weight:500;">Routing Provider</label>
+              <select id="route-provider-select" class="setting-input"
+                style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+                <option value="osrm" selected>OSRM (free)</option>
+                <option value="openrouteservice">OpenRouteService</option>
+                <option value="google">Google Maps</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="route-google-key-row" style="display:none;flex-direction:column;gap:0.25rem;">
+            <label style="font-size:0.85rem;font-weight:500;">Google API Key</label>
+            <input id="route-google-key-input" type="text" class="setting-input"
+              placeholder="Your Google Maps API key"
+              style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+          </div>
+
+          <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
+            <button class="control-button" data-action="route-start"
+              style="flex:1;justify-content:center;">
+              <ha-icon icon="mdi:map-marker-path"></ha-icon>
+              <span>Start Route</span>
+            </button>
+            ${isActive ? `
+            <button class="control-button" data-action="route-cancel"
+              style="flex:0 0 auto;background:var(--error-color,#d32f2f);color:white;">
+              <ha-icon icon="mdi:close-circle"></ha-icon>
+              <span>Cancel Route</span>
+            </button>` : ''}
+          </div>
+        </div>
+
+        ${isActive ? `<div style="margin-top:0.5rem;padding:0.4rem 0.6rem;background:var(--primary-color,#039be5);color:white;border-radius:4px;font-size:0.85rem;">
+          ✅ Route Active
+        </div>` : ''}
+        ${activeStatusHtml}
+        ${bestStationHtml}
+        ${topStationsHtml}
       </div>
     `;
   }
@@ -2887,6 +3122,28 @@ class FWCAMCard extends HTMLElement {
         this._handleBackupDelete(filePath);
       });
     });
+
+    // Route Planner buttons
+    const routeStartBtn = this.shadowRoot.querySelector('[data-action="route-start"]');
+    if (routeStartBtn) {
+      routeStartBtn.addEventListener('click', () => this._handleRouteStart());
+    }
+
+    const routeCancelBtn = this.shadowRoot.querySelector('[data-action="route-cancel"]');
+    if (routeCancelBtn) {
+      routeCancelBtn.addEventListener('click', () => this._handleRouteCancel());
+    }
+
+    // Show/hide Google API key input based on provider selection
+    const providerSelect = this.shadowRoot.getElementById('route-provider-select');
+    const googleKeyRow = this.shadowRoot.getElementById('route-google-key-row');
+    if (providerSelect && googleKeyRow) {
+      const updateGoogleKeyVisibility = () => {
+        googleKeyRow.style.display = providerSelect.value === 'google' ? 'flex' : 'none';
+      };
+      providerSelect.addEventListener('change', updateGoogleKeyVisibility);
+      updateGoogleKeyVisibility();
+    }
   }
 
   /**
@@ -5701,6 +5958,7 @@ class FWCAMCard extends HTMLElement {
       show_consumption_chart: true,
       show_cheapest_stations: true,
       show_map: true,
+      show_route_planner: true,
       show_controls: true,
       show_settings: true,
       show_backup: true,
