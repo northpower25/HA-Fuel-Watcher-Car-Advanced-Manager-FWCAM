@@ -39,6 +39,7 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.B
 # Frontend card configuration
 CARD_FILENAME = "fwcam-card.js"
 CARD_VERSION = "1.2.0"  # Update this when the card changes
+ROUTENPLANUNG_CARD_FILENAME = "fwcam-routenplanung-card.js"
 
 # Dashboard panel configuration
 PANEL_FILENAME = "fwcam-dashboard-panel.js"
@@ -286,7 +287,7 @@ async def _async_register_frontend_card(hass: HomeAssistant) -> None:
             )
         ])
         
-        # Register the card as a frontend module
+        # Register the main card as a frontend module
         # This adds it to the list of available resources
         card_url = f"/{DOMAIN}_local/{CARD_FILENAME}?v={CARD_VERSION}"
         
@@ -298,6 +299,16 @@ async def _async_register_frontend_card(hass: HomeAssistant) -> None:
             "FWCAM frontend card registered at %s",
             card_url
         )
+
+        # Also register the standalone Routenplanung card if it exists
+        routenplanung_path = card_dir / ROUTENPLANUNG_CARD_FILENAME
+        if routenplanung_path.exists():
+            routenplanung_url = f"/{DOMAIN}_local/{ROUTENPLANUNG_CARD_FILENAME}?v={CARD_VERSION}"
+            hass.data.setdefault("frontend_extra_module_url", set()).add(routenplanung_url)
+            _LOGGER.info(
+                "FWCAM Routenplanung card registered at %s",
+                routenplanung_url
+            )
         
     except Exception as err:
         _LOGGER.error(
