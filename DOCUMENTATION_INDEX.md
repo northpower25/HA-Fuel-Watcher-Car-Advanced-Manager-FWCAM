@@ -46,6 +46,7 @@ This file provides an overview of all available documentation for the Fuel Watch
 4. **Advanced Features**
    - [Geolocation Concept (DE)](docs/GEOLOCATION_CONCEPT.md)
    - [Geolocation Concept (EN)](docs/GEOLOCATION_CONCEPT_EN.md)
+   - [Route Corridor Station Search Concept (DE/EN)](docs/dev_docs/ROUTE_CORRIDOR_STATION_SEARCH_CONCEPT.md)
    - [API Documentation](docs/API.md)
    - [Data Storage](docs/DATA_STORAGE.md)
 
@@ -127,6 +128,7 @@ This file provides an overview of all available documentation for the Fuel Watch
 5. [docs/DATA_STORAGE.md](docs/DATA_STORAGE.md) - Storage schema
 6. [docs/TRIP_TRACKING_CONCEPT.md](docs/TRIP_TRACKING_CONCEPT.md) - Trip tracking architecture
 7. [docs/dev_docs/FREEMATICS_FLASH_TOOL_CONCEPT.md](docs/dev_docs/FREEMATICS_FLASH_TOOL_CONCEPT.md) - Flash Tool concept & spec
+8. [docs/dev_docs/ROUTE_CORRIDOR_STATION_SEARCH_CONCEPT.md](docs/dev_docs/ROUTE_CORRIDOR_STATION_SEARCH_CONCEPT.md) - Route corridor fuel station search concept
 
 ### For Troubleshooters
 **Problem-solving resources:**
@@ -168,6 +170,7 @@ This file provides an overview of all available documentation for the Fuel Watch
 - [docs/GEOLOCATION_CONCEPT.md](docs/GEOLOCATION_CONCEPT.md)
 - [docs/GEOLOCATION_CONCEPT_EN.md](docs/GEOLOCATION_CONCEPT_EN.md)
 - [docs/GEOLOCATION_SUMMARY.md](docs/GEOLOCATION_SUMMARY.md)
+- [docs/dev_docs/ROUTE_CORRIDOR_STATION_SEARCH_CONCEPT.md](docs/dev_docs/ROUTE_CORRIDOR_STATION_SEARCH_CONCEPT.md)
 - [docs/TELEGRAM_REFUELING_BOT.md](docs/TELEGRAM_REFUELING_BOT.md)
 - [docs/TELEGRAM_REFUELING_BOT_DE.md](docs/TELEGRAM_REFUELING_BOT_DE.md)
 
@@ -188,6 +191,7 @@ This file provides an overview of all available documentation for the Fuel Watch
 - [docs/dev_docs/ATTRIBUTE_STRUCTURE_IMPLEMENTATION_SUMMARY.md](docs/dev_docs/ATTRIBUTE_STRUCTURE_IMPLEMENTATION_SUMMARY.md)
 - [docs/dev_docs/DEVELOPER_NOTES.md](docs/dev_docs/DEVELOPER_NOTES.md)
 - [docs/dev_docs/FREEMATICS_FLASH_TOOL_CONCEPT.md](docs/dev_docs/FREEMATICS_FLASH_TOOL_CONCEPT.md)
+- [docs/dev_docs/ROUTE_CORRIDOR_STATION_SEARCH_CONCEPT.md](docs/dev_docs/ROUTE_CORRIDOR_STATION_SEARCH_CONCEPT.md)
 
 ### Troubleshooting
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
