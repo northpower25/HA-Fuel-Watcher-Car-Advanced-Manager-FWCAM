@@ -72,8 +72,8 @@ async def _fetch_route_osrm(
             return {}
 
         route = data["routes"][0]
-        # OSRM GeoJSON coordinates are [lon, lat]
-        polyline = [(coord_lat, coord_lon) for coord_lon, coord_lat in route["geometry"]["coordinates"]]
+        # OSRM GeoJSON coordinates are [lon, lat] – convert to (lat, lon)
+        polyline = [(lat, lon) for lon, lat in route["geometry"]["coordinates"]]
         return {
             "polyline": polyline,
             "distance_km": route["distance"] / 1000.0,
@@ -128,8 +128,8 @@ async def _fetch_route_openrouteservice(
             return {}
 
         feature = features[0]
-        # ORS GeoJSON coordinates are [lon, lat]
-        polyline = [(coord_lat, coord_lon) for coord_lon, coord_lat in feature["geometry"]["coordinates"]]
+        # ORS GeoJSON coordinates are [lon, lat] – convert to (lat, lon)
+        polyline = [(lat, lon) for lon, lat in feature["geometry"]["coordinates"]]
         summary = feature.get("properties", {}).get("summary", {})
         return {
             "polyline": polyline,
