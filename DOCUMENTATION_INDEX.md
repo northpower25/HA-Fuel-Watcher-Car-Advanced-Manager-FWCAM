@@ -12,12 +12,14 @@ This file provides an overview of all available documentation for the Fuel Watch
 - **[HACS_INSTALLATION_DE.md](HACS_INSTALLATION_DE.md)** - HACS-Installationsanleitung
 - **[docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_DE.md](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_DE.md)** - Freematics ONE+ Einrichtungsanleitung
 - **[docs/user_docs/TRACCAR_INTEGRATION_DE.md](docs/user_docs/TRACCAR_INTEGRATION_DE.md)** - Traccar-Integration mit haFWCMA
+- **[docs/user_docs/ROUTENPLANUNG_ANLEITUNG_DE.md](docs/user_docs/ROUTENPLANUNG_ANLEITUNG_DE.md)** - Routenplanung und Tankstellensuche
 
 ### 🇬🇧 English Documentation
 - **[README.md](README.md)** - Main documentation and quick start
 - **[HACS_INSTALLATION.md](HACS_INSTALLATION.md)** - HACS installation guide
 - **[docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md](docs/user_docs/FREEMATICS_ONE_PLUS_SETUP_EN.md)** - Freematics ONE+ Setup Guide
 - **[docs/user_docs/TRACCAR_INTEGRATION_EN.md](docs/user_docs/TRACCAR_INTEGRATION_EN.md)** - Traccar Integration with haFWCMA
+- **[docs/user_docs/ROUTE_PLANNER_GUIDE.md](docs/user_docs/ROUTE_PLANNER_GUIDE.md)** - Route Planner & Corridor Station Search
 
 ---
 
@@ -46,6 +48,8 @@ This file provides an overview of all available documentation for the Fuel Watch
 4. **Advanced Features**
    - [Geolocation Concept (DE)](docs/GEOLOCATION_CONCEPT.md)
    - [Geolocation Concept (EN)](docs/GEOLOCATION_CONCEPT_EN.md)
+   - [Route Planner Guide (EN)](docs/user_docs/ROUTE_PLANNER_GUIDE.md)
+   - [Routenplanung Anleitung (DE)](docs/user_docs/ROUTENPLANUNG_ANLEITUNG_DE.md)
    - [Route Corridor Station Search Concept (DE/EN)](docs/dev_docs/ROUTE_CORRIDOR_STATION_SEARCH_CONCEPT.md)
    - [API Documentation](docs/API.md)
    - [Data Storage](docs/DATA_STORAGE.md)
@@ -165,6 +169,8 @@ This file provides an overview of all available documentation for the Fuel Watch
 - [docs/TRIP_TRACKING_CONCEPT.md](docs/TRIP_TRACKING_CONCEPT.md)
 - [docs/DATA_UPDATE_FREQUENCIES.md](docs/DATA_UPDATE_FREQUENCIES.md)
 - [docs/DATA_UPDATE_FREQUENCIES_DE.md](docs/DATA_UPDATE_FREQUENCIES_DE.md)
+- [docs/user_docs/ROUTE_PLANNER_GUIDE.md](docs/user_docs/ROUTE_PLANNER_GUIDE.md)
+- [docs/user_docs/ROUTENPLANUNG_ANLEITUNG_DE.md](docs/user_docs/ROUTENPLANUNG_ANLEITUNG_DE.md)
 
 ### Advanced Features
 - [docs/GEOLOCATION_CONCEPT.md](docs/GEOLOCATION_CONCEPT.md)
@@ -239,6 +245,9 @@ This file provides an overview of all available documentation for the Fuel Watch
 **...use the trip tracking feature?**
 → [docs/TRIP_TRACKING_README.md](docs/TRIP_TRACKING_README.md)
 
+**...use the route planner?**
+→ [docs/user_docs/ROUTE_PLANNER_GUIDE.md](docs/user_docs/ROUTE_PLANNER_GUIDE.md) or [DE](docs/user_docs/ROUTENPLANUNG_ANLEITUNG_DE.md)
+
 **...log refueling via Telegram?**
 → [docs/TELEGRAM_REFUELING_BOT_DE.md](docs/TELEGRAM_REFUELING_BOT_DE.md)
 
@@ -280,6 +289,7 @@ This file provides an overview of all available documentation for the Fuel Watch
 | Telegram Setup | ✅ TELEGRAM_SETUP_DE.md | ✅ TELEGRAM_SETUP.md |
 | Refueling Guide | ✅ REFUELING_LOG_GUIDE_DE.md | ✅ REFUELING_LOG_GUIDE.md |
 | Geolocation | ✅ GEOLOCATION_CONCEPT.md | ✅ GEOLOCATION_CONCEPT_EN.md |
+| Route Planner | ✅ ROUTENPLANUNG_ANLEITUNG_DE.md | ✅ ROUTE_PLANNER_GUIDE.md |
 | Troubleshooting | ✅ TELEGRAM_TROUBLESHOOTING_DE.md | ✅ TELEGRAM_TROUBLESHOOTING_EN.md |
 | Freematics ONE+ Setup | ✅ FREEMATICS_ONE_PLUS_SETUP_DE.md | ✅ FREEMATICS_ONE_PLUS_SETUP_EN.md |
 | Traccar Integration | ✅ TRACCAR_INTEGRATION_DE.md | ✅ TRACCAR_INTEGRATION_EN.md |
@@ -308,6 +318,6 @@ Found an error or want to improve documentation?
 
 ---
 
-**Last Updated**: 2026-03-01  
-**Documentation Version**: 1.1.0  
+**Last Updated**: 2026-03-19  
+**Documentation Version**: 1.2.0  
 **Integration Version**: See [manifest.json](custom_components/hafwcma/manifest.json)
