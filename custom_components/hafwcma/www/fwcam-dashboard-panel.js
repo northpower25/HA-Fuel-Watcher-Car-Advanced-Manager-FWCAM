@@ -39,6 +39,8 @@ class FWCAMDashboardPanel extends HTMLElement {
    * Called when the element is added to the DOM.
    * Registers the Page Visibility listener so the panel can recover
    * from a blank/black state when the user switches back to this tab.
+   * Also proactively imports the routenplanung card module so the custom
+   * element is registered before the user clicks the Routenplanung tab.
    */
   connectedCallback() {
     this._visibilityHandler = () => {
@@ -47,6 +49,15 @@ class FWCAMDashboardPanel extends HTMLElement {
       }
     };
     document.addEventListener("visibilitychange", this._visibilityHandler);
+
+    // Proactively load the routenplanung card module so that the custom
+    // element is registered even when the panel module is the only entry
+    // point (e.g. the first navigation after a hard-refresh).
+    if (!customElements.get(ROUTENPLANUNG_ELEMENT)) {
+      import("/hafwcma_local/fwcam-routenplanung-card.js").catch((e) => {
+        console.warn("[FWCAM] Could not preload routenplanung card module:", e);
+      });
+    }
 
     // If hass was already set before we were connected, ensure the panel
     // is rendered (handles re-attachment to the DOM after a navigation).
