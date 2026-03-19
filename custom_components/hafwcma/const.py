@@ -201,3 +201,54 @@ EVENT_FUEL_PRICE_ALERT: Final = f"{DOMAIN}_fuel_price_alert"
 EVENT_TANK_LOW: Final = f"{DOMAIN}_tank_low"
 EVENT_REFUEL_RECOMMENDATION: Final = f"{DOMAIN}_refuel_recommendation"
 EVENT_NEAR_CHEAP_STATION: Final = f"{DOMAIN}_near_cheap_station"
+
+# Route Corridor Station Search configuration keys
+CONF_ROUTE_CORRIDOR_WIDTH_KM: Final      = "route_corridor_width_km"
+CONF_ROUTE_FUEL_SAFETY_BUFFER_PCT: Final = "route_fuel_safety_buffer_pct"
+CONF_ROUTE_PRICE_ALERT_DELTA: Final      = "route_price_alert_delta"
+CONF_ROUTE_NOTIFY_INTERVAL_MIN: Final    = "route_notify_interval_min"
+CONF_ROUTE_SEARCH_WINDOW_KM: Final       = "route_search_window_km"
+CONF_ROUTE_TOP_N_STATIONS: Final         = "route_top_n_stations"
+CONF_ROUTE_ROUTING_PROVIDER: Final       = "route_routing_provider"
+CONF_ROUTE_AVOID_TOLLS: Final            = "route_avoid_tolls"
+
+# Route corridor defaults
+DEFAULT_ROUTE_CORRIDOR_WIDTH_KM: Final      = 5
+DEFAULT_ROUTE_FUEL_SAFETY_BUFFER_PCT: Final = 15
+DEFAULT_ROUTE_PRICE_ALERT_DELTA: Final      = 0.03
+DEFAULT_ROUTE_NOTIFY_INTERVAL_MIN: Final    = 5
+DEFAULT_ROUTE_SEARCH_WINDOW_KM: Final       = 20
+DEFAULT_ROUTE_TOP_N_STATIONS: Final         = 3
+
+# Route routing provider options
+ROUTE_PROVIDER_GOOGLE: Final        = "google"
+ROUTE_PROVIDER_APPLE: Final         = "apple"
+ROUTE_PROVIDER_WAZE: Final          = "waze"
+ROUTE_PROVIDER_VEHICLE: Final       = "vehicle"
+ROUTE_PROVIDER_OSRM: Final          = "osrm"
+ROUTE_PROVIDER_ORS: Final           = "openrouteservice"
+DEFAULT_ROUTE_PROVIDER: Final        = ROUTE_PROVIDER_OSRM
+
+# Route corridor sensor attributes
+ATTR_ROUTE_DESTINATION: Final        = "destination"
+ATTR_ROUTE_WAYPOINTS: Final          = "waypoints"
+ATTR_ROUTE_TOTAL_DISTANCE_KM: Final  = "total_distance_km"
+ATTR_ROUTE_POLYLINE: Final           = "route_polyline"
+ATTR_ROUTE_CORRIDOR_WIDTH_KM: Final  = "corridor_width_km"
+ATTR_PREDICTED_STOP_LAT: Final       = "predicted_position_lat"
+ATTR_PREDICTED_STOP_LON: Final       = "predicted_position_lon"
+ATTR_PREDICTED_STOP_ADDR: Final      = "predicted_position_address"
+ATTR_KM_REMAINING_TO_STOP: Final     = "km_remaining_to_stop"
+ATTR_TIME_REMAINING_TO_STOP: Final   = "time_remaining_to_stop"
+ATTR_SAFETY_BUFFER_PCT: Final        = "safety_buffer_pct"
+ATTR_EFFECTIVE_TOTAL_COST: Final     = "effective_total_cost_eur"
+ATTR_DETOUR_KM: Final                = "detour_km"
+ATTR_PRICE_PER_LITRE: Final          = "price_per_litre"
+ATTR_EFFECTIVE_PRICE: Final          = "effective_price_eur_per_l"
+ATTR_SEARCH_WINDOW_KM: Final         = "search_window_km"
+
+# Route-specific events
+EVENT_ROUTE_STARTED: Final         = f"{DOMAIN}_route_started"
+EVENT_ROUTE_CANCELLED: Final       = f"{DOMAIN}_route_cancelled"
+EVENT_CHEAPER_STATION_FOUND: Final = f"{DOMAIN}_cheaper_station_found"
+EVENT_RANGE_WARNING: Final         = f"{DOMAIN}_range_warning"
