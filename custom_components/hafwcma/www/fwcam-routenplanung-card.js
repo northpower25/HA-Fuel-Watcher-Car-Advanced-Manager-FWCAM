@@ -44,7 +44,14 @@ class FWCAMRoutePlannerCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     this._entities = this._buildEntities();
-    this._render();
+    // Only do a full render the first time (or if the DOM was lost).
+    // On subsequent updates only refresh the dynamic status section so
+    // the user's input-field focus and values are never interrupted.
+    if (!this.shadowRoot.querySelector('ha-card')) {
+      this._render();
+    } else {
+      this._updateStatus();
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -123,14 +130,95 @@ class FWCAMRoutePlannerCard extends HTMLElement {
           <span class="name">${this._esc(this._config.title)}</span>
         </div>
         <div class="card-content">
-          ${this._renderRoutePlanner()}
+          <div class="section">
+            ${this._renderFormSection()}
+            <div id="rp-status"></div>
+          </div>
         </div>
       </ha-card>
     `;
     this._attachListeners();
+    this._updateStatus();
   }
 
-  _renderRoutePlanner() {
+  /**
+   * Partially update only the dynamic route-status section without touching
+   * the form inputs.  Called on every hass update after the first render so
+   * that the user's typed values and input focus are never interrupted.
+   */
+  _updateStatus() {
+    const statusEl = this.shadowRoot.getElementById('rp-status');
+    if (!statusEl) {
+      // DOM was lost (e.g. shadow root replaced externally) – fall back to
+      // a full render to restore everything.
+      this._render();
+      return;
+    }
+    statusEl.innerHTML = this._renderStatusSection();
+    // The cancel button lives inside the status section, so re-attach its
+    // listener after every status update.
+    const cancelBtn = this.shadowRoot.getElementById('rp-cancel-btn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => this._handleRouteCancel());
+    }
+  }
+
+  /** Static form section – rendered once, never replaced during hass updates. */
+  _renderFormSection() {
+    return `
+      <div style="display:flex;flex-direction:column;gap:0.5rem;">
+        <label style="font-size:0.85rem;font-weight:500;">Zieladresse</label>
+        <input id="rp-destination" type="text" class="setting-input"
+          placeholder="z.B. München Hauptbahnhof"
+          style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+
+        <label style="font-size:0.85rem;font-weight:500;">Zwischenstopps <small style="font-weight:normal;">(optional, kommagetrennt)</small></label>
+        <input id="rp-waypoints" type="text" class="setting-input"
+          placeholder="z.B. Augsburg, Ingolstadt"
+          style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:120px;">
+            <label style="font-size:0.85rem;font-weight:500;">Korridor-Breite (km)</label>
+            <input id="rp-corridor" type="number" class="setting-input"
+              min="1" max="50" step="1" value="5"
+              style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+          </div>
+          <div style="flex:1;min-width:140px;">
+            <label style="font-size:0.85rem;font-weight:500;">Routing-Anbieter</label>
+            <select id="rp-provider" class="setting-input"
+              style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+              <option value="osrm" selected>OSRM (kostenlos)</option>
+              <option value="openrouteservice">OpenRouteService</option>
+              <option value="google">Google Maps</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="rp-google-key-row" style="display:none;flex-direction:column;gap:0.25rem;">
+          <label style="font-size:0.85rem;font-weight:500;">Google API Key</label>
+          <input id="rp-google-key" type="text" class="setting-input"
+            placeholder="Google Maps API-Schlüssel"
+            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+        </div>
+
+        <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
+          <button id="rp-start-btn" class="control-button" style="flex:1;justify-content:center;">
+            <ha-icon icon="mdi:map-marker-path"></ha-icon>
+            <span>Route starten</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Dynamic status section – re-rendered on every hass update.
+   * Contains the cancel button (visible only while a route is active),
+   * the active-route banner, route info grid, best-station box and top
+   * stations table.
+   */
+  _renderStatusSection() {
     const activeRouteEntity = this._getEntityState(this._entities.active_route);
     const predictedFuelStopEntity = this._getEntityState(this._entities.predicted_fuel_stop);
     const corridorBestEntity = this._getEntityState(this._entities.corridor_best_station);
@@ -138,10 +226,23 @@ class FWCAMRoutePlannerCard extends HTMLElement {
 
     const isActive = activeRouteEntity && activeRouteEntity.state === 'active';
     const routeAttrs = activeRouteEntity ? (activeRouteEntity.attributes || {}) : {};
-    const fuelStopAttrs = predictedFuelStopEntity ? (predictedFuelStopEntity.attributes || {}) : {};
     const bestAttrs = corridorBestEntity ? (corridorBestEntity.attributes || {}) : {};
     const corridorAttrs = corridorStationsEntity ? (corridorStationsEntity.attributes || {}) : {};
     const topStations = corridorAttrs.stations || [];
+
+    const cancelBtnHtml = isActive ? `
+      <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
+        <button id="rp-cancel-btn" class="control-button"
+          style="flex:0 0 auto;background:var(--error-color,#d32f2f);color:white;">
+          <ha-icon icon="mdi:close-circle"></ha-icon>
+          <span>Abbrechen</span>
+        </button>
+      </div>` : '';
+
+    const activeBannerHtml = isActive ? `
+      <div style="margin-top:0.5rem;padding:0.4rem 0.6rem;background:var(--primary-color,#039be5);color:white;border-radius:4px;font-size:0.85rem;">
+        ✅ Route aktiv
+      </div>` : '';
 
     const activeStatusHtml = isActive ? `
       <div class="info-grid" style="margin-top:0.5rem;">
@@ -219,66 +320,7 @@ class FWCAMRoutePlannerCard extends HTMLElement {
       </div>
     ` : '';
 
-    return `
-      <div class="section">
-        <div style="display:flex;flex-direction:column;gap:0.5rem;">
-          <label style="font-size:0.85rem;font-weight:500;">Zieladresse</label>
-          <input id="rp-destination" type="text" class="setting-input"
-            placeholder="z.B. München Hauptbahnhof"
-            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
-
-          <label style="font-size:0.85rem;font-weight:500;">Zwischenstopps <small style="font-weight:normal;">(optional, kommagetrennt)</small></label>
-          <input id="rp-waypoints" type="text" class="setting-input"
-            placeholder="z.B. Augsburg, Ingolstadt"
-            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
-
-          <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
-            <div style="flex:1;min-width:120px;">
-              <label style="font-size:0.85rem;font-weight:500;">Korridor-Breite (km)</label>
-              <input id="rp-corridor" type="number" class="setting-input"
-                min="1" max="50" step="1" value="5"
-                style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
-            </div>
-            <div style="flex:1;min-width:140px;">
-              <label style="font-size:0.85rem;font-weight:500;">Routing-Anbieter</label>
-              <select id="rp-provider" class="setting-input"
-                style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
-                <option value="osrm" selected>OSRM (kostenlos)</option>
-                <option value="openrouteservice">OpenRouteService</option>
-                <option value="google">Google Maps</option>
-              </select>
-            </div>
-          </div>
-
-          <div id="rp-google-key-row" style="display:none;flex-direction:column;gap:0.25rem;">
-            <label style="font-size:0.85rem;font-weight:500;">Google API Key</label>
-            <input id="rp-google-key" type="text" class="setting-input"
-              placeholder="Google Maps API-Schlüssel"
-              style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
-          </div>
-
-          <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
-            <button id="rp-start-btn" class="control-button" style="flex:1;justify-content:center;">
-              <ha-icon icon="mdi:map-marker-path"></ha-icon>
-              <span>Route starten</span>
-            </button>
-            ${isActive ? `
-            <button id="rp-cancel-btn" class="control-button"
-              style="flex:0 0 auto;background:var(--error-color,#d32f2f);color:white;">
-              <ha-icon icon="mdi:close-circle"></ha-icon>
-              <span>Abbrechen</span>
-            </button>` : ''}
-          </div>
-        </div>
-
-        ${isActive ? `<div style="margin-top:0.5rem;padding:0.4rem 0.6rem;background:var(--primary-color,#039be5);color:white;border-radius:4px;font-size:0.85rem;">
-          ✅ Route aktiv
-        </div>` : ''}
-        ${activeStatusHtml}
-        ${bestStationHtml}
-        ${topStationsHtml}
-      </div>
-    `;
+    return `${cancelBtnHtml}${activeBannerHtml}${activeStatusHtml}${bestStationHtml}${topStationsHtml}`;
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -291,10 +333,7 @@ class FWCAMRoutePlannerCard extends HTMLElement {
       startBtn.addEventListener('click', () => this._handleRouteStart());
     }
 
-    const cancelBtn = this.shadowRoot.getElementById('rp-cancel-btn');
-    if (cancelBtn) {
-      cancelBtn.addEventListener('click', () => this._handleRouteCancel());
-    }
+    // Cancel button is in the status section and re-attached by _updateStatus().
 
     const providerSelect = this.shadowRoot.getElementById('rp-provider');
     const googleKeyRow = this.shadowRoot.getElementById('rp-google-key-row');
