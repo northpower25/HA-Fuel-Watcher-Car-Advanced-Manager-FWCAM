@@ -1,8 +1,8 @@
 # Routen-Korridor Tankstellensuche – Konzept / Route Corridor Station Search – Concept
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Datum / Date:** 2026-03-19  
-**Status:** Konzept / Concept  
+**Status:** Konzept (Offene Fragen beantwortet) / Concept (Open Questions Answered)  
 **Priorität / Priority:** Hoch / High
 
 ---
@@ -25,19 +25,27 @@ This document describes the concept for an intelligent route function with dynam
 
 **Deutsch:**
 - Der Benutzer gibt vor Fahrtbeginn Ziel und optionale Zwischenziele ein
-- Eingabe über das FWCAM Lovelace-Dashboard, den Telegram-Bot oder eine HA-Automation
+- Eingabe über **drei Kanäle** (beantwortet – Frage 2):
+  - **FWCAM Lovelace-Dashboard** (Browser-Zugriff via HA-Frontend)
+  - **HA Companion App** (iOS/Android – direkte Routeneingabe im Mobilkontext)
+  - **Telegram-Bot** (Befehle `/route`, siehe Abschnitt 5)
 - Unterstützung für Freitext-Adresseingabe mit Geocoding via OpenStreetMap Nominatim
 - Unterstützung für GPS-Koordinaten
 - Darstellung der geplanten Route in der Kartenansicht des FWCAM-Dashboards
 - Optionale Angabe der bevorzugten Kraftstoffsorte (Standardmäßig aus Fahrzeugkonfiguration)
+- **Geografischer Geltungsbereich: Deutschland** (TankerKönig API ist auf Deutschland beschränkt – beantwortet Frage 8)
 
 **English:**
 - The user enters the destination and optional waypoints before starting the trip
-- Input via the FWCAM Lovelace dashboard, the Telegram bot, or an HA automation
+- Input via **three channels** (answered – Question 2):
+  - **FWCAM Lovelace dashboard** (browser access via HA frontend)
+  - **HA Companion App** (iOS/Android – direct route input in mobile context)
+  - **Telegram bot** (commands `/route`, see Section 5)
 - Support for free-text address input with geocoding via OpenStreetMap Nominatim
 - Support for GPS coordinates
 - Display of the planned route in the FWCAM dashboard map view
 - Optional specification of the preferred fuel type (defaults to vehicle configuration)
+- **Geographic scope: Germany only** (TankerKönig API is Germany-only – answers Question 8)
 
 #### 1.1.2 Tankstopp-Prognose / Fuel Stop Prediction
 
@@ -46,6 +54,7 @@ This document describes the concept for an intelligent route function with dynam
 - Bestimmung des voraussichtlichen Tankstopppunkts auf der Route (Distanz × Verbrauch)
 - Berücksichtigung eines konfigurierbaren Sicherheitspuffers (z.B. 15 % Restfüllstand)
 - Wiederholende Neuberechnung während der Fahrt (bei jeder Positionsaktualisierung)
+- **Fahrzeugposition via konfigurierter `device_tracker`-Entität** (beantwortet – Frage 3): Die in der Integration hinterlegte `device_tracker`-Entität liefert kontinuierlich GPS-Koordinaten und Geschwindigkeit zur Route-Projektion
 - Anzeige des prognostizierten Tankstoppzeitpunkts/-orts als HA-Sensor-Attribut
 
 **English:**
@@ -53,6 +62,7 @@ This document describes the concept for an intelligent route function with dynam
 - Determine the predicted refueling point on the route (distance × consumption)
 - Respect a configurable safety buffer (e.g. 15 % remaining level)
 - Repeated recalculation during the trip (on every position update)
+- **Vehicle position via configured `device_tracker` entity** (answered – Question 3): the `device_tracker` entity registered in the integration continuously provides GPS coordinates and speed for route projection
 - Display the predicted refueling point/time as an HA sensor attribute
 
 #### 1.1.3 Korridor-basierte Tankstellensuche / Corridor-Based Station Search
@@ -118,63 +128,80 @@ This document describes the concept for an intelligent route function with dynam
 ### 2.1 Systemübersicht / System Overview
 
 ```
-┌────────────────────────────────────────────────────────────────────────────────┐
-│                           Home Assistant                                        │
-│                                                                                  │
-│  ┌───────────────────────────────────────────────────────────────────────────┐  │
-│  │                        haFWCMA Integration                                │  │
-│  │                                                                           │  │
-│  │  ┌─────────────────────┐   ┌────────────────────────┐                   │  │
-│  │  │  FWCAM Lovelace     │   │   Telegram Bot         │                   │  │
-│  │  │  Card               │   │   (Eingabe/Ausgabe)    │                   │  │
-│  │  │  - Routeneingabe    │   │   - /route Befehl      │                   │  │
-│  │  │  - Kartenansicht    │   │   - Benachrichtigungen │                   │  │
-│  │  └────────┬────────────┘   └──────────┬─────────────┘                   │  │
-│  │           │                           │                                  │  │
-│  │           ▼                           ▼                                  │  │
-│  │  ┌──────────────────────────────────────────────────────┐               │  │
-│  │  │         utils/route_planner.py  (NEU / NEW)          │               │  │
-│  │  │                                                      │               │  │
-│  │  │  - Routenberechnung / Route calculation              │               │  │
-│  │  │  - Korridor-Polygon-Erzeugung / Corridor polygon     │               │  │
-│  │  │  - Tankstopp-Prognose / Fuel stop prediction         │               │  │
-│  │  │  - Tankstellen-Filterung / Station filtering         │               │  │
-│  │  │  - Kostenoptimierung / Cost optimization             │               │  │
-│  │  └───────────────────────────┬──────────────────────────┘               │  │
-│  │                              │                                           │  │
-│  │           ┌──────────────────┼──────────────────┐                       │  │
-│  │           │                  │                  │                       │  │
-│  │           ▼                  ▼                  ▼                       │  │
-│  │  ┌─────────────────┐ ┌──────────────┐ ┌──────────────────────────────┐ │  │
-│  │  │ providers/      │ │ utils/       │ │ utils/                       │ │  │
-│  │  │ tankerkonig.py  │ │ geolocation  │ │ prediction_engine.py +       │ │  │
-│  │  │ (Preisabfrage)  │ │ .py          │ │ consumption_prediction.py    │ │  │
-│  │  └─────────────────┘ └──────────────┘ └──────────────────────────────┘ │  │
-│  │                              │                                           │  │
-│  │                              ▼                                           │  │
-│  │  ┌──────────────────────────────────────────────────────┐               │  │
-│  │  │    sensor.py: RouteCorridorStationSensor (NEU/NEW)   │               │  │
-│  │  │    - active_route                                    │               │  │
-│  │  │    - predicted_fuel_stop                             │               │  │
-│  │  │    - corridor_stations                               │               │  │
-│  │  │    - best_station                                    │               │  │
-│  │  └──────────────────────────────────────────────────────┘               │  │
-│  │                              │                                           │  │
-│  │                              ▼                                           │  │
-│  │  ┌──────────────────────────────────────────────────────┐               │  │
-│  │  │    messaging/telegram.py – send_route_alert()  (NEU) │               │  │
-│  │  └──────────────────────────────────────────────────────┘               │  │
-│  └───────────────────────────────────────────────────────────────────────────┘  │
-│                                │                                                  │
-│                    ┌───────────┴───────────┐                                     │
-│                    │   Externe APIs /       │                                     │
-│                    │   External APIs        │                                     │
-│                    │   - OpenRouteService   │                                     │
-│                    │   - OSRM               │                                     │
-│                    │   - Nominatim (Geocod.)│                                     │
-│                    │   - TankerKönig        │                                     │
-│                    └───────────────────────┘                                     │
-└────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│                           Home Assistant                                            │
+│                                                                                      │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐  │
+│  │                        haFWCMA Integration                                    │  │
+│  │                                                                               │  │
+│  │  ┌──────────────────┐  ┌────────────────────────┐  ┌─────────────────────┐   │  │
+│  │  │  FWCAM Lovelace  │  │   Telegram Bot         │  │  HA Companion App   │   │  │
+│  │  │  Card (Browser)  │  │   (Eingabe/Ausgabe)    │  │  (iOS / Android)    │   │  │
+│  │  │  - Routeneingabe │  │   - /route Befehl      │  │  - Routeneingabe    │   │  │
+│  │  │  - Kartenansicht │  │   - Benachrichtigungen │  │  - Statusansicht    │   │  │
+│  │  └────────┬─────────┘  └──────────┬─────────────┘  └──────────┬──────────┘   │  │
+│  │           └─────────────────────── ┴──────────────────────────┘              │  │
+│  │                                    │                                          │  │
+│  │  ┌─────────────────────────────────┴──────────────────────────────────────┐  │  │
+│  │  │   device_tracker Entität (GPS-Position + Geschwindigkeit)              │  │  │
+│  │  │   → Route-Projektion + vorausschauende Korridor-Cache-Berechnung       │  │  │
+│  │  └─────────────────────────────────┬──────────────────────────────────────┘  │  │
+│  │                                    ▼                                          │  │
+│  │  ┌──────────────────────────────────────────────────────────┐               │  │
+│  │  │         utils/route_planner.py  (NEU / NEW)              │               │  │
+│  │  │                                                          │               │  │
+│  │  │  - Routenberechnung / Route calculation                  │               │  │
+│  │  │  - Korridor-Polygon-Erzeugung / Corridor polygon         │               │  │
+│  │  │  - Tankstopp-Prognose / Fuel stop prediction             │               │  │
+│  │  │  - Tankstellen-Filterung / Station filtering             │               │  │
+│  │  │  - Kostenoptimierung / Cost optimization                 │               │  │
+│  │  │  - Vorausschauender Cache / Predictive cache             │               │  │
+│  │  └───────────────────────────┬──────────────────────────────┘               │  │
+│  │                              │                                               │  │
+│  │           ┌──────────────────┼──────────────────┐                           │  │
+│  │           │                  │                  │                           │  │
+│  │           ▼                  ▼                  ▼                           │  │
+│  │  ┌─────────────────┐ ┌──────────────┐ ┌──────────────────────────────────┐ │  │
+│  │  │ providers/      │ │ utils/       │ │ utils/                           │ │  │
+│  │  │ tankerkonig.py  │ │ geolocation  │ │ prediction_engine.py +           │ │  │
+│  │  │ (Preisabfrage   │ │ .py          │ │ consumption_prediction.py        │ │  │
+│  │  │  + 5-Min-Cache) │ │              │ │                                  │ │  │
+│  │  └─────────────────┘ └──────────────┘ └──────────────────────────────────┘ │  │
+│  │                              │                                               │  │
+│  │                              ▼                                               │  │
+│  │  ┌──────────────────────────────────────────────────────┐                   │  │
+│  │  │    sensor.py: RouteCorridorStationSensor (NEU/NEW)   │                   │  │
+│  │  │    - active_route                                    │                   │  │
+│  │  │    - predicted_fuel_stop                             │                   │  │
+│  │  │    - corridor_stations                               │                   │  │
+│  │  │    - best_station                                    │                   │  │
+│  │  └──────────────────────────────────────────────────────┘                   │  │
+│  │                              │                                               │  │
+│  │                              ▼                                               │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────┐   │  │
+│  │  │    messaging/telegram.py – send_route_alert()  (NEU)                 │   │  │
+│  │  │    auch: API-Fehlerbenachrichtigungen / API error notifications       │   │  │
+│  │  └──────────────────────────────────────────────────────────────────────┘   │  │
+│  └───────────────────────────────────────────────────────────────────────────────┘  │
+│                                │                                                      │
+│                    ┌───────────┴──────────────────────┐                              │
+│                    │   Externe APIs / External APIs    │                              │
+│                    │                                   │                              │
+│                    │  Routing (Prio 1–4):              │                              │
+│                    │   1. Google Maps API              │                              │
+│                    │   2. Apple Maps                   │                              │
+│                    │   3. Waze Routing                 │                              │
+│                    │   4. Fahrzeug-Navigation          │                              │
+│                    │      (Skoda/VW – falls API verf.) │                              │
+│                    │   5. OSRM / ORS (Fallback)        │                              │
+│                    │                                   │                              │
+│                    │  Geocoding:                       │                              │
+│                    │   - Nominatim (OSM)               │                              │
+│                    │                                   │                              │
+│                    │  Tankstellen (nur Deutschland):   │                              │
+│                    │   - TankerKönig API               │                              │
+│                    └───────────────────────────────────┘                              │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 Neue Komponenten / New Components
@@ -218,7 +245,15 @@ CONF_ROUTE_PRICE_ALERT_DELTA      = "route_price_alert_delta"        # Standard 
 CONF_ROUTE_NOTIFY_INTERVAL_MIN    = "route_notify_interval_min"      # Standard / Default: 5
 CONF_ROUTE_SEARCH_WINDOW_KM       = "route_search_window_km"         # Standard / Default: 20
 CONF_ROUTE_TOP_N_STATIONS         = "route_top_n_stations"           # Standard / Default: 3
-CONF_ROUTE_ROUTING_PROVIDER       = "route_routing_provider"         # "osrm" | "openrouteservice"
+CONF_ROUTE_ROUTING_PROVIDER       = "route_routing_provider"
+# Werte / Values (beantwortet – Frage 1 / answered – Question 1):
+#   "google"      – Google Maps API (Standard / Default)
+#   "apple"       – Apple Maps (primär iOS / primarily iOS)
+#   "waze"        – Waze Routing API
+#   "vehicle"     – Fahrzeug-Navigation (Skoda/VW, falls API verfügbar)
+#   "osrm"        – OSRM (Open Source Routing Machine, Fallback)
+#   "openrouteservice" – OpenRouteService (Fallback mit Höhenprofil)
+CONF_ROUTE_AVOID_TOLLS            = "route_avoid_tolls"              # False (zukünftige Option / future option)
 ```
 
 ---
@@ -228,13 +263,13 @@ CONF_ROUTE_ROUTING_PROVIDER       = "route_routing_provider"         # "osrm" | 
 ### 3.1 Korridor-Polygon-Berechnung / Corridor Polygon Calculation
 
 **Deutsch:**
-1. Route-Polyline (Liste von GPS-Punkten) vom Routing-Provider empfangen (OSRM oder OpenRouteService)
+1. Route-Polyline (Liste von GPS-Punkten) vom konfigurierten Routing-Provider empfangen (Google Maps, Apple Maps, Waze, Fahrzeug-Navigation oder Fallback OSRM/ORS – beantwortet Frage 1 und 6)
 2. Für jeden Liniensegment: Berechnung eines Rechteck-Puffers ±`corridor_width_km` (Haversine-Methode)
 3. Union aller Segment-Puffer = Gesamt-Korridor-Polygon
 4. Tankstellen werden nur dann berücksichtigt, wenn ihre Koordinaten `(lat, lon)` innerhalb des Polygons liegen (Point-in-Polygon-Test, z.B. Ray-Casting-Algorithmus)
 
 **English:**
-1. Receive route polyline (list of GPS points) from the routing provider (OSRM or OpenRouteService)
+1. Receive route polyline (list of GPS points) from the configured routing provider (Google Maps, Apple Maps, Waze, vehicle navigation, or fallback OSRM/ORS – answers Questions 1 and 6)
 2. For each line segment: calculate a rectangular buffer of ±`corridor_width_km` (Haversine method)
 3. Union of all segment buffers = total corridor polygon
 4. Stations are included only if their coordinates `(lat, lon)` lie within the polygon (point-in-polygon test, e.g. ray-casting algorithm)
@@ -342,20 +377,128 @@ During the trip (every notify_interval_min minutes):
 
 ---
 
+### 3.5 Vorausschauender Cache-Algorithmus / Predictive Caching Algorithm
+
+> **Hintergrund / Background:** Die TankerKönig-API erlaubt maximal eine Anfrage pro 5 Minuten. Um API-Aufrufe zu reduzieren und dennoch aktuelle Daten bereitzustellen, wird ein vorausschauender Cache auf Basis der aktuellen GPS-Geschwindigkeit eingesetzt (beantwortet – Frage 4).
+
+**Deutsch:**
+```
+Vorausschauender Cache-Zyklus (alle 5 Minuten):
+
+  t=0:  Aktuelle Position P0 aus device_tracker (GPS-Koordinaten + Geschwindigkeit v_kmh)
+        │
+        ▼
+        Prognose-Position P10 berechnen:
+          Distanz_10min_km = v_kmh × (10/60)
+          P10 = Interpolierter Punkt auf Route-Polyline bei P0 + Distanz_10min_km
+        │
+        ▼
+        TankerKönig API anfragen:
+          Suchzentrum = P10  (vorausschauende Position in 10 Minuten)
+          Suchradius = corridor_width_km + puffer_km
+        │
+        ▼
+        Ergebnisse im Cache speichern (TTL = 5 Minuten)
+        │
+  t=5:  Aktuelle Position P5 aus device_tracker
+        │
+        ▼
+        Korridor-Filterung mit gecachten Stationen
+        (keine neue API-Anfrage erforderlich)
+        │
+        ▼
+        Neue Prognose-Position P15 berechnen → nächste API-Anfrage vorbereiten
+        │
+  t=10: Neue TankerKönig API anfragen (Suchzentrum = P20)
+        Ergebnisse ersetzen alten Cache-Eintrag
+```
+
+**English:**
+```
+Predictive cache cycle (every 5 minutes):
+
+  t=0:  Current position P0 from device_tracker (GPS coordinates + speed v_kmh)
+        │
+        ▼
+        Calculate predicted position P10:
+          distance_10min_km = v_kmh × (10/60)
+          P10 = interpolated point on route polyline at P0 + distance_10min_km
+        │
+        ▼
+        Query TankerKönig API:
+          search_centre = P10  (predicted position in 10 minutes)
+          search_radius = corridor_width_km + buffer_km
+        │
+        ▼
+        Store results in cache (TTL = 5 minutes)
+        │
+  t=5:  Current position P5 from device_tracker
+        │
+        ▼
+        Filter corridor with cached stations
+        (no new API call required)
+        │
+        ▼
+        Calculate new predicted position P15 → prepare next API query
+        │
+  t=10: New TankerKönig API query (search_centre = P20)
+        Replace old cache entry with new results
+```
+
+**Fallback bei niedriger / hoher Geschwindigkeit / Fallback for low / high speed:**
+- **Fahrzeug steht (v < 5 km/h):** Cache-Zyklus pausiert; Suche bleibt auf aktuelle Position zentriert
+- **Sehr hohe Geschwindigkeit (v > 130 km/h):** Prognose-Horizont wird auf 15 Minuten ausgedehnt, Suchradius vergrößert
+
+---
+
+### 3.6 API-Fehlerbehandlung / API Error Handling
+
+> (beantwortet – Frage 7 / answered – Question 7)
+
+**Deutsch:**
+- Fehler bei Routing-APIs (Google, Apple, Waze, OSRM, ORS) werden abgefangen und per **Telegram-Nachricht** gemeldet
+- Fehler bei der TankerKönig-API werden geloggt und per Telegram gemeldet; die Integration fällt auf den zuletzt gecachten Zustand zurück
+- Fehler-Nachrichtenformat:
+  ```
+  ⚠️ FWCAM Routing-Fehler / Routing Error
+  Komponente: Google Maps API
+  Fehler: [Fehlermeldung / Error message]
+  Aktion: Route konnte nicht berechnet werden. Bitte Route erneut eingeben.
+  ```
+- Jeder Fehlertyp wird maximal **einmal pro Fahrt** per Telegram gemeldet (keine Spam-Flut)
+- Bei vollständigem API-Ausfall: Sicherer Fallback auf OSRM/ORS; wenn kein Provider erreichbar, Route-Modus deaktiviert
+
+**English:**
+- Errors from routing APIs (Google, Apple, Waze, OSRM, ORS) are caught and reported via **Telegram message**
+- TankerKönig API errors are logged and reported via Telegram; the integration falls back to the last cached state
+- Error message format:
+  ```
+  ⚠️ FWCAM Routing Error
+  Component: Google Maps API
+  Error: [error message]
+  Action: Route could not be calculated. Please re-enter the route.
+  ```
+- Each error type is reported via Telegram at most **once per trip** (no spam flood)
+- In case of complete API failure: safe fallback to OSRM/ORS; if no provider is reachable, route mode is deactivated
+
+---
+
 ## 4. Datenfluss / Data Flow
 
 ### 4.1 Vor der Fahrt / Before the Trip
 
 ```
 Benutzer gibt Ziel ein / User enters destination
+(Lovelace-Dashboard, HA Companion App oder Telegram)
             │
             ▼
     Geocoding (Nominatim)
     Adresse → GPS-Koordinaten
             │
             ▼
-    Routing API (OSRM / ORS)
+    Routing API (Google Maps / Apple / Waze / Fahrzeug-Nav. / OSRM / ORS)
     Route-Polyline + Distanz + Zwischenpunkte
+    [Bei Fehler: Telegram-Benachrichtigung + Fallback-Provider]
             │
             ▼
     RouteCorridorCalculator
@@ -364,10 +507,12 @@ Benutzer gibt Ziel ein / User enters destination
             ▼
     FuelStopPredictor
     Tankstopp-Position berechnen
+    (device_tracker: aktuelle GPS-Position als Ausgangspunkt)
             │
             ▼
-    TankerKönig API
+    TankerKönig API (nur Deutschland)
     Tankstellen im Korridor abfragen
+    + Cache aufwärmen für Prognose-Position P10
             │
             ▼
     CorridorStationRanker
@@ -381,7 +526,7 @@ Benutzer gibt Ziel ein / User enters destination
 ### 4.2 Während der Fahrt / During the Trip
 
 ```
-Position-Update (vehicle_tracker)
+Position-Update (device_tracker: GPS-Koordinaten + Geschwindigkeit)
             │
             ▼
     RouteCorridorStationSensor
@@ -393,8 +538,11 @@ Position-Update (vehicle_tracker)
     (Verbrauch + verbleibender Kraftstoff)
             │
             ▼
-    Korridor-Stationssuche (TankerKönig)
-    [alle notify_interval_min Minuten]
+    Vorausschauender Cache-Check:
+    Ist Cache noch gültig? (< 5 Min. alt)
+      JA  → Korridor-Filterung mit Cache-Daten (kein API-Call)
+      NEIN→ TankerKönig API anfragen (Suchzentrum = P10-Prognose)
+            [Bei Fehler: Telegram-Benachrichtigung, Cache behalten]
             │
             ▼
     Benachrichtigungslogik prüfen
@@ -552,43 +700,119 @@ Optional integration of weather data (OpenWeatherMap): high ambient temperatures
 
 ## 7. Routing-Provider / Routing Providers
 
-### 7.1 OSRM (Open Source Routing Machine)
+> **Entschieden (Frage 1 & 6) / Decided (Questions 1 & 6):** Standard-Provider ist **Google Maps**, gefolgt von Apple Maps, Waze und Fahrzeug-Navigation (Skoda/VW). OSRM und ORS dienen als Fallback-Optionen. Die Priorisierung kann in der Config-Flow konfiguriert werden.
+
+### 7.1 Google Maps (Standard / Default)
+
+**Deutsch:**
+- **Standard-Routing-Provider** für die Integration
+- Hervorragende Routing-Qualität mit Echtzeit-Verkehrsdaten
+- Liefert präzise Route-Polylines (GeoJSON/Encoded Polyline)
+- **API-Key erforderlich** (Google Maps Platform – Directions API)
+- Kostenloses Kontingent vorhanden; kostenpflichtig bei hohem Volumen
+- Unterstützt Vermeidung von Mautstraßen (für spätere Optimierung, Frage 5)
+
+**English:**
+- **Default routing provider** for the integration
+- Excellent routing quality with real-time traffic data
+- Delivers precise route polylines (GeoJSON/Encoded Polyline)
+- **API key required** (Google Maps Platform – Directions API)
+- Free tier available; costs apply at high volume
+- Supports toll-road avoidance (for future optimization, Question 5)
+
+### 7.2 Apple Maps
+
+**Deutsch:**
+- Nativ auf iOS-Geräten verfügbar; tiefe Integration mit HA Companion App auf iPhone/iPad
+- Nutzung über **MapKit JS** (Web) oder Deep-Link-Schema `maps://` für Turn-by-Turn-Navigation
+- Kein separater API-Key für reine Deep-Link-Navigation erforderlich
+- Routing-Polyline für Korridor-Berechnung über Apple Maps Server API (API-Key erforderlich)
+- **Empfohlen für iOS-Nutzer** als Alternative zu Google Maps
+
+**English:**
+- Natively available on iOS devices; deep integration with HA Companion App on iPhone/iPad
+- Used via **MapKit JS** (web) or Deep-Link scheme `maps://` for turn-by-turn navigation
+- No separate API key required for pure deep-link navigation
+- Routing polyline for corridor calculation via Apple Maps Server API (API key required)
+- **Recommended for iOS users** as an alternative to Google Maps
+
+### 7.3 Waze
+
+**Deutsch:**
+- Sehr gute Echtzeit-Verkehrs- und Stau-Informationen (Community-basiert)
+- Navigation via Waze Deep-Link `waze://` oder `https://waze.com/ul` möglich
+- **Keine öffentliche Routing-Polyline-API** – Waze wird daher primär für **Navigations-Links** in Telegram-Nachrichten genutzt
+- Routing-Polyline für Korridor-Berechnung muss von anderem Provider kommen (z.B. Google)
+
+**English:**
+- Excellent real-time traffic and congestion information (community-based)
+- Navigation via Waze Deep-Link `waze://` or `https://waze.com/ul`
+- **No public routing polyline API** – Waze is therefore primarily used for **navigation links** in Telegram messages
+- Routing polyline for corridor calculation must come from another provider (e.g. Google)
+
+### 7.4 Fahrzeug-Navigation / Vehicle Navigation (Skoda / VW)
+
+> **(Frage 6 beantwortet / Question 6 answered)**
+
+**Deutsch:**
+- Idealziel: Nutzung der eingebauten Fahrzeug-Navigation (z.B. Skoda Laura, VW We Connect)
+- **Aktuelle Verfügbarkeit:** Skoda/VW bieten über die **We Connect API** und **Skoda Connect API** begrenzte Fahrzeugdaten; eine direkte Routenübernahme aus der Fahrzeug-Navigation ist über diese APIs **aktuell nicht standardmäßig verfügbar**
+- **Möglicher Ansatz:** Auslesen der Ziel-/Routeninformation aus dem Fahrzeug-Infotainment via `custom_components/skodaconnect` oder `volkswagencarnet` HA-Integrationen, falls verfügbar und konfiguriert
+- **Fallback:** Wenn keine Fahrzeug-Navigation-API verfügbar ist, wird automatisch Google Maps (oder der nächste konfigurierten Provider) verwendet
+
+**English:**
+- Ideal goal: use the built-in vehicle navigation (e.g. Skoda Laura, VW We Connect)
+- **Current availability:** Skoda/VW offer limited vehicle data via the **We Connect API** and **Skoda Connect API**; direct route import from the vehicle navigation is **not currently available as standard** via these APIs
+- **Possible approach:** Read destination/route information from the vehicle infotainment via `custom_components/skodaconnect` or `volkswagencarnet` HA integrations, if available and configured
+- **Fallback:** If no vehicle navigation API is available, Google Maps (or the next configured provider) is used automatically
+
+### 7.5 OSRM (Open Source Routing Machine) – Fallback
 
 **Deutsch:**
 - Kostenlos, selbst-hostbar oder als öffentlicher Endpoint
 - Liefert präzise Route-Polylines (GeoJSON)
 - Kein API-Key erforderlich für den öffentlichen Demo-Server
 - Limitierungen beim öffentlichen Demo-Server (Rate Limits)
-- **Empfehlung**: Selbst-gehostete Instanz oder Alternative
+- **Rolle:** Fallback wenn Google/Apple/Waze nicht konfiguriert oder nicht erreichbar
 
 **English:**
 - Free, self-hostable or public endpoint
 - Delivers precise route polylines (GeoJSON)
 - No API key required for the public demo server
 - Rate limits apply for the public demo server
-- **Recommendation**: self-hosted instance or alternative
+- **Role:** Fallback when Google/Apple/Waze not configured or unreachable
 
-### 7.2 OpenRouteService (ORS)
+### 7.6 OpenRouteService (ORS) – Fallback
 
 **Deutsch:**
 - Kostenloser API-Key verfügbar (mit Limit)
 - Erweiterte Routing-Optionen (Vermeidung von Maut, Fähren, etc.)
 - Unterstützt Höhenprofil (für verbessertes Verbrauchsmodell)
-- Bessere Unterstützung für Verkehrsdaten
+- **Rolle:** Sekundärer Fallback; besonders geeignet wenn Höhenprofil-Daten für ML-Verbrauchsschätzung benötigt werden
 
 **English:**
 - Free API key available (with limits)
 - Advanced routing options (avoid tolls, ferries, etc.)
 - Supports elevation profile (for improved consumption model)
-- Better support for traffic data
+- **Role:** Secondary fallback; particularly useful when elevation profile data is needed for ML consumption estimation
 
-### 7.3 Abstraktionsschicht / Abstraction Layer
+### 7.7 Maut-Vermeidung / Toll Avoidance
+
+> **(Frage 5 beantwortet / Question 5 answered)**
 
 **Deutsch:**
-`utils/route_planner.py` implementiert eine Provider-Abstraktion, sodass der Benutzer in der Config-Flow den bevorzugten Routing-Provider auswählen kann. Neue Provider können leicht ergänzt werden.
+Maut-Straßen-Vermeidung ist in Deutschland kaum relevant (wenige Mautstraßen). Die Option `CONF_ROUTE_AVOID_TOLLS` wird als konfigurierbare Einstellung vorbereitet (`False` als Standard), aber **erst in einer späteren Optimierungsphase** aktiv implementiert.
 
 **English:**
-`utils/route_planner.py` implements a provider abstraction, allowing the user to select the preferred routing provider in the config flow. New providers can be added easily.
+Toll road avoidance is barely relevant in Germany (few toll roads). The `CONF_ROUTE_AVOID_TOLLS` option is prepared as a configurable setting (`False` as default), but **only actively implemented in a later optimization phase**.
+
+### 7.8 Abstraktionsschicht / Abstraction Layer
+
+**Deutsch:**
+`utils/route_planner.py` implementiert eine Provider-Abstraktion, sodass der Benutzer in der Config-Flow den bevorzugten Routing-Provider auswählen kann. Neue Provider können leicht ergänzt werden. Provider-Priorität (konfigurierbar): Google → Apple → Waze → Fahrzeug-Nav → OSRM → ORS.
+
+**English:**
+`utils/route_planner.py` implements a provider abstraction, allowing the user to select the preferred routing provider in the config flow. New providers can be added easily. Provider priority (configurable): Google → Apple → Waze → Vehicle Nav → OSRM → ORS.
 
 ---
 
@@ -610,50 +834,59 @@ Optional integration of weather data (OpenWeatherMap): high ambient temperatures
 
 ---
 
-## 9. Offene Fragen / Open Questions
+## 9. Beantwortete Fragen / Answered Questions
 
-| Nr. | Frage (DE) | Question (EN) | Priorität |
-|-----|------------|---------------|-----------|
-| 1 | Welcher Routing-Provider wird standardmäßig genutzt? | Which routing provider is used by default? | Hoch |
-| 2 | Soll die Routeneingabe auch über die HA-Companion-App möglich sein? | Should route input also be possible via the HA Companion App? | Mittel |
-| 3 | Wie wird die genaue Position auf der Route (Route-Projektion) berechnet? | How is the precise position on the route (route projection) computed? | Hoch |
-| 4 | Soll der Korridor-Suchalgorithmus Caching nutzen um API-Calls zu reduzieren? | Should the corridor search algorithm use caching to reduce API calls? | Mittel |
-| 5 | Sollen Maut-Straßen optionally vermieden werden? | Should toll roads optionally be avoided? | Niedrig |
-| 6 | Integration mit HA-Navigation (falls vorhanden)? | Integration with HA navigation (if present)? | Niedrig |
-| 7 | Wie soll das Routing-API-Fehlerverhalten aussehen? | How should routing API error handling behave? | Hoch |
-| 8 | TankerKönig-API ist auf Deutschland beschränkt – internationale Route-Unterstützung? | TankerKönig API is Germany-only – international route support? | Mittel |
+| Nr. | Frage (DE) | Question (EN) | Antwort (DE) | Answer (EN) | Dok.-Abschnitt |
+|-----|------------|---------------|--------------|-------------|----------------|
+| 1 | Welcher Routing-Provider wird standardmäßig genutzt? | Which routing provider is used by default? | **Google Maps** (Standard); zusätzlich Apple Maps, Waze, Fahrzeug-Navigation (Skoda/VW); OSRM/ORS als Fallback | **Google Maps** (default); additionally Apple Maps, Waze, vehicle navigation (Skoda/VW); OSRM/ORS as fallback | Abschnitt 7 |
+| 2 | Soll die Routeneingabe auch über die HA-Companion-App möglich sein? | Should route input also be possible via the HA Companion App? | **Ja** – Routenplanung über Companion App (iOS/Android), Telegram und Browser (Lovelace) | **Yes** – route planning via Companion App (iOS/Android), Telegram and browser (Lovelace) | Abschnitt 1.1.1 |
+| 3 | Wie wird die genaue Position auf der Route (Route-Projektion) berechnet? | How is the precise position on the route (route projection) computed? | Via konfigurierter **`device_tracker`-Entität** der Integration (GPS-Koordinaten + Geschwindigkeit) | Via configured **`device_tracker` entity** of the integration (GPS coordinates + speed) | Abschnitte 1.1.2, 3.5, 4.2 |
+| 4 | Soll der Korridor-Suchalgorithmus Caching nutzen um API-Calls zu reduzieren? | Should the corridor search algorithm use caching to reduce API calls? | **Ja** – vorausschauender Cache auf Basis GPS-Geschwindigkeit: Suche für Prognoseposition in 10 Min., Cache-TTL 5 Min. (TankerKönig-Limit) | **Yes** – predictive cache based on GPS speed: search for predicted position in 10 min, cache TTL 5 min (TankerKönig limit) | Abschnitt 3.5 |
+| 5 | Sollen Maut-Straßen optionally vermieden werden? | Should toll roads optionally be avoided? | **Später** – in Deutschland kaum Mautstraßen; Option `avoid_tolls` vorbereitet, aber erst in späterer Phase implementiert | **Later** – few toll roads in Germany; `avoid_tolls` option prepared but only implemented in a later phase | Abschnitte 2.2.3, 7.7 |
+| 6 | Integration mit HA-Navigation (falls vorhanden)? | Integration with HA navigation (if present)? | Idealerweise Fahrzeug-Navigation (Skoda/VW über We Connect/Skoda Connect API, falls verfügbar); Fallback: Google, Apple, Waze | Ideally vehicle navigation (Skoda/VW via We Connect/Skoda Connect API, if available); fallback: Google, Apple, Waze | Abschnitt 7.4 |
+| 7 | Wie soll das Routing-API-Fehlerverhalten aussehen? | How should routing API error handling behave? | Fehler per **Telegram-Benachrichtigung** melden (max. 1× pro Fehlertyp/Fahrt), sicherer Fallback auf nächsten Provider, Route-Modus deaktivieren bei vollständigem Ausfall | Report errors via **Telegram notification** (max. once per error type/trip), safe fallback to next provider, deactivate route mode on complete failure | Abschnitt 3.6 |
+| 8 | TankerKönig-API ist auf Deutschland beschränkt – internationale Route-Unterstützung? | TankerKönig API is Germany-only – international route support? | **Nur Deutschland** – internationale Unterstützung zunächst nicht geplant | **Germany only** – international support not planned initially | Abschnitt 1.1.1 |
 
 ---
 
 ## 10. Implementierungs-Roadmap / Implementation Roadmap
 
-> **Status: Konzept – keine Umsetzung gestartet / Concept – implementation not started**
+> **Status: Konzept (Fragen beantwortet) – Umsetzung noch nicht gestartet / Concept (questions answered) – implementation not started**
 
 ### Phase 1: Kern-Routing (Basis / Core)
-- [ ] Routing-Provider-Abstraktion in `utils/route_planner.py`
+- [ ] Routing-Provider-Abstraktion in `utils/route_planner.py` (Google, Apple, Waze, Fahrzeug-Nav, OSRM, ORS)
+- [ ] Google Maps Directions API Integration (Standard-Provider)
 - [ ] Geocoding-Integration (Adresse → GPS, wiederverwendet `utils/geocoding.py`)
+- [ ] device_tracker-Entität als Positionsquelle verdrahten
 - [ ] Korridor-Polygon-Berechnung
 - [ ] Tankstopp-Prognose (wiederverwendet `utils/prediction_engine.py`)
 
-### Phase 2: Stationsuche und Kostenoptimierung
-- [ ] Korridor-Filterung der TankerKönig-Stationen
+### Phase 2: Stationsuche, Caching und Kostenoptimierung
+- [ ] Korridor-Filterung der TankerKönig-Stationen (nur Deutschland)
+- [ ] Vorausschauender Cache-Algorithmus (GPS-Geschwindigkeit → Prognoseposition → 5-Min-TTL)
 - [ ] Effektiver-Preis-Algorithmus (inkl. Umwegkosten)
 - [ ] `sensor.py`: `RouteCorridorStationSensor` hinzufügen
 - [ ] Persistenz der aktiven Route (wiederverwendet `utils/storage.py`)
 
-### Phase 3: Dashboard und Telegram
-- [ ] Routeneingabe-UI im FWCAM Lovelace-Card
+### Phase 3: Dashboard, Telegram und Fehlerbehandlung
+- [ ] Routeneingabe-UI im FWCAM Lovelace-Card (Browser)
+- [ ] HA Companion App Routeneingabe-Unterstützung
 - [ ] Kartenansicht: Route + Korridor + Tankstellen-Marker
 - [ ] Telegram-Befehle: `/route`, `/routecancel`, `/routestatus`
 - [ ] Telegram-Nachrichten: Routenstart, günstigere Station, Reichweitenwarnung
+- [ ] API-Fehlerbehandlung mit Telegram-Benachrichtigungen (Abschnitt 3.6)
 
 ### Phase 4: Optimierungen
+- [ ] Apple Maps Server API Integration
+- [ ] Waze Navigation-Links in Telegram-Nachrichten
+- [ ] Fahrzeug-Navigation (Skoda/VW We Connect / Skoda Connect) – falls API verfügbar
 - [ ] Preisvorhersage-Integration
 - [ ] Mehrfach-Tankstopp-Planung
 - [ ] Öffnungszeiten-Bewusstsein
 - [ ] Fahrstil-Anpassung (ML-basiert)
 
-### Phase 5: Erweiterungen
+### Phase 5: Erweiterungen (Zukunft / Future)
+- [ ] Maut-Straßen-Vermeidung (`avoid_tolls`-Option)
 - [ ] Mehrfahrzeug-Koordination
 - [ ] Historische Routenanalyse
 - [ ] Wetterdaten-Integration
@@ -676,8 +909,15 @@ Optional integration of weather data (OpenWeatherMap): high ambient temperatures
 - `utils/debug_export.py` – Anonymisierung
 
 ### 11.2 Neue externe Abhängigkeiten / New External Dependencies
-- **OSRM** oder **OpenRouteService** API (Routing-Polyline) – kein neues Python-Paket, nur HTTP-Requests via `aiohttp` (bereits vorhanden)
-- **Keine weiteren Python-Pakete** erforderlich
+
+**Routing-APIs / Routing APIs (HTTP-Requests via `aiohttp`, bereits vorhanden / already present):**
+- **Google Maps Directions API** – Primär-Provider; API-Key erforderlich (Google Maps Platform)
+- **Apple Maps Server API** – Sekundär-Provider für iOS; API-Key erforderlich (Apple Developer)
+- **Waze** – Nur Navigation-Deep-Links, keine Polyline-API; kein Key erforderlich
+- **Fahrzeug-Navigation (Skoda/VW)** – Optional; über `custom_components/skodaconnect` oder `volkswagencarnet` HA-Integrationen (falls installiert)
+- **OSRM** – Fallback; kein API-Key für öffentlichen Demo-Server
+- **OpenRouteService** – Fallback; kostenloser API-Key verfügbar
+- **Keine neuen Python-Pakete** erforderlich – ausschließlich HTTP-Requests via `aiohttp`
 
 ---
 
@@ -691,4 +931,4 @@ Optional integration of weather data (OpenWeatherMap): high ambient temperatures
 
 ---
 
-*Erstellt / Created: 2026-03-19 | Autor / Author: FWCAM Development Team*
+*Erstellt / Created: 2026-03-19 | Aktualisiert / Updated: 2026-03-19 (v1.1 – Offene Fragen beantwortet) | Autor / Author: FWCAM Development Team*
