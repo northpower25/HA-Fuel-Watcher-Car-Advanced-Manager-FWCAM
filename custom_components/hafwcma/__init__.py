@@ -247,6 +247,7 @@ SCHEMA_SET_ROUTE = vol.Schema({
     vol.Optional("corridor_width_km", default=5.0): vol.Coerce(float),
     vol.Optional("routing_provider", default="osrm"): cv.string,
     vol.Optional("google_api_key", default=""): cv.string,
+    vol.Optional("departure_time", default=""): cv.string,
 })
 
 SCHEMA_CANCEL_ROUTE = vol.Schema({
@@ -1354,6 +1355,59 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         DOMAIN, SERVICE_EXPORT_DEBUG_DATA, handle_export_debug_data, schema=SCHEMA_EXPORT_DEBUG_DATA, supports_response=True
     )
 
+    def _parse_departure_time(departure_time_str: str) -> "datetime | None":
+        """Parse a departure-time string into a datetime object.
+
+        Accepts ISO-8601 datetime strings (``2026-03-20T08:30``) or plain
+        ``HH:MM`` / ``HH:MM:SS`` time strings (interpreted as today's date in
+        the Home Assistant local timezone).
+
+        Args:
+            departure_time_str: User-supplied departure time string.
+
+        Returns:
+            Timezone-aware (HA local) ``datetime``, or ``None`` if the string
+            is empty / cannot be parsed.
+        """
+        if not departure_time_str:
+            return None
+
+        from homeassistant.util import dt as _dt_util
+        from datetime import datetime as _dt
+
+        now = _dt_util.now()
+        for fmt in (
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+        ):
+            try:
+                naive = _dt.strptime(departure_time_str, fmt)
+                # Attach HA local timezone when available
+                if now.tzinfo:
+                    return naive.replace(tzinfo=now.tzinfo)
+                return naive
+            except ValueError:
+                pass
+
+        # Try plain HH:MM or HH:MM:SS → today
+        for fmt in ("%H:%M:%S", "%H:%M"):
+            try:
+                naive = _dt.strptime(departure_time_str, fmt)
+                combined = now.replace(
+                    hour=naive.hour,
+                    minute=naive.minute,
+                    second=naive.second,
+                    microsecond=0,
+                )
+                return combined
+            except ValueError:
+                pass
+
+        _LOGGER.warning("set_route: could not parse departure_time '%s'", departure_time_str)
+        return None
+
     async def handle_set_route(call: ServiceCall) -> ServiceResponse:
         """Handle the set_route service call.
 
@@ -1378,6 +1432,10 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         corridor_width_km: float = call.data.get("corridor_width_km", 5.0)
         routing_provider: str = call.data.get("routing_provider", "osrm")
         google_api_key: str = call.data.get("google_api_key", "")
+        departure_time_str: str = call.data.get("departure_time", "")
+
+        # Parse departure_time string → datetime (naive/local)
+        departure_dt = _parse_departure_time(departure_time_str)
 
         # Retrieve or create the RoutePlanner for this entry
         if "route_planner" not in hass.data[DOMAIN][entry_id]:
@@ -1440,9 +1498,11 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "total_distance_km": round(route_result["distance_km"], 2),
             "duration_s": route_result.get("duration_s", 0),
             "route_polyline": route_result["polyline"],
+            "departure_time": departure_time_str or None,
             "fuel_stop": {},
             "best_corridor_station": None,
             "corridor_stations": [],
+            "categorized_stations": {},
         }
 
         # ── Initial fuel-stop prediction ──────────────────────────────────────
@@ -1454,9 +1514,15 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         #                   (coordinator.data["consumption_prediction"]["avg_consumption_rate"])
         predicted_stop_km: float | None = None
         initial_corridor_stations: list[dict] = []
+        categorized_stations: dict = {}
         safety_buffer_pct: float = 15.0
+        eta_at_stop: str | None = None
         try:
-            from .utils.route_planner import FuelStopPredictor, CorridorStationRanker
+            from .utils.route_planner import (
+                FuelStopPredictor, CorridorStationRanker,
+                async_enrich_stations_with_road_detour,
+                select_categorized_stations,
+            )
             from .const import (
                 CONF_API_KEY,
                 CONF_FUEL_TYPE,
@@ -1501,7 +1567,21 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                         predicted_stop_km = stop_info.get("km_remaining_to_stop")
                         route_data["fuel_stop"] = stop_info
 
-                        # Fetch up to 5 corridor stations near the predicted stop point
+                        # Compute estimated time of arrival at fuel stop
+                        if departure_dt is not None:
+                            duration_s = route_result.get("duration_s", 0) or 0
+                            stop_frac = 0.0
+                            total_dist = route_data["total_distance_km"]
+                            stop_dist = stop_info.get("predicted_distance_km", 0)
+                            if total_dist and total_dist > 0:
+                                stop_frac = min(stop_dist / total_dist, 1.0)
+                            stop_duration_s = duration_s * stop_frac
+                            from datetime import timedelta as _td
+                            eta_dt = departure_dt + _td(seconds=stop_duration_s)
+                            eta_at_stop = eta_dt.strftime("%H:%M")
+                            route_data["eta_at_stop"] = eta_at_stop
+
+                        # Fetch up to 10 corridor stations near the predicted stop point
                         api_key = config_data.get(CONF_API_KEY)
                         fuel_type = (
                             options_data.get(CONF_FUEL_TYPE)
@@ -1534,6 +1614,12 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                         )
                                         if price is None:
                                             continue
+                                        # Filter by open status when ETA is available
+                                        # (TankerKönig only provides current is_open;
+                                        # we skip stations that are currently closed)
+                                        is_open = getattr(st, "is_open", True)
+                                        if not is_open:
+                                            continue
                                         from .utils.geolocation import calculate_distance
                                         dist_km = calculate_distance(
                                             stop_lat, stop_lon,
@@ -1541,14 +1627,25 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                             getattr(st, "longitude", 0),
                                         )
                                         station_dicts.append({
+                                            "station_id": getattr(st, "station_id", ""),
                                             "name": getattr(st, "name", "Unknown"),
                                             "lat": getattr(st, "latitude", stop_lat),
                                             "lng": getattr(st, "longitude", stop_lon),
                                             "price": price,
-                                            "detour_km": round(dist_km, 2),
+                                            # Straight-line one-way * 2 = initial round-trip estimate
+                                            "detour_km": round(dist_km * 2.0, 2),
+                                            "is_open": is_open,
                                         })
 
                                     if station_dicts:
+                                        # Enrich with road-based round-trip detour via OSRM
+                                        nearest_route_pt = (
+                                            float(stop_lat), float(stop_lon)
+                                        )
+                                        station_dicts = await async_enrich_stations_with_road_detour(
+                                            station_dicts, nearest_route_pt
+                                        )
+
                                         ranker = CorridorStationRanker()
                                         fuel_needed = max(
                                             float(tank_capacity) - float(tank_level_liters), 0.0
@@ -1562,6 +1659,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                         route_data["corridor_stations"] = ranked
                                         if ranked:
                                             route_data["best_corridor_station"] = ranked[0]
+                                        # Build 3-category recommendation
+                                        categorized_stations = select_categorized_stations(ranked)
+                                        route_data["categorized_stations"] = categorized_stations
                             except Exception as tk_err:
                                 _LOGGER.warning(
                                     "set_route: initial corridor station fetch failed: %s", tk_err
@@ -1588,15 +1688,16 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     chat_id=telegram_chat_id,
                     hass=hass,
                 )
-                best_station = route_data.get("best_corridor_station")
                 await notifier.send_route_started(
                     destination=destination_str,
                     total_distance_km=route_data["total_distance_km"],
                     predicted_stop_km=predicted_stop_km,
-                    best_station=best_station,
+                    categorized_stations=categorized_stations,
                     top_stations=initial_corridor_stations,
                     corridor_km=corridor_width_km,
                     safety_buffer_pct=safety_buffer_pct,
+                    departure_time=departure_time_str or None,
+                    eta_at_stop=eta_at_stop,
                 )
             except Exception as tg_err:
                 _LOGGER.warning("set_route: Telegram notification failed: %s", tg_err)
@@ -1642,6 +1743,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 "fuel_stop": {},
                 "best_corridor_station": None,
                 "corridor_stations": [],
+                "categorized_stations": {},
+                "departure_time": None,
+                "eta_at_stop": None,
             }
             coordinator.async_update_listeners()
 
