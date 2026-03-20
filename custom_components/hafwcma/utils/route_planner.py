@@ -44,6 +44,8 @@ async def _fetch_route_osrm(
     origin: tuple[float, float],
     destination: tuple[float, float],
     waypoints: list[tuple[float, float]] | None = None,
+    *,
+    session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """Fetch route from the OSRM public endpoint.
 
@@ -51,6 +53,9 @@ async def _fetch_route_osrm(
         origin: (lat, lon) of the start point.
         destination: (lat, lon) of the end point.
         waypoints: Optional intermediate (lat, lon) stops.
+        session: Optional aiohttp session to reuse.  Pass the HA-managed
+            session (``async_get_clientsession(hass)``) to avoid blocking
+            ``ssl.load_verify_locations`` calls in the event loop.
 
     Returns:
         Dict with ``polyline`` (list of (lat, lon)), ``distance_km`` and
@@ -61,17 +66,20 @@ async def _fetch_route_osrm(
     url = f"{OSRM_BASE_URL}/{coords}"
     params = {"overview": "full", "geometries": "geojson"}
 
+    _own_session: aiohttp.ClientSession | None = None
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url,
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
-            ) as resp:
-                if resp.status != 200:
-                    _LOGGER.error("OSRM API returned HTTP %d", resp.status)
-                    return {}
-                data = await resp.json()
+        if session is None:
+            _own_session = aiohttp.ClientSession()
+            session = _own_session
+        async with session.get(
+            url,
+            params=params,
+            timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.error("OSRM API returned HTTP %d", resp.status)
+                return {}
+            data = await resp.json()
 
         if data.get("code") != "Ok" or not data.get("routes"):
             _LOGGER.error("OSRM API error code: %s", data.get("code"))
@@ -88,6 +96,9 @@ async def _fetch_route_osrm(
     except Exception as err:
         _LOGGER.error("Error fetching OSRM route: %s", err)
         return {}
+    finally:
+        if _own_session is not None:
+            await _own_session.close()
 
 
 async def _fetch_route_openrouteservice(
@@ -95,6 +106,8 @@ async def _fetch_route_openrouteservice(
     destination: tuple[float, float],
     waypoints: list[tuple[float, float]] | None = None,
     api_key: str = "",
+    *,
+    session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """Fetch route from OpenRouteService API.
 
@@ -103,6 +116,9 @@ async def _fetch_route_openrouteservice(
         destination: (lat, lon) of the end point.
         waypoints: Optional intermediate (lat, lon) stops.
         api_key: ORS API key.
+        session: Optional aiohttp session to reuse.  Pass the HA-managed
+            session (``async_get_clientsession(hass)``) to avoid blocking
+            ``ssl.load_verify_locations`` calls in the event loop.
 
     Returns:
         Dict with ``polyline``, ``distance_km``, ``duration_s``, or empty dict.
@@ -115,18 +131,21 @@ async def _fetch_route_openrouteservice(
 
     headers = {"Authorization": api_key, "Content-Type": "application/json"}
 
+    _own_session: aiohttp.ClientSession | None = None
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                ORS_DIRECTIONS_URL,
-                json={"coordinates": coords},
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
-            ) as resp:
-                if resp.status != 200:
-                    _LOGGER.error("ORS API returned HTTP %d", resp.status)
-                    return {}
-                data = await resp.json()
+        if session is None:
+            _own_session = aiohttp.ClientSession()
+            session = _own_session
+        async with session.post(
+            ORS_DIRECTIONS_URL,
+            json={"coordinates": coords},
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.error("ORS API returned HTTP %d", resp.status)
+                return {}
+            data = await resp.json()
 
         features = data.get("features", [])
         if not features:
@@ -145,6 +164,9 @@ async def _fetch_route_openrouteservice(
     except Exception as err:
         _LOGGER.error("Error fetching ORS route: %s", err)
         return {}
+    finally:
+        if _own_session is not None:
+            await _own_session.close()
 
 
 async def _fetch_route_google(
@@ -152,6 +174,8 @@ async def _fetch_route_google(
     destination: tuple[float, float],
     waypoints: list[tuple[float, float]] | None = None,
     api_key: str = "",
+    *,
+    session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """Fetch route from Google Maps Directions API.
 
@@ -160,6 +184,9 @@ async def _fetch_route_google(
         destination: (lat, lon) of the end point.
         waypoints: Optional intermediate (lat, lon) stops.
         api_key: Google Maps API key.
+        session: Optional aiohttp session to reuse.  Pass the HA-managed
+            session (``async_get_clientsession(hass)``) to avoid blocking
+            ``ssl.load_verify_locations`` calls in the event loop.
 
     Returns:
         Dict with ``polyline``, ``distance_km``, ``duration_s``, or empty dict.
@@ -172,17 +199,20 @@ async def _fetch_route_google(
     if waypoints:
         params["waypoints"] = "|".join(f"{lat},{lon}" for lat, lon in waypoints)
 
+    _own_session: aiohttp.ClientSession | None = None
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                GOOGLE_DIRECTIONS_URL,
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
-            ) as resp:
-                if resp.status != 200:
-                    _LOGGER.error("Google Directions API returned HTTP %d", resp.status)
-                    return {}
-                data = await resp.json()
+        if session is None:
+            _own_session = aiohttp.ClientSession()
+            session = _own_session
+        async with session.get(
+            GOOGLE_DIRECTIONS_URL,
+            params=params,
+            timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.error("Google Directions API returned HTTP %d", resp.status)
+                return {}
+            data = await resp.json()
 
         if data.get("status") != "OK" or not data.get("routes"):
             _LOGGER.error("Google Directions API status: %s", data.get("status"))
@@ -201,6 +231,9 @@ async def _fetch_route_google(
     except Exception as err:
         _LOGGER.error("Error fetching Google route: %s", err)
         return {}
+    finally:
+        if _own_session is not None:
+            await _own_session.close()
 
 
 def _decode_google_polyline(encoded: str) -> list[tuple[float, float]]:
@@ -750,24 +783,26 @@ class RoutePlanner:
         """Forward-geocode an address string to (lat, lon) via Nominatim.
 
         Args:
-            hass: Home Assistant instance (unused but kept for consistency).
+            hass: Home Assistant instance used to obtain the shared aiohttp
+                session, avoiding blocking ``ssl.load_verify_locations`` calls.
             address: Free-form address string.
 
         Returns:
             ``(lat, lon)`` tuple, or ``None`` on failure.
         """
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+        session = async_get_clientsession(hass)
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    NOMINATIM_SEARCH_URL,
-                    params={"q": address, "format": "json", "limit": 1},
-                    headers={"User-Agent": NOMINATIM_USER_AGENT},
-                    timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
-                ) as resp:
-                    if resp.status != 200:
-                        _LOGGER.error("Nominatim search returned HTTP %d", resp.status)
-                        return None
-                    data = await resp.json()
+            async with session.get(
+                NOMINATIM_SEARCH_URL,
+                params={"q": address, "format": "json", "limit": 1},
+                headers={"User-Agent": NOMINATIM_USER_AGENT},
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+            ) as resp:
+                if resp.status != 200:
+                    _LOGGER.error("Nominatim search returned HTTP %d", resp.status)
+                    return None
+                data = await resp.json()
 
             if not data:
                 _LOGGER.warning("No geocoding results for address: %s", address)
@@ -789,7 +824,8 @@ class RoutePlanner:
         """Calculate a route and return polyline + metadata.
 
         Args:
-            hass: Home Assistant instance.
+            hass: Home Assistant instance used to obtain the shared aiohttp
+                session, avoiding blocking ``ssl.load_verify_locations`` calls.
             origin: ``(lat, lon)`` start position.
             destination: ``(lat, lon)`` end position.
             waypoints: Optional intermediate ``(lat, lon)`` stops.
@@ -801,13 +837,15 @@ class RoutePlanner:
             Dict with ``polyline``, ``distance_km``, ``duration_s`` on success,
             or an empty dict on error.
         """
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+        session = async_get_clientsession(hass)
         if provider == "google":
-            return await _fetch_route_google(origin, destination, waypoints, api_key or "")
+            return await _fetch_route_google(origin, destination, waypoints, api_key or "", session=session)
         if provider == "openrouteservice":
             return await _fetch_route_openrouteservice(
-                origin, destination, waypoints, api_key or ""
+                origin, destination, waypoints, api_key or "", session=session
             )
-        return await _fetch_route_osrm(origin, destination, waypoints)
+        return await _fetch_route_osrm(origin, destination, waypoints, session=session)
 
     async def async_set_route(self, route_data: dict[str, Any]) -> None:
         """Persist new route data as the active route.

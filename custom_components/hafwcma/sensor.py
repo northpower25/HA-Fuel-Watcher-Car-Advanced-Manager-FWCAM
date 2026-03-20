@@ -287,19 +287,10 @@ async def async_setup_entry(
     """
     _LOGGER.info("Setting up haFWCMA sensors")
 
-    # Initialize coordinator with actual data fetching
-    coordinator = HaFWCMACoordinator(hass, config_entry)
-    
-    # Load any persisted active route so it is available from the very first
-    # coordinator refresh (survives HA restarts).
-    await coordinator.async_load_route_data()
-    
-    # Store coordinator in hass.data for button/switch access
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
-    if config_entry.entry_id not in hass.data[DOMAIN]:
-        hass.data[DOMAIN][config_entry.entry_id] = {}
-    hass.data[DOMAIN][config_entry.entry_id]["coordinator"] = coordinator
+    # The coordinator was already created and stored in hass.data by
+    # async_setup_entry in __init__.py before any platform setup began.
+    # Retrieving it here ensures we reuse the same instance.
+    coordinator: HaFWCMACoordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
     vehicle_name = config_entry.data.get(CONF_VEHICLE_NAME, "Vehicle")
 

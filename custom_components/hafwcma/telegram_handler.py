@@ -468,9 +468,10 @@ class TelegramEventHandler:
         Args:
             event_data: Event data from Telegram.
         """
-        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        coordinator = entry_data.get("coordinator")
         route_data: dict[str, Any] = {}
-        if coordinator and hasattr(coordinator, "data") and coordinator.data:
+        if coordinator and coordinator.data:
             route_data = coordinator.data.get("route_data") or {}
 
         if not route_data.get("is_active"):
@@ -589,10 +590,11 @@ class TelegramEventHandler:
             args: Command arguments; first element should be a number (km).
         """
         if not args:
-            coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+            entry_data_read = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+            coordinator_read = entry_data_read.get("coordinator")
             current_width = 5
-            if coordinator and hasattr(coordinator, "data") and coordinator.data:
-                current_width = (coordinator.data.get("route_data") or {}).get(
+            if coordinator_read and coordinator_read.data:
+                current_width = (coordinator_read.data.get("route_data") or {}).get(
                     "corridor_width_km", 5
                 )
             await self._send_telegram_message(
@@ -612,12 +614,12 @@ class TelegramEventHandler:
             )
             return
 
-        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
-        if coordinator and hasattr(coordinator, "data") and coordinator.data:
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        coordinator = entry_data.get("coordinator")
+        if coordinator and coordinator.data:
             route_data = coordinator.data.get("route_data")
             if route_data:
                 route_data["corridor_width_km"] = new_width
-                entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
                 route_planner = entry_data.get("route_planner")
                 if route_planner and route_planner.active_route:
                     route_planner.active_route["corridor_width_km"] = new_width
