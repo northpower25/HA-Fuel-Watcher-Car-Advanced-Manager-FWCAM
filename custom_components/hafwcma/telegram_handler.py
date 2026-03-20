@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import html
 import logging
+import re as _re
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, HomeAssistant, callback
@@ -33,6 +34,18 @@ CMD_CORRIDOR = "/corridor"
 
 # All supported commands
 SUPPORTED_COMMANDS = [CMD_REFUEL, CMD_STATUS, CMD_HELP, CMD_ROUTE, CMD_ROUTE_STATUS, CMD_ROUTE_CANCEL, CMD_CORRIDOR]
+
+# Pattern helpers ─────────────────────────────────────────────────────────────
+
+_TIME_RE = _re.compile(
+    r"^\d{1,2}:\d{2}(:\d{2})?$"                        # HH:MM or HH:MM:SS
+    r"|^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$"  # ISO date-time
+)
+
+
+def _is_time_token(token: str) -> bool:
+    """Return True when *token* looks like a time or ISO datetime string."""
+    return bool(_TIME_RE.match(token.strip()))
 
 
 class TelegramEventHandler:
@@ -210,21 +223,31 @@ class TelegramEventHandler:
             f"{CMD_STATUS} – Fahrzeug- und Kraftstoffstatus anzeigen\n"
             f"{CMD_REFUEL} – Tankvorgang protokollieren (demnächst)\n\n"
             "<b>🗺️ Routenplanung</b>\n"
-            f"<code>{CMD_ROUTE} start &lt;Adresse&gt; [km]</code>\n"
-            f"  Route starten, optional mit Korridor-Breite in km\n"
-            f"  Beispiel: <code>{CMD_ROUTE} start München Hbf 10</code>\n"
+            f"<code>{CMD_ROUTE} start &lt;Adresse&gt; [km] [Abfahrt]</code>\n"
+            f"  Route starten, optional mit Korridor-Breite in km und Abfahrtszeit\n"
+            f"  Beispiele:\n"
+            f"  <code>{CMD_ROUTE} start München Hbf 10</code>\n"
+            f"  <code>{CMD_ROUTE} start München Hbf 10 08:30</code>\n"
+            f"  <code>{CMD_ROUTE} start München Hbf 10 2026-03-20T08:30</code>\n"
             f"<code>{CMD_ROUTE} stop</code>\n"
             f"  Aktive Route beenden\n"
             f"{CMD_ROUTE_STATUS} – Aktuellen Routenstatus anzeigen\n"
             f"{CMD_ROUTE_CANCEL} – Aktive Route abbrechen\n"
             f"{CMD_CORRIDOR} [km] – Korridor-Breite ändern (z. B. /corridor 10)\n\n"
             "<b>⛽ Tankstopp-Prognose</b>\n"
-            "Beim Starten einer Route wird sofort eine Tankstopp-Prognose\n"
-            "berechnet. Die Prognose basiert auf:\n"
+            "Beim Starten einer Route wird eine Tankstopp-Prognose berechnet.\n"
+            "Mit optionaler Abfahrtszeit wird die geschätzte Ankunftszeit am\n"
+            "Tankstopp angezeigt. Es werden nur geöffnete Tankstellen vorgeschlagen.\n\n"
+            "Die Prognose basiert auf:\n"
             "  • <b>Position</b>: verknüpfte <code>device_tracker</code>-Entität\n"
             "  • <b>Restreichweite</b>: <code>sensor.[ID]_range</code>\n"
             "  • <b>Verbrauch</b>: <code>sensor.[ID]_average_consumption_history</code>\n\n"
-            "<i>Weitere Funktionen folgen!</i>"
+            "<b>🏆 Tankstellen-Empfehlungen</b>\n"
+            "  1. Günstigste (inkl. Hin-/Rückfahrt zur Route)\n"
+            "  2. Nächste an der Route\n"
+            "  3. Kompromiss (Preis/Entfernung)\n"
+            "Je Tankstelle: Preis (€/l) + Navigation (Google, Apple, Waze)\n\n"
+            "<i>Umwege werden als tatsächliche Fahrstrecke (nicht Luftlinie) berechnet.</i>"
         )
 
         await self._send_telegram_message(help_text)
@@ -319,8 +342,8 @@ class TelegramEventHandler:
         """Handle /route command with start/stop subcommands.
 
         Supported syntax:
-          /route start <address> [corridor_km]  – start a new route
-          /route stop                           – stop/cancel the active route
+          /route start <address> [corridor_km] [departure_time]  – start a new route
+          /route stop                                            – stop/cancel the active route
 
         For backwards compatibility a bare ``/route <destination>`` (without a
         ``start``/``stop`` keyword) is still treated as ``/route start``.
@@ -332,9 +355,11 @@ class TelegramEventHandler:
         if not args:
             await self._send_telegram_message(
                 f"ℹ️ <b>Routenplanung</b>\n\n"
-                f"<code>{CMD_ROUTE} start &lt;Adresse&gt; [km]</code>\n"
-                f"  Route starten (optional: Korridorbreite in km)\n"
-                f"  Beispiel: <code>{CMD_ROUTE} start München Hbf 10</code>\n\n"
+                f"<code>{CMD_ROUTE} start &lt;Adresse&gt; [km] [Abfahrtszeit]</code>\n"
+                f"  Route starten (optional: Korridorbreite in km, Abfahrtszeit)\n"
+                f"  Beispiele:\n"
+                f"  <code>{CMD_ROUTE} start München Hbf 10</code>\n"
+                f"  <code>{CMD_ROUTE} start München Hbf 10 08:30</code>\n\n"
                 f"<code>{CMD_ROUTE} stop</code>\n"
                 f"  Aktive Route beenden\n\n"
                 f"Tipp: {CMD_HELP} für alle Befehle"
@@ -348,7 +373,7 @@ class TelegramEventHandler:
             await self._handle_routecancel_command(event_data)
             return
 
-        # ── /route start <address> [corridor_km] ────────────────────────────
+        # ── /route start <address> [corridor_km] [departure_time] ───────────
         # Accept both "start <address>" and bare "<address>" for compatibility.
         if subcommand == "start":
             route_args = args[1:]
@@ -362,7 +387,13 @@ class TelegramEventHandler:
             )
             return
 
-        # Check whether the last token is a numeric corridor width
+        # Check whether the last token looks like a departure time (HH:MM or ISO)
+        departure_time: str | None = None
+        if route_args and _is_time_token(route_args[-1]):
+            departure_time = route_args[-1]
+            route_args = route_args[:-1]
+
+        # Check whether the last remaining token is a numeric corridor width
         corridor_km: float | None = None
         try:
             candidate = float(route_args[-1])
@@ -395,10 +426,14 @@ class TelegramEventHandler:
         }
         if corridor_km is not None:
             service_data["corridor_width_km"] = corridor_km
+        if departure_time is not None:
+            service_data["departure_time"] = departure_time
 
         corridor_info = f" (Korridor: {corridor_km} km)" if corridor_km is not None else ""
+        departure_info = f" | Abfahrt: {departure_time}" if departure_time else ""
         await self._send_telegram_message(
-            f"🗺️ Route wird berechnet nach <b>{html.escape(destination)}</b>{html.escape(corridor_info)}…"
+            f"🗺️ Route wird berechnet nach <b>{html.escape(destination)}</b>"
+            f"{html.escape(corridor_info)}{html.escape(departure_info)}…"
         )
 
         try:
@@ -427,7 +462,8 @@ class TelegramEventHandler:
     async def _handle_routestatus_command(self, event_data: dict[str, Any]) -> None:
         """Handle /routestatus command.
 
-        Shows the active route, predicted fuel stop, and best corridor station.
+        Shows the active route, predicted fuel stop, and 3-category station
+        recommendations with current prices and all navigation links.
 
         Args:
             event_data: Event data from Telegram.
@@ -449,31 +485,69 @@ class TelegramEventHandler:
         lines.append(f"📏 Strecke: {route_data.get('total_distance_km', 'N/A')} km")
         lines.append(f"⚙️ Korridor: {route_data.get('corridor_width_km', 5)} km")
 
+        if route_data.get("departure_time"):
+            lines.append(f"🕐 Abfahrt: <b>{html.escape(str(route_data['departure_time']))}</b>")
+
         fuel_stop = route_data.get("fuel_stop") or {}
         if fuel_stop.get("km_remaining_to_stop") is not None:
-            lines.append(f"\n⛽ <b>Prognostizierter Tankstopp</b>")
-            lines.append(f"   ~{fuel_stop['km_remaining_to_stop']} km")
+            stop_line = f"\n⛽ <b>Prognostizierter Tankstopp</b>\n   ~{fuel_stop['km_remaining_to_stop']} km"
+            if route_data.get("eta_at_stop"):
+                stop_line += f" (~{html.escape(str(route_data['eta_at_stop']))} Uhr)"
+            lines.append(stop_line)
 
-        best = route_data.get("best_corridor_station")
-        if best:
-            nav = best.get("navigation_urls") or {}
-            lines.append(f"\n🏆 <b>Beste Korridor-Tankstelle</b>")
-            lines.append(f"   {html.escape(str(best.get('name', 'Unbekannt')))}")
-            lines.append(f"   💰 {best.get('price', 'N/A')} €/l")
-            lines.append(f"   📏 Umweg: {best.get('detour_km', 0)} km")
-            lines.append(f"   💶 Effektiv: {best.get('effective_price_eur_per_l', 'N/A')} €/l")
+        def _append_station(label: str, emoji: str, station: dict) -> None:
+            nav = station.get("navigation_urls") or {}
+            price = station.get("price", "N/A")
+            detour = station.get("detour_km", 0)
+            eff = station.get("effective_price_eur_per_l")
+            lines.append(f"\n{emoji} <b>{label}</b>")
+            lines.append(f"   {html.escape(str(station.get('name', 'Unbekannt')))}")
+            lines.append(f"   💰 Preis: <b>{price} €/l</b>")
+            lines.append(f"   📏 Umweg (Hin+Zurück): {detour} km")
+            if eff is not None:
+                lines.append(f"   💶 Effektiv: {eff} €/l (inkl. Umweg)")
+            nav_parts = []
             if nav.get("google_maps"):
-                lines.append(f"   🗺️ <a href=\"{nav['google_maps']}\">Google Maps</a>")
+                nav_parts.append(f"<a href=\"{nav['google_maps']}\">Google Maps</a>")
+            if nav.get("apple_maps"):
+                nav_parts.append(f"<a href=\"{nav['apple_maps']}\">Apple Maps</a>")
+            if nav.get("waze"):
+                nav_parts.append(f"<a href=\"{nav['waze']}\">Waze</a>")
+            if nav_parts:
+                lines.append(f"   🗺️ {' | '.join(nav_parts)}")
 
-        corridor_stations: list[dict] = route_data.get("corridor_stations", [])
-        if len(corridor_stations) > 1:
-            lines.append(f"\n📋 <b>Weitere Korridor-Tankstellen</b>")
-            for i, st in enumerate(corridor_stations[1:4], start=2):
-                lines.append(
-                    f"   {i}. {html.escape(str(st.get('name', 'N/A')))} – "
-                    f"{st.get('price', 'N/A')} €/l "
-                    f"({st.get('detour_km', 0)} km Umweg)"
-                )
+        cats = route_data.get("categorized_stations") or {}
+        if cats:
+            if cats.get("cheapest"):
+                _append_station("Günstigste (inkl. Umweg)", "🏆", cats["cheapest"])
+            if cats.get("nearest"):
+                _append_station("Nächste an der Route", "📍", cats["nearest"])
+            if cats.get("middle"):
+                _append_station("Kompromiss (Preis/Entfernung)", "⚖️", cats["middle"])
+        else:
+            # Fallback: show best_corridor_station and up to 2 more
+            best = route_data.get("best_corridor_station")
+            if best:
+                _append_station("Beste Korridor-Tankstelle", "🏆", best)
+            corridor_stations: list[dict] = route_data.get("corridor_stations", [])
+            if len(corridor_stations) > 1:
+                lines.append(f"\n📋 <b>Weitere Korridor-Tankstellen</b>")
+                for i, st in enumerate(corridor_stations[1:4], start=2):
+                    nav = st.get("navigation_urls") or {}
+                    lines.append(
+                        f"   {i}. {html.escape(str(st.get('name', 'N/A')))} – "
+                        f"{st.get('price', 'N/A')} €/l "
+                        f"({st.get('detour_km', 0)} km Umweg)"
+                    )
+                    nav_parts = []
+                    if nav.get("google_maps"):
+                        nav_parts.append(f"<a href=\"{nav['google_maps']}\">Google Maps</a>")
+                    if nav.get("apple_maps"):
+                        nav_parts.append(f"<a href=\"{nav['apple_maps']}\">Apple Maps</a>")
+                    if nav.get("waze"):
+                        nav_parts.append(f"<a href=\"{nav['waze']}\">Waze</a>")
+                    if nav_parts:
+                        lines.append(f"      🗺️ {' | '.join(nav_parts)}")
 
         await self._send_telegram_message("\n".join(lines))
 

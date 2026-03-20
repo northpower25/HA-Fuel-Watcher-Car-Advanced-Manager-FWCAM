@@ -30,6 +30,7 @@ NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
 
 NOMINATIM_USER_AGENT = "HomeAssistant-haFWCMA/1.0"
 REQUEST_TIMEOUT_SECONDS = 15
+OSRM_TABLE_BASE_URL = "https://router.project-osrm.org/table/v1/driving"
 
 
 # ── Internal routing helpers ────────────────────────────────────────────────
@@ -232,6 +233,182 @@ def _decode_google_polyline(encoded: str) -> list[tuple[float, float]]:
         result.append((lat / 1e5, lng / 1e5))
 
     return result
+
+
+async def fetch_road_distances_osrm(
+    origin: tuple[float, float],
+    destinations: list[tuple[float, float]],
+) -> list[float | None]:
+    """Fetch one-way road distances from *origin* to each destination via OSRM table.
+
+    Uses the OSRM ``/table/v1`` endpoint to compute road distances in a single
+    HTTP request, which is much more efficient than N individual route calls.
+
+    Args:
+        origin: ``(lat, lon)`` of the single source point.
+        destinations: List of ``(lat, lon)`` target points.
+
+    Returns:
+        List of road distances in km (one per destination), or ``None`` for
+        any destination where the routing failed.  Returns an all-``None``
+        list on network/API error.
+    """
+    if not destinations:
+        return []
+
+    # OSRM coordinates format: lon,lat (longitude first)
+    all_points = [origin] + destinations
+    coords_str = ";".join(f"{lon},{lat}" for lat, lon in all_points)
+
+    # source index 0 = origin; destination indices = 1..N
+    dest_indices = ";".join(str(i) for i in range(1, len(all_points)))
+    url = f"{OSRM_TABLE_BASE_URL}/{coords_str}"
+    params = {
+        "sources": "0",
+        "destinations": dest_indices,
+        "annotations": "distance",
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+            ) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning("OSRM table API returned HTTP %d", resp.status)
+                    return [None] * len(destinations)
+                data = await resp.json()
+
+        if data.get("code") != "Ok":
+            _LOGGER.warning("OSRM table API error: %s", data.get("code"))
+            return [None] * len(destinations)
+
+        # distances is a matrix: distances[source_row][dest_col] in metres
+        distances_matrix = data.get("distances", [[]])
+        if not distances_matrix or not distances_matrix[0]:
+            return [None] * len(destinations)
+
+        row = distances_matrix[0]
+        result: list[float | None] = []
+        for d in row:
+            if d is None or d < 0:
+                result.append(None)
+            else:
+                result.append(d / 1000.0)  # metres → km
+        return result
+
+    except Exception as err:
+        _LOGGER.warning("Error fetching OSRM table distances: %s", err)
+        return [None] * len(destinations)
+
+
+async def async_enrich_stations_with_road_detour(
+    stations: list[dict[str, Any]],
+    nearest_route_point: tuple[float, float],
+) -> list[dict[str, Any]]:
+    """Add road-based round-trip detour distances to corridor station dicts.
+
+    Queries OSRM for the actual road distance from *nearest_route_point* to
+    each station.  The round-trip detour is 2 × one-way road distance.
+    Falls back to the existing ``detour_km`` (straight-line) when OSRM
+    returns ``None`` for a particular station.
+
+    Args:
+        stations: List of station dicts.  Each must have ``lat``/``latitude``
+            and ``lng``/``longitude`` fields.
+        nearest_route_point: ``(lat, lon)`` of the closest point on the route
+            to the refuel corridor.
+
+    Returns:
+        New list of station dicts with ``road_detour_km`` added/updated and
+        ``detour_km`` preserved (straight-line fallback).
+    """
+    if not stations:
+        return []
+
+    destinations: list[tuple[float, float]] = []
+    for st in stations:
+        lat = st.get("lat") or st.get("latitude", 0.0)
+        lon = st.get("lng") or st.get("longitude", 0.0)
+        destinations.append((float(lat), float(lon)))
+
+    one_way_km = await fetch_road_distances_osrm(nearest_route_point, destinations)
+
+    enriched: list[dict[str, Any]] = []
+    for st, ow_km in zip(stations, one_way_km):
+        updated = dict(st)
+        if ow_km is not None:
+            # Round-trip: station → route and back
+            updated["road_detour_km"] = round(ow_km * 2.0, 2)
+        else:
+            # Fall back to straight-line detour (already 2× in caller) or raw value
+            updated["road_detour_km"] = st.get("road_detour_km") or st.get("detour_km", 0.0)
+        enriched.append(updated)
+
+    return enriched
+
+
+def select_categorized_stations(
+    stations: list[dict[str, Any]],
+) -> dict[str, dict[str, Any] | None]:
+    """Select at least 3 stations in distinct recommendation categories.
+
+    Categories:
+        - **cheapest**: lowest ``effective_price_eur_per_l`` (road detour included)
+        - **nearest**: smallest ``road_detour_km``
+        - **middle**: best remaining station by effective price that differs
+          from both *cheapest* and *nearest*
+
+    Args:
+        stations: Stations already enriched with ``road_detour_km`` and
+            ``effective_price_eur_per_l`` keys.
+
+    Returns:
+        Dict with keys ``"cheapest"``, ``"nearest"``, ``"middle"``; each value
+        is a station dict or ``None`` if insufficient stations are available.
+    """
+    if not stations:
+        return {"cheapest": None, "nearest": None, "middle": None}
+
+    # Best by effective price (road detour included)
+    by_effective = sorted(
+        stations, key=lambda s: s.get("effective_price_eur_per_l", float("inf"))
+    )
+    # Best by road detour (nearest to the route)
+    by_detour = sorted(
+        stations, key=lambda s: s.get("road_detour_km", float("inf"))
+    )
+
+    cheapest = by_effective[0] if by_effective else None
+    nearest = by_detour[0] if by_detour else None
+
+    # Avoid duplicate: if cheapest == nearest (same station), nearest uses runner-up
+    cheapest_id = _station_id(cheapest)
+    nearest_id = _station_id(nearest)
+    if cheapest_id and cheapest_id == nearest_id and len(by_detour) > 1:
+        nearest = by_detour[1]
+        nearest_id = _station_id(nearest)
+
+    # Middle: best effective price among stations that are neither cheapest nor nearest
+    excluded = {cheapest_id, nearest_id}
+    remaining = [s for s in by_effective if _station_id(s) not in excluded]
+    middle = remaining[0] if remaining else None
+
+    return {"cheapest": cheapest, "nearest": nearest, "middle": middle}
+
+
+def _station_id(station: dict[str, Any] | None) -> str | None:
+    """Return a stable identity key for a station dict (for deduplication)."""
+    if station is None:
+        return None
+    sid = station.get("station_id") or station.get("id")
+    if sid:
+        return str(sid)
+    lat = station.get("lat") or station.get("latitude")
+    lon = station.get("lng") or station.get("longitude")
+    return f"{lat},{lon}"
 
 
 # ── RoutePlanner ────────────────────────────────────────────────────────────
@@ -653,8 +830,9 @@ class CorridorStationRanker:
         """Sort stations by effective price, cheapest first.
 
         Each station dict must have ``lat``/``latitude``, ``lng``/``longitude``,
-        and ``price`` keys.  Optional ``detour_km`` is used when present.
-        Adds ``detour_km``, ``effective_price_eur_per_l``, ``total_cost_eur``,
+        and ``price`` keys.  Uses ``road_detour_km`` (round-trip road distance)
+        when available, falling back to ``detour_km`` (straight-line).
+        Adds ``effective_price_eur_per_l``, ``total_cost_eur``,
         and ``navigation_urls`` to each result dict.
 
         Args:
@@ -675,7 +853,12 @@ class CorridorStationRanker:
             if lat is None or lon is None or price is None:
                 continue
 
-            detour_km = float(station.get("detour_km", 0.0))
+            # Prefer road-based round-trip detour; fall back to straight-line
+            detour_km = float(
+                station.get("road_detour_km")
+                if station.get("road_detour_km") is not None
+                else station.get("detour_km", 0.0)
+            )
             effective_price = self.calculate_effective_price(
                 price, detour_km, consumption_l_per_100km, fuel_needed_liters
             )

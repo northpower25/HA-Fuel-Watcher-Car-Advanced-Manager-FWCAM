@@ -230,12 +230,15 @@ class TelegramNotifier(MessageService):
         destination: str,
         total_distance_km: float | None,
         predicted_stop_km: float | None,
-        best_station: dict | None,
-        top_stations: list[dict],
+        best_station: dict | None = None,
+        top_stations: list[dict] | None = None,
         corridor_km: float = 5,
         safety_buffer_pct: float = 15,
+        categorized_stations: dict | None = None,
+        departure_time: str | None = None,
+        eta_at_stop: str | None = None,
     ) -> bool:
-        """Send a route-started notification matching the concept doc format.
+        """Send a route-started notification with 3-category station recommendations.
 
         Resets the per-trip error deduplication set so that each new route
         starts with a clean slate.
@@ -244,10 +247,17 @@ class TelegramNotifier(MessageService):
             destination: Human-readable destination string.
             total_distance_km: Total route distance in km, or None.
             predicted_stop_km: Distance to predicted fuel stop in km, or None.
-            best_station: Best corridor station dict (may be None on route start).
-            top_stations: List of top corridor station dicts.
+            best_station: Deprecated – best corridor station dict (kept for
+                backwards compatibility; ignored when *categorized_stations* is
+                provided).
+            top_stations: Deprecated – list of top corridor station dicts (kept
+                for backwards compatibility).
             corridor_km: Corridor half-width in km.
             safety_buffer_pct: Fuel safety buffer percentage.
+            categorized_stations: Dict with keys ``"cheapest"``, ``"nearest"``,
+                ``"middle"`` – each value is a station dict or ``None``.
+            departure_time: Human-readable departure time string (e.g. "08:30").
+            eta_at_stop: Estimated arrival time string at fuel stop (e.g. "10:45").
 
         Returns:
             True if the message was sent successfully.
@@ -260,32 +270,84 @@ class TelegramNotifier(MessageService):
             f"📍 Ziel: <b>{html.escape(destination)}</b> ({dist_str})",
         ]
 
+        if departure_time:
+            lines.append(f"🕐 Abfahrt: <b>{html.escape(departure_time)}</b>")
         if predicted_stop_km is not None:
-            lines.append(f"⛽ Prognose Tankstopp bei: ~{predicted_stop_km:.0f} km")
+            stop_line = f"⛽ Prognose Tankstopp bei: ~{predicted_stop_km:.0f} km"
+            if eta_at_stop:
+                stop_line += f" (~{html.escape(eta_at_stop)} Uhr)"
+            lines.append(stop_line)
 
-        if best_station:
-            nav = best_station.get("navigation_urls") or {}
-            lines += [
+        # ── 3-category station recommendations ──────────────────────────────
+        cats = categorized_stations or {}
+        cheapest = cats.get("cheapest")
+        nearest = cats.get("nearest")
+        middle = cats.get("middle")
+
+        # Fall back to legacy best_station / top_stations when no categories set
+        if not cats:
+            cheapest = best_station
+            nearest = (top_stations or [])[1] if (top_stations and len(top_stations) > 1) else None
+            middle = (top_stations or [])[2] if (top_stations and len(top_stations) > 2) else None
+
+        def _fmt_station_block(label: str, emoji: str, station: dict) -> list[str]:
+            nav = station.get("navigation_urls") or {}
+            price = station.get("price", "N/A")
+            detour = station.get("detour_km", 0)
+            eff = station.get("effective_price_eur_per_l")
+            block = [
                 "",
-                "🏆 <b>Empfohlene Tankstelle im Korridor:</b>",
-                f"   {html.escape(str(best_station.get('name', 'N/A')))}",
-                f"   💰 {best_station.get('price', 'N/A')} €/l",
-                f"   📏 Umweg: {best_station.get('detour_km', 0)} km",
-                f"   💶 Effektiver Preis: {best_station.get('effective_price_eur_per_l', 'N/A')} €/l (inkl. Umweg)",
+                f"{emoji} <b>{label}</b>",
+                f"   {html.escape(str(station.get('name', 'N/A')))}",
+                f"   💰 Preis: <b>{price} €/l</b>",
+                f"   📏 Umweg (Hin+Zurück): {detour} km",
             ]
-            google_url = nav.get("google_maps")
-            if google_url:
-                lines.append(f"   🗺️ <a href=\"{google_url}\">Google Maps</a>")
+            if eff is not None:
+                block.append(f"   💶 Effektiv: {eff} €/l (inkl. Umweg)")
+            # All 3 navigation links
+            nav_parts = []
+            if nav.get("google_maps"):
+                nav_parts.append(f"<a href=\"{nav['google_maps']}\">Google Maps</a>")
+            if nav.get("apple_maps"):
+                nav_parts.append(f"<a href=\"{nav['apple_maps']}\">Apple Maps</a>")
+            if nav.get("waze"):
+                nav_parts.append(f"<a href=\"{nav['waze']}\">Waze</a>")
+            if nav_parts:
+                block.append(f"   🗺️ {' | '.join(nav_parts)}")
+            return block
 
-        if top_stations:
-            lines += ["", "📋 <b>Weitere Optionen im Korridor:</b>"]
-            for i, st in enumerate(top_stations[1:3], start=2):
-                detour = st.get("detour_km", 0)
-                detour_str = f"{detour} km Umweg" if detour else "direkt an Route"
-                lines.append(
-                    f"   {i}. {html.escape(str(st.get('name', 'N/A')))} – "
-                    f"{st.get('price', 'N/A')} €/l ({detour_str})"
-                )
+        if cheapest:
+            lines += _fmt_station_block("Günstigste Tankstelle (inkl. Umweg)", "🏆", cheapest)
+        if nearest:
+            lines += _fmt_station_block("Nächste Tankstelle an der Route", "📍", nearest)
+        if middle:
+            lines += _fmt_station_block("Kompromiss (Preis/Entfernung)", "⚖️", middle)
+
+        # Legacy fallback: show remaining top_stations when no categorized_stations
+        if not cats and top_stations:
+            shown_names = {
+                s.get("name") for s in [cheapest, nearest, middle] if s
+            }
+            extras = [s for s in top_stations if s.get("name") not in shown_names]
+            if extras:
+                lines += ["", "📋 <b>Weitere Optionen im Korridor:</b>"]
+                for i, st in enumerate(extras[:2], start=len(shown_names) + 1):
+                    detour = st.get("detour_km", 0)
+                    detour_str = f"{detour} km Umweg" if detour else "direkt an Route"
+                    nav = st.get("navigation_urls") or {}
+                    lines.append(
+                        f"   {i}. {html.escape(str(st.get('name', 'N/A')))} – "
+                        f"{st.get('price', 'N/A')} €/l ({detour_str})"
+                    )
+                    nav_parts = []
+                    if nav.get("google_maps"):
+                        nav_parts.append(f"<a href=\"{nav['google_maps']}\">Google Maps</a>")
+                    if nav.get("apple_maps"):
+                        nav_parts.append(f"<a href=\"{nav['apple_maps']}\">Apple Maps</a>")
+                    if nav.get("waze"):
+                        nav_parts.append(f"<a href=\"{nav['waze']}\">Waze</a>")
+                    if nav_parts:
+                        lines.append(f"      🗺️ {' | '.join(nav_parts)}")
 
         lines += [
             "",
