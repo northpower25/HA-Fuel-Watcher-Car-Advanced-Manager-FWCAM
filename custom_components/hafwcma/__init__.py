@@ -1445,6 +1445,131 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "corridor_stations": [],
         }
 
+        # ── Initial fuel-stop prediction ──────────────────────────────────────
+        # Compute the predicted refuel point immediately from current tank data.
+        # Data sources:
+        #   • Position  – via the configured position_entity (device_tracker)
+        #   • Range/tank – sensor.[entry_id]_range (coordinator.data["range"])
+        #   • Consumption – sensor.[entry_id]_consumption_history
+        #                   (coordinator.data["consumption_prediction"]["avg_consumption_rate"])
+        predicted_stop_km: float | None = None
+        initial_corridor_stations: list[dict] = []
+        safety_buffer_pct: float = 15.0
+        try:
+            from .utils.route_planner import FuelStopPredictor, CorridorStationRanker
+            from .const import (
+                CONF_API_KEY,
+                CONF_FUEL_TYPE,
+                CONF_TANK_CAPACITY,
+                DEFAULT_TANK_CAPACITY,
+                PROVIDER_TANKERKONIG,
+                CONF_PROVIDER,
+            )
+
+            if coordinator and coordinator.data:
+                cdata = coordinator.data
+                # Tank level (liters) from sensor.[entry_id]_tank_level
+                tank_level_liters: float | None = cdata.get("tank_level")
+                # Remaining range (km) from sensor.[entry_id]_range
+                range_km: float | None = cdata.get("range")
+                # Average consumption from sensor.[entry_id]_consumption_history
+                consumption_pred = cdata.get("consumption_prediction") or {}
+                avg_consumption: float | None = consumption_pred.get("avg_consumption_rate")
+
+                # Derive consumption from range + tank level as fallback
+                if avg_consumption is None and tank_level_liters and range_km and tank_level_liters > 0:
+                    avg_consumption = (tank_level_liters / range_km) * 100.0
+
+                options_data = entry.options
+                config_data = entry.data
+                tank_capacity = (
+                    options_data.get(CONF_TANK_CAPACITY)
+                    or config_data.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
+                )
+
+                if tank_level_liters and avg_consumption and avg_consumption > 0:
+                    predictor = FuelStopPredictor()
+                    stop_info = predictor.predict_fuel_stop(
+                        polyline=route_result["polyline"],
+                        current_position=origin_coords,
+                        tank_level_liters=tank_level_liters,
+                        tank_capacity=float(tank_capacity),
+                        consumption_l_per_100km=avg_consumption,
+                        safety_buffer_pct=safety_buffer_pct,
+                    )
+                    if stop_info:
+                        predicted_stop_km = stop_info.get("km_remaining_to_stop")
+                        route_data["fuel_stop"] = stop_info
+
+                        # Fetch up to 5 corridor stations near the predicted stop point
+                        api_key = config_data.get(CONF_API_KEY)
+                        fuel_type = (
+                            options_data.get(CONF_FUEL_TYPE)
+                            or config_data.get(CONF_FUEL_TYPE, "e5")
+                        )
+                        provider_name = (
+                            options_data.get(CONF_PROVIDER)
+                            or config_data.get(CONF_PROVIDER, PROVIDER_TANKERKONIG)
+                        )
+                        stop_lat = stop_info.get("predicted_lat")
+                        stop_lon = stop_info.get("predicted_lon")
+
+                        if api_key and stop_lat and stop_lon and provider_name == PROVIDER_TANKERKONIG:
+                            try:
+                                import aiohttp as _aiohttp
+                                from .providers.tankerkonig import TankerkoenigProvider
+                                async with _aiohttp.ClientSession() as _session:
+                                    tk_provider = TankerkoenigProvider(api_key, _session)
+                                    nearby = await tk_provider.get_stations_nearby(
+                                        stop_lat, stop_lon, corridor_width_km, fuel_type
+                                    )
+                                if nearby:
+                                    # Convert FuelStation objects to plain dicts for the ranker
+                                    station_dicts: list[dict] = []
+                                    for st in nearby[:10]:
+                                        price = (
+                                            st.get_price(fuel_type)
+                                            if hasattr(st, "get_price")
+                                            else getattr(st, "price", None)
+                                        )
+                                        if price is None:
+                                            continue
+                                        from .utils.geolocation import calculate_distance
+                                        dist_km = calculate_distance(
+                                            stop_lat, stop_lon,
+                                            getattr(st, "latitude", 0),
+                                            getattr(st, "longitude", 0),
+                                        )
+                                        station_dicts.append({
+                                            "name": getattr(st, "name", "Unknown"),
+                                            "lat": getattr(st, "latitude", stop_lat),
+                                            "lng": getattr(st, "longitude", stop_lon),
+                                            "price": price,
+                                            "detour_km": round(dist_km, 2),
+                                        })
+
+                                    if station_dicts:
+                                        ranker = CorridorStationRanker()
+                                        fuel_needed = max(
+                                            float(tank_capacity) - float(tank_level_liters), 0.0
+                                        )
+                                        ranked = ranker.rank_stations(
+                                            station_dicts,
+                                            fuel_needed_liters=max(fuel_needed, 10.0),
+                                            consumption_l_per_100km=avg_consumption,
+                                        )
+                                        initial_corridor_stations = ranked[:5]
+                                        route_data["corridor_stations"] = ranked
+                                        if ranked:
+                                            route_data["best_corridor_station"] = ranked[0]
+                            except Exception as tk_err:
+                                _LOGGER.warning(
+                                    "set_route: initial corridor station fetch failed: %s", tk_err
+                                )
+        except Exception as pred_err:
+            _LOGGER.warning("set_route: initial fuel stop prediction failed: %s", pred_err)
+        # ─────────────────────────────────────────────────────────────────────
+
         await route_planner.async_set_route(route_data)
 
         # Persist into coordinator data so sensors update immediately
@@ -1463,14 +1588,15 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     chat_id=telegram_chat_id,
                     hass=hass,
                 )
+                best_station = route_data.get("best_corridor_station")
                 await notifier.send_route_started(
                     destination=destination_str,
                     total_distance_km=route_data["total_distance_km"],
-                    predicted_stop_km=None,
-                    best_station=None,
-                    top_stations=[],
+                    predicted_stop_km=predicted_stop_km,
+                    best_station=best_station,
+                    top_stations=initial_corridor_stations,
                     corridor_km=corridor_width_km,
-                    safety_buffer_pct=15,
+                    safety_buffer_pct=safety_buffer_pct,
                 )
             except Exception as tg_err:
                 _LOGGER.warning("set_route: Telegram notification failed: %s", tg_err)
