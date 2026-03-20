@@ -26,7 +26,7 @@ const SERVICE_CALL_REFRESH_DELAY_MS = 1000;
 const DEFAULT_TANK_CAPACITY_LITERS = 99.99;
 const DEFAULT_DAILY_DISTANCE_KM = 40.0;
 const MAX_AUTOCOMPLETE_SUGGESTIONS = 10;
-const DEFAULT_SECTION_ORDER = ['vehicle_info', 'price_chart', 'consumption_chart', 'cheapest_stations', 'map', 'route_planner', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'];
+const DEFAULT_SECTION_ORDER = ['vehicle_info', 'price_chart', 'consumption_chart', 'cheapest_stations', 'map', 'route_planner', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log', 'top_destinations'];
 
 class FWCAMCard extends HTMLElement {
   constructor() {
@@ -1219,8 +1219,9 @@ class FWCAMCard extends HTMLElement {
         price_chart: '⛽ Fuel Price Development',
         consumption_chart: '📊 Consumption',
         cheapest_stations: '🏆 Top 5 Cheapest Stations',
-        map: '🗺️ Map',
+        map: '🗺️ Fuelstation Map',
         route_planner: '🗺️ Route Planner',
+        top_destinations: '🏁 Top 20 Trip Destinations',
         controls: '🎛️ Controls',
         settings: '⚙️ Settings',
         backup: '💾 Backup',
@@ -1279,8 +1280,11 @@ class FWCAMCard extends HTMLElement {
         if (!this._config.show_trip_log) return '';
         return `<div data-fwcam-section="trip_log">
           ${this.renderTripLog(this._allTrips || [])}
-          ${this._config.show_top_destinations ? this.renderTopDestinations(this._allTrips || []) : ''}
+          ${(this._config.show_top_destinations && !this._config.section_order.includes('top_destinations')) ? this.renderTopDestinations(this._allTrips || []) : ''}
         </div>`;
+      case 'top_destinations':
+        if (!this._config.show_top_destinations) return '';
+        return this.renderTopDestinations(this._allTrips || []);
       default:
         return '';
     }
@@ -2851,7 +2855,7 @@ class FWCAMCard extends HTMLElement {
     }
     container.innerHTML = `
       ${this.renderTripLog(this._allTrips || [])}
-      ${this._config.show_top_destinations ? this.renderTopDestinations(this._allTrips || []) : ''}
+      ${(this._config.show_top_destinations && !this._config.section_order.includes('top_destinations')) ? this.renderTopDestinations(this._allTrips || []) : ''}
     `;
   }
 
@@ -3050,10 +3054,15 @@ class FWCAMCard extends HTMLElement {
       });
     });
 
-    // Settings inputs
+    // Settings inputs – only fire for inputs that have an explicit data-entity
+    // attribute (i.e. settings number entities).  Route-planner and other
+    // inputs share the "setting-input" CSS class but must NOT trigger a
+    // number.set_value call; doing so would pass a non-float value and produce
+    // the HA error "expected float for dictionary value @ data['value']".
     this.shadowRoot.querySelectorAll('.setting-input').forEach(input => {
       input.addEventListener('change', (e) => {
         const entity = e.target.dataset.entity;
+        if (!entity) return;
         const value = e.target.value;
         this.setNumberValue(entity, value);
       });
