@@ -202,6 +202,19 @@ class FWCAMRoutePlannerCard extends HTMLElement {
             style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
         </div>
 
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:140px;">
+            <label style="font-size:0.85rem;font-weight:500;">Abfahrtsdatum <small style="font-weight:normal;">(optional)</small></label>
+            <input id="rp-departure-date" type="date" class="setting-input"
+              style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+          </div>
+          <div style="flex:1;min-width:120px;">
+            <label style="font-size:0.85rem;font-weight:500;">Abfahrtszeit <small style="font-weight:normal;">(24h)</small></label>
+            <input id="rp-departure-time" type="time" class="setting-input"
+              style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+          </div>
+        </div>
+
         <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
           <button id="rp-start-btn" class="control-button" style="flex:1;justify-content:center;">
             <ha-icon icon="mdi:map-marker-path"></ha-icon>
@@ -356,6 +369,8 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     const corridorEl = this.shadowRoot.getElementById('rp-corridor');
     const providerEl = this.shadowRoot.getElementById('rp-provider');
     const googleKeyEl = this.shadowRoot.getElementById('rp-google-key');
+    const departureDateEl = this.shadowRoot.getElementById('rp-departure-date');
+    const departureTimeEl = this.shadowRoot.getElementById('rp-departure-time');
 
     const destination = destinationEl ? destinationEl.value.trim() : '';
     if (!destination) {
@@ -371,6 +386,13 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     const provider = providerEl ? providerEl.value : 'osrm';
     const googleApiKey = googleKeyEl ? googleKeyEl.value.trim() : '';
 
+    // Build departure_time string "YYYY-MM-DD HH:MM" when both fields are set
+    const departureDate = departureDateEl ? departureDateEl.value : '';
+    const departureTime = departureTimeEl ? departureTimeEl.value : '';
+    const departureTimeStr = (departureDate && departureTime)
+      ? `${departureDate} ${departureTime}`
+      : '';
+
     const configEntryId = this._getConfigEntryId();
 
     const serviceData = {
@@ -382,6 +404,9 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     };
     if (googleApiKey) {
       serviceData.google_api_key = googleApiKey;
+    }
+    if (departureTimeStr) {
+      serviceData.departure_time = departureTimeStr;
     }
 
     try {

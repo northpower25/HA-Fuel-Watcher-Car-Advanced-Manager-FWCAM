@@ -310,6 +310,25 @@ async def _async_register_frontend_card(hass: HomeAssistant) -> None:
                 "FWCAM Routenplanung card registered at %s",
                 routenplanung_url
             )
+
+        # Register all additional standalone section cards
+        _ADDITIONAL_CARDS = [
+            "fwcam-vehicle-info-card.js",
+            "fwcam-fuel-price-card.js",
+            "fwcam-consumption-card.js",
+            "fwcam-cheapest-stations-card.js",
+            "fwcam-map-card.js",
+            "fwcam-maintenance-card.js",
+            "fwcam-refueling-log-card.js",
+            "fwcam-trip-log-card.js",
+            "fwcam-top-destinations-card.js",
+        ]
+        for card_file in _ADDITIONAL_CARDS:
+            extra_path = card_dir / card_file
+            if extra_path.exists():
+                extra_url = f"/{DOMAIN}_local/{card_file}?v={CARD_VERSION}"
+                hass.data.setdefault("frontend_extra_module_url", set()).add(extra_url)
+                _LOGGER.debug("FWCAM section card registered at %s", extra_url)
         
     except Exception as err:
         _LOGGER.error(

@@ -2855,7 +2855,7 @@ class FWCAMCard extends HTMLElement {
     }
     container.innerHTML = `
       ${this.renderTripLog(this._allTrips || [])}
-      ${this._config.show_top_destinations ? this.renderTopDestinations(this._allTrips || []) : ''}
+      ${(this._config.show_top_destinations && !this._config.section_order.includes('top_destinations')) ? this.renderTopDestinations(this._allTrips || []) : ''}
     `;
   }
 
