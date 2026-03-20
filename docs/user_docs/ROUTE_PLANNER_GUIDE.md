@@ -69,6 +69,10 @@ Open the FWCAM card in your Home Assistant dashboard and switch to the **🗺️
 | **Corridor Width (km)** | Buffer around the route to search for stations (1–50 km) | 5 km |
 | **Routing Provider** | Service used to calculate the route | OSRM (free) |
 | **Google API Key** | Only required when *Google Maps* is selected as provider | – |
+| **Departure Date** | Optional date for the planned departure (date picker, format `YYYY-MM-DD`) | – |
+| **Departure Time** | Optional departure time in 24-hour format (time picker, format `HH:MM`) | – |
+
+> **Note on Departure Date & Time:** When both fields are filled in, the departure timestamp is passed to the routing provider via the `departure_time` service parameter. This enables traffic-aware routing with providers that support it (e.g. Google Maps). If left empty, the route is calculated for departure "now". Both fields must be filled together – a date without a time (or vice versa) is ignored.
 
 ### Routing Providers
 
@@ -95,8 +99,9 @@ Open the FWCAM card in your Home Assistant dashboard and switch to the **🗺️
 4. Optionally enter **Waypoints** (comma-separated).
 5. Adjust **Corridor Width** if needed (default 5 km is suitable for most motorway trips).
 6. Select your preferred **Routing Provider** (OSRM is recommended for casual use).
-7. Click **Start Route**.
-8. The card will show a green **✅ Route Active** banner once the route is calculated.
+7. Optionally set a **Departure Date** and **Departure Time** for traffic-aware routing.
+8. Click **Start Route**.
+9. The card will show a green **✅ Route Active** banner once the route is calculated.
 
 ---
 
@@ -191,6 +196,7 @@ data:
   corridor_width_km: 5
   routing_provider: "osrm"
   # google_api_key: "AIza..." # only for Google Maps provider
+  # departure_time: "2025-06-15 08:30"  # optional: YYYY-MM-DD HH:MM
 ```
 
 | Parameter | Required | Type | Default | Description |
@@ -201,6 +207,7 @@ data:
 | `corridor_width_km` | ❌ | float | `5.0` | Corridor width in km |
 | `routing_provider` | ❌ | string | `"osrm"` | `osrm` / `openrouteservice` / `google` |
 | `google_api_key` | ❌ | string | `""` | Google Maps API key (only for `google` provider) |
+| `departure_time` | ❌ | string | `""` | Planned departure as `YYYY-MM-DD HH:MM`. Enables traffic-aware routing when supported by the provider. |
 
 ### `hafwcma.cancel_route`
 

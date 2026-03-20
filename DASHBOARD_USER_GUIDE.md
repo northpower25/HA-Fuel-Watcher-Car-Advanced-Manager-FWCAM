@@ -102,6 +102,100 @@ After installation, **"Fuel Watcher"** appears automatically in the sidebar.
 
 ## ⚙️ Anpassung / Customization
 
+### fwcam-card – Dashboard-Abschnitte / Dashboard Sections
+
+The **fwcam-card** organises its content into independently toggleable sections. Users can show, hide and reorder each section to create a personalised dashboard layout.
+
+**Available sections / Verfügbare Abschnitte:**
+
+| Section key | Label | Description |
+|---|---|---|
+| `vehicle_info` | 🚗 Vehicle Info | Current fuel price, tank level, range, nearest station |
+| `price_chart` | 📈 Price Chart | Historical fuel price graph |
+| `consumption_chart` | ⛽ Consumption Chart | Historical consumption graph |
+| `cheapest_stations` | 💰 Cheapest Stations | Up to 10 cheapest nearby stations |
+| `map` | 🗺️ Map | Leaflet map with station markers |
+| `route_planner` | 🗺️ Route Planner | Corridor-based route planning with departure time |
+| `controls` | 🎛️ Controls | Refresh, import and action buttons |
+| `settings` | ⚙️ Settings | Inline integration settings |
+| `backup` | 💾 Backup | Backup / restore controls |
+| `refueling_log` | ⛽ Refueling Log | Full refueling history table |
+| `trip_log` | 🚗 Trip Log | Full trip history table |
+| `top_destinations` | 🏁 Top 20 Destinations | Most-visited destinations aggregated from all trips |
+
+#### Reihenfolge per Drag-and-Drop ändern / Reordering sections via drag-and-drop
+
+1. Click the **✏️ Edit Layout** button in the card header.
+2. Drag the ⠿ handle of any section to reposition it.
+3. Click **✅ Done** to save the new order. The order is persisted in the browser's `localStorage`.
+
+> **Hinweis / Note:** When the integration adds new sections in a future update, they are appended automatically at the end of your saved order so nothing gets lost.
+
+#### Abschnitte ein-/ausblenden / Showing and hiding sections
+
+Add the corresponding `show_*` key to the card YAML configuration:
+
+```yaml
+type: custom:fwcam-card
+entity: sensor.my_car_fuel_price   # your main FWCAM sensor
+show_route_planner: true            # default: true
+show_top_destinations: true         # default: true
+show_trip_log: true                 # default: true
+show_vehicle_info: true             # default: true
+show_map: true                      # default: true
+# … other show_* options
+```
+
+---
+
+### 🗺️ Routenplanung / Route Planner
+
+The Route Planner section lets you plan a trip and instantly find the cheapest fuel station along the route.
+
+**Configuration fields / Konfigurationsfelder:**
+
+| Field | Description |
+|---|---|
+| Destination | Free-text address or city name |
+| Waypoints | Optional intermediate stops (comma-separated) |
+| Corridor Width (km) | Buffer around the route for station search (default 5 km) |
+| Routing Provider | OSRM (free) · OpenRouteService · Google Maps |
+| **Departure Date** | Optional planned departure date (`YYYY-MM-DD`) |
+| **Departure Time** | Optional planned departure time in 24-h format (`HH:MM`) |
+
+> **Abfahrtszeit / Departure time:** Fill in **both** Departure Date and Departure Time to enable traffic-aware routing. When both are set, the value is passed as `departure_time` to the routing service. If only one field is filled the departure time is ignored and the route is planned for "now".
+
+After clicking **Start Route** the card shows a ✅ Route Active banner with the best corridor station, detour cost and direct navigation links (Google Maps, Waze, Apple Maps).
+
+---
+
+### 🏁 Top 20 Reiseziele / Top 20 Trip Destinations
+
+The **Top 20 Trip Destinations** section aggregates all recorded trips and ranks destination names by visit frequency.
+
+**How it works / So funktioniert es:**
+- Destination names come from `end_name` / `end_address` trip attributes; if neither is set, the rounded GPS coordinates are used as a fallback.
+- All trips are loaded asynchronously in the background when the card first opens.
+- The section is populated once the full trip history has been fetched (you may see it appear a few seconds after the card loads).
+
+**Voraussetzungen / Prerequisites:**
+- At least one completed trip must be stored.
+- Make sure `show_top_destinations: true` (default) in the card YAML configuration.
+- If `show_trip_log`, `show_vehicle_info`, **or** `show_top_destinations` is enabled, all trips are fetched automatically.
+
+**Display columns / Angezeigte Spalten:**
+
+| Column | Description |
+|---|---|
+| # | Rank (most visited = #1) |
+| Destination | Destination name or coordinates |
+| Trips | Number of visits |
+| Ø Distance | Average trip distance (km) |
+| Ø Fuel | Average fuel consumed (L) |
+| Ø Cost | Average fuel cost (€) |
+
+---
+
 ### Fahrzeugnamen finden / Find Vehicle Names
 
 Ihre Entitäts-IDs basieren auf Ihrem Fahrzeugnamen:
