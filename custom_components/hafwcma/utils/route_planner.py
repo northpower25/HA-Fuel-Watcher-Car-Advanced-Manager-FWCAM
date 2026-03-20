@@ -243,6 +243,8 @@ def _decode_google_polyline(encoded: str) -> list[tuple[float, float]]:
 async def fetch_road_distances_osrm(
     origin: tuple[float, float],
     destinations: list[tuple[float, float]],
+    *,
+    session: aiohttp.ClientSession | None = None,
 ) -> list[float | None]:
     """Fetch one-way road distances from *origin* to each destination via OSRM table.
 
@@ -252,6 +254,12 @@ async def fetch_road_distances_osrm(
     Args:
         origin: ``(lat, lon)`` of the single source point.
         destinations: List of ``(lat, lon)`` target points.
+        session: Optional aiohttp session to reuse.  When provided the caller
+            owns the session lifecycle (it will *not* be closed here).  When
+            ``None`` a temporary session is created and closed automatically.
+            Pass the HA-managed session (``async_get_clientsession(hass)``) to
+            avoid the blocking ``ssl.load_verify_locations`` call in the event
+            loop.
 
     Returns:
         List of road distances in km (one per destination), or ``None`` for
@@ -274,17 +282,20 @@ async def fetch_road_distances_osrm(
         "annotations": "distance",
     }
 
+    _own_session: aiohttp.ClientSession | None = None
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url,
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
-            ) as resp:
-                if resp.status != 200:
-                    _LOGGER.warning("OSRM table API returned HTTP %d", resp.status)
-                    return [None] * len(destinations)
-                data = await resp.json()
+        if session is None:
+            _own_session = aiohttp.ClientSession()
+            session = _own_session
+        async with session.get(
+            url,
+            params=params,
+            timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.warning("OSRM table API returned HTTP %d", resp.status)
+                return [None] * len(destinations)
+            data = await resp.json()
 
         if data.get("code") != "Ok":
             _LOGGER.warning("OSRM table API error: %s", data.get("code"))
@@ -307,11 +318,16 @@ async def fetch_road_distances_osrm(
     except Exception as err:
         _LOGGER.warning("Error fetching OSRM table distances: %s", err)
         return [None] * len(destinations)
+    finally:
+        if _own_session is not None:
+            await _own_session.close()
 
 
 async def fetch_road_distances_osrm_many_to_one(
     origins: list[tuple[float, float]],
     destination: tuple[float, float],
+    *,
+    session: aiohttp.ClientSession | None = None,
 ) -> list[float | None]:
     """Fetch road distances from each origin to a single destination via OSRM table.
 
@@ -321,6 +337,12 @@ async def fetch_road_distances_osrm_many_to_one(
     Args:
         origins: List of ``(lat, lon)`` source points.
         destination: Single ``(lat, lon)`` target point.
+        session: Optional aiohttp session to reuse.  When provided the caller
+            owns the session lifecycle (it will *not* be closed here).  When
+            ``None`` a temporary session is created and closed automatically.
+            Pass the HA-managed session (``async_get_clientsession(hass)``) to
+            avoid the blocking ``ssl.load_verify_locations`` call in the event
+            loop.
 
     Returns:
         List of road distances in km (one per origin), or ``None`` for any
@@ -346,17 +368,20 @@ async def fetch_road_distances_osrm_many_to_one(
         "annotations": "distance",
     }
 
+    _own_session: aiohttp.ClientSession | None = None
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url,
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
-            ) as resp:
-                if resp.status != 200:
-                    _LOGGER.warning("OSRM table API returned HTTP %d", resp.status)
-                    return [None] * len(origins)
-                data = await resp.json()
+        if session is None:
+            _own_session = aiohttp.ClientSession()
+            session = _own_session
+        async with session.get(
+            url,
+            params=params,
+            timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.warning("OSRM table API returned HTTP %d", resp.status)
+                return [None] * len(origins)
+            data = await resp.json()
 
         if data.get("code") != "Ok":
             _LOGGER.warning("OSRM table API error: %s", data.get("code"))
@@ -378,12 +403,17 @@ async def fetch_road_distances_osrm_many_to_one(
     except Exception as err:
         _LOGGER.warning("Error fetching OSRM table distances (many-to-one): %s", err)
         return [None] * len(origins)
+    finally:
+        if _own_session is not None:
+            await _own_session.close()
 
 
 async def fetch_all_detour_distances_osrm(
     origin: tuple[float, float],
     waypoints: list[tuple[float, float]],
     destination: tuple[float, float],
+    *,
+    session: aiohttp.ClientSession | None = None,
 ) -> tuple[list[float | None], list[float | None], float | None]:
     """Fetch all triangle-formula distances in a single OSRM table call.
 
@@ -409,6 +439,12 @@ async def fetch_all_detour_distances_osrm(
         origin: ``(lat, lon)`` of the route reference point (P_near).
         waypoints: ``(lat, lon)`` list of N gas-station points.
         destination: ``(lat, lon)`` of the route re-entry point (P_after).
+        session: Optional aiohttp session to reuse.  When provided the caller
+            owns the session lifecycle (it will *not* be closed here).  When
+            ``None`` a temporary session is created and closed automatically.
+            Pass the HA-managed session (``async_get_clientsession(hass)``) to
+            avoid the blocking ``ssl.load_verify_locations`` call in the event
+            loop.
 
     Returns:
         Tuple ``(origin_to_wp, wp_to_dest, baseline)`` where distances are in
@@ -441,17 +477,20 @@ async def fetch_all_detour_distances_osrm(
             return row[col] / 1000.0
         return None
 
+    _own_session: aiohttp.ClientSession | None = None
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url,
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
-            ) as resp:
-                if resp.status != 200:
-                    _LOGGER.warning("OSRM table API returned HTTP %d", resp.status)
-                    return [None] * N, [None] * N, None
-                data = await resp.json()
+        if session is None:
+            _own_session = aiohttp.ClientSession()
+            session = _own_session
+        async with session.get(
+            url,
+            params=params,
+            timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.warning("OSRM table API returned HTTP %d", resp.status)
+                return [None] * N, [None] * N, None
+            data = await resp.json()
 
         if data.get("code") != "Ok":
             _LOGGER.warning("OSRM table API error: %s", data.get("code"))
@@ -481,13 +520,17 @@ async def fetch_all_detour_distances_osrm(
     except Exception as err:
         _LOGGER.warning("Error fetching OSRM detour distances: %s", err)
         return [None] * N, [None] * N, None
-
+    finally:
+        if _own_session is not None:
+            await _own_session.close()
 
 async def async_enrich_stations_with_road_detour(
     stations: list[dict[str, Any]],
     nearest_route_point: tuple[float, float],
     ahead_route_point: tuple[float, float] | None = None,
     lookahead_km: float = DETOUR_LOOKAHEAD_KM,
+    *,
+    session: aiohttp.ClientSession | None = None,
 ) -> list[dict[str, Any]]:
     """Add road-based detour distances to corridor station dicts.
 
@@ -525,6 +568,10 @@ async def async_enrich_stations_with_road_detour(
         lookahead_km: Fallback baseline distance in km used only when
             *ahead_route_point* is ``None`` or when the OSRM call cannot
             determine the P_near → P_after road distance.
+        session: Optional aiohttp session to reuse for OSRM requests.  Pass
+            the HA-managed session (``async_get_clientsession(hass)``) to
+            avoid blocking ``ssl.load_verify_locations`` calls in the event
+            loop.  When ``None`` a temporary session is created internally.
 
     Returns:
         New list of station dicts with ``road_detour_km`` set to the actual
@@ -546,14 +593,17 @@ async def async_enrich_stations_with_road_detour(
         # first succeeds, which previously triggered the incorrect 2× fallback.
         one_way_km, station_to_ahead_km, road_baseline = (
             await fetch_all_detour_distances_osrm(
-                nearest_route_point, station_coords, ahead_route_point
+                nearest_route_point, station_coords, ahead_route_point,
+                session=session,
             )
         )
         # Use the OSRM-measured P_near→P_after distance as baseline; fall back
         # to the polyline estimate when OSRM could not compute it.
         baseline_km = road_baseline if road_baseline is not None else lookahead_km
     else:
-        one_way_km = await fetch_road_distances_osrm(nearest_route_point, station_coords)
+        one_way_km = await fetch_road_distances_osrm(
+            nearest_route_point, station_coords, session=session
+        )
         station_to_ahead_km = [None] * len(stations)
         baseline_km = lookahead_km
 

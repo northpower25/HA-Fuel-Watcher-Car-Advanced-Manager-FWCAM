@@ -1597,13 +1597,15 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
                         if api_key and stop_lat and stop_lon and provider_name == PROVIDER_TANKERKONIG:
                             try:
-                                import aiohttp as _aiohttp
+                                from homeassistant.helpers.aiohttp_client import (
+                                    async_get_clientsession,
+                                )
                                 from .providers.tankerkonig import TankerkoenigProvider
-                                async with _aiohttp.ClientSession() as _session:
-                                    tk_provider = TankerkoenigProvider(api_key, _session)
-                                    nearby = await tk_provider.get_stations_nearby(
-                                        stop_lat, stop_lon, corridor_width_km, fuel_type
-                                    )
+                                _session = async_get_clientsession(hass)
+                                tk_provider = TankerkoenigProvider(api_key, _session)
+                                nearby = await tk_provider.get_stations_nearby(
+                                    stop_lat, stop_lon, corridor_width_km, fuel_type
+                                )
                                 if nearby:
                                     # Convert FuelStation objects to plain dicts for the ranker
                                     station_dicts: list[dict] = []
@@ -1663,6 +1665,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                             nearest_route_pt,
                                             ahead_route_point=ahead_pt,
                                             lookahead_km=DETOUR_LOOKAHEAD_KM,
+                                            session=_session,
                                         )
 
                                         ranker = CorridorStationRanker()
