@@ -300,7 +300,7 @@ class TelegramNotifier(MessageService):
                 f"{emoji} <b>{label}</b>",
                 f"   {html.escape(str(station.get('name', 'N/A')))}",
                 f"   💰 Preis: <b>{price} €/l</b>",
-                f"   📏 Umweg (Hin+Zurück): {detour} km",
+                f"   📏 Streckenumweg: {detour} km",
             ]
             if eff is not None:
                 block.append(f"   💶 Effektiv: {eff} €/l (inkl. Umweg)")

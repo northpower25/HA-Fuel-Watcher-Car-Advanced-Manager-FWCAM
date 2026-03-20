@@ -243,7 +243,7 @@ class TelegramEventHandler:
             "  • <b>Restreichweite</b>: <code>sensor.[ID]_range</code>\n"
             "  • <b>Verbrauch</b>: <code>sensor.[ID]_average_consumption_history</code>\n\n"
             "<b>🏆 Tankstellen-Empfehlungen</b>\n"
-            "  1. Günstigste (inkl. Hin-/Rückfahrt zur Route)\n"
+            "  1. Günstigste (inkl. Streckenumweg)\n"
             "  2. Nächste an der Route\n"
             "  3. Kompromiss (Preis/Entfernung)\n"
             "Je Tankstelle: Preis (€/l) + Navigation (Google, Apple, Waze)\n\n"
@@ -503,7 +503,7 @@ class TelegramEventHandler:
             lines.append(f"\n{emoji} <b>{label}</b>")
             lines.append(f"   {html.escape(str(station.get('name', 'Unbekannt')))}")
             lines.append(f"   💰 Preis: <b>{price} €/l</b>")
-            lines.append(f"   📏 Umweg (Hin+Zurück): {detour} km")
+            lines.append(f"   📏 Streckenumweg: {detour} km")
             if eff is not None:
                 lines.append(f"   💶 Effektiv: {eff} €/l (inkl. Umweg)")
             nav_parts = []
