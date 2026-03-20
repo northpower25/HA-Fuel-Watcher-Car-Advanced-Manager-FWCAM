@@ -19,6 +19,8 @@ const FWCAM_CARD_ELEMENT = "fwcam-card";
 const ROUTENPLANUNG_ELEMENT = "fwcam-routenplanung-card";
 const VIEW_VEHICLE = "vehicle";
 const VIEW_ROUTENPLANUNG = "routenplanung";
+// Viewport width (px) below which the panel is considered narrow (matches HA's breakpoint)
+const NARROW_VIEWPORT_BREAKPOINT = 870;
 
 class FWCAMDashboardPanel extends HTMLElement {
   constructor() {
@@ -57,6 +59,15 @@ class FWCAMDashboardPanel extends HTMLElement {
       import("/hafwcma_local/fwcam-routenplanung-card.js").catch((e) => {
         console.warn("[FWCAM] Could not preload routenplanung card module:", e);
       });
+    }
+
+    // Fallback for the HA Companion App: if HA has not yet called the narrow
+    // setter (or never will because of how the app bridges the panel element),
+    // treat the viewport as narrow when its width is below HA's standard
+    // breakpoint.  This ensures the hamburger menu button is always
+    // visible on mobile/tablet devices regardless of how the app sets the flag.
+    if (!this._narrow && typeof window !== "undefined" && window.innerWidth < NARROW_VIEWPORT_BREAKPOINT) {
+      this._narrow = true;
     }
 
     // If hass was already set before we were connected, ensure the panel
@@ -115,13 +126,16 @@ class FWCAMDashboardPanel extends HTMLElement {
    * HA sets `narrow` on panel_custom elements to indicate mobile/narrow mode.
    * Forwarding it to ha-menu-button makes the hamburger icon visible and
    * functional in the HA Companion App.
+   *
+   * We also set the attribute (in addition to the property) because
+   * ha-menu-button's internal CSS relies on :host([narrow]) to toggle
+   * visibility, and some Companion App WebView builds do not reflect
+   * the property back to the attribute automatically.
    */
   set narrow(narrow) {
     this._narrow = narrow;
     const menuBtn = this.shadowRoot && this.shadowRoot.querySelector("ha-menu-button");
-    if (menuBtn) {
-      menuBtn.narrow = narrow;
-    }
+    this._applyMenuButtonState(menuBtn);
   }
 
   /**
@@ -170,10 +184,7 @@ class FWCAMDashboardPanel extends HTMLElement {
     }
     // Keep ha-menu-button in sync with latest hass so it can toggle sidebar
     const menuBtn = this.shadowRoot && this.shadowRoot.querySelector("ha-menu-button");
-    if (menuBtn) {
-      menuBtn.hass = hass;
-      menuBtn.narrow = this._narrow;
-    }
+    this._applyMenuButtonState(menuBtn);
   }
 
   /**
@@ -215,6 +226,23 @@ class FWCAMDashboardPanel extends HTMLElement {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  /**
+   * Apply the current hass object and narrow state to an ha-menu-button element.
+   * Sets both the property AND the attribute so that the component's internal
+   * :host([narrow]) CSS selector activates in all environments including the
+   * HA Companion App WebView.
+   */
+  _applyMenuButtonState(menuBtn) {
+    if (!menuBtn) return;
+    menuBtn.hass = this._hass;
+    menuBtn.narrow = this._narrow;
+    if (this._narrow) {
+      menuBtn.setAttribute("narrow", "");
+    } else {
+      menuBtn.removeAttribute("narrow");
+    }
   }
 
   _render() {
@@ -347,10 +375,7 @@ class FWCAMDashboardPanel extends HTMLElement {
       `;
       // Attach hass to menu button
       const menuBtn = this.shadowRoot.querySelector('ha-menu-button');
-      if (menuBtn) {
-        menuBtn.hass = this._hass;
-        menuBtn.narrow = this._narrow;
-      }
+      this._applyMenuButtonState(menuBtn);
       this._card = null;
       return;
     }
@@ -398,10 +423,7 @@ class FWCAMDashboardPanel extends HTMLElement {
 
     // Attach hass to the ha-menu-button so it can toggle the sidebar
     const menuBtn = this.shadowRoot.querySelector('ha-menu-button');
-    if (menuBtn) {
-      menuBtn.hass = this._hass;
-      menuBtn.narrow = this._narrow;
-    }
+    this._applyMenuButtonState(menuBtn);
 
     // --- Attach vehicle tab click listeners ---
     this.shadowRoot.querySelectorAll(".vehicle-tab").forEach((tab) => {

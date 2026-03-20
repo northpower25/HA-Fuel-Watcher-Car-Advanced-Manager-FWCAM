@@ -132,7 +132,15 @@ class FWCAMCard extends HTMLElement {
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            this._config.section_order = parsed;
+            // Merge: keep user's saved order, but append any new sections from
+            // DEFAULT_SECTION_ORDER that weren't present when the order was saved.
+            // This ensures newly-added sections (e.g. route_planner) always appear
+            // even when the user has an older cached section order in localStorage.
+            const parsedSet = new Set(parsed);
+            const newSections = DEFAULT_SECTION_ORDER.filter(s => !parsedSet.has(s));
+            this._config.section_order = newSections.length > 0
+              ? [...parsed, ...newSections]
+              : parsed;
           }
         }
       } catch (_e) { /* ignore storage errors */ }
