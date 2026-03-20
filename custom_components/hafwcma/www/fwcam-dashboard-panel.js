@@ -102,23 +102,11 @@ class FWCAMDashboardPanel extends HTMLElement {
     };
     document.addEventListener("visibilitychange", this._visibilityHandler);
 
-    // Preload all standalone card modules
-    const modules = [
-      "fwcam-vehicle-info-card.js",
-      "fwcam-fuel-price-card.js",
-      "fwcam-consumption-card.js",
-      "fwcam-cheapest-stations-card.js",
-      "fwcam-map-card.js",
-      "fwcam-routenplanung-card.js",
-      "fwcam-maintenance-card.js",
-      "fwcam-refueling-log-card.js",
-      "fwcam-trip-log-card.js",
-      "fwcam-top-destinations-card.js",
-    ];
-    modules.forEach((m) => {
-      if (!customElements.get(m.replace(".js", ""))) {
-        import(`/hafwcma_local/${m}`).catch((e) =>
-          console.warn(`[FWCAM] Could not preload ${m}:`, e)
+    // Preload all standalone card modules by deriving filenames from AVAILABLE_CARDS
+    AVAILABLE_CARDS.forEach((card) => {
+      if (!customElements.get(card.type)) {
+        import(`/hafwcma_local/${card.type}.js`).catch((e) =>
+          console.warn(`[FWCAM] Could not preload ${card.type}.js:`, e)
         );
       }
     });
