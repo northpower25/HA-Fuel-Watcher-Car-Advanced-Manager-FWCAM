@@ -1827,7 +1827,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "config": entry.data,
         "options": entry.options,
     }
-    
+
+    # Create and store the coordinator here, before any platform setup, so that all
+    # platforms (binary_sensor, button, switch, number) can safely access it from
+    # hass.data during their own async_setup_entry calls.  Platforms are set up
+    # concurrently by async_forward_entry_setups and there is no guaranteed order,
+    # so the coordinator must already be present in hass.data at that point.
+    from .sensor import HaFWCMACoordinator
+    coordinator = HaFWCMACoordinator(hass, entry)
+    await coordinator.async_load_route_data()
+    hass.data[DOMAIN][entry.entry_id]["coordinator"] = coordinator
+
     # Initialize Telegram event handler for bidirectional communication
     # Defer initialization until Home Assistant is fully started to ensure telegram_bot is loaded
     from .const import CONF_TELEGRAM_CHAT_ID, CONF_TELEGRAM_TOKEN
