@@ -380,6 +380,109 @@ async def fetch_road_distances_osrm_many_to_one(
         return [None] * len(origins)
 
 
+async def fetch_all_detour_distances_osrm(
+    origin: tuple[float, float],
+    waypoints: list[tuple[float, float]],
+    destination: tuple[float, float],
+) -> tuple[list[float | None], list[float | None], float | None]:
+    """Fetch all triangle-formula distances in a single OSRM table call.
+
+    Computes d(origin → each waypoint), d(each waypoint → destination), and
+    d(origin → destination) using one HTTP request.  This is more reliable
+    than two sequential calls because either all values succeed or all fail.
+
+    With N waypoints the coordinate list sent to OSRM is::
+
+        [origin(0), waypoint_0(1), waypoint_1(2), ..., waypoint_{N-1}(N), destination(N+1)]
+
+    Setting ``sources = [0, 1, ..., N]`` (origin + N waypoints) and
+    ``destinations = [1, 2, ..., N, N+1]`` (N waypoints + destination) causes
+    OSRM to return an (N+1) × (N+1) distance matrix.  The columns correspond
+    to the *destinations* list (indices 0..N-1 = waypoints, index N =
+    destination), so we extract:
+
+    * Row 0 (= origin), dest-col 0..N-1 → d(origin → waypoint_k) for k=0..N-1
+    * Row 0 (= origin), dest-col N       → d(origin → destination)  [baseline]
+    * Row k+1 (= waypoint_k), dest-col N → d(waypoint_k → destination) for k=0..N-1
+
+    Args:
+        origin: ``(lat, lon)`` of the route reference point (P_near).
+        waypoints: ``(lat, lon)`` list of N gas-station points.
+        destination: ``(lat, lon)`` of the route re-entry point (P_after).
+
+    Returns:
+        Tuple ``(origin_to_wp, wp_to_dest, baseline)`` where distances are in
+        km.  ``origin_to_wp[k]`` is d(origin → waypoints[k]),
+        ``wp_to_dest[k]`` is d(waypoints[k] → destination), and ``baseline``
+        is d(origin → destination).  Any value is ``None`` when OSRM could
+        not compute that particular distance.  Returns all-``None`` lists on
+        network or API error.
+    """
+    if not waypoints:
+        return [], [], None
+
+    N = len(waypoints)
+    # Points: [origin(0), wp_0(1), ..., wp_N-1(N), destination(N+1)]
+    all_points = [origin] + waypoints + [destination]
+    coords_str = ";".join(f"{lon},{lat}" for lat, lon in all_points)
+
+    # sources = origin + all waypoints; destinations = all waypoints + destination
+    src_indices = ";".join(str(i) for i in range(N + 1))
+    dest_indices = ";".join(str(i) for i in range(1, N + 2))
+    url = f"{OSRM_TABLE_BASE_URL}/{coords_str}"
+    params = {
+        "sources": src_indices,
+        "destinations": dest_indices,
+        "annotations": "distance",
+    }
+
+    def _safe_km(row: list, col: int) -> float | None:
+        if col < len(row) and row[col] is not None and row[col] >= 0:
+            return row[col] / 1000.0
+        return None
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+            ) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning("OSRM table API returned HTTP %d", resp.status)
+                    return [None] * N, [None] * N, None
+                data = await resp.json()
+
+        if data.get("code") != "Ok":
+            _LOGGER.warning("OSRM table API error: %s", data.get("code"))
+            return [None] * N, [None] * N, None
+
+        # distances matrix: (N+1) rows × (N+1) columns
+        matrix = data.get("distances", [])
+
+        # Row 0: distances from origin to each waypoint (cols 0..N-1) and to
+        # destination (col N).
+        origin_to_wp: list[float | None] = [None] * N
+        baseline: float | None = None
+        if matrix:
+            row0 = matrix[0]
+            for k in range(N):
+                origin_to_wp[k] = _safe_km(row0, k)
+            baseline = _safe_km(row0, N)
+
+        # Rows 1..N: distances from each waypoint to destination (col N).
+        wp_to_dest: list[float | None] = [None] * N
+        for k in range(N):
+            if k + 1 < len(matrix):
+                wp_to_dest[k] = _safe_km(matrix[k + 1], N)
+
+        return origin_to_wp, wp_to_dest, baseline
+
+    except Exception as err:
+        _LOGGER.warning("Error fetching OSRM detour distances: %s", err)
+        return [None] * N, [None] * N, None
+
+
 async def async_enrich_stations_with_road_detour(
     stations: list[dict[str, Any]],
     nearest_route_point: tuple[float, float],
@@ -393,12 +496,15 @@ async def async_enrich_stations_with_road_detour(
     detour uses the triangle formula::
 
         detour = max(0, d(P_near → station) + d(station → P_after)
-                        - d_polyline(P_near → P_after))
+                        - d_road(P_near → P_after))
 
-    where *P_near* is *nearest_route_point*, *P_after* is *ahead_route_point*
-    (a point ``lookahead_km`` further along the route), and the baseline
-    ``d_polyline`` equals ``lookahead_km`` when *ahead_route_point* was
-    obtained by advancing exactly that far along the polyline.
+    where *P_near* is *nearest_route_point*, *P_after* is *ahead_route_point*,
+    and the baseline ``d_road(P_near → P_after)`` is the actual OSRM road
+    distance between those two points (not a polyline estimate).
+
+    All three distances are fetched in a **single** OSRM table request via
+    :func:`fetch_all_detour_distances_osrm`, which is more reliable than two
+    sequential calls and uses the real road distance as the baseline.
 
     This correctly captures the reality that a driver does **not** drive back
     to the entry point after visiting the station – they continue forward.
@@ -416,9 +522,9 @@ async def async_enrich_stations_with_road_detour(
         ahead_route_point: Optional ``(lat, lon)`` of the re-entry point on
             the route, ``lookahead_km`` further along from P_near (P_after).
             Enables the accurate triangle-formula detour calculation.
-        lookahead_km: Route distance in km from *nearest_route_point* to
-            *ahead_route_point*; used as the baseline in the triangle formula.
-            Ignored when *ahead_route_point* is ``None``.
+        lookahead_km: Fallback baseline distance in km used only when
+            *ahead_route_point* is ``None`` or when the OSRM call cannot
+            determine the P_near → P_after road distance.
 
     Returns:
         New list of station dicts with ``road_detour_km`` set to the actual
@@ -433,26 +539,35 @@ async def async_enrich_stations_with_road_detour(
         lon = st.get("lng") or st.get("longitude", 0.0)
         station_coords.append((float(lat), float(lon)))
 
-    # Step 1: d(P_near → each station)
-    one_way_km = await fetch_road_distances_osrm(nearest_route_point, station_coords)
-
-    # Step 2: d(each station → P_after), only when ahead_route_point is given
-    station_to_ahead_km: list[float | None] = [None] * len(stations)
     if ahead_route_point is not None:
-        station_to_ahead_km = await fetch_road_distances_osrm_many_to_one(
-            station_coords, ahead_route_point
+        # Single combined OSRM call: get d(P_near→stations), d(stations→P_after),
+        # and d(P_near→P_after) all at once.  This avoids the reliability issue
+        # of two sequential calls where the second call might fail while the
+        # first succeeds, which previously triggered the incorrect 2× fallback.
+        one_way_km, station_to_ahead_km, road_baseline = (
+            await fetch_all_detour_distances_osrm(
+                nearest_route_point, station_coords, ahead_route_point
+            )
         )
+        # Use the OSRM-measured P_near→P_after distance as baseline; fall back
+        # to the polyline estimate when OSRM could not compute it.
+        baseline_km = road_baseline if road_baseline is not None else lookahead_km
+    else:
+        one_way_km = await fetch_road_distances_osrm(nearest_route_point, station_coords)
+        station_to_ahead_km = [None] * len(stations)
+        baseline_km = lookahead_km
 
     enriched: list[dict[str, Any]] = []
     for st, ow_km, s2a_km in zip(stations, one_way_km, station_to_ahead_km):
         updated = dict(st)
         if ow_km is not None:
-            if ahead_route_point is not None and s2a_km is not None:
+            if s2a_km is not None:
                 # Triangle formula: actual extra km vs. staying on route
-                triangle_detour = max(0.0, ow_km + s2a_km - lookahead_km)
+                triangle_detour = max(0.0, ow_km + s2a_km - baseline_km)
                 updated["road_detour_km"] = round(triangle_detour, 2)
             else:
-                # Legacy fallback: round-trip from same point
+                # Fallback: round-trip from same point (ahead_route_point absent
+                # or OSRM could not route from this station to P_after)
                 updated["road_detour_km"] = round(ow_km * 2.0, 2)
         else:
             # OSRM failed for this station – keep existing value or straight-line
