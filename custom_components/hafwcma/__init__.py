@@ -1420,6 +1420,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             ServiceResponse with ``success``, ``route`` (dict) and ``error``.
         """
         from .utils.route_planner import RoutePlanner
+        from .const import CONF_GOOGLE_MAPS_API_KEY
 
         entry_id = call.data["config_entry_id"]
         entry = hass.config_entries.async_get_entry(entry_id)
@@ -1431,7 +1432,10 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         waypoint_strings: list[str] = call.data.get("waypoints", [])
         corridor_width_km: float = call.data.get("corridor_width_km", 5.0)
         routing_provider: str = call.data.get("routing_provider", "osrm")
+        # Use google_api_key from service call first; fall back to config/options
         google_api_key: str = call.data.get("google_api_key", "")
+        if not google_api_key:
+            google_api_key = entry.options.get(CONF_GOOGLE_MAPS_API_KEY, "") or entry.data.get(CONF_GOOGLE_MAPS_API_KEY, "")
         departure_time_str: str = call.data.get("departure_time", "")
 
         # Parse departure_time string → datetime (naive/local)

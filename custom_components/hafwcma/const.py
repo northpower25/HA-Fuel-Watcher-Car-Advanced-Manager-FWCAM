@@ -211,6 +211,7 @@ CONF_ROUTE_SEARCH_WINDOW_KM: Final       = "route_search_window_km"
 CONF_ROUTE_TOP_N_STATIONS: Final         = "route_top_n_stations"
 CONF_ROUTE_ROUTING_PROVIDER: Final       = "route_routing_provider"
 CONF_ROUTE_AVOID_TOLLS: Final            = "route_avoid_tolls"
+CONF_GOOGLE_MAPS_API_KEY: Final          = "google_maps_api_key"
 
 # Route corridor defaults
 DEFAULT_ROUTE_CORRIDOR_WIDTH_KM: Final      = 5
