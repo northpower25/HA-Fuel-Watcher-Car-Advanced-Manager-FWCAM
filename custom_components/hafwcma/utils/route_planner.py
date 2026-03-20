@@ -557,61 +557,189 @@ async def fetch_all_detour_distances_osrm(
         if _own_session is not None:
             await _own_session.close()
 
+def _compute_polyline_detour_km(
+    station_lat: float,
+    station_lon: float,
+    polyline: list[tuple[float, float]],
+    lookahead_km: float = DETOUR_LOOKAHEAD_KM,
+) -> float:
+    """Compute the route detour for a station using the straight-line triangle formula.
+
+    Finds the nearest point on the route polyline to the station (P_near),
+    then locates a point *lookahead_km* further along the polyline (P_after),
+    and returns::
+
+        detour = max(0, d_sl(P_near → station) + d_sl(station → P_after)
+                        - d_sl(P_near → P_after))
+
+    where ``d_sl`` is the straight-line (Haversine) distance.
+
+    Using the **per-station nearest route point** as P_near is critical for
+    accuracy.  A shared reference point (e.g. the predicted fuel stop) placed
+    several km past a station's highway exit inflates the detour dramatically
+    when the formula is evaluated with OSRM road distances.  Straight-line
+    distances in the triangle formula cancel out most of the curvature error
+    because all three legs are measured consistently, giving results that
+    closely match Google Maps insertion-based detour values.
+
+    Args:
+        station_lat: Station latitude.
+        station_lon: Station longitude.
+        polyline: Route as a list of ``(lat, lon)`` tuples.
+        lookahead_km: How far ahead of P_near to place P_after.  Defaults to
+            :data:`DETOUR_LOOKAHEAD_KM`.
+
+    Returns:
+        Detour in km (always ≥ 0), rounded to 2 decimal places.
+    """
+    if not polyline or len(polyline) < 2:
+        _LOGGER.debug(
+            "_compute_polyline_detour_km: polyline is empty or too short – returning 0"
+        )
+        return 0.0
+
+    # ── Step 1: project station onto the nearest polyline segment ──────────
+    min_perp_dist = float("inf")
+    nearest_lat = polyline[0][0]
+    nearest_lon = polyline[0][1]
+    nearest_dist_along = 0.0  # km along the polyline to the nearest point
+    cumulative_km = 0.0
+
+    for i in range(len(polyline) - 1):
+        lat1, lon1 = polyline[i]
+        lat2, lon2 = polyline[i + 1]
+        seg_len = calculate_distance(lat1, lon1, lat2, lon2)
+
+        # Project station onto segment [A, B] using a planar approximation.
+        # Works well for the short polyline segments used by OSRM/ORS.
+        dx = lat2 - lat1
+        dy = lon2 - lon1
+        len_sq = dx * dx + dy * dy
+        # Threshold for a degenerate segment (start == end, coincident points).
+        # Using 1e-18 rather than 0 to guard against floating-point rounding.
+        if len_sq < 1e-18:
+            t = 0.0
+        else:
+            t = max(
+                0.0,
+                min(
+                    1.0,
+                    ((station_lat - lat1) * dx + (station_lon - lon1) * dy) / len_sq,
+                ),
+            )
+
+        proj_lat = lat1 + t * dx
+        proj_lon = lon1 + t * dy
+        perp = calculate_distance(station_lat, station_lon, proj_lat, proj_lon)
+
+        if perp < min_perp_dist:
+            min_perp_dist = perp
+            nearest_lat = proj_lat
+            nearest_lon = proj_lon
+            nearest_dist_along = cumulative_km + t * seg_len
+
+        cumulative_km += seg_len
+
+    # ── Step 2: find P_after (lookahead_km further along the polyline) ─────
+    target_km = nearest_dist_along + lookahead_km
+    ahead_lat = polyline[-1][0]
+    ahead_lon = polyline[-1][1]
+    tmp_cumulative = 0.0
+
+    for i in range(len(polyline) - 1):
+        lat1, lon1 = polyline[i]
+        lat2, lon2 = polyline[i + 1]
+        seg_len = calculate_distance(lat1, lon1, lat2, lon2)
+        if tmp_cumulative + seg_len >= target_km:
+            t = (target_km - tmp_cumulative) / seg_len if seg_len > 0 else 0.0
+            ahead_lat = lat1 + t * (lat2 - lat1)
+            ahead_lon = lon1 + t * (lon2 - lon1)
+            break
+        tmp_cumulative += seg_len
+
+    # ── Step 3: straight-line triangle formula ─────────────────────────────
+    d_near_to_station = calculate_distance(nearest_lat, nearest_lon, station_lat, station_lon)
+    d_station_to_ahead = calculate_distance(station_lat, station_lon, ahead_lat, ahead_lon)
+    d_near_to_ahead = calculate_distance(nearest_lat, nearest_lon, ahead_lat, ahead_lon)
+
+    detour = max(0.0, d_near_to_station + d_station_to_ahead - d_near_to_ahead)
+    return round(detour, 2)
+
+
 async def async_enrich_stations_with_road_detour(
     stations: list[dict[str, Any]],
-    nearest_route_point: tuple[float, float],
+    nearest_route_point: tuple[float, float] | None = None,
     ahead_route_point: tuple[float, float] | None = None,
     lookahead_km: float = DETOUR_LOOKAHEAD_KM,
     *,
+    polyline: list[tuple[float, float]] | None = None,
     session: aiohttp.ClientSession | None = None,
 ) -> list[dict[str, Any]]:
     """Add road-based detour distances to corridor station dicts.
 
     Calculates the actual extra kilometres a driver incurs when diverting from
-    the route to visit a station.  When *ahead_route_point* is supplied the
-    detour uses the triangle formula::
+    the route to visit a station.
 
-        detour = max(0, d(P_near → station) + d(station → P_after)
-                        - d_road(P_near → P_after))
+    **Preferred mode – polyline provided**:
 
-    where *P_near* is *nearest_route_point*, *P_after* is *ahead_route_point*,
-    and the baseline ``d_road(P_near → P_after)`` is the actual OSRM road
-    distance between those two points (not a polyline estimate).
+    When *polyline* is supplied each station's detour is computed independently
+    using :func:`_compute_polyline_detour_km`.  That function projects the
+    station onto the nearest segment of the route polyline to obtain a
+    per-station P_near, then finds a point *lookahead_km* further along the
+    polyline (P_after), and evaluates the triangle formula with straight-line
+    distances::
 
-    All three distances are fetched in a **single** OSRM table request via
-    :func:`fetch_all_detour_distances_osrm`, which is more reliable than two
-    sequential calls and uses the real road distance as the baseline.
+        detour = max(0, d_sl(P_near → station) + d_sl(station → P_after)
+                        - d_sl(P_near → P_after))
 
-    This correctly captures the reality that a driver does **not** drive back
-    to the entry point after visiting the station – they continue forward.
-    Stations close to the route produce a small (or zero) detour, while
-    stations truly off the route produce a larger one.
+    Using per-station P_near points (rather than a shared predicted-stop
+    reference) is essential for accuracy when stations lie before or after
+    the predicted fuel stop on the route.
 
-    Falls back to ``2 × one-way`` distance when *ahead_route_point* is
-    ``None`` or when OSRM returns ``None`` for a station.
+    **Legacy mode – no polyline**:
+
+    When *polyline* is ``None`` the function falls back to the original
+    OSRM-based triangle formula using the shared *nearest_route_point* and
+    *ahead_route_point*.  This mode is kept for backward compatibility.
 
     Args:
         stations: List of station dicts.  Each must have ``lat``/``latitude``
             and ``lng``/``longitude`` fields.
-        nearest_route_point: ``(lat, lon)`` of the closest point on the route
-            to the refuel corridor (P_near).
-        ahead_route_point: Optional ``(lat, lon)`` of the re-entry point on
-            the route, ``lookahead_km`` further along from P_near (P_after).
-            Enables the accurate triangle-formula detour calculation.
-        lookahead_km: Fallback baseline distance in km used only when
-            *ahead_route_point* is ``None`` or when the OSRM call cannot
-            determine the P_near → P_after road distance.
-        session: Optional aiohttp session to reuse for OSRM requests.  Pass
-            the HA-managed session (``async_get_clientsession(hass)``) to
-            avoid blocking ``ssl.load_verify_locations`` calls in the event
-            loop.  When ``None`` a temporary session is created internally.
+        nearest_route_point: ``(lat, lon)`` reference point used in legacy
+            mode only (ignored when *polyline* is supplied).
+        ahead_route_point: ``(lat, lon)`` re-entry point used in legacy mode
+            only (ignored when *polyline* is supplied).
+        lookahead_km: Distance ahead of P_near used to place P_after (both
+            modes).
+        polyline: Full route polyline as a list of ``(lat, lon)`` tuples.
+            When provided, enables the accurate per-station detour calculation
+            without any external network calls.
+        session: Optional aiohttp session for legacy-mode OSRM requests.
 
     Returns:
-        New list of station dicts with ``road_detour_km`` set to the actual
-        extra distance and ``detour_km`` preserved as straight-line fallback.
+        New list of station dicts with ``road_detour_km`` set to the computed
+        extra distance and ``detour_km`` preserved as the original estimate.
     """
     if not stations:
         return []
+
+    # ── Preferred mode: per-station polyline-based triangle formula ─────────
+    if polyline is not None:
+        enriched: list[dict[str, Any]] = []
+        for st in stations:
+            lat = float(st.get("lat") or st.get("latitude") or 0.0)
+            lon = float(st.get("lng") or st.get("longitude") or 0.0)
+            updated = dict(st)
+            updated["road_detour_km"] = _compute_polyline_detour_km(
+                lat, lon, polyline, lookahead_km
+            )
+            enriched.append(updated)
+        return enriched
+
+    # ── Legacy mode: OSRM-based triangle formula ────────────────────────────
+    if nearest_route_point is None:
+        # No reference point available – return stations unchanged
+        return list(stations)
 
     station_coords: list[tuple[float, float]] = []
     for st in stations:
@@ -640,7 +768,7 @@ async def async_enrich_stations_with_road_detour(
         station_to_ahead_km = [None] * len(stations)
         baseline_km = lookahead_km
 
-    enriched: list[dict[str, Any]] = []
+    legacy_enriched: list[dict[str, Any]] = []
     for st, ow_km, s2a_km in zip(stations, one_way_km, station_to_ahead_km):
         updated = dict(st)
         if ow_km is not None:
@@ -655,9 +783,9 @@ async def async_enrich_stations_with_road_detour(
         else:
             # OSRM failed for this station – keep existing value or straight-line
             updated["road_detour_km"] = st.get("road_detour_km") or st.get("detour_km", 0.0)
-        enriched.append(updated)
+        legacy_enriched.append(updated)
 
-    return enriched
+    return legacy_enriched
 
 
 def select_categorized_stations(

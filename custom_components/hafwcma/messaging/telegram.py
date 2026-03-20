@@ -44,7 +44,8 @@ class TelegramNotifier(MessageService):
             hass: Home Assistant instance (optional, for using HA's service)
         """
         self.hass = hass
-        self.bot = Bot(token=bot_token)
+        self._bot_token = bot_token
+        self._bot: Bot | None = None  # Lazy initialisation avoids blocking SSL setup
         self.chat_id = chat_id
         self._use_ha_service = (
             hass is not None and "telegram_bot" in hass.config.components
@@ -65,6 +66,33 @@ class TelegramNotifier(MessageService):
             _LOGGER.info(
                 "TelegramNotifier using direct bot API (one-way notifications only - telegram_bot integration not found)"
             )
+
+    @property
+    def bot(self) -> "Bot | None":
+        """Return the cached Telegram Bot instance, or ``None`` if not yet created.
+
+        Prefer :meth:`_ensure_bot` (async) for all sending code so that Bot
+        initialisation is deferred to a worker thread and never blocks the HA
+        event loop.  This property exists only for read-only introspection
+        (e.g. testing or diagnostics).
+        """
+        return self._bot
+
+    async def _ensure_bot(self) -> "Bot":
+        """Return (or create) the Telegram Bot instance asynchronously.
+
+        Creates the Bot in an executor thread when HA is available to avoid
+        blocking the event loop with the ``ssl.load_verify_locations`` call
+        that ``python-telegram-bot`` makes during SSL context initialisation.
+        """
+        if self._bot is None:
+            if self.hass is not None:
+                self._bot = await self.hass.async_add_executor_job(
+                    lambda: Bot(token=self._bot_token)
+                )
+            else:
+                self._bot = Bot(token=self._bot_token)
+        return self._bot
 
     async def send_message(self, message: str, **kwargs) -> bool:
         """Send a text message via Telegram.
@@ -102,7 +130,8 @@ class TelegramNotifier(MessageService):
                 )
             else:
                 # Fallback to direct bot API
-                await self.bot.send_message(
+                bot = await self._ensure_bot()
+                await bot.send_message(
                     chat_id=chat_id,
                     text=message,
                     parse_mode=parse_mode,

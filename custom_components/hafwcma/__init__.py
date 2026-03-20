@@ -1641,31 +1641,17 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                         })
 
                                     if station_dicts:
-                                        # Compute the route re-entry point (P_after):
-                                        # a point DETOUR_LOOKAHEAD_KM ahead of the
-                                        # predicted fuel stop on the polyline.  Used by
-                                        # the triangle-formula detour calculation so the
-                                        # detour reflects actual extra km vs. staying on
-                                        # the route rather than a round-trip to the stop.
-                                        stop_dist_km = stop_info.get("predicted_distance_km", 0)
-                                        ahead_pt = predictor.find_point_at_distance(
-                                            route_result["polyline"],
-                                            stop_dist_km + DETOUR_LOOKAHEAD_KM,
-                                        )
-                                        if ahead_pt is None:
-                                            # Predicted stop is near the end of route;
-                                            # fall back to destination as re-entry point.
-                                            ahead_pt = route_result["polyline"][-1]
-
-                                        nearest_route_pt = (
-                                            float(stop_lat), float(stop_lon)
-                                        )
+                                        # Use the full route polyline so that each
+                                        # station's detour is computed from its own
+                                        # nearest route point (per-station P_near).
+                                        # This avoids the systematic overestimate that
+                                        # occurs when the predicted fuel stop is used as
+                                        # a shared P_near for stations located before or
+                                        # after that stop on the route.
                                         station_dicts = await async_enrich_stations_with_road_detour(
                                             station_dicts,
-                                            nearest_route_pt,
-                                            ahead_route_point=ahead_pt,
+                                            polyline=route_result["polyline"],
                                             lookahead_km=DETOUR_LOOKAHEAD_KM,
-                                            session=_session,
                                         )
 
                                         ranker = CorridorStationRanker()
