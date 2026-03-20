@@ -17,7 +17,7 @@ Key features:
 - ⛽ **Fuel stop prediction** – estimates where you will need to refuel based on current fuel level and average consumption
 - 💰 **Effective price ranking** – accounts for the detour cost to reach each station
 - 📱 **Navigation links** – one-tap navigation to the best station via Google Maps, Waze, or Apple Maps
-- 🔔 **Telegram notifications** – receive route start/cancel confirmations via the configured Telegram bot
+- 🔔 **Telegram notifications** – receive route start/cancel confirmations including an immediate fuel stop prediction with the top-5 corridor stations
 
 ---
 
@@ -30,6 +30,29 @@ Key features:
 | Average consumption configured | Set in the integration settings for accurate fuel stop prediction |
 | Internet access | Required for geocoding (Nominatim) and routing APIs |
 | Germany-only | TankerKönig only covers German fuel stations |
+
+---
+
+## Entities Used for Fuel Stop Prediction
+
+The fuel stop prediction relies on three data sources from the FWCAM integration:
+
+| Data | Entity | Description |
+|---|---|---|
+| **Vehicle position** | Linked `device_tracker` entity (configured as `position_entity`) | Current GPS coordinates used as the route starting point. Example: `device_tracker.my_car` |
+| **Range / tank level** | `sensor.[entry_id]_range` | Remaining range in km – primary source for the prediction. The tank level in litres from `sensor.[entry_id]_tank_level` is used as fallback. |
+| **Average consumption** | `sensor.[entry_id]_average_consumption_history` | Average fuel consumption in l/100 km derived from historical trip data (`avg_consumption_rate`). |
+
+**Simplified prediction formula:**
+
+```
+usable_range = (tank_litres × (1 − safety_buffer%)) / consumption × 100
+stop_km      = current_position_on_route + usable_range
+```
+
+A **15 % safety buffer** is applied by default to keep a reserve for detours and traffic.
+
+> **Tip:** If tank level or consumption data is unavailable, no fuel stop hint is included in the notification. Make sure the entities above are linked in the integration settings.
 
 ---
 
@@ -189,12 +212,24 @@ data:
 
 ---
 
-## Telegram Notifications
+## Telegram Notifications & Commands
 
 If Telegram is configured in your FWCAM integration, you will receive notifications when:
 
-- **Route starts** – confirmation with destination, distance, and best station
+- **Route starts** – confirmation with destination, distance, predicted fuel stop (km), and the **top-5 corridor stations** (price/l + distance from route)
 - **Route is cancelled** – confirmation message
+
+### Telegram Bot Commands for Route Planning
+
+| Command | Description |
+|---|---|
+| `/route start <address>` | Start a route to the given destination |
+| `/route start <address> <km>` | Start a route with a custom corridor width (1–50 km). Example: `/route start Munich Central 10` |
+| `/route stop` | Stop/cancel the active route |
+| `/routestatus` | Show active route status including fuel stop prediction and best station |
+| `/routecancel` | Cancel the active route (same as `/route stop`) |
+| `/corridor [km]` | Adjust corridor width for the running route |
+| `/help` | Show all available commands |
 
 To configure Telegram, see [TELEGRAM_SETUP.md](../TELEGRAM_SETUP.md).
 

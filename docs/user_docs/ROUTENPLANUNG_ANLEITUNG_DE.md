@@ -17,7 +17,7 @@ Funktionsübersicht:
 - ⛽ **Tankstopp-Prognose** – schätzt, wo auf der Route getankt werden muss (auf Basis von aktuellem Tankstand und Durchschnittsverbrauch)
 - 💰 **Effektiver Preisvergleich** – Umwegkosten zu jeder Tankstelle werden eingerechnet
 - 📱 **Navigationslinks** – direkte Navigation zur günstigsten Tankstelle via Google Maps, Waze oder Apple Maps
-- 🔔 **Telegram-Benachrichtigungen** – Bestätigungen beim Starten und Beenden der Route
+- 🔔 **Telegram-Benachrichtigungen** – Bestätigungen beim Starten und Beenden der Route inkl. sofortiger Tankstopp-Prognose mit Top-5-Tankstellen
 
 ---
 
@@ -30,6 +30,29 @@ Funktionsübersicht:
 | Konfigurierter Durchschnittsverbrauch | Wird in den Integrationseinstellungen angegeben und für die Tankstoppprognose benötigt |
 | Internetzugang | Erforderlich für Geocoding (Nominatim) und Routing-APIs |
 | Nur Deutschland | TankerKönig deckt ausschließlich deutsche Tankstellen ab |
+
+---
+
+## Entitäten für die Tankstopp-Prognose
+
+Die Tankstopp-Prognose greift auf folgende Datenquellen zu:
+
+| Datenpunkt | Entität | Beschreibung |
+|---|---|---|
+| **Fahrzeugposition** | konfigurierte `device_tracker`-Entität (Startpunkt der Route) | Wird über die in den Integrationseinstellungen verknüpfte `position_entity` bezogen. Beispiel: `device_tracker.mein_auto` |
+| **Restreichweite / Tankfüllstand** | `sensor.[entry_id]_range` | Verbleibende Reichweite in km – Hauptquelle für die Prognose. Alternativ wird der Tankfüllstand in Litern aus `sensor.[entry_id]_tank_level` genutzt. |
+| **Durchschnittsverbrauch** | `sensor.[entry_id]_average_consumption_history` | Mittlerer Verbrauch in l/100 km aus dem Verbrauchsverlauf. Wird in der Konfiguration als `avg_consumption_rate` geführt. |
+
+**Prognoseformel (vereinfacht):**
+
+```
+nutzbare_reichweite = (tankfüllstand_liter × (1 − sicherheitspuffer%)) / verbrauch × 100
+tankstopp_km       = aktuelle_position_auf_route + nutzbare_reichweite
+```
+
+Ein **15 % Sicherheitspuffer** wird standardmäßig abgezogen, um Reserve für Umwege und Staus zu gewährleisten.
+
+> **Tipp:** Sind Tankstand oder Verbrauch nicht verfügbar, erscheint kein Tankstopp-Hinweis in der Benachrichtigung. Stelle sicher, dass die oben genannten Entitäten in den Integrationseinstellungen verknüpft sind.
 
 ---
 
@@ -189,12 +212,26 @@ data:
 
 ---
 
-## Telegram-Benachrichtigungen
+## Telegram-Benachrichtigungen & Befehle
 
 Wenn Telegram in der FWCAM-Integration konfiguriert ist, werden folgende Benachrichtigungen gesendet:
 
-- **Route gestartet** – Bestätigung mit Ziel, Entfernung und bester Tankstelle
+- **Route gestartet** – Bestätigung mit Ziel, Entfernung, prognostiziertem Tankstopp-km und den **Top-5-Tankstellen im Korridor** (Preis/l + Entfernung von der Route)
 - **Route abgebrochen** – Bestätigungsnachricht
+
+### Telegram-Befehle für die Routenplanung
+
+Der Telegram-Bot unterstützt folgende Befehle:
+
+| Befehl | Beschreibung |
+|---|---|
+| `/route start <Adresse>` | Route zum angegebenen Ziel starten |
+| `/route start <Adresse> <km>` | Route starten mit eigener Korridorbreite (1–50 km). Beispiel: `/route start München Hbf 10` |
+| `/route stop` | Aktive Route beenden |
+| `/routestatus` | Aktuellen Routenstatus mit Tankstopp-Prognose und bester Tankstelle anzeigen |
+| `/routecancel` | Aktive Route abbrechen (gleichwertig zu `/route stop`) |
+| `/corridor [km]` | Korridorbreite der laufenden Route anpassen |
+| `/help` | Alle Befehle anzeigen |
 
 Zur Telegram-Konfiguration siehe [TELEGRAM_SETUP_DE.md](../TELEGRAM_SETUP_DE.md).
 
