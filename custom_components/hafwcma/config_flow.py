@@ -29,6 +29,7 @@ from .const import (
     CONF_FALLBACK_DAILY_KM_SATURDAY,
     CONF_FALLBACK_DAILY_KM_SUNDAY,
     CONF_FUEL_TYPE,
+    CONF_GOOGLE_MAPS_API_KEY,
     CONF_IMPORT_HISTORICAL_DATA,
     CONF_INITIAL_CONSUMPTION,
     CONF_LOW_FUEL_THRESHOLD,
@@ -1374,6 +1375,10 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
         telegram_chat_id_value = current_options.get(CONF_TELEGRAM_CHAT_ID, "")
         if not telegram_chat_id_value:
             telegram_chat_id_value = current_config.get(CONF_TELEGRAM_CHAT_ID, "")
+
+        google_maps_api_key_value = current_options.get(CONF_GOOGLE_MAPS_API_KEY, "")
+        if not google_maps_api_key_value:
+            google_maps_api_key_value = current_config.get(CONF_GOOGLE_MAPS_API_KEY, "")
             
         # Get vehicle entity values
         odometer_value = current_options.get(CONF_ODOMETER_ENTITY, "")
@@ -1517,6 +1522,14 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                     CONF_TELEGRAM_CHAT_ID,
                     default=telegram_chat_id_value,
                 ): str,
+                vol.Optional(
+                    CONF_GOOGLE_MAPS_API_KEY,
+                    default=google_maps_api_key_value,
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                    )
+                ),
                 vol.Optional(
                     CONF_ODOMETER_ENTITY,
                     description={"suggested_value": odometer_value},

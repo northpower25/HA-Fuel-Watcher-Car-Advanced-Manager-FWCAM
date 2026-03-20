@@ -870,7 +870,8 @@ class FWCAMCard extends HTMLElement {
     const waypointsEl = this.shadowRoot.getElementById('route-waypoints-input');
     const corridorEl = this.shadowRoot.getElementById('route-corridor-input');
     const providerEl = this.shadowRoot.getElementById('route-provider-select');
-    const googleKeyEl = this.shadowRoot.getElementById('route-google-key-input');
+    const departureDateEl = this.shadowRoot.getElementById('route-departure-date');
+    const departureTimeEl = this.shadowRoot.getElementById('route-departure-time');
 
     const destination = destinationEl ? destinationEl.value.trim() : '';
     if (!destination) {
@@ -884,7 +885,13 @@ class FWCAMCard extends HTMLElement {
       : [];
     const corridorWidth = corridorEl ? (parseFloat(corridorEl.value) || 5) : 5;
     const provider = providerEl ? providerEl.value : 'osrm';
-    const googleApiKey = googleKeyEl ? googleKeyEl.value.trim() : '';
+
+    // Build departure_time string (ISO-like "YYYY-MM-DD HH:MM") if both fields are set
+    const departureDate = departureDateEl ? departureDateEl.value : '';
+    const departureTime = departureTimeEl ? departureTimeEl.value : '';
+    const departureTimeStr = (departureDate && departureTime)
+      ? `${departureDate} ${departureTime}`
+      : '';
 
     const entryId = this._config.entity
       ? this._hass.states[this._config.entity]?.attributes?.entry_id || ''
@@ -897,8 +904,8 @@ class FWCAMCard extends HTMLElement {
       corridor_width_km: corridorWidth,
       routing_provider: provider,
     };
-    if (googleApiKey) {
-      serviceData.google_api_key = googleApiKey;
+    if (departureTimeStr) {
+      serviceData.departure_time = departureTimeStr;
     }
 
     try {
@@ -2085,11 +2092,17 @@ class FWCAMCard extends HTMLElement {
             </div>
           </div>
 
-          <div id="route-google-key-row" style="display:none;flex-direction:column;gap:0.25rem;">
-            <label style="font-size:0.85rem;font-weight:500;">Google API Key</label>
-            <input id="route-google-key-input" type="text" class="setting-input"
-              placeholder="Your Google Maps API key"
-              style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+          <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
+            <div style="flex:1;min-width:140px;">
+              <label style="font-size:0.85rem;font-weight:500;">Departure Date <small style="font-weight:normal;">(optional)</small></label>
+              <input id="route-departure-date" type="date" class="setting-input"
+                style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+            </div>
+            <div style="flex:1;min-width:120px;">
+              <label style="font-size:0.85rem;font-weight:500;">Departure Time <small style="font-weight:normal;">(24h)</small></label>
+              <input id="route-departure-time" type="time" class="setting-input"
+                style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+            </div>
           </div>
 
           <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
@@ -3140,17 +3153,6 @@ class FWCAMCard extends HTMLElement {
     const routeCancelBtn = this.shadowRoot.querySelector('[data-action="route-cancel"]');
     if (routeCancelBtn) {
       routeCancelBtn.addEventListener('click', () => this._handleRouteCancel());
-    }
-
-    // Show/hide Google API key input based on provider selection
-    const providerSelect = this.shadowRoot.getElementById('route-provider-select');
-    const googleKeyRow = this.shadowRoot.getElementById('route-google-key-row');
-    if (providerSelect && googleKeyRow) {
-      const updateGoogleKeyVisibility = () => {
-        googleKeyRow.style.display = providerSelect.value === 'google' ? 'flex' : 'none';
-      };
-      providerSelect.addEventListener('change', updateGoogleKeyVisibility);
-      updateGoogleKeyVisibility();
     }
   }
 
