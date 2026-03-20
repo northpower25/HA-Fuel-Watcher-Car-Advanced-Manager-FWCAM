@@ -1672,10 +1672,12 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
         await route_planner.async_set_route(route_data)
 
-        # Persist into coordinator data so sensors update immediately
+        # Persist into coordinator data so sensors update immediately, and save
+        # to HA storage so the route survives coordinator refreshes and restarts.
         if coordinator and coordinator.data is not None:
             coordinator.data["route_data"] = route_data
             coordinator.async_update_listeners()
+        await coordinator.async_save_route_data(route_data)
 
         # Send Telegram notification
         telegram_token = entry.data.get("telegram_token", "")
@@ -1733,21 +1735,25 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             await route_planner.async_cancel_route()
 
         coordinator = hass.data[DOMAIN].get(entry_id, {}).get("coordinator")
+        empty_route = {
+            "is_active": False,
+            "destination": None,
+            "waypoints": [],
+            "route_polyline": [],
+            "total_distance_km": None,
+            "fuel_stop": {},
+            "best_corridor_station": None,
+            "corridor_stations": [],
+            "categorized_stations": {},
+            "departure_time": None,
+            "eta_at_stop": None,
+        }
         if coordinator and coordinator.data is not None:
-            coordinator.data["route_data"] = {
-                "is_active": False,
-                "destination": None,
-                "waypoints": [],
-                "route_polyline": [],
-                "total_distance_km": None,
-                "fuel_stop": {},
-                "best_corridor_station": None,
-                "corridor_stations": [],
-                "categorized_stations": {},
-                "departure_time": None,
-                "eta_at_stop": None,
-            }
+            coordinator.data["route_data"] = empty_route
             coordinator.async_update_listeners()
+        # Clear persisted route data so the cancellation survives restarts
+        if coordinator:
+            await coordinator.async_clear_route_data()
 
         # Send Telegram notification
         telegram_token = entry.data.get("telegram_token", "")

@@ -20,6 +20,7 @@ from homeassistant.const import CURRENCY_EURO, PERCENTAGE, UnitOfLength
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
@@ -289,6 +290,10 @@ async def async_setup_entry(
     # Initialize coordinator with actual data fetching
     coordinator = HaFWCMACoordinator(hass, config_entry)
     
+    # Load any persisted active route so it is available from the very first
+    # coordinator refresh (survives HA restarts).
+    await coordinator.async_load_route_data()
+    
     # Store coordinator in hass.data for button/switch access
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
@@ -391,6 +396,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         )  # Track proximity alerts
         self._position_tracker = PositionTracker()  # Track position changes for recommendation cooldown
         
+        # Persisted route data – survives both coordinator refresh cycles and HA restarts.
+        # Populated by async_load_route_data() at startup and updated by the set/cancel
+        # route service handlers in __init__.py.
+        self._stored_route_data: dict | None = None
+        
         # Entity availability and caching
         self._cached_vehicle_data = {}  # Cache last known vehicle data
         self._cached_consumption_prediction = None  # Cache last known prediction
@@ -416,6 +426,59 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 self._api_debug_info["last_api_request"] = self._provider.last_api_request
             if hasattr(self._provider, 'last_api_response'):
                 self._api_debug_info["last_api_response"] = self._provider.last_api_response
+
+    # ── Route-data persistence helpers ──────────────────────────────────────
+
+    def _route_store(self):
+        """Return the HA Store used to persist route data across restarts."""
+        return Store(self.hass, 1, f"hafwcma_route_{self.config_entry.entry_id}")
+
+    async def async_load_route_data(self) -> None:
+        """Load persisted route data from HA storage.
+
+        Called once during setup so that an active route survives HA restarts.
+        If stored data is present and marks the route as active it is installed
+        in ``_stored_route_data`` so that ``_async_update_data`` can include it
+        in the coordinator payload from the very first refresh.
+        """
+        try:
+            stored = await self._route_store().async_load()
+            if stored and stored.get("is_active"):
+                self._stored_route_data = stored
+                _LOGGER.info(
+                    "Restored active route from storage: destination=%s",
+                    stored.get("destination"),
+                )
+        except Exception as err:
+            _LOGGER.warning("Could not load persisted route data: %s", err)
+
+    async def async_save_route_data(self, route_data: dict) -> None:
+        """Persist route data to HA storage.
+
+        Called by the set_route service handler so that the route survives both
+        coordinator refresh cycles and full HA restarts.
+        """
+        try:
+            self._stored_route_data = route_data
+            await self._route_store().async_save(route_data)
+            _LOGGER.debug(
+                "Route data persisted to storage: destination=%s",
+                route_data.get("destination"),
+            )
+        except Exception as err:
+            _LOGGER.warning("Could not save route data to storage: %s", err)
+
+    async def async_clear_route_data(self) -> None:
+        """Clear persisted route data from HA storage.
+
+        Called by the cancel_route service handler.
+        """
+        try:
+            self._stored_route_data = None
+            await self._route_store().async_remove()
+            _LOGGER.debug("Route data cleared from storage")
+        except Exception as err:
+            _LOGGER.warning("Could not clear route data from storage: %s", err)
 
 
     def _get_randomized_interval(self, base_minutes: int) -> timedelta:
@@ -1186,7 +1249,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         provider = options.get(CONF_PROVIDER) or config.get(CONF_PROVIDER, PROVIDER_TANKERKONIG)
         api_key = config.get(CONF_API_KEY)
         fuel_type = options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5")
-        radius = options.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
+        radius = options.get(CONF_CHEAP_STATIONS_RADIUS) or config.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
         
         # Validate critical configuration
         if not api_key:
@@ -1498,9 +1561,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 try:
                     # Get geolocation configuration
                     proximity_enabled = options.get(CONF_PROXIMITY_ALERTS_ENABLED, DEFAULT_PROXIMITY_ALERTS_ENABLED)
-                    cheap_stations_count = options.get(CONF_CHEAP_STATIONS_COUNT, DEFAULT_CHEAP_STATIONS_COUNT)
-                    cheap_stations_radius = options.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
-                    cheap_near_stations_radius = options.get(CONF_CHEAP_NEAR_STATIONS_RADIUS, DEFAULT_CHEAP_NEAR_STATIONS_RADIUS)
+                    cheap_stations_count = options.get(CONF_CHEAP_STATIONS_COUNT) or config.get(CONF_CHEAP_STATIONS_COUNT, DEFAULT_CHEAP_STATIONS_COUNT)
+                    cheap_stations_radius = options.get(CONF_CHEAP_STATIONS_RADIUS) or config.get(CONF_CHEAP_STATIONS_RADIUS, DEFAULT_CHEAP_STATIONS_RADIUS)
+                    cheap_near_stations_radius = options.get(CONF_CHEAP_NEAR_STATIONS_RADIUS) or config.get(CONF_CHEAP_NEAR_STATIONS_RADIUS, DEFAULT_CHEAP_NEAR_STATIONS_RADIUS)
                     proximity_distance = options.get(CONF_PROXIMITY_ALERT_DISTANCE, DEFAULT_PROXIMITY_ALERT_DISTANCE)
                     min_tank_level = options.get(CONF_MIN_TANK_LEVEL_FOR_ALERTS, DEFAULT_MIN_TANK_LEVEL_FOR_ALERTS)
                     
@@ -2396,6 +2459,15 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             "radius_comparison": radius_comparison,  # Add 10km vs 20km comparison
             "storage_statistics": storage_statistics,  # Add storage statistics for debug sensor
             "weekday_consumption": weekday_consumption,  # Add weekday consumption for pattern attributes
+            # Preserve active route data across coordinator refresh cycles.
+            # Priority: in-memory stored data (set/updated by service handlers)
+            # falls back to whatever was already in coordinator.data before this
+            # refresh, so the route is never lost just because the update timer fired.
+            "route_data": (
+                self._stored_route_data
+                or (self.data.get("route_data") if self.data else None)
+                or {"is_active": False}
+            ),
         }
         
         # Apply randomization for next update interval
@@ -3370,7 +3442,8 @@ class FarStationSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             stations = nearby_data.get("all_stations") or nearby_data.get("stations") or []
             if stations:
                 options = self.coordinator.config_entry.options
-                near_radius = options.get(
+                config = self.coordinator.config_entry.data
+                near_radius = options.get(CONF_CHEAP_NEAR_STATIONS_RADIUS) or config.get(
                     CONF_CHEAP_NEAR_STATIONS_RADIUS, DEFAULT_CHEAP_NEAR_STATIONS_RADIUS
                 )
                 outer_stations = [
