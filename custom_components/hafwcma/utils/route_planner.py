@@ -32,6 +32,11 @@ NOMINATIM_USER_AGENT = "HomeAssistant-haFWCMA/1.0"
 REQUEST_TIMEOUT_SECONDS = 15
 OSRM_TABLE_BASE_URL = "https://router.project-osrm.org/table/v1/driving"
 
+# Distance (km) ahead of the predicted fuel stop used as the route re-entry
+# point in the triangle-formula detour calculation.  Must be long enough that
+# stations clearly off the route produce a meaningful positive detour value.
+DETOUR_LOOKAHEAD_KM = 30.0
+
 
 # ── Internal routing helpers ────────────────────────────────────────────────
 
@@ -304,46 +309,153 @@ async def fetch_road_distances_osrm(
         return [None] * len(destinations)
 
 
+async def fetch_road_distances_osrm_many_to_one(
+    origins: list[tuple[float, float]],
+    destination: tuple[float, float],
+) -> list[float | None]:
+    """Fetch road distances from each origin to a single destination via OSRM table.
+
+    Uses the OSRM ``/table/v1`` endpoint with N sources and 1 destination so
+    all distances are obtained in a single HTTP request.
+
+    Args:
+        origins: List of ``(lat, lon)`` source points.
+        destination: Single ``(lat, lon)`` target point.
+
+    Returns:
+        List of road distances in km (one per origin), or ``None`` for any
+        origin where the routing failed.  Returns an all-``None`` list on
+        network/API error.
+    """
+    if not origins:
+        return []
+
+    # Append destination after origins; OSRM uses lon,lat order.
+    # The loop `for lat, lon in all_points` unpacks (lat, lon) tuples, and
+    # `f"{lon},{lat}"` emits them in the lon-first format required by OSRM.
+    all_points = origins + [destination]
+    coords_str = ";".join(f"{lon},{lat}" for lat, lon in all_points)
+
+    # source indices cover origins (0..N-1); destination index is N
+    src_indices = ";".join(str(i) for i in range(len(origins)))
+    dest_index = str(len(origins))
+    url = f"{OSRM_TABLE_BASE_URL}/{coords_str}"
+    params = {
+        "sources": src_indices,
+        "destinations": dest_index,
+        "annotations": "distance",
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+            ) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning("OSRM table API returned HTTP %d", resp.status)
+                    return [None] * len(origins)
+                data = await resp.json()
+
+        if data.get("code") != "Ok":
+            _LOGGER.warning("OSRM table API error: %s", data.get("code"))
+            return [None] * len(origins)
+
+        # distances matrix: N rows (sources) × 1 column (destination)
+        distances_matrix = data.get("distances", [])
+        result: list[float | None] = []
+        for row in distances_matrix:
+            if not row or row[0] is None or row[0] < 0:
+                result.append(None)
+            else:
+                result.append(row[0] / 1000.0)  # metres → km
+        # Pad with None if the API returned fewer rows than expected
+        while len(result) < len(origins):
+            result.append(None)
+        return result
+
+    except Exception as err:
+        _LOGGER.warning("Error fetching OSRM table distances (many-to-one): %s", err)
+        return [None] * len(origins)
+
+
 async def async_enrich_stations_with_road_detour(
     stations: list[dict[str, Any]],
     nearest_route_point: tuple[float, float],
+    ahead_route_point: tuple[float, float] | None = None,
+    lookahead_km: float = DETOUR_LOOKAHEAD_KM,
 ) -> list[dict[str, Any]]:
-    """Add road-based round-trip detour distances to corridor station dicts.
+    """Add road-based detour distances to corridor station dicts.
 
-    Queries OSRM for the actual road distance from *nearest_route_point* to
-    each station.  The round-trip detour is 2 × one-way road distance.
-    Falls back to the existing ``detour_km`` (straight-line) when OSRM
-    returns ``None`` for a particular station.
+    Calculates the actual extra kilometres a driver incurs when diverting from
+    the route to visit a station.  When *ahead_route_point* is supplied the
+    detour uses the triangle formula::
+
+        detour = max(0, d(P_near → station) + d(station → P_after)
+                        - d_polyline(P_near → P_after))
+
+    where *P_near* is *nearest_route_point*, *P_after* is *ahead_route_point*
+    (a point ``lookahead_km`` further along the route), and the baseline
+    ``d_polyline`` equals ``lookahead_km`` when *ahead_route_point* was
+    obtained by advancing exactly that far along the polyline.
+
+    This correctly captures the reality that a driver does **not** drive back
+    to the entry point after visiting the station – they continue forward.
+    Stations close to the route produce a small (or zero) detour, while
+    stations truly off the route produce a larger one.
+
+    Falls back to ``2 × one-way`` distance when *ahead_route_point* is
+    ``None`` or when OSRM returns ``None`` for a station.
 
     Args:
         stations: List of station dicts.  Each must have ``lat``/``latitude``
             and ``lng``/``longitude`` fields.
         nearest_route_point: ``(lat, lon)`` of the closest point on the route
-            to the refuel corridor.
+            to the refuel corridor (P_near).
+        ahead_route_point: Optional ``(lat, lon)`` of the re-entry point on
+            the route, ``lookahead_km`` further along from P_near (P_after).
+            Enables the accurate triangle-formula detour calculation.
+        lookahead_km: Route distance in km from *nearest_route_point* to
+            *ahead_route_point*; used as the baseline in the triangle formula.
+            Ignored when *ahead_route_point* is ``None``.
 
     Returns:
-        New list of station dicts with ``road_detour_km`` added/updated and
-        ``detour_km`` preserved (straight-line fallback).
+        New list of station dicts with ``road_detour_km`` set to the actual
+        extra distance and ``detour_km`` preserved as straight-line fallback.
     """
     if not stations:
         return []
 
-    destinations: list[tuple[float, float]] = []
+    station_coords: list[tuple[float, float]] = []
     for st in stations:
         lat = st.get("lat") or st.get("latitude", 0.0)
         lon = st.get("lng") or st.get("longitude", 0.0)
-        destinations.append((float(lat), float(lon)))
+        station_coords.append((float(lat), float(lon)))
 
-    one_way_km = await fetch_road_distances_osrm(nearest_route_point, destinations)
+    # Step 1: d(P_near → each station)
+    one_way_km = await fetch_road_distances_osrm(nearest_route_point, station_coords)
+
+    # Step 2: d(each station → P_after), only when ahead_route_point is given
+    station_to_ahead_km: list[float | None] = [None] * len(stations)
+    if ahead_route_point is not None:
+        station_to_ahead_km = await fetch_road_distances_osrm_many_to_one(
+            station_coords, ahead_route_point
+        )
 
     enriched: list[dict[str, Any]] = []
-    for st, ow_km in zip(stations, one_way_km):
+    for st, ow_km, s2a_km in zip(stations, one_way_km, station_to_ahead_km):
         updated = dict(st)
         if ow_km is not None:
-            # Round-trip: station → route and back
-            updated["road_detour_km"] = round(ow_km * 2.0, 2)
+            if ahead_route_point is not None and s2a_km is not None:
+                # Triangle formula: actual extra km vs. staying on route
+                triangle_detour = max(0.0, ow_km + s2a_km - lookahead_km)
+                updated["road_detour_km"] = round(triangle_detour, 2)
+            else:
+                # Legacy fallback: round-trip from same point
+                updated["road_detour_km"] = round(ow_km * 2.0, 2)
         else:
-            # Fall back to straight-line detour (already 2× in caller) or raw value
+            # OSRM failed for this station – keep existing value or straight-line
             updated["road_detour_km"] = st.get("road_detour_km") or st.get("detour_km", 0.0)
         enriched.append(updated)
 
@@ -800,6 +912,25 @@ class FuelStopPredictor:
                 return lat1 + t * (lat2 - lat1), lon1 + t * (lon2 - lon1)
             cumulative += seg_len
         return None
+
+    def find_point_at_distance(
+        self,
+        polyline: list[tuple[float, float]],
+        target_km: float,
+    ) -> tuple[float, float] | None:
+        """Return the interpolated (lat, lon) at *target_km* along the polyline.
+
+        Public API for callers outside this class.
+
+        Args:
+            polyline: Route as ``(lat, lon)`` list.
+            target_km: Distance along the polyline in km.
+
+        Returns:
+            Interpolated ``(lat, lon)`` at the requested distance, or ``None``
+            when *target_km* is beyond the end of the polyline.
+        """
+        return self._find_point_at_distance(polyline, target_km)
 
     def _total_route_distance(self, polyline: list[tuple[float, float]]) -> float:
         """Return the total length of the polyline in km."""
