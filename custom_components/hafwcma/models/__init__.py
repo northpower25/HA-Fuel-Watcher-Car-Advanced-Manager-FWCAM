@@ -45,6 +45,8 @@ class FuelStation:
     price_diesel: Optional[float] = None
     is_open: bool = True
     last_updated: Optional[datetime] = None
+    opening_times: Optional[list] = None  # Raw openingTimes from detail.php
+    whole_day: bool = False  # True when station operates 24 h
 
     def get_price(self, fuel_type: str) -> Optional[float]:
         """Get price for specified fuel type.
