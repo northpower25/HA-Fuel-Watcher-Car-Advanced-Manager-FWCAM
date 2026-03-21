@@ -266,6 +266,7 @@ class TelegramNotifier(MessageService):
         categorized_stations: dict | None = None,
         departure_time: str | None = None,
         eta_at_stop: str | None = None,
+        abroad_fuel_stop: bool = False,
     ) -> bool:
         """Send a route-started notification with 3-category station recommendations.
 
@@ -287,6 +288,9 @@ class TelegramNotifier(MessageService):
                 ``"middle"`` – each value is a station dict or ``None``.
             departure_time: Human-readable departure time string (e.g. "08:30").
             eta_at_stop: Estimated arrival time string at fuel stop (e.g. "10:45").
+            abroad_fuel_stop: When ``True`` the predicted stop is outside Germany;
+                station blocks are formatted without price information and use
+                OSM-sourced data.
 
         Returns:
             True if the message was sent successfully.
@@ -321,19 +325,27 @@ class TelegramNotifier(MessageService):
 
         def _fmt_station_block(label: str, emoji: str, station: dict) -> list[str]:
             nav = station.get("navigation_urls") or {}
-            price = station.get("price", "N/A")
-            detour = station.get("detour_km", 0)
+            price = station.get("price")
+            detour = station.get("road_detour_km") or station.get("detour_km", 0)
             eff = station.get("effective_price_eur_per_l")
             opening_hours = station.get("opening_hours", "")
+            address = station.get("address", "")
+            is_osm = station.get("source") == "osm"
+
             block = [
                 "",
                 f"{emoji} <b>{label}</b>",
                 f"   {html.escape(str(station.get('name', 'N/A')))}",
-                f"   💰 Preis: <b>{price} €/l</b>",
-                f"   📏 Streckenumweg: {detour} km",
             ]
-            if eff is not None:
-                block.append(f"   💶 Effektiv: {eff} €/l (inkl. Umweg)")
+            if address:
+                block.append(f"   📮 {html.escape(address)}")
+            if not is_osm and price is not None:
+                block.append(f"   💰 Preis: <b>{price} €/l</b>")
+                block.append(f"   📏 Streckenumweg: {detour} km")
+                if eff is not None:
+                    block.append(f"   💶 Effektiv: {eff} €/l (inkl. Umweg)")
+            else:
+                block.append(f"   📏 Streckenumweg: {detour} km")
             if opening_hours:
                 block.append(f"   🕒 Öffnungszeiten: {html.escape(str(opening_hours))}")
             # All 3 navigation links
@@ -348,12 +360,23 @@ class TelegramNotifier(MessageService):
                 block.append(f"   🗺️ {' | '.join(nav_parts)}")
             return block
 
-        if cheapest:
-            lines += _fmt_station_block("Günstigste Tankstelle (inkl. Umweg)", "🏆", cheapest)
-        if nearest:
-            lines += _fmt_station_block("Nächste Tankstelle an der Route", "📍", nearest)
-        if middle:
-            lines += _fmt_station_block("Kompromiss (Preis/Entfernung)", "⚖️", middle)
+        if abroad_fuel_stop:
+            # International stop: show up to 3 nearest OSM stations without price
+            if nearest:
+                lines.append("")
+                lines.append("🌍 <b>Tankstellen im Ausland (keine Preisinfo verfügbar)</b>")
+                lines += _fmt_station_block("1. Nächste Tankstelle", "📍", nearest)
+            if middle:
+                lines += _fmt_station_block("2. Nächste Tankstelle", "📍", middle)
+            if cheapest:
+                lines += _fmt_station_block("3. Nächste Tankstelle", "📍", cheapest)
+        else:
+            if cheapest:
+                lines += _fmt_station_block("Günstigste Tankstelle (inkl. Umweg)", "🏆", cheapest)
+            if nearest:
+                lines += _fmt_station_block("Nächste Tankstelle an der Route", "📍", nearest)
+            if middle:
+                lines += _fmt_station_block("Kompromiss (Preis/Entfernung)", "⚖️", middle)
 
         # Legacy fallback: show remaining top_stations when no categorized_stations
         if not cats and top_stations:
