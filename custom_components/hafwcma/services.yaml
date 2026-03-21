@@ -1024,3 +1024,200 @@ export_debug_data:
       example: "abc123def456"
       selector:
         text:
+
+set_route:
+  name: Set Route
+  description: >
+    Activate a route immediately. Geocodes the destination and any waypoints,
+    calculates the route via the configured routing provider, and stores the
+    active route in the coordinator. Corridor station search becomes active.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    destination:
+      name: Destination
+      description: Destination address or place name
+      required: true
+      example: "Berlin Hauptbahnhof"
+      selector:
+        text:
+    origin:
+      name: Origin
+      description: Starting address or place name (uses current location if omitted)
+      required: false
+      example: "Hamburg Hauptbahnhof"
+      selector:
+        text:
+    waypoints:
+      name: Waypoints
+      description: Optional list of intermediate stops
+      required: false
+      example: ["Hannover Hauptbahnhof"]
+      selector:
+        object:
+    corridor_width_km:
+      name: Corridor Width (km)
+      description: Search radius in km on each side of the route for fuel stations
+      required: false
+      default: 5.0
+      example: 5.0
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 0.5
+          unit_of_measurement: km
+    routing_provider:
+      name: Routing Provider
+      description: Routing engine to use (osrm or google)
+      required: false
+      default: "osrm"
+      example: "osrm"
+      selector:
+        select:
+          options:
+            - osrm
+            - google
+    google_api_key:
+      name: Google API Key
+      description: Google Directions API key (required when routing_provider is google)
+      required: false
+      example: "AIzaSy..."
+      selector:
+        text:
+    departure_time:
+      name: Departure Time
+      description: Planned departure time in ISO 8601 format (e.g. 2026-06-01T08:00:00)
+      required: false
+      example: "2026-06-01T08:00:00"
+      selector:
+        text:
+
+cancel_route:
+  name: Cancel Route
+  description: >
+    Cancel the currently active route for the given integration instance.
+    Clears the active route and deactivates corridor station search.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+
+plan_route:
+  name: Plan Route
+  description: >
+    Save a planned route without activating it. Geocodes the destination and
+    waypoints, calculates the route distance and duration, then appends the
+    route to the saved-routes list. The route remains in the list until
+    explicitly activated via set_route or the Lovelace card.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    destination:
+      name: Destination
+      description: Destination address or place name
+      required: true
+      example: "Berlin Hauptbahnhof"
+      selector:
+        text:
+    origin:
+      name: Origin
+      description: Starting address or place name (uses current location if omitted)
+      required: false
+      example: "Hamburg Hauptbahnhof"
+      selector:
+        text:
+    waypoints:
+      name: Waypoints
+      description: Optional list of intermediate stops
+      required: false
+      example: ["Hannover Hauptbahnhof"]
+      selector:
+        object:
+    corridor_width_km:
+      name: Corridor Width (km)
+      description: Search radius in km on each side of the route for fuel stations
+      required: false
+      default: 5.0
+      example: 5.0
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 0.5
+          unit_of_measurement: km
+    routing_provider:
+      name: Routing Provider
+      description: Routing engine to use (osrm or google)
+      required: false
+      default: "osrm"
+      example: "osrm"
+      selector:
+        select:
+          options:
+            - osrm
+            - google
+    google_api_key:
+      name: Google API Key
+      description: Google Directions API key (required when routing_provider is google)
+      required: false
+      example: "AIzaSy..."
+      selector:
+        text:
+    departure_time:
+      name: Departure Time
+      description: Planned departure time in ISO 8601 format
+      required: false
+      example: "2026-06-01T08:00:00"
+      selector:
+        text:
+
+get_saved_routes:
+  name: Get Saved Routes
+  description: >
+    Return the list of all saved/planned routes for the given integration
+    instance. Requires return_response: true to receive the result.
+    Returns a dict with keys "routes" (list) and "count" (int).
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+
+delete_saved_route:
+  name: Delete Saved Route
+  description: >
+    Delete a saved/planned route by its route_id from the saved-routes list.
+    Returns a dict with key "success" (bool).
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The configuration entry ID of the integration instance
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+    route_id:
+      name: Route ID
+      description: The unique identifier of the route to delete
+      required: true
+      example: 1
+      selector:
+        text:

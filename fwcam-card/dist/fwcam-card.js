@@ -951,9 +951,9 @@ class FWCAMCard extends HTMLElement {
         'hafwcma',
         'get_saved_routes',
         { config_entry_id: entryId },
-        {},     // target
-        true,   // notifyOnError
-        true    // returnResponse
+        undefined,  // no entity target
+        true,       // notifyOnError
+        true        // returnResponse
       );
       this._savedRoutes = (result && Array.isArray(result.response?.routes)) ? result.response.routes : [];
       this._savedRoutesLoaded = true;
@@ -978,7 +978,11 @@ class FWCAMCard extends HTMLElement {
         config_entry_id: entryId,
         route_id: routeId,
       });
-      await this._fetchSavedRoutes();
+      // Optimistically remove the deleted route from local state for immediate UI feedback
+      this._savedRoutes = (this._savedRoutes || []).filter(
+        r => String(r.route_id) !== String(routeId)
+      );
+      this._updateSavedRoutesSection();
     } catch (err) {
       console.error('FWCAM: delete_saved_route failed', err);
     }
