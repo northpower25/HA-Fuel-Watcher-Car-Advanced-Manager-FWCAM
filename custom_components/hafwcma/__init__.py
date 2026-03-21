@@ -1374,6 +1374,20 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         DOMAIN, SERVICE_EXPORT_DEBUG_DATA, handle_export_debug_data, schema=SCHEMA_EXPORT_DEBUG_DATA, supports_response=True
     )
 
+    def _is_in_germany(lat: float, lon: float) -> bool:
+        """Fast bounding-box check: return True when (lat, lon) is inside Germany.
+
+        Germany's approximate bounding box (WGS-84):
+            North  55.09°N  (Sylt)
+            South  47.27°N  (Berchtesgaden)
+            West    5.87°E  (Aachen area)
+            East   15.04°E  (Görlitz)
+
+        Borderline cases (Alsace, western Austria) are intentionally inside
+        the box to avoid a Nominatim round-trip for the common case.
+        """
+        return 47.27 <= lat <= 55.09 and 5.87 <= lon <= 15.04
+
     def _parse_departure_time(departure_time_str: str) -> "datetime | None":
         """Parse a departure-time string into a datetime object.
 
@@ -1526,6 +1540,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "best_corridor_station": None,
             "corridor_stations": [],
             "categorized_stations": {},
+            "abroad_fuel_stop": False,
         }
 
         # ── Initial fuel-stop prediction ──────────────────────────────────────
@@ -1619,17 +1634,23 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                         stop_lat = stop_info.get("predicted_lat")
                         stop_lon = stop_info.get("predicted_lon")
 
-                        if api_key and stop_lat and stop_lon and provider_name == PROVIDER_TANKERKONIG:
+                        from homeassistant.helpers.aiohttp_client import (
+                            async_get_clientsession,
+                        )
+                        _session = async_get_clientsession(hass)
+
+                        stop_in_germany = stop_lat and stop_lon and _is_in_germany(
+                            float(stop_lat), float(stop_lon)
+                        )
+
+                        if stop_in_germany and api_key and provider_name == PROVIDER_TANKERKONIG:
+                            # ── German route: price-optimised Tankerkönig search ──────────
                             try:
-                                from homeassistant.helpers.aiohttp_client import (
-                                    async_get_clientsession,
-                                )
                                 from .providers.tankerkonig import (
                                     TankerkoenigProvider,
                                     is_station_open_at,
                                     format_opening_hours,
                                 )
-                                _session = async_get_clientsession(hass)
                                 tk_provider = TankerkoenigProvider(api_key, _session)
                                 nearby = await tk_provider.get_stations_nearby(
                                     stop_lat, stop_lon, corridor_width_km, fuel_type
@@ -1652,8 +1673,15 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                                 "set_route: opening hours batch fetch failed: %s", oh_err
                                             )
 
-                                    # Convert FuelStation objects to plain dicts for the ranker
-                                    station_dicts: list[dict] = []
+                                    # Build candidate dicts in two passes:
+                                    #   1st pass – stations open at ETA (preferred)
+                                    #   2nd pass – currently-open stations (fallback when
+                                    #              ETA filter would remove everything, e.g.
+                                    #              because all stations close before arrival)
+                                    from .utils.geolocation import calculate_distance
+                                    eta_open_dicts: list[dict] = []
+                                    is_open_dicts: list[dict] = []
+
                                     for st in top_nearby:
                                         price = (
                                             st.get_price(fuel_type)
@@ -1662,53 +1690,61 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                         )
                                         if price is None:
                                             continue
-                                        # Filter by open status.
-                                        # When ETA is known, check opening hours at ETA time.
-                                        # Otherwise fall back to the current is_open flag.
-                                        is_open = getattr(st, "is_open", True)
+                                        cur_is_open = getattr(st, "is_open", True)
                                         sid = getattr(st, "station_id", "")
                                         ot, wd = opening_hours_map.get(sid, (None, False))
-                                        if eta_dt is not None and ot is not None:
-                                            # Use schedule to check at ETA time
-                                            open_at_eta = is_station_open_at(ot, wd, eta_dt)
-                                            if not open_at_eta:
-                                                _LOGGER.debug(
-                                                    "set_route: skipping station '%s' – "
-                                                    "closed at ETA %s",
-                                                    getattr(st, "name", sid),
-                                                    eta_dt.strftime("%H:%M"),
-                                                )
-                                                continue
-                                        elif not is_open:
-                                            # No ETA or no detail data – use current is_open
-                                            continue
-                                        from .utils.geolocation import calculate_distance
                                         dist_km = calculate_distance(
                                             stop_lat, stop_lon,
                                             getattr(st, "latitude", 0),
                                             getattr(st, "longitude", 0),
                                         )
                                         opening_hours_str = format_opening_hours(ot, wd)
-                                        station_dicts.append({
+                                        candidate = {
                                             "station_id": sid,
                                             "name": getattr(st, "name", "Unknown"),
                                             "lat": getattr(st, "latitude", stop_lat),
                                             "lng": getattr(st, "longitude", stop_lon),
                                             "price": price,
-                                            # Straight-line one-way * 2 = initial round-trip estimate
+                                            # Straight-line one-way * 2 = initial estimate
                                             "detour_km": round(dist_km * 2.0, 2),
-                                            "is_open": is_open,
+                                            "is_open": cur_is_open,
                                             "opening_hours": opening_hours_str,
-                                        })
+                                        }
+                                        # ETA-aware check
+                                        if eta_dt is not None and ot is not None:
+                                            open_at_eta = is_station_open_at(ot, wd, eta_dt)
+                                            if open_at_eta:
+                                                eta_open_dicts.append(candidate)
+                                            else:
+                                                _LOGGER.debug(
+                                                    "set_route: station '%s' closed at ETA %s",
+                                                    getattr(st, "name", sid),
+                                                    eta_dt.strftime("%H:%M"),
+                                                )
+                                        else:
+                                            # No ETA data or no opening-hours detail –
+                                            # use current is_open flag
+                                            if cur_is_open:
+                                                eta_open_dicts.append(candidate)
+
+                                        # Always track currently-open for fallback
+                                        if cur_is_open:
+                                            is_open_dicts.append(candidate)
+
+                                    # Prefer ETA-filtered list; if empty fall back to
+                                    # currently-open stations so we always show something.
+                                    station_dicts: list[dict] = eta_open_dicts or is_open_dicts
+                                    if not eta_open_dicts and is_open_dicts:
+                                        _LOGGER.debug(
+                                            "set_route: ETA filter removed all stations – "
+                                            "falling back to %d currently-open station(s)",
+                                            len(is_open_dicts),
+                                        )
 
                                     if station_dicts:
                                         # Use the full route polyline so that each
                                         # station's detour is computed from its own
                                         # nearest route point (per-station P_near).
-                                        # This avoids the systematic overestimate that
-                                        # occurs when the predicted fuel stop is used as
-                                        # a shared P_near for stations located before or
-                                        # after that stop on the route.
                                         station_dicts = await async_enrich_stations_with_road_detour(
                                             station_dicts,
                                             polyline=route_result["polyline"],
@@ -1734,6 +1770,82 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                             except Exception as tk_err:
                                 _LOGGER.warning(
                                     "set_route: initial corridor station fetch failed: %s", tk_err
+                                )
+
+                        # OSM Overpass abroad search:
+                        # • Primary:  stop is detected as outside Germany
+                        # • Fallback: stop may be in Germany bounding box but Tankerkönig
+                        #             returned no stations (e.g. borderline location or no
+                        #             API key configured)
+                        _need_osm = (stop_lat and stop_lon) and not route_data.get(
+                            "corridor_stations"
+                        )
+                        # Only flag as "abroad" when the stop is genuinely outside Germany;
+                        # OSM-fallback inside Germany should not show the abroad header.
+                        _osm_is_abroad = not stop_in_germany
+                        if _need_osm:
+                            try:
+                                from .providers.osm_fuel import (
+                                    fetch_osm_fuel_stations,
+                                    is_osm_station_open_at,
+                                )
+                                from .utils.geolocation import get_navigation_urls
+                                radius_m = max(int(corridor_width_km * 1000), 3000)
+                                osm_raw = await fetch_osm_fuel_stations(
+                                    _session,
+                                    float(stop_lat),
+                                    float(stop_lon),
+                                    radius_m=radius_m,
+                                    max_stations=10,
+                                )
+                                if osm_raw:
+                                    # Optional ETA-aware open-hours filter (best-effort)
+                                    if eta_dt is not None:
+                                        eta_open: list[dict] = []
+                                        for st in osm_raw:
+                                            oh_str = st.get("opening_hours", "")
+                                            result = is_osm_station_open_at(oh_str, eta_dt)
+                                            # result is None = unknown → keep station
+                                            if result is not False:
+                                                eta_open.append(st)
+                                        # Fallback: if filter removes everything, keep all
+                                        osm_candidates = eta_open or osm_raw
+                                    else:
+                                        osm_candidates = osm_raw
+
+                                    # Enrich with road detour
+                                    osm_candidates = await async_enrich_stations_with_road_detour(
+                                        osm_candidates,
+                                        polyline=route_result["polyline"],
+                                        lookahead_km=DETOUR_LOOKAHEAD_KM,
+                                    )
+                                    # Sort nearest-to-route first (no price to optimise)
+                                    osm_candidates.sort(
+                                        key=lambda s: s.get("road_detour_km", float("inf"))
+                                    )
+                                    # Add navigation URLs
+                                    for st in osm_candidates:
+                                        st["navigation_urls"] = get_navigation_urls(
+                                            st["lat"], st["lng"], st.get("name", "")
+                                        )
+                                    top3 = osm_candidates[:3]
+                                    route_data["corridor_stations"] = top3
+                                    route_data["abroad_fuel_stop"] = _osm_is_abroad
+                                    if top3:
+                                        route_data["best_corridor_station"] = top3[0]
+                                    # Re-use categorized_stations keys for abroad stops:
+                                    # "nearest"=1st, "middle"=2nd, "cheapest"=3rd nearest
+                                    # (no price data so sorting by road detour only)
+                                    categorized_stations = {
+                                        "nearest": top3[0] if len(top3) > 0 else None,
+                                        "middle": top3[1] if len(top3) > 1 else None,
+                                        "cheapest": top3[2] if len(top3) > 2 else None,
+                                    }
+                                    route_data["categorized_stations"] = categorized_stations
+                                    initial_corridor_stations = top3
+                            except Exception as osm_err:
+                                _LOGGER.warning(
+                                    "set_route: OSM abroad station fetch failed: %s", osm_err
                                 )
         except Exception as pred_err:
             _LOGGER.warning("set_route: initial fuel stop prediction failed: %s", pred_err)
@@ -1769,6 +1881,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     safety_buffer_pct=safety_buffer_pct,
                     departure_time=departure_time_str or None,
                     eta_at_stop=eta_at_stop,
+                    abroad_fuel_stop=bool(route_data.get("abroad_fuel_stop")),
                 )
             except Exception as tg_err:
                 _LOGGER.warning("set_route: Telegram notification failed: %s", tg_err)
@@ -1816,6 +1929,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "categorized_stations": {},
             "departure_time": None,
             "eta_at_stop": None,
+            "abroad_fuel_stop": False,
         }
         if coordinator and coordinator.data is not None:
             coordinator.data["route_data"] = empty_route
