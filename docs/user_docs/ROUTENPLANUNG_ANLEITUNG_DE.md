@@ -69,6 +69,10 @@ Ein **15 % Sicherheitspuffer** wird standardmäßig abgezogen, um Reserve für U
 | **Corridor Width (Korridorbreite, km)** | Puffer um die Route für die Tankstellensuche (1–50 km) | 5 km |
 | **Routing Provider (Routing-Anbieter)** | Dienst zur Routenberechnung | OSRM (kostenlos) |
 | **Google API Key** | Nur erforderlich, wenn *Google Maps* als Anbieter gewählt wurde | – |
+| **Departure Date (Abfahrtsdatum)** | Optionales Datum der geplanten Abfahrt (Datumsauswahl, Format `JJJJ-MM-TT`) | – |
+| **Departure Time (Abfahrtszeit)** | Optionale Abfahrtszeit im 24-Stunden-Format (Zeitauswahl, Format `HH:MM`) | – |
+
+> **Hinweis zu Abfahrtsdatum und -uhrzeit:** Wenn beide Felder ausgefüllt sind, wird der Abfahrtszeitpunkt über den Serviceparameter `departure_time` an den Routing-Anbieter übergeben. Dies ermöglicht verkehrsabhängiges Routing bei Anbietern, die dies unterstützen (z. B. Google Maps). Wenn die Felder leer bleiben, wird die Route für eine sofortige Abfahrt berechnet. Beide Felder müssen gemeinsam ausgefüllt werden – ein Datum ohne Uhrzeit (oder umgekehrt) wird ignoriert.
 
 ### Routing-Anbieter
 
@@ -95,8 +99,9 @@ Ein **15 % Sicherheitspuffer** wird standardmäßig abgezogen, um Reserve für U
 4. Optional: Gib **Zwischenziele** ein (kommagetrennt).
 5. Passe die **Korridorbreite** bei Bedarf an (Standard 5 km ist für die meisten Autobahnfahrten geeignet).
 6. Wähle deinen bevorzugten **Routing-Anbieter** (OSRM wird für die normale Nutzung empfohlen).
-7. Klicke auf **Start Route**.
-8. Die Karte zeigt ein grünes **✅ Route Active**-Banner, sobald die Route berechnet wurde.
+7. Optional: Lege **Abfahrtsdatum** und **Abfahrtszeit** für verkehrsabhängiges Routing fest.
+8. Klicke auf **Start Route**.
+9. Die Karte zeigt ein grünes **✅ Route Active**-Banner, sobald die Route berechnet wurde.
 
 ---
 
@@ -191,6 +196,7 @@ data:
   corridor_width_km: 5
   routing_provider: "osrm"
   # google_api_key: "AIza..." # nur für Google-Maps-Anbieter
+  # departure_time: "2025-06-15 08:30"  # optional: JJJJ-MM-TT HH:MM
 ```
 
 | Parameter | Pflicht | Typ | Standard | Beschreibung |
@@ -201,6 +207,7 @@ data:
 | `corridor_width_km` | ❌ | float | `5.0` | Korridorbreite in km |
 | `routing_provider` | ❌ | string | `"osrm"` | `osrm` / `openrouteservice` / `google` |
 | `google_api_key` | ❌ | string | `""` | Google Maps API-Schlüssel (nur für `google`-Anbieter) |
+| `departure_time` | ❌ | string | `""` | Geplante Abfahrtszeit als `JJJJ-MM-TT HH:MM`. Ermöglicht verkehrsabhängiges Routing bei unterstützten Anbietern. |
 
 ### `hafwcma.cancel_route`
 

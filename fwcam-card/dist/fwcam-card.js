@@ -1086,7 +1086,7 @@ class FWCAMCard extends HTMLElement {
       this._allTrips = recentTrips;
     }
     // Trigger async fetch of all trips if we haven't fetched them yet
-    if (!this._allTripsFetched && (this._config.show_trip_log || this._config.show_vehicle_info)) {
+    if (!this._allTripsFetched && (this._config.show_trip_log || this._config.show_vehicle_info || this._config.show_top_destinations)) {
       this._fetchAllTripsAsync();
     }
 
