@@ -268,6 +268,7 @@ class FWCAMCard extends HTMLElement {
       nearby_cheap_stations: `sensor.${baseName}_nearby_cheap_stations`,
       // Route corridor sensors
       active_route: `sensor.${baseName}_active_route`,
+      planned_routes: `sensor.${baseName}_planned_routes`,
       predicted_fuel_stop: `sensor.${baseName}_predicted_fuel_stop`,
       corridor_best_station: `sensor.${baseName}_corridor_best_station`,
       corridor_stations: `sensor.${baseName}_corridor_stations`,
@@ -926,6 +927,89 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Handle Route Planner – Plan Route button click (save without activating).
+   * Calls hafwcma.plan_route service.
+   */
+  async _handleRoutePlan() {
+    const originEl = this.shadowRoot.getElementById('route-origin-input');
+    const destinationEl = this.shadowRoot.getElementById('route-destination-input');
+    const waypointsEl = this.shadowRoot.getElementById('route-waypoints-input');
+    const corridorEl = this.shadowRoot.getElementById('route-corridor-input');
+    const providerEl = this.shadowRoot.getElementById('route-provider-select');
+    const departureDateEl = this.shadowRoot.getElementById('route-departure-date');
+    const departureTimeEl = this.shadowRoot.getElementById('route-departure-time');
+
+    const origin = originEl ? originEl.value.trim() : '';
+    const destination = destinationEl ? destinationEl.value.trim() : '';
+    const lang = this.getUserLanguage ? this.getUserLanguage() : 'en';
+    if (!destination) {
+      alert(lang === 'de' ? 'Bitte eine Zieladresse eingeben.' : 'Please enter a destination.');
+      return;
+    }
+
+    const waypointsRaw = waypointsEl ? waypointsEl.value.trim() : '';
+    const waypoints = waypointsRaw
+      ? waypointsRaw.split(',').map(w => w.trim()).filter(Boolean)
+      : [];
+    const corridorWidth = corridorEl ? (parseFloat(corridorEl.value) || 5) : 5;
+    const provider = providerEl ? providerEl.value : 'osrm';
+    const departureDate = departureDateEl ? departureDateEl.value : '';
+    const departureTime = departureTimeEl ? departureTimeEl.value : '';
+    const departureTimeStr = (departureDate && departureTime)
+      ? `${departureDate} ${departureTime}`
+      : '';
+
+    const entryId = this.getConfigEntryId();
+    const serviceData = {
+      config_entry_id: entryId,
+      destination,
+      waypoints,
+      corridor_width_km: corridorWidth,
+      routing_provider: provider,
+    };
+    if (origin) serviceData.origin = origin;
+    if (departureTimeStr) serviceData.departure_time = departureTimeStr;
+
+    try {
+      await this.callService('hafwcma', 'plan_route', serviceData);
+      // Clear destination after planning
+      if (destinationEl) destinationEl.value = '';
+      setTimeout(() => this._fetchSavedRoutes(), 1200);
+    } catch (err) {
+      console.error('FWCAM: plan_route failed', err);
+      alert(lang === 'de' ? `Route konnte nicht geplant werden: ${err.message || err}` : `Could not plan route: ${err.message || err}`);
+    }
+  }
+
+  /**
+   * Activate a saved/planned route immediately by calling set_route.
+   */
+  async _activateSavedRoute(route) {
+    const lang = this.getUserLanguage ? this.getUserLanguage() : 'en';
+    const confirmMsg = lang === 'de'
+      ? `Route nach "${route.destination}" jetzt starten?`
+      : `Start route to "${route.destination}" now?`;
+    if (!confirm(confirmMsg)) return;
+    const entryId = this.getConfigEntryId();
+    const serviceData = {
+      config_entry_id: entryId,
+      destination: route.destination || '',
+      waypoints: Array.isArray(route.waypoints) ? route.waypoints : [],
+      corridor_width_km: route.corridor_width_km || 5,
+      routing_provider: route.routing_provider || 'osrm',
+    };
+    if (route.origin) serviceData.origin = route.origin;
+    if (route.departure_time) serviceData.departure_time = route.departure_time;
+    try {
+      await this.callService('hafwcma', 'set_route', serviceData);
+      this.forceRender();
+    } catch (err) {
+      console.error('FWCAM: activate saved route failed', err);
+      alert(lang === 'de' ? `Route konnte nicht gestartet werden: ${err.message || err}` : `Could not start route: ${err.message || err}`);
+    }
+  }
+
+  /**
    * Handle Route Planner – Cancel Route button click.
    * Calls hafwcma.cancel_route service.
    */
@@ -945,6 +1029,9 @@ class FWCAMCard extends HTMLElement {
    * Updates the saved-routes sub-section in place when possible.
    */
   async _fetchSavedRoutes() {
+    // First try to sync from the planned_routes sensor entity (instant, no service call)
+    if (this._syncSavedRoutesFromEntity()) return;
+    // Fall back to service call if entity not available
     try {
       const entryId = this.getConfigEntryId();
       const result = await this._hass.callService(
@@ -961,6 +1048,21 @@ class FWCAMCard extends HTMLElement {
     } catch (err) {
       console.error('FWCAM: get_saved_routes failed', err);
     }
+  }
+
+  /**
+   * Sync saved/planned routes from the planned_routes sensor entity.
+   * Returns true if the entity was available and data was synced.
+   */
+  _syncSavedRoutesFromEntity() {
+    const entity = this.getEntityState(this._entities.planned_routes);
+    if (entity && Array.isArray(entity.attributes.routes)) {
+      this._savedRoutes = entity.attributes.routes;
+      this._savedRoutesLoaded = true;
+      this._updateSavedRoutesSection();
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -2217,11 +2319,16 @@ class FWCAMCard extends HTMLElement {
             </div>
           </div>
 
-          <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
+          <div style="display:flex;gap:0.5rem;margin-top:0.25rem;flex-wrap:wrap;">
             <button class="control-button" data-action="route-start"
               style="flex:1;justify-content:center;">
               <ha-icon icon="mdi:map-marker-path"></ha-icon>
               <span>Start Route</span>
+            </button>
+            <button class="control-button" data-action="route-plan"
+              style="flex:1;justify-content:center;background:var(--success-color,#4caf50);">
+              <ha-icon icon="mdi:calendar-plus"></ha-icon>
+              <span>Plan Route</span>
             </button>
             ${isActive ? `
             <button class="control-button" data-action="route-cancel"
@@ -2248,20 +2355,20 @@ class FWCAMCard extends HTMLElement {
 
   /**
    * Render the list of all saved/planned routes.
-   * Each row shows destination, optional waypoints, distance and settings,
-   * plus Edit (load into form) and Delete buttons.
+   * Each row shows destination, optional waypoints, distance, departure time,
+   * plus Edit (load into form), Activate and Delete buttons.
    */
   _renderSavedRoutesList() {
     const routes = this._savedRoutes || [];
     const lang = this.getUserLanguage ? this.getUserLanguage() : 'en';
     const labels = {
-      de: { title: '📋 Gespeicherte Routen', noRoutes: 'Keine gespeicherten Routen.', destination: 'Ziel', via: 'Via', distance: 'Distanz', corridor: 'Korridor', provider: 'Anbieter', edit: 'Laden', delete: 'Löschen', created: 'Erstellt' },
-      en: { title: '📋 Saved Routes', noRoutes: 'No saved routes yet.', destination: 'Destination', via: 'Via', distance: 'Distance', corridor: 'Corridor', provider: 'Provider', edit: 'Load', delete: 'Delete', created: 'Created' },
+      de: { title: '📋 Geplante Routen', noRoutes: 'Keine geplanten Routen.', destination: 'Ziel', distance: 'Distanz', departure: 'Abfahrt', edit: 'Laden', activate: 'Starten', delete: 'Löschen' },
+      en: { title: '📋 Planned Routes', noRoutes: 'No planned routes yet.', destination: 'Destination', distance: 'Distance', departure: 'Departure', edit: 'Load', activate: 'Activate', delete: 'Delete' },
     };
     const t = labels[lang] || labels['en'];
 
     if (!this._savedRoutesLoaded) {
-      return `<div style="margin-top:1rem;font-size:0.85rem;color:var(--secondary-text-color,#888);">Loading saved routes…</div>`;
+      return `<div style="margin-top:1rem;font-size:0.85rem;color:var(--secondary-text-color,#888);">${lang === 'de' ? 'Geplante Routen werden geladen…' : 'Loading planned routes…'}</div>`;
     }
 
     const rowsHtml = routes.length === 0
@@ -2272,6 +2379,7 @@ class FWCAMCard extends HTMLElement {
             : (r.waypoints || '');
           const distanceStr = r.total_distance_km != null ? `${r.total_distance_km} km` : '—';
           const createdStr = r.created_at ? r.created_at.replace('T', ' ').slice(0, 16) : '—';
+          const departureStr = r.departure_time ? r.departure_time.replace('T', ' ').slice(0, 16) : '—';
           const routeJson = this._esc(JSON.stringify(r));
           return `
             <tr style="border-bottom:1px solid var(--divider-color,#eee);font-size:0.82rem;">
@@ -2281,12 +2389,16 @@ class FWCAMCard extends HTMLElement {
                 <div style="font-size:0.78rem;color:var(--secondary-text-color,#888);">${createdStr}</div>
               </td>
               <td style="padding:4px 6px;white-space:nowrap;vertical-align:top;">${distanceStr}</td>
-              <td style="padding:4px 6px;white-space:nowrap;vertical-align:top;">${r.corridor_width_km != null ? r.corridor_width_km + ' km' : '—'}</td>
+              <td style="padding:4px 6px;white-space:nowrap;vertical-align:top;">${departureStr}</td>
               <td style="padding:4px 6px;vertical-align:top;">
-                <div style="display:flex;gap:4px;">
+                <div style="display:flex;gap:4px;flex-wrap:wrap;">
                   <button class="action-button" data-action="saved-route-edit" data-route-json="${routeJson}"
                     title="${t.edit}" style="padding:2px 6px;font-size:0.78rem;">
                     <ha-icon icon="mdi:pencil" style="--mdi-icon-size:14px;"></ha-icon>
+                  </button>
+                  <button class="action-button" data-action="saved-route-activate" data-route-json="${routeJson}"
+                    title="${t.activate}" style="padding:2px 6px;font-size:0.78rem;color:var(--primary-color,#039be5);">
+                    <ha-icon icon="mdi:play" style="--mdi-icon-size:14px;"></ha-icon>
                   </button>
                   <button class="action-button delete-button" data-action="saved-route-delete" data-route-id="${this._esc(String(r.route_id))}"
                     title="${t.delete}" style="padding:2px 6px;font-size:0.78rem;">
@@ -2307,7 +2419,7 @@ class FWCAMCard extends HTMLElement {
             <tr style="text-align:left;border-bottom:1px solid var(--divider-color,#ccc);font-size:0.78rem;color:var(--secondary-text-color,#888);">
               <th style="padding:2px 6px;">${t.destination}</th>
               <th style="padding:2px 6px;">${t.distance}</th>
-              <th style="padding:2px 6px;">${t.corridor}</th>
+              <th style="padding:2px 6px;">${t.departure}</th>
               <th style="padding:2px 6px;"></th>
             </tr>
           </thead>
@@ -3342,6 +3454,11 @@ class FWCAMCard extends HTMLElement {
       routeStartBtn.addEventListener('click', () => this._handleRouteStart());
     }
 
+    const routePlanBtn = this.shadowRoot.querySelector('[data-action="route-plan"]');
+    if (routePlanBtn) {
+      routePlanBtn.addEventListener('click', () => this._handleRoutePlan());
+    }
+
     const routeCancelBtn = this.shadowRoot.querySelector('[data-action="route-cancel"]');
     if (routeCancelBtn) {
       routeCancelBtn.addEventListener('click', () => this._handleRouteCancel());
@@ -3363,6 +3480,13 @@ class FWCAMCard extends HTMLElement {
             this._editSavedRoute(route);
           } catch (err) {
             console.error('FWCAM: could not parse route JSON', err);
+          }
+        } else if (action === 'saved-route-activate') {
+          try {
+            const route = JSON.parse(actionEl.dataset.routeJson);
+            this._activateSavedRoute(route);
+          } catch (err) {
+            console.error('FWCAM: could not parse route JSON for activate', err);
           }
         }
       });
