@@ -10,6 +10,7 @@ This integration provides:
 from __future__ import annotations
 
 import logging
+import time as _time
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +72,8 @@ SERVICE_DELETE_BACKUP = "delete_backup"
 SERVICE_EXPORT_DEBUG_DATA = "export_debug_data"
 SERVICE_SET_ROUTE = "set_route"
 SERVICE_CANCEL_ROUTE = "cancel_route"
+SERVICE_GET_SAVED_ROUTES = "get_saved_routes"
+SERVICE_DELETE_SAVED_ROUTE = "delete_saved_route"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -253,6 +256,15 @@ SCHEMA_SET_ROUTE = vol.Schema({
 
 SCHEMA_CANCEL_ROUTE = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
+})
+
+SCHEMA_GET_SAVED_ROUTES = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+})
+
+SCHEMA_DELETE_SAVED_ROUTE = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("route_id"): vol.Any(int, cv.string),
 })
 
 
@@ -1894,6 +1906,23 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             coordinator.async_update_listeners()
         await coordinator.async_save_route_data(route_data)
 
+        # Also append a lightweight entry to the saved-routes list so the
+        # frontend can show all planned routes with edit / delete actions.
+        from homeassistant.util import dt as _dt_util
+        import random as _random
+        route_entry = {
+            "route_id": int(_time.time() * 1000) * 1000 + _random.randint(0, 999),
+            "created_at": _dt_util.now().isoformat(timespec="seconds"),
+            "destination": destination_str,
+            "origin": origin_str or "",
+            "waypoints": waypoint_strings,
+            "corridor_width_km": corridor_width_km,
+            "routing_provider": routing_provider,
+            "departure_time": departure_time_str or "",
+            "total_distance_km": route_data.get("total_distance_km"),
+        }
+        await coordinator.async_add_to_saved_routes(route_entry)
+
         # Send Telegram notification
         telegram_token = entry.data.get("telegram_token", "")
         telegram_chat_id = entry.data.get("telegram_chat_id", "")
@@ -1999,6 +2028,43 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         DOMAIN, SERVICE_CANCEL_ROUTE, handle_cancel_route, schema=SCHEMA_CANCEL_ROUTE, supports_response=True
     )
 
+    async def handle_get_saved_routes(call: ServiceCall) -> ServiceResponse:
+        """Return the list of all saved/planned routes for the given config entry.
+
+        Returns:
+            ServiceResponse with ``routes`` (list of route dicts) and ``count``.
+        """
+        entry_id = call.data["config_entry_id"]
+        coordinator = hass.data[DOMAIN].get(entry_id, {}).get("coordinator")
+        if not coordinator:
+            return {"routes": [], "count": 0}
+        routes = list(coordinator._saved_routes_list)
+        return {"routes": routes, "count": len(routes)}
+
+    async def handle_delete_saved_route(call: ServiceCall) -> ServiceResponse:
+        """Delete a saved route by its ``route_id``.
+
+        Returns:
+            ServiceResponse with ``success`` bool.
+        """
+        entry_id = call.data["config_entry_id"]
+        route_id = call.data["route_id"]
+        coordinator = hass.data[DOMAIN].get(entry_id, {}).get("coordinator")
+        if not coordinator:
+            _LOGGER.error("delete_saved_route: config entry %s not found", entry_id)
+            return {"success": False}
+        removed = await coordinator.async_delete_saved_route(route_id)
+        return {"success": removed}
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_GET_SAVED_ROUTES, handle_get_saved_routes,
+        schema=SCHEMA_GET_SAVED_ROUTES, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DELETE_SAVED_ROUTE, handle_delete_saved_route,
+        schema=SCHEMA_DELETE_SAVED_ROUTE, supports_response=True
+    )
+
     return True
 
 
@@ -2031,6 +2097,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .sensor import HaFWCMACoordinator
     coordinator = HaFWCMACoordinator(hass, entry)
     await coordinator.async_load_route_data()
+    await coordinator.async_load_saved_routes()
     hass.data[DOMAIN][entry.entry_id]["coordinator"] = coordinator
 
     # Initialize Telegram event handler for bidirectional communication

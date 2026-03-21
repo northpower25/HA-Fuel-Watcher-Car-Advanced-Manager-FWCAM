@@ -26,7 +26,7 @@ const SERVICE_CALL_REFRESH_DELAY_MS = 1000;
 const DEFAULT_TANK_CAPACITY_LITERS = 99.99;
 const DEFAULT_DAILY_DISTANCE_KM = 40.0;
 const MAX_AUTOCOMPLETE_SUGGESTIONS = 10;
-const DEFAULT_SECTION_ORDER = ['vehicle_info', 'price_chart', 'consumption_chart', 'cheapest_stations', 'map', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log'];
+const DEFAULT_SECTION_ORDER = ['vehicle_info', 'price_chart', 'consumption_chart', 'cheapest_stations', 'map', 'route_planner', 'controls', 'settings', 'backup', 'refueling_log', 'trip_log', 'top_destinations'];
 
 class FWCAMCard extends HTMLElement {
   constructor() {
@@ -66,6 +66,9 @@ class FWCAMCard extends HTMLElement {
     // State for layout edit mode (drag & drop section reordering)
     this._editLayoutMode = false;
     this._dragSrcSection = null;
+    // State for saved routes (route planner list)
+    this._savedRoutes = [];
+    this._savedRoutesLoaded = false;
     // Re-render when the browser tab becomes visible again to avoid blank screen
     this._visibilityChangeHandler = () => {
       if (document.visibilityState === 'visible' && this._hass && this._config.entity) {
@@ -113,6 +116,7 @@ class FWCAMCard extends HTMLElement {
       show_cheapest_stations: Object.prototype.hasOwnProperty.call(config, 'show_cheapest_stations') ? config.show_cheapest_stations : true,
       show_top_destinations: Object.prototype.hasOwnProperty.call(config, 'show_top_destinations') ? config.show_top_destinations : true,
       show_map: Object.prototype.hasOwnProperty.call(config, 'show_map') ? config.show_map : true,
+      show_route_planner: config.show_route_planner !== false,
       show_controls: Object.prototype.hasOwnProperty.call(config, 'show_controls') ? config.show_controls : defaultShowValue,
       show_settings: Object.prototype.hasOwnProperty.call(config, 'show_settings') ? config.show_settings : defaultShowValue,
       show_backup: Object.prototype.hasOwnProperty.call(config, 'show_backup') ? config.show_backup : defaultShowValue,
@@ -254,6 +258,11 @@ class FWCAMCard extends HTMLElement {
       trip_log_sensor: `sensor.${baseName}_trip_log`,
       current_trip: `sensor.${baseName}_current_trip`,
       nearby_cheap_stations: `sensor.${baseName}_nearby_cheap_stations`,
+      // Route corridor sensors
+      active_route: `sensor.${baseName}_active_route`,
+      predicted_fuel_stop: `sensor.${baseName}_predicted_fuel_stop`,
+      corridor_best_station: `sensor.${baseName}_corridor_best_station`,
+      corridor_stations: `sensor.${baseName}_corridor_stations`,
       // Switches
       fuel_price_refresh: `switch.${baseName}_fuel_price_refresh`,
       consumption_prediction: `switch.${baseName}_consumption_prediction`,
@@ -848,6 +857,158 @@ class FWCAMCard extends HTMLElement {
   }
 
   /**
+   * Handle Route Planner – Start Route button click.
+   * Reads form values and calls hafwcma.set_route service.
+   */
+  async _handleRouteStart() {
+    const originEl = this.shadowRoot.getElementById('route-origin-input');
+    const destinationEl = this.shadowRoot.getElementById('route-destination-input');
+    const waypointsEl = this.shadowRoot.getElementById('route-waypoints-input');
+    const corridorEl = this.shadowRoot.getElementById('route-corridor-input');
+    const providerEl = this.shadowRoot.getElementById('route-provider-select');
+    const departureDateEl = this.shadowRoot.getElementById('route-departure-date');
+    const departureTimeEl = this.shadowRoot.getElementById('route-departure-time');
+
+    const origin = originEl ? originEl.value.trim() : '';
+    const destination = destinationEl ? destinationEl.value.trim() : '';
+    if (!destination) {
+      alert('Please enter a destination.');
+      return;
+    }
+
+    const waypointsRaw = waypointsEl ? waypointsEl.value.trim() : '';
+    const waypoints = waypointsRaw
+      ? waypointsRaw.split(',').map(w => w.trim()).filter(Boolean)
+      : [];
+    const corridorWidth = corridorEl ? (parseFloat(corridorEl.value) || 5) : 5;
+    const provider = providerEl ? providerEl.value : 'osrm';
+
+    // Build departure_time string (ISO-like "YYYY-MM-DD HH:MM") if both fields are set
+    const departureDate = departureDateEl ? departureDateEl.value : '';
+    const departureTime = departureTimeEl ? departureTimeEl.value : '';
+    const departureTimeStr = (departureDate && departureTime)
+      ? `${departureDate} ${departureTime}`
+      : '';
+
+    const entryId = this.getConfigEntryId();
+
+    const serviceData = {
+      config_entry_id: entryId,
+      destination,
+      waypoints,
+      corridor_width_km: corridorWidth,
+      routing_provider: provider,
+    };
+    if (origin) {
+      serviceData.origin = origin;
+    }
+    if (departureTimeStr) {
+      serviceData.departure_time = departureTimeStr;
+    }
+
+    try {
+      await this.callService('hafwcma', 'set_route', serviceData);
+      this.forceRender();
+      // Refresh saved routes list after a short delay (backend persists asynchronously)
+      setTimeout(() => this._fetchSavedRoutes(), 1200);
+    } catch (err) {
+      console.error('FWCAM: set_route failed', err);
+      alert(`Could not start route: ${err.message || err}`);
+    }
+  }
+
+  /**
+   * Handle Route Planner – Cancel Route button click.
+   * Calls hafwcma.cancel_route service.
+   */
+  async _handleRouteCancel() {
+    const entryId = this.getConfigEntryId();
+    try {
+      await this.callService('hafwcma', 'cancel_route', { config_entry_id: entryId });
+      this.forceRender();
+    } catch (err) {
+      console.error('FWCAM: cancel_route failed', err);
+      alert(`Could not cancel route: ${err.message || err}`);
+    }
+  }
+
+  /**
+   * Fetch all saved routes from the backend and store them in _savedRoutes.
+   * Updates the saved-routes sub-section in place when possible.
+   */
+  async _fetchSavedRoutes() {
+    try {
+      const entryId = this.getConfigEntryId();
+      const result = await this.callService('hafwcma', 'get_saved_routes', { config_entry_id: entryId });
+      this._savedRoutes = (result && Array.isArray(result.routes)) ? result.routes : [];
+      this._savedRoutesLoaded = true;
+      this._updateSavedRoutesSection();
+    } catch (err) {
+      console.error('FWCAM: get_saved_routes failed', err);
+    }
+  }
+
+  /**
+   * Delete a saved route by route_id, then refresh the list.
+   */
+  async _deleteSavedRoute(routeId) {
+    const lang = this.getUserLanguage ? this.getUserLanguage() : 'en';
+    const confirmMsg = lang === 'de'
+      ? 'Route wirklich löschen?'
+      : 'Delete this route?';
+    if (!confirm(confirmMsg)) return;
+    try {
+      const entryId = this.getConfigEntryId();
+      await this.callService('hafwcma', 'delete_saved_route', {
+        config_entry_id: entryId,
+        route_id: routeId,
+      });
+      await this._fetchSavedRoutes();
+    } catch (err) {
+      console.error('FWCAM: delete_saved_route failed', err);
+    }
+  }
+
+  /**
+   * Load a saved route's parameters into the route-planner form so the user
+   * can review or modify them before re-running the route.
+   */
+  _editSavedRoute(route) {
+    const originEl = this.shadowRoot.getElementById('route-origin-input');
+    const destinationEl = this.shadowRoot.getElementById('route-destination-input');
+    const waypointsEl = this.shadowRoot.getElementById('route-waypoints-input');
+    const corridorEl = this.shadowRoot.getElementById('route-corridor-input');
+    const providerEl = this.shadowRoot.getElementById('route-provider-select');
+    const departureDateEl = this.shadowRoot.getElementById('route-departure-date');
+    const departureTimeEl = this.shadowRoot.getElementById('route-departure-time');
+
+    if (originEl) originEl.value = route.origin || '';
+    if (destinationEl) destinationEl.value = route.destination || '';
+    if (waypointsEl) waypointsEl.value = Array.isArray(route.waypoints) ? route.waypoints.join(', ') : (route.waypoints || '');
+    if (corridorEl) corridorEl.value = route.corridor_width_km != null ? route.corridor_width_km : 5;
+    if (providerEl) providerEl.value = route.routing_provider || 'osrm';
+    if (route.departure_time && departureDateEl && departureTimeEl) {
+      const parts = route.departure_time.split(' ');
+      if (parts.length === 2) {
+        departureDateEl.value = parts[0];
+        departureTimeEl.value = parts[1];
+      }
+    }
+    // Scroll the form into view
+    const section = this.shadowRoot.querySelector('[data-fwcam-section="route_planner"]');
+    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /**
+   * Re-render only the saved-routes sub-section inside the route_planner wrapper.
+   */
+  _updateSavedRoutesSection() {
+    const placeholder = this.shadowRoot.querySelector('[data-fwcam-section="saved_routes"]');
+    if (!placeholder) return;
+    placeholder.innerHTML = this._renderSavedRoutesList();
+  }
+
+  /**
    * Get tank capacity from config
    */
   getTankCapacity() {
@@ -1132,7 +1293,9 @@ class FWCAMCard extends HTMLElement {
         price_chart: '⛽ Fuel Price Development',
         consumption_chart: '📊 Consumption',
         cheapest_stations: '🏆 Top 5 Cheapest Stations',
-        map: '🗺️ Map',
+        map: '🗺️ Fuelstation Map',
+        route_planner: '🗺️ Route Planner',
+        top_destinations: '🏁 Top 20 Trip Destinations',
         controls: '🎛️ Controls',
         settings: '⚙️ Settings',
         backup: '💾 Backup',
@@ -1174,6 +1337,8 @@ class FWCAMCard extends HTMLElement {
         return this._config.show_cheapest_stations ? this.renderTopCheapestStations() : '';
       case 'map':
         return this._config.show_map ? this.renderStationsMap() : '';
+      case 'route_planner':
+        return this._config.show_route_planner ? this.renderRoutePlanner() : '';
       case 'controls':
         return this._config.show_controls ? this.renderControls() : '';
       case 'settings':
@@ -1189,8 +1354,11 @@ class FWCAMCard extends HTMLElement {
         if (!this._config.show_trip_log) return '';
         return `<div data-fwcam-section="trip_log">
           ${this.renderTripLog(this._allTrips || [])}
-          ${this._config.show_top_destinations ? this.renderTopDestinations(this._allTrips || []) : ''}
+          ${(this._config.show_top_destinations && !this._config.section_order.includes('top_destinations')) ? this.renderTopDestinations(this._allTrips || []) : ''}
         </div>`;
+      case 'top_destinations':
+        if (!this._config.show_top_destinations) return '';
+        return this.renderTopDestinations(this._allTrips || []);
       default:
         return '';
     }
@@ -1870,6 +2038,266 @@ class FWCAMCard extends HTMLElement {
             <tbody>${rows}</tbody>
           </table>
         </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render the Route Corridor Station Search section.
+   *
+   * Shows a form to set/cancel a route and displays the active route status,
+   * predicted fuel stop, best corridor station and top-3 station list.
+   */
+  renderRoutePlanner() {
+    const activeRouteEntity = this.getEntityState(this._entities.active_route);
+    const predictedFuelStopEntity = this.getEntityState(this._entities.predicted_fuel_stop);
+    const corridorBestEntity = this.getEntityState(this._entities.corridor_best_station);
+    const corridorStationsEntity = this.getEntityState(this._entities.corridor_stations);
+    // Vehicle position for pre-filling the origin field
+    const nearbyEntity = this.getEntityState(this._entities.nearby_cheap_stations);
+    const vehicleLat = nearbyEntity?.attributes?.vehicle_latitude;
+    const vehicleLon = nearbyEntity?.attributes?.vehicle_longitude;
+    const vehiclePosStr = (vehicleLat != null && vehicleLon != null)
+      ? `${parseFloat(vehicleLat).toFixed(5)},${parseFloat(vehicleLon).toFixed(5)}`
+      : '';
+    const originPlaceholder = vehiclePosStr
+      ? `Default: current vehicle position (${vehiclePosStr})`
+      : 'Default: current vehicle position';
+
+    const isActive = activeRouteEntity && activeRouteEntity.state === 'active';
+    const routeAttrs = activeRouteEntity ? (activeRouteEntity.attributes || {}) : {};
+    const fuelStopAttrs = predictedFuelStopEntity ? (predictedFuelStopEntity.attributes || {}) : {};
+    const bestAttrs = corridorBestEntity ? (corridorBestEntity.attributes || {}) : {};
+    const corridorAttrs = corridorStationsEntity ? (corridorStationsEntity.attributes || {}) : {};
+    const topStations = corridorAttrs.stations || [];
+
+    const activeStatusHtml = isActive ? `
+      <div class="info-grid" style="margin-top:0.5rem;">
+        ${routeAttrs.origin ? `<div class="info-item">
+          <span class="info-label">Origin</span>
+          <span class="info-value">${this._esc(routeAttrs.origin)}</span>
+        </div>` : ''}
+        <div class="info-item">
+          <span class="info-label">Destination</span>
+          <span class="info-value">${this._esc(routeAttrs.destination || '—')}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Distance</span>
+          <span class="info-value">${routeAttrs.total_distance_km != null ? routeAttrs.total_distance_km + ' km' : '—'}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Corridor Width</span>
+          <span class="info-value">${routeAttrs.corridor_width_km != null ? routeAttrs.corridor_width_km + ' km' : '—'}</span>
+        </div>
+        ${predictedFuelStopEntity && predictedFuelStopEntity.state && predictedFuelStopEntity.state !== 'unknown' && predictedFuelStopEntity.state !== 'unavailable' ? `
+        <div class="info-item">
+          <span class="info-label">Predicted Fuel Stop</span>
+          <span class="info-value">~${this._esc(predictedFuelStopEntity.state)} km ahead</span>
+        </div>` : ''}
+      </div>
+    ` : '';
+
+    const bestStationHtml = (isActive && corridorBestEntity && corridorBestEntity.state && corridorBestEntity.state !== 'unknown' && corridorBestEntity.state !== 'unavailable') ? `
+      <div style="margin-top:0.75rem;padding:0.5rem;background:var(--secondary-background-color,#f5f5f5);border-radius:6px;">
+        <div style="font-weight:600;margin-bottom:0.25rem;">🏆 Best Corridor Station</div>
+        <div class="info-grid" style="margin:0;">
+          <div class="info-item">
+            <span class="info-label">Station</span>
+            <span class="info-value">${this._esc(bestAttrs.station_name || '—')}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Price</span>
+            <span class="info-value">${bestAttrs.price_per_litre != null ? bestAttrs.price_per_litre + ' €/l' : '—'}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Detour</span>
+            <span class="info-value">${bestAttrs.detour_km != null ? bestAttrs.detour_km + ' km' : '—'}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Effective Price</span>
+            <span class="info-value">${bestAttrs.effective_price_eur_per_l != null ? bestAttrs.effective_price_eur_per_l + ' €/l' : '—'}</span>
+          </div>
+        </div>
+        <div style="margin-top:0.4rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+          ${bestAttrs.google_maps_url ? `<a href="${this._esc(bestAttrs.google_maps_url)}" target="_blank" rel="noopener" style="font-size:0.8rem;">🗺️ Google Maps</a>` : ''}
+          ${bestAttrs.waze_url ? `<a href="${this._esc(bestAttrs.waze_url)}" target="_blank" rel="noopener" style="font-size:0.8rem;">🚗 Waze</a>` : ''}
+          ${bestAttrs.apple_maps_url ? `<a href="${this._esc(bestAttrs.apple_maps_url)}" target="_blank" rel="noopener" style="font-size:0.8rem;">🍎 Apple Maps</a>` : ''}
+        </div>
+      </div>
+    ` : '';
+
+    const topStationsHtml = (isActive && topStations.length > 1) ? `
+      <div style="margin-top:0.75rem;">
+        <div style="font-weight:600;margin-bottom:0.25rem;">📋 Top Corridor Stations</div>
+        <table style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+          <thead><tr style="text-align:left;border-bottom:1px solid var(--divider-color,#ccc);">
+            <th style="padding:2px 4px;">#</th>
+            <th style="padding:2px 4px;">Station</th>
+            <th style="padding:2px 4px;">Price</th>
+            <th style="padding:2px 4px;">Detour</th>
+            <th style="padding:2px 4px;">Eff. Price</th>
+          </tr></thead>
+          <tbody>
+            ${topStations.slice(0, 3).map((st, i) => `
+              <tr style="border-bottom:1px solid var(--divider-color,#eee);">
+                <td style="padding:2px 4px;">${i + 1}</td>
+                <td style="padding:2px 4px;">${this._esc(st.name || '—')}</td>
+                <td style="padding:2px 4px;">${st.price != null ? st.price + ' €/l' : '—'}</td>
+                <td style="padding:2px 4px;">${st.detour_km != null ? st.detour_km + ' km' : '—'}</td>
+                <td style="padding:2px 4px;">${st.effective_price_eur_per_l != null ? st.effective_price_eur_per_l + ' €/l' : '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    ` : '';
+
+    return `
+      <div class="section" data-fwcam-section="route_planner">
+        <h3>🗺️ Route Planner</h3>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.85rem;font-weight:500;">Start Point <small style="font-weight:normal;">(optional)</small></label>
+          <input id="route-origin-input" type="text" class="setting-input"
+            placeholder="${this._esc(originPlaceholder)}"
+            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+
+          <label style="font-size:0.85rem;font-weight:500;">Destination</label>
+          <input id="route-destination-input" type="text" class="setting-input"
+            placeholder="e.g. München Hauptbahnhof"
+            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+
+          <label style="font-size:0.85rem;font-weight:500;">Waypoints <small style="font-weight:normal;">(optional, comma-separated)</small></label>
+          <input id="route-waypoints-input" type="text" class="setting-input"
+            placeholder="e.g. Augsburg, Ingolstadt"
+            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+
+          <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
+            <div style="flex:1;min-width:120px;">
+              <label style="font-size:0.85rem;font-weight:500;">Corridor Width (km)</label>
+              <input id="route-corridor-input" type="number" class="setting-input"
+                min="1" max="50" step="1" value="5"
+                style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+            </div>
+            <div style="flex:1;min-width:140px;">
+              <label style="font-size:0.85rem;font-weight:500;">Routing Provider</label>
+              <select id="route-provider-select" class="setting-input"
+                style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+                <option value="osrm" selected>OSRM (free)</option>
+                <option value="openrouteservice">OpenRouteService</option>
+                <option value="google">Google Maps</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
+            <div style="flex:1;min-width:140px;">
+              <label style="font-size:0.85rem;font-weight:500;">Departure Date <small style="font-weight:normal;">(optional)</small></label>
+              <input id="route-departure-date" type="date" class="setting-input"
+                style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+            </div>
+            <div style="flex:1;min-width:120px;">
+              <label style="font-size:0.85rem;font-weight:500;">Departure Time <small style="font-weight:normal;">(24h)</small></label>
+              <input id="route-departure-time" type="time" class="setting-input"
+                style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+            </div>
+          </div>
+
+          <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
+            <button class="control-button" data-action="route-start"
+              style="flex:1;justify-content:center;">
+              <ha-icon icon="mdi:map-marker-path"></ha-icon>
+              <span>Start Route</span>
+            </button>
+            ${isActive ? `
+            <button class="control-button" data-action="route-cancel"
+              style="flex:0 0 auto;background:var(--error-color,#d32f2f);color:white;">
+              <ha-icon icon="mdi:close-circle"></ha-icon>
+              <span>Cancel Route</span>
+            </button>` : ''}
+          </div>
+        </div>
+
+        ${isActive ? `<div style="margin-top:0.5rem;padding:0.4rem 0.6rem;background:var(--primary-color,#039be5);color:white;border-radius:4px;font-size:0.85rem;">
+          ✅ Route Active
+        </div>` : ''}
+        ${activeStatusHtml}
+        ${bestStationHtml}
+        ${topStationsHtml}
+
+        <div data-fwcam-section="saved_routes">
+          ${this._renderSavedRoutesList()}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render the list of all saved/planned routes.
+   * Each row shows destination, optional waypoints, distance and settings,
+   * plus Edit (load into form) and Delete buttons.
+   */
+  _renderSavedRoutesList() {
+    const routes = this._savedRoutes || [];
+    const lang = this.getUserLanguage ? this.getUserLanguage() : 'en';
+    const labels = {
+      de: { title: '📋 Gespeicherte Routen', noRoutes: 'Keine gespeicherten Routen.', destination: 'Ziel', via: 'Via', distance: 'Distanz', corridor: 'Korridor', provider: 'Anbieter', edit: 'Laden', delete: 'Löschen', created: 'Erstellt' },
+      en: { title: '📋 Saved Routes', noRoutes: 'No saved routes yet.', destination: 'Destination', via: 'Via', distance: 'Distance', corridor: 'Corridor', provider: 'Provider', edit: 'Load', delete: 'Delete', created: 'Created' },
+    };
+    const t = labels[lang] || labels['en'];
+
+    if (!this._savedRoutesLoaded) {
+      return `<div style="margin-top:1rem;font-size:0.85rem;color:var(--secondary-text-color,#888);">Loading saved routes…</div>`;
+    }
+
+    const rowsHtml = routes.length === 0
+      ? `<div style="padding:0.5rem 0;font-size:0.85rem;color:var(--secondary-text-color,#888);">${t.noRoutes}</div>`
+      : routes.slice().reverse().map(r => {
+          const waypointsStr = Array.isArray(r.waypoints) && r.waypoints.length
+            ? r.waypoints.join(' → ')
+            : (r.waypoints || '');
+          const distanceStr = r.total_distance_km != null ? `${r.total_distance_km} km` : '—';
+          const createdStr = r.created_at ? r.created_at.replace('T', ' ').slice(0, 16) : '—';
+          const routeJson = this._esc(JSON.stringify(r));
+          return `
+            <tr style="border-bottom:1px solid var(--divider-color,#eee);font-size:0.82rem;">
+              <td style="padding:4px 6px;vertical-align:top;">
+                <div style="font-weight:600;">${this._esc(r.destination || '—')}</div>
+                ${waypointsStr ? `<div style="font-size:0.78rem;color:var(--secondary-text-color,#888);">↪ ${this._esc(waypointsStr)}</div>` : ''}
+                <div style="font-size:0.78rem;color:var(--secondary-text-color,#888);">${createdStr}</div>
+              </td>
+              <td style="padding:4px 6px;white-space:nowrap;vertical-align:top;">${distanceStr}</td>
+              <td style="padding:4px 6px;white-space:nowrap;vertical-align:top;">${r.corridor_width_km != null ? r.corridor_width_km + ' km' : '—'}</td>
+              <td style="padding:4px 6px;vertical-align:top;">
+                <div style="display:flex;gap:4px;">
+                  <button class="action-button" data-action="saved-route-edit" data-route-json="${routeJson}"
+                    title="${t.edit}" style="padding:2px 6px;font-size:0.78rem;">
+                    <ha-icon icon="mdi:pencil" style="--mdi-icon-size:14px;"></ha-icon>
+                  </button>
+                  <button class="action-button delete-button" data-action="saved-route-delete" data-route-id="${this._esc(String(r.route_id))}"
+                    title="${t.delete}" style="padding:2px 6px;font-size:0.78rem;">
+                    <ha-icon icon="mdi:delete" style="--mdi-icon-size:14px;"></ha-icon>
+                  </button>
+                </div>
+              </td>
+            </tr>`;
+        }).join('')
+    ;
+
+    return `
+      <div style="margin-top:1rem;">
+        <div style="font-weight:600;margin-bottom:0.4rem;">${t.title} (${routes.length})</div>
+        ${routes.length > 0 ? `
+        <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+          <thead>
+            <tr style="text-align:left;border-bottom:1px solid var(--divider-color,#ccc);font-size:0.78rem;color:var(--secondary-text-color,#888);">
+              <th style="padding:2px 6px;">${t.destination}</th>
+              <th style="padding:2px 6px;">${t.distance}</th>
+              <th style="padding:2px 6px;">${t.corridor}</th>
+              <th style="padding:2px 6px;"></th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>` : rowsHtml}
       </div>
     `;
   }
@@ -2595,7 +3023,7 @@ class FWCAMCard extends HTMLElement {
     }
     container.innerHTML = `
       ${this.renderTripLog(this._allTrips || [])}
-      ${this._config.show_top_destinations ? this.renderTopDestinations(this._allTrips || []) : ''}
+      ${(this._config.show_top_destinations && !this._config.section_order.includes('top_destinations')) ? this.renderTopDestinations(this._allTrips || []) : ''}
     `;
   }
 
@@ -2887,6 +3315,43 @@ class FWCAMCard extends HTMLElement {
         this._handleBackupDelete(filePath);
       });
     });
+
+    // Route Planner buttons
+    const routeStartBtn = this.shadowRoot.querySelector('[data-action="route-start"]');
+    if (routeStartBtn) {
+      routeStartBtn.addEventListener('click', () => this._handleRouteStart());
+    }
+
+    const routeCancelBtn = this.shadowRoot.querySelector('[data-action="route-cancel"]');
+    if (routeCancelBtn) {
+      routeCancelBtn.addEventListener('click', () => this._handleRouteCancel());
+    }
+
+    // Saved-routes list event delegation (attached to the persistent section wrapper)
+    const routePlannerSection = this.shadowRoot.querySelector('[data-fwcam-section="route_planner"]');
+    if (routePlannerSection) {
+      routePlannerSection.addEventListener('click', (e) => {
+        const actionEl = e.target.closest('[data-action]');
+        if (!actionEl) return;
+        const action = actionEl.dataset.action;
+        if (action === 'saved-route-delete') {
+          const routeId = actionEl.dataset.routeId;
+          this._deleteSavedRoute(routeId);
+        } else if (action === 'saved-route-edit') {
+          try {
+            const route = JSON.parse(actionEl.dataset.routeJson);
+            this._editSavedRoute(route);
+          } catch (err) {
+            console.error('FWCAM: could not parse route JSON', err);
+          }
+        }
+      });
+    }
+
+    // Kick off an async fetch of saved routes whenever the section is present
+    if (routePlannerSection) {
+      this._fetchSavedRoutes();
+    }
   }
 
   /**
@@ -5701,6 +6166,7 @@ class FWCAMCard extends HTMLElement {
       show_consumption_chart: true,
       show_cheapest_stations: true,
       show_map: true,
+      show_route_planner: true,
       show_controls: true,
       show_settings: true,
       show_backup: true,
