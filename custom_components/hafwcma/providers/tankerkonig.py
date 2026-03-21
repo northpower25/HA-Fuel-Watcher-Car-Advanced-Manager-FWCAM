@@ -498,6 +498,36 @@ class TankerkoenigProvider(FuelPriceProvider):
             _LOGGER.error("Error fetching stations: %s", err)
             raise ProviderError(f"Network error: {err}") from err
 
+    async def validate_api_key(self, api_key: str) -> bool:
+        """Validate API key with Tankerkönig provider.
+
+        Makes a minimal test request to the Tankerkönig list endpoint to verify
+        that the provided API key is accepted by the API.
+
+        Args:
+            api_key: API key to validate
+
+        Returns:
+            True if the key is valid, False otherwise
+        """
+        params = {
+            "lat": 52.521,
+            "lng": 13.438,
+            "rad": 1.0,
+            "type": "e5",
+            "apikey": api_key,
+            "sort": "price",
+        }
+        try:
+            url = f"{TANKERKONIG_API_URL}/list.php"
+            async with self.session.get(url, params=params) as response:
+                if response.status != 200:
+                    return False
+                data = await response.json()
+                return bool(data.get("ok"))
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            return False
+
     async def get_station_details(self, station_id: str) -> FuelStation:
         """Get detailed information for a specific station.
 

@@ -167,6 +167,11 @@ class FWCAMRoutePlannerCard extends HTMLElement {
   _renderFormSection() {
     return `
       <div style="display:flex;flex-direction:column;gap:0.5rem;">
+        <label style="font-size:0.85rem;font-weight:500;">Startadresse <small style="font-weight:normal;">(optional)</small></label>
+        <input id="rp-origin" type="text" class="setting-input"
+          placeholder="z.B. Berlin Hauptbahnhof (leer = Fahrzeugposition)"
+          style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+
         <label style="font-size:0.85rem;font-weight:500;">Zieladresse</label>
         <input id="rp-destination" type="text" class="setting-input"
           placeholder="z.B. München Hauptbahnhof"
@@ -364,6 +369,7 @@ class FWCAMRoutePlannerCard extends HTMLElement {
   // ──────────────────────────────────────────────────────────────────────────
 
   async _handleRouteStart() {
+    const originEl = this.shadowRoot.getElementById('rp-origin');
     const destinationEl = this.shadowRoot.getElementById('rp-destination');
     const waypointsEl = this.shadowRoot.getElementById('rp-waypoints');
     const corridorEl = this.shadowRoot.getElementById('rp-corridor');
@@ -372,6 +378,7 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     const departureDateEl = this.shadowRoot.getElementById('rp-departure-date');
     const departureTimeEl = this.shadowRoot.getElementById('rp-departure-time');
 
+    const origin = originEl ? originEl.value.trim() : '';
     const destination = destinationEl ? destinationEl.value.trim() : '';
     if (!destination) {
       alert('Bitte eine Zieladresse eingeben.');
@@ -402,6 +409,9 @@ class FWCAMRoutePlannerCard extends HTMLElement {
       corridor_width_km: corridorWidth,
       routing_provider: provider,
     };
+    if (origin) {
+      serviceData.origin = origin;
+    }
     if (googleApiKey) {
       serviceData.google_api_key = googleApiKey;
     }
