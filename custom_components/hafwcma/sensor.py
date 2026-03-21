@@ -88,6 +88,7 @@ from .const import (
     GEOLOCATION_ALERT_COOLDOWN,
     GEOLOCATION_HYSTERESIS_FACTOR,
     PROVIDER_TANKERKONIG,
+    ATTR_ROUTE_ORIGIN,
     ATTR_ROUTE_DESTINATION,
     ATTR_ROUTE_WAYPOINTS,
     ATTR_ROUTE_TOTAL_DISTANCE_KM,
@@ -5202,6 +5203,7 @@ class ActiveRouteSensor(CoordinatorEntity, SensorEntity):
             step = max(1, len(polyline) // 100)
             polyline = polyline[::step][:100]
         return {
+            ATTR_ROUTE_ORIGIN: route_data.get("origin"),
             ATTR_ROUTE_DESTINATION: route_data.get("destination"),
             ATTR_ROUTE_WAYPOINTS: route_data.get("waypoints", []),
             ATTR_ROUTE_TOTAL_DISTANCE_KM: route_data.get("total_distance_km"),

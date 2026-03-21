@@ -621,36 +621,6 @@ class TankerkoenigProvider(FuelPriceProvider):
                 out[sid] = result
         return out
 
-
-        """Validate API key by making a test request.
-
-        Args:
-            api_key: API key to validate
-
-        Returns:
-            True if key is valid, False otherwise
-        """
-        params = {
-            "lat": 50.000,  # Generic test coordinates
-            "lng": 10.000,
-            "rad": 1,
-            "type": "e5",
-            "apikey": api_key,
-        }
-
-        try:
-            async with self.session.get(
-                f"{TANKERKONIG_API_URL}/list.php", params=params, timeout=10
-            ) as response:
-                if response.status != 200:
-                    return False
-
-                data = await response.json()
-                return data.get("ok", False)
-
-        except (aiohttp.ClientError, TimeoutError):
-            return False
-
     def _parse_station_data(self, data: Dict[str, Any], ref_lat: float = None, ref_lon: float = None, fuel_type: str = None) -> FuelStation | None:
         """Parse station data from API response.
 

@@ -866,6 +866,7 @@ class FWCAMCard extends HTMLElement {
    * Reads form values and calls hafwcma.set_route service.
    */
   async _handleRouteStart() {
+    const originEl = this.shadowRoot.getElementById('route-origin-input');
     const destinationEl = this.shadowRoot.getElementById('route-destination-input');
     const waypointsEl = this.shadowRoot.getElementById('route-waypoints-input');
     const corridorEl = this.shadowRoot.getElementById('route-corridor-input');
@@ -873,6 +874,7 @@ class FWCAMCard extends HTMLElement {
     const departureDateEl = this.shadowRoot.getElementById('route-departure-date');
     const departureTimeEl = this.shadowRoot.getElementById('route-departure-time');
 
+    const origin = originEl ? originEl.value.trim() : '';
     const destination = destinationEl ? destinationEl.value.trim() : '';
     if (!destination) {
       alert('Please enter a destination.');
@@ -902,6 +904,9 @@ class FWCAMCard extends HTMLElement {
       corridor_width_km: corridorWidth,
       routing_provider: provider,
     };
+    if (origin) {
+      serviceData.origin = origin;
+    }
     if (departureTimeStr) {
       serviceData.departure_time = departureTimeStr;
     }
@@ -1975,6 +1980,16 @@ class FWCAMCard extends HTMLElement {
     const predictedFuelStopEntity = this.getEntityState(this._entities.predicted_fuel_stop);
     const corridorBestEntity = this.getEntityState(this._entities.corridor_best_station);
     const corridorStationsEntity = this.getEntityState(this._entities.corridor_stations);
+    // Vehicle position for pre-filling the origin field
+    const nearbyEntity = this.getEntityState(this._entities.nearby_cheap_stations);
+    const vehicleLat = nearbyEntity?.attributes?.vehicle_latitude;
+    const vehicleLon = nearbyEntity?.attributes?.vehicle_longitude;
+    const vehiclePosStr = (vehicleLat != null && vehicleLon != null)
+      ? `${parseFloat(vehicleLat).toFixed(5)},${parseFloat(vehicleLon).toFixed(5)}`
+      : '';
+    const originPlaceholder = vehiclePosStr
+      ? `Default: current vehicle position (${vehiclePosStr})`
+      : 'Default: current vehicle position';
 
     const isActive = activeRouteEntity && activeRouteEntity.state === 'active';
     const routeAttrs = activeRouteEntity ? (activeRouteEntity.attributes || {}) : {};
@@ -1985,6 +2000,10 @@ class FWCAMCard extends HTMLElement {
 
     const activeStatusHtml = isActive ? `
       <div class="info-grid" style="margin-top:0.5rem;">
+        ${routeAttrs.origin ? `<div class="info-item">
+          <span class="info-label">Origin</span>
+          <span class="info-value">${this._esc(routeAttrs.origin)}</span>
+        </div>` : ''}
         <div class="info-item">
           <span class="info-label">Destination</span>
           <span class="info-value">${this._esc(routeAttrs.destination || '—')}</span>
@@ -2064,6 +2083,11 @@ class FWCAMCard extends HTMLElement {
         <h3>🗺️ Route Planner</h3>
 
         <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.85rem;font-weight:500;">Start Point <small style="font-weight:normal;">(optional)</small></label>
+          <input id="route-origin-input" type="text" class="setting-input"
+            placeholder="${this._esc(originPlaceholder)}"
+            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+
           <label style="font-size:0.85rem;font-weight:500;">Destination</label>
           <input id="route-destination-input" type="text" class="setting-input"
             placeholder="e.g. München Hauptbahnhof"

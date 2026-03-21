@@ -243,6 +243,7 @@ SCHEMA_EXPORT_DEBUG_DATA = vol.Schema({
 SCHEMA_SET_ROUTE = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
     vol.Required("destination"): cv.string,
+    vol.Optional("origin", default=""): cv.string,
     vol.Optional("waypoints", default=[]): vol.All(cv.ensure_list, [cv.string]),
     vol.Optional("corridor_width_km", default=5.0): vol.Coerce(float),
     vol.Optional("routing_provider", default="osrm"): cv.string,
@@ -1462,6 +1463,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             return {"success": False, "route": None, "error": "Config entry not found"}
 
         destination_str = call.data["destination"]
+        origin_str: str = call.data.get("origin", "")
         waypoint_strings: list[str] = call.data.get("waypoints", [])
         corridor_width_km: float = call.data.get("corridor_width_km", 5.0)
         routing_provider: str = call.data.get("routing_provider", "osrm")
@@ -1497,10 +1499,22 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 continue
             waypoint_coords.append(wp_coords)
 
-        # Determine origin – use vehicle position if available, fall back to HA location
+        # Determine origin:
+        #   1. Explicitly provided origin string → geocode it
+        #   2. Vehicle's current GPS position from coordinator data
+        #   3. Fall back to HA home location
         coordinator = hass.data[DOMAIN][entry_id].get("coordinator")
         origin_coords: tuple[float, float] | None = None
-        if coordinator and coordinator.data:
+        if origin_str:
+            geocoded_origin = await route_planner.async_geocode_address(hass, origin_str)
+            if geocoded_origin is not None:
+                origin_coords = geocoded_origin
+            else:
+                _LOGGER.warning(
+                    "set_route: could not geocode origin '%s', falling back to vehicle position",
+                    origin_str,
+                )
+        if origin_coords is None and coordinator and coordinator.data:
             vehicle_data = coordinator.data.get("vehicle_data") or {}
             vlat = vehicle_data.get("latitude") or vehicle_data.get("lat")
             vlon = vehicle_data.get("longitude") or vehicle_data.get("lon")
@@ -1528,6 +1542,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
         route_data = {
             "is_active": True,
+            "origin": origin_str or None,
             "destination": destination_str,
             "waypoints": waypoint_strings,
             "corridor_width_km": corridor_width_km,
@@ -1710,8 +1725,15 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                             "is_open": cur_is_open,
                                             "opening_hours": opening_hours_str,
                                         }
-                                        # ETA-aware check
-                                        if eta_dt is not None and ot is not None:
+                                        # ETA-aware check:
+                                        # Use is_station_open_at when we have any opening-hours
+                                        # data from the API (either opening_times list or
+                                        # whole_day flag).  is_station_open_at handles both
+                                        # (None, True) for 24h stations and (list, False) for
+                                        # timed-open stations correctly.
+                                        # Stations not in the map at all (API was not called or
+                                        # skipped) fall through to the cur_is_open fallback.
+                                        if eta_dt is not None and (ot is not None or wd):
                                             open_at_eta = is_station_open_at(ot, wd, eta_dt)
                                             if open_at_eta:
                                                 eta_open_dicts.append(candidate)
@@ -1721,8 +1743,20 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                                     getattr(st, "name", sid),
                                                     eta_dt.strftime("%H:%M"),
                                                 )
+                                        elif eta_dt is not None and sid in opening_hours_map:
+                                            # API was called but returned no useful data
+                                            # (no opening_times and not whole_day).  We cannot
+                                            # determine the open/close status at ETA, so include
+                                            # the station only when it is currently open.
+                                            if cur_is_open:
+                                                _LOGGER.debug(
+                                                    "set_route: no opening-hours data for '%s', "
+                                                    "including based on current status",
+                                                    getattr(st, "name", sid),
+                                                )
+                                                eta_open_dicts.append(candidate)
                                         else:
-                                            # No ETA data or no opening-hours detail –
+                                            # No ETA data or opening-hours API not queried –
                                             # use current is_open flag
                                             if cur_is_open:
                                                 eta_open_dicts.append(candidate)
