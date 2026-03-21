@@ -31,9 +31,10 @@ CMD_ROUTE = "/route"
 CMD_ROUTE_STATUS = "/routestatus"
 CMD_ROUTE_CANCEL = "/routecancel"
 CMD_CORRIDOR = "/corridor"
+CMD_TANKENJETZT = "/tankenjetzt"
 
 # All supported commands
-SUPPORTED_COMMANDS = [CMD_REFUEL, CMD_STATUS, CMD_HELP, CMD_ROUTE, CMD_ROUTE_STATUS, CMD_ROUTE_CANCEL, CMD_CORRIDOR]
+SUPPORTED_COMMANDS = [CMD_REFUEL, CMD_STATUS, CMD_HELP, CMD_ROUTE, CMD_ROUTE_STATUS, CMD_ROUTE_CANCEL, CMD_CORRIDOR, CMD_TANKENJETZT]
 
 # Pattern helpers ─────────────────────────────────────────────────────────────
 
@@ -158,6 +159,8 @@ class TelegramEventHandler:
             self.hass.async_create_task(self._handle_routecancel_command(event_data))
         elif command == CMD_CORRIDOR:
             self.hass.async_create_task(self._handle_corridor_command(event_data, args))
+        elif command == CMD_TANKENJETZT:
+            self.hass.async_create_task(self._handle_tankenjetzt_command(event_data))
         else:
             # Unknown command
             self.hass.async_create_task(
@@ -234,10 +237,14 @@ class TelegramEventHandler:
             f"{CMD_ROUTE_STATUS} – Aktuellen Routenstatus anzeigen\n"
             f"{CMD_ROUTE_CANCEL} – Aktive Route abbrechen\n"
             f"{CMD_CORRIDOR} [km] – Korridor-Breite ändern (z. B. /corridor 10)\n\n"
+            "<b>⛽ Tanken jetzt</b>\n"
+            f"{CMD_TANKENJETZT} – Günstigste geöffnete Tankstellen an der aktuellen\n"
+            f"  Fahrzeugposition anzeigen (sortiert nach Preis)\n\n"
             "<b>⛽ Tankstopp-Prognose</b>\n"
             "Beim Starten einer Route wird eine Tankstopp-Prognose berechnet.\n"
             "Mit optionaler Abfahrtszeit wird die geschätzte Ankunftszeit am\n"
-            "Tankstopp angezeigt. Es werden nur geöffnete Tankstellen vorgeschlagen.\n\n"
+            "Tankstopp angezeigt. Es werden nur geöffnete Tankstellen vorgeschlagen.\n"
+            "Die Öffnungszeiten werden je Tankstelle angezeigt.\n\n"
             "Die Prognose basiert auf:\n"
             "  • <b>Position</b>: verknüpfte <code>device_tracker</code>-Entität\n"
             "  • <b>Restreichweite</b>: <code>sensor.[ID]_range</code>\n"
@@ -246,7 +253,7 @@ class TelegramEventHandler:
             "  1. Günstigste (inkl. Streckenumweg)\n"
             "  2. Nächste an der Route\n"
             "  3. Kompromiss (Preis/Entfernung)\n"
-            "Je Tankstelle: Preis (€/l) + Navigation (Google, Apple, Waze)\n\n"
+            "Je Tankstelle: Preis (€/l) + Öffnungszeiten + Navigation (Google, Apple, Waze)\n\n"
             "<i>Umwege werden als tatsächliche Fahrstrecke (nicht Luftlinie) berechnet.</i>"
         )
 
@@ -628,3 +635,139 @@ class TelegramEventHandler:
         await self._send_telegram_message(
             f"✅ Corridor width updated to <b>{new_width} km</b>."
         )
+
+    async def _handle_tankenjetzt_command(self, event_data: dict[str, Any]) -> None:
+        """Handle /tankenjetzt command.
+
+        Fetches the cheapest currently-open fuel stations near the vehicle's
+        current position and sends them as a Telegram message.
+
+        Args:
+            event_data: Event data from Telegram.
+        """
+        from .const import (
+            CONF_API_KEY,
+            CONF_FUEL_TYPE,
+            PROVIDER_TANKERKONIG,
+            CONF_PROVIDER,
+        )
+        from .providers.tankerkonig import (
+            TankerkoenigProvider,
+            format_opening_hours,
+        )
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        coordinator = entry_data.get("coordinator")
+
+        if not coordinator or not coordinator.data:
+            await self._send_telegram_message(
+                "❌ Keine Fahrzeugdaten verfügbar. Bitte warte bis die Integration geladen ist."
+            )
+            return
+
+        # Determine current vehicle position
+        vehicle_data = coordinator.data.get("vehicle_data") or {}
+        vlat = vehicle_data.get("latitude") or vehicle_data.get("lat")
+        vlon = vehicle_data.get("longitude") or vehicle_data.get("lon")
+        if not vlat or not vlon:
+            vlat = self.hass.config.latitude
+            vlon = self.hass.config.longitude
+
+        config_data = self.config_entry.data
+        options_data = self.config_entry.options
+        api_key = options_data.get(CONF_API_KEY) or config_data.get(CONF_API_KEY, "")
+        fuel_type = (
+            options_data.get(CONF_FUEL_TYPE)
+            or config_data.get(CONF_FUEL_TYPE, "e5")
+        )
+        provider_name = (
+            options_data.get(CONF_PROVIDER)
+            or config_data.get(CONF_PROVIDER, PROVIDER_TANKERKONIG)
+        )
+
+        if not api_key or provider_name != PROVIDER_TANKERKONIG:
+            await self._send_telegram_message(
+                "❌ Kein Tankerkönig-API-Key konfiguriert. "
+                "Bitte in der Integration hinterlegen."
+            )
+            return
+
+        await self._send_telegram_message(
+            f"⏳ Suche günstigste Tankstellen in der Nähe ({fuel_type.upper()})…"
+        )
+
+        try:
+            _session = async_get_clientsession(self.hass)
+            tk_provider = TankerkoenigProvider(api_key, _session)
+
+            # Use 5 km radius by default; adjust from active route corridor if available
+            search_radius = 5.0
+            route_data = coordinator.data.get("route_data") or {}
+            if route_data.get("is_active") and route_data.get("corridor_width_km"):
+                search_radius = float(route_data["corridor_width_km"])
+
+            nearby = await tk_provider.get_stations_nearby(
+                float(vlat), float(vlon), search_radius, fuel_type
+            )
+
+            if not nearby:
+                await self._send_telegram_message(
+                    f"ℹ️ Keine Tankstellen im Umkreis von {search_radius:.0f} km gefunden."
+                )
+                return
+
+            # Filter to currently-open stations only
+            open_stations = [st for st in nearby if getattr(st, "is_open", True)]
+            if not open_stations:
+                await self._send_telegram_message(
+                    f"ℹ️ Keine geöffneten Tankstellen im Umkreis von {search_radius:.0f} km gefunden."
+                )
+                return
+
+            # Fetch opening hours for the top stations in parallel
+            top_stations = open_stations[:5]
+            top_ids = [getattr(st, "station_id", "") for st in top_stations if getattr(st, "station_id", "")]
+            opening_hours_map: dict = {}
+            if top_ids:
+                try:
+                    opening_hours_map = await tk_provider.get_opening_hours_batch(top_ids)
+                except Exception as oh_err:
+                    _LOGGER.debug("tankenjetzt: opening hours fetch failed: %s", oh_err)
+
+            # Build result message
+            fuel_label = fuel_type.upper()
+            lines = [
+                f"⛽ <b>Günstigste {fuel_label}-Tankstellen in der Nähe</b>",
+                f"📍 Umkreis: {search_radius:.0f} km | Nur geöffnete Stationen",
+                "",
+            ]
+            for i, st in enumerate(top_stations, start=1):
+                price = st.get_price(fuel_type) if hasattr(st, "get_price") else None
+                price_str = f"{price:.3f}" if price is not None else "N/A"
+                dist = getattr(st, "distance", None)
+                dist_str = f"{dist:.1f} km" if dist is not None else "?"
+                sid = getattr(st, "station_id", "")
+                ot, wd = opening_hours_map.get(sid, (None, False))
+                oh_str = format_opening_hours(ot, wd)
+
+                lat_v = getattr(st, "latitude", 0)
+                lon_v = getattr(st, "longitude", 0)
+                gmaps = f"https://maps.google.com/?q={lat_v},{lon_v}"
+
+                lines.append(f"<b>{i}. {html.escape(str(getattr(st, 'name', 'Unbekannt')))}</b>")
+                lines.append(f"   💰 {fuel_label}: <b>{price_str} €/l</b>")
+                lines.append(f"   📏 Entfernung: {dist_str}")
+                if oh_str:
+                    lines.append(f"   🕒 Öffnungszeiten: {html.escape(oh_str)}")
+                lines.append(f"   🗺️ <a href=\"{gmaps}\">Google Maps</a>")
+                lines.append("")
+
+            await self._send_telegram_message("\n".join(lines))
+
+        except Exception as err:
+            _LOGGER.error("Error in _handle_tankenjetzt_command: %s", err)
+            await self._send_telegram_message(
+                f"❌ Fehler beim Abrufen der Tankstellen: {html.escape(str(err))}"
+            )
+

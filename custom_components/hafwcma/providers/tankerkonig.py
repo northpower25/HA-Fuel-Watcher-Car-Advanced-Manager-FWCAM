@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from math import radians, sin, cos, sqrt, atan2
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 
@@ -89,6 +89,143 @@ def _parse_is_open(value: Any) -> bool:
     # Unknown type - this indicates an API format change that should be investigated
     _LOGGER.warning("Unexpected isOpen value type '%s' (value: %s), defaulting to True", type(value).__name__, value)
     return True
+
+
+# German weekday abbreviations used by Tankerkönig
+_DE_DAYS = {
+    "mo": 0,
+    "di": 1,
+    "mi": 2,
+    "do": 3,
+    "fr": 4,
+    "sa": 5,
+    "so": 6,
+}
+
+
+def _parse_time_str(t: str) -> Optional[dt_time]:
+    """Parse a HH:MM time string into a :class:`datetime.time` object.
+
+    Returns ``None`` if the string cannot be parsed.
+    """
+    try:
+        h, m = t.split(":")[:2]
+        return dt_time(int(h), int(m))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _applicable_days_to_weekdays(applicable_days: str) -> list[int]:
+    """Convert a Tankerkönig ``applicable_days`` string to a list of weekday ints (0=Mon).
+
+    Supports:
+    * Single day: ``"Mo"``, ``"So"`` …
+    * Range: ``"Mo-Fr"``, ``"Mo-So"`` …
+    * Comma-separated: ``"Sa,So"`` (seen in some API responses)
+    """
+    weekdays: list[int] = []
+    if not applicable_days:
+        return weekdays
+
+    for part in applicable_days.replace(";", ",").split(","):
+        part = part.strip()
+        if "-" in part:
+            parts = part.split("-", 1)
+            start_day = _DE_DAYS.get(parts[0].lower().strip())
+            end_day = _DE_DAYS.get(parts[1].lower().strip())
+            if start_day is not None and end_day is not None:
+                if start_day <= end_day:
+                    weekdays.extend(range(start_day, end_day + 1))
+                else:
+                    # wrap-around (e.g. Fr-Mo)
+                    weekdays.extend(range(start_day, 7))
+                    weekdays.extend(range(0, end_day + 1))
+        else:
+            day = _DE_DAYS.get(part.lower())
+            if day is not None:
+                weekdays.append(day)
+
+    return weekdays
+
+
+def is_station_open_at(
+    opening_times: Optional[list],
+    whole_day: bool,
+    check_dt: datetime,
+) -> bool:
+    """Return ``True`` if the station is open at *check_dt*.
+
+    Args:
+        opening_times: List of opening-time dicts from Tankerkönig detail.php,
+            each with keys ``applicable_days``, ``start``, ``end`` (HH:MM strings).
+            May be ``None`` when the detail endpoint was not called.
+        whole_day: When ``True`` the station operates 24 h and is always open.
+        check_dt: The datetime to check (timezone-aware or naive).
+
+    Returns:
+        ``True`` when open, ``False`` when closed.  If *opening_times* is
+        ``None`` (detail data not available) the function returns ``True`` to
+        avoid false negatives.
+    """
+    if whole_day:
+        return True
+
+    if not opening_times:
+        # No detail data – don't filter the station out
+        return True
+
+    weekday = check_dt.weekday()  # 0=Mon … 6=Sun
+    check_time = check_dt.time().replace(second=0, microsecond=0)
+
+    for slot in opening_times:
+        applicable = slot.get("applicable_days") or slot.get("text", "")
+        start_str = slot.get("start") or slot.get("open")
+        end_str = slot.get("end") or slot.get("close")
+        if not applicable or not start_str or not end_str:
+            continue
+
+        if weekday not in _applicable_days_to_weekdays(applicable):
+            continue
+
+        start_t = _parse_time_str(str(start_str))
+        end_t = _parse_time_str(str(end_str))
+        if start_t is None or end_t is None:
+            continue
+
+        if start_t <= end_t:
+            # Normal slot: e.g. 06:00 – 22:00
+            if start_t <= check_time <= end_t:
+                return True
+        else:
+            # Midnight-spanning slot: e.g. 22:00 – 02:00
+            if check_time >= start_t or check_time <= end_t:
+                return True
+
+    return False
+
+
+def format_opening_hours(opening_times: Optional[list], whole_day: bool) -> str:
+    """Return a human-readable opening-hours string for the Telegram notification.
+
+    Example output: ``"Mo-Fr 06:00-22:00 | Sa 07:00-21:00 | So 08:00-20:00"``
+
+    Returns an empty string when no data is available.
+    """
+    if whole_day:
+        return "24h geöffnet"
+
+    if not opening_times:
+        return ""
+
+    parts: list[str] = []
+    for slot in opening_times:
+        applicable = slot.get("applicable_days") or slot.get("text", "")
+        start_str = slot.get("start") or slot.get("open", "")
+        end_str = slot.get("end") or slot.get("close", "")
+        if applicable and start_str and end_str:
+            parts.append(f"{applicable} {start_str}-{end_str}")
+
+    return " | ".join(parts)
 
 
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -435,7 +572,56 @@ class TankerkoenigProvider(FuelPriceProvider):
             _LOGGER.error("Error fetching station details: %s", err)
             raise ProviderError(f"Network error: {err}") from err
 
-    async def validate_api_key(self, api_key: str) -> bool:
+    async def _fetch_opening_hours(
+        self,
+        station_id: str,
+    ) -> tuple[Optional[list], bool]:
+        """Fetch opening hours for a single station via detail.php.
+
+        Returns a ``(opening_times, whole_day)`` tuple.  On any error returns
+        ``(None, False)`` so the caller can still proceed without filtering.
+        """
+        params = {"id": station_id, "apikey": self.api_key}
+        try:
+            url = f"{TANKERKONIG_API_URL}/detail.php"
+            async with self.session.get(url, params=params, timeout=10) as response:
+                if response.status != 200:
+                    return None, False
+                data = await response.json()
+                if not data.get("ok"):
+                    return None, False
+                # Support both v4 and legacy formats
+                station_data = data.get("station") or (data.get("data") or {}).get("station") or {}
+                opening_times = station_data.get("openingTimes") or None
+                whole_day = bool(station_data.get("wholeDay", False))
+                return opening_times, whole_day
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError) as err:
+            _LOGGER.debug("Opening hours fetch failed for %s: %s", station_id, err)
+            return None, False
+
+    async def get_opening_hours_batch(
+        self,
+        station_ids: List[str],
+    ) -> Dict[str, tuple]:
+        """Fetch opening hours for multiple stations in parallel.
+
+        Args:
+            station_ids: List of Tankerkönig station UUIDs.
+
+        Returns:
+            Mapping ``station_id -> (opening_times, whole_day)``.
+        """
+        tasks = [self._fetch_opening_hours(sid) for sid in station_ids]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        out: Dict[str, tuple] = {}
+        for sid, result in zip(station_ids, results):
+            if isinstance(result, Exception):
+                out[sid] = (None, False)
+            else:
+                out[sid] = result
+        return out
+
+
         """Validate API key by making a test request.
 
         Args:

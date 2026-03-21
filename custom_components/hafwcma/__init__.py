@@ -1540,6 +1540,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         categorized_stations: dict = {}
         safety_buffer_pct: float = 15.0
         eta_at_stop: str | None = None
+        eta_dt = None  # datetime at predicted fuel stop (set when departure_dt known)
         try:
             from .utils.route_planner import (
                 FuelStopPredictor, CorridorStationRanker,
@@ -1623,16 +1624,37 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                 from homeassistant.helpers.aiohttp_client import (
                                     async_get_clientsession,
                                 )
-                                from .providers.tankerkonig import TankerkoenigProvider
+                                from .providers.tankerkonig import (
+                                    TankerkoenigProvider,
+                                    is_station_open_at,
+                                    format_opening_hours,
+                                )
                                 _session = async_get_clientsession(hass)
                                 tk_provider = TankerkoenigProvider(api_key, _session)
                                 nearby = await tk_provider.get_stations_nearby(
                                     stop_lat, stop_lon, corridor_width_km, fuel_type
                                 )
                                 if nearby:
+                                    # Fetch opening hours in parallel for the top stations
+                                    # so we can filter by open-at-ETA status.
+                                    top_nearby = nearby[:10]
+                                    top_ids = [
+                                        getattr(st, "station_id", "")
+                                        for st in top_nearby
+                                        if getattr(st, "station_id", "")
+                                    ]
+                                    opening_hours_map: dict = {}
+                                    if top_ids and eta_dt is not None:
+                                        try:
+                                            opening_hours_map = await tk_provider.get_opening_hours_batch(top_ids)
+                                        except Exception as oh_err:
+                                            _LOGGER.debug(
+                                                "set_route: opening hours batch fetch failed: %s", oh_err
+                                            )
+
                                     # Convert FuelStation objects to plain dicts for the ranker
                                     station_dicts: list[dict] = []
-                                    for st in nearby[:10]:
+                                    for st in top_nearby:
                                         price = (
                                             st.get_price(fuel_type)
                                             if hasattr(st, "get_price")
@@ -1640,11 +1662,25 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                         )
                                         if price is None:
                                             continue
-                                        # Filter by open status when ETA is available
-                                        # (TankerKönig only provides current is_open;
-                                        # we skip stations that are currently closed)
+                                        # Filter by open status.
+                                        # When ETA is known, check opening hours at ETA time.
+                                        # Otherwise fall back to the current is_open flag.
                                         is_open = getattr(st, "is_open", True)
-                                        if not is_open:
+                                        sid = getattr(st, "station_id", "")
+                                        ot, wd = opening_hours_map.get(sid, (None, False))
+                                        if eta_dt is not None and ot is not None:
+                                            # Use schedule to check at ETA time
+                                            open_at_eta = is_station_open_at(ot, wd, eta_dt)
+                                            if not open_at_eta:
+                                                _LOGGER.debug(
+                                                    "set_route: skipping station '%s' – "
+                                                    "closed at ETA %s",
+                                                    getattr(st, "name", sid),
+                                                    eta_dt.strftime("%H:%M"),
+                                                )
+                                                continue
+                                        elif not is_open:
+                                            # No ETA or no detail data – use current is_open
                                             continue
                                         from .utils.geolocation import calculate_distance
                                         dist_km = calculate_distance(
@@ -1652,8 +1688,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                             getattr(st, "latitude", 0),
                                             getattr(st, "longitude", 0),
                                         )
+                                        opening_hours_str = format_opening_hours(ot, wd)
                                         station_dicts.append({
-                                            "station_id": getattr(st, "station_id", ""),
+                                            "station_id": sid,
                                             "name": getattr(st, "name", "Unknown"),
                                             "lat": getattr(st, "latitude", stop_lat),
                                             "lng": getattr(st, "longitude", stop_lon),
@@ -1661,6 +1698,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                                             # Straight-line one-way * 2 = initial round-trip estimate
                                             "detour_km": round(dist_km * 2.0, 2),
                                             "is_open": is_open,
+                                            "opening_hours": opening_hours_str,
                                         })
 
                                     if station_dicts:

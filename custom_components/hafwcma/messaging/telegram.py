@@ -324,6 +324,7 @@ class TelegramNotifier(MessageService):
             price = station.get("price", "N/A")
             detour = station.get("detour_km", 0)
             eff = station.get("effective_price_eur_per_l")
+            opening_hours = station.get("opening_hours", "")
             block = [
                 "",
                 f"{emoji} <b>{label}</b>",
@@ -333,6 +334,8 @@ class TelegramNotifier(MessageService):
             ]
             if eff is not None:
                 block.append(f"   💶 Effektiv: {eff} €/l (inkl. Umweg)")
+            if opening_hours:
+                block.append(f"   🕒 Öffnungszeiten: {html.escape(str(opening_hours))}")
             # All 3 navigation links
             nav_parts = []
             if nav.get("google_maps"):
