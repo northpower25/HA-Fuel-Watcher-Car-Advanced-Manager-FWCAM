@@ -71,6 +71,7 @@ SERVICE_LIST_BACKUPS = "list_backups"
 SERVICE_DELETE_BACKUP = "delete_backup"
 SERVICE_EXPORT_DEBUG_DATA = "export_debug_data"
 SERVICE_SET_ROUTE = "set_route"
+SERVICE_PLAN_ROUTE = "plan_route"
 SERVICE_CANCEL_ROUTE = "cancel_route"
 SERVICE_GET_SAVED_ROUTES = "get_saved_routes"
 SERVICE_DELETE_SAVED_ROUTE = "delete_saved_route"
@@ -244,6 +245,17 @@ SCHEMA_EXPORT_DEBUG_DATA = vol.Schema({
 })
 
 SCHEMA_SET_ROUTE = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("destination"): cv.string,
+    vol.Optional("origin", default=""): cv.string,
+    vol.Optional("waypoints", default=[]): vol.All(cv.ensure_list, [cv.string]),
+    vol.Optional("corridor_width_km", default=5.0): vol.Coerce(float),
+    vol.Optional("routing_provider", default="osrm"): cv.string,
+    vol.Optional("google_api_key", default=""): cv.string,
+    vol.Optional("departure_time", default=""): cv.string,
+})
+
+SCHEMA_PLAN_ROUTE = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
     vol.Required("destination"): cv.string,
     vol.Optional("origin", default=""): cv.string,
@@ -2028,6 +2040,146 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         DOMAIN, SERVICE_CANCEL_ROUTE, handle_cancel_route, schema=SCHEMA_CANCEL_ROUTE, supports_response=True
     )
 
+    async def handle_plan_route(call: ServiceCall) -> ServiceResponse:
+        """Save a planned route without activating it.
+
+        Geocodes the destination and waypoints, calculates the route distance
+        and duration via the configured routing provider, then appends a
+        lightweight entry to the saved-routes list.  The route is *not*
+        activated – it remains in the planned list until the user starts it
+        explicitly (via set_route or the card's "Activate" button).
+
+        Returns:
+            ServiceResponse with ``success``, ``route_entry`` (dict) and ``error``.
+        """
+        from .utils.route_planner import RoutePlanner
+        from .const import CONF_GOOGLE_MAPS_API_KEY
+
+        entry_id = call.data["config_entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if not entry:
+            _LOGGER.error("plan_route: config entry %s not found", entry_id)
+            return {"success": False, "route_entry": None, "error": "Config entry not found"}
+
+        destination_str = call.data["destination"]
+        origin_str: str = call.data.get("origin", "")
+        waypoint_strings: list[str] = call.data.get("waypoints", [])
+        corridor_width_km: float = call.data.get("corridor_width_km", 5.0)
+        routing_provider: str = call.data.get("routing_provider", "osrm")
+        google_api_key: str = call.data.get("google_api_key", "")
+        if not google_api_key:
+            google_api_key = entry.options.get(CONF_GOOGLE_MAPS_API_KEY, "") or entry.data.get(CONF_GOOGLE_MAPS_API_KEY, "")
+        departure_time_str: str = call.data.get("departure_time", "")
+
+        # Retrieve or create the RoutePlanner for this entry
+        if "route_planner" not in hass.data[DOMAIN][entry_id]:
+            hass.data[DOMAIN][entry_id]["route_planner"] = RoutePlanner()
+        route_planner: RoutePlanner = hass.data[DOMAIN][entry_id]["route_planner"]
+
+        # Geocode destination
+        dest_coords = await route_planner.async_geocode_address(hass, destination_str)
+        if dest_coords is None:
+            return {
+                "success": False,
+                "route_entry": None,
+                "error": f"Could not geocode destination: {destination_str}",
+            }
+
+        # Geocode waypoints (skip failures)
+        waypoint_coords: list[tuple[float, float]] = []
+        for wp_str in waypoint_strings:
+            wp_coords = await route_planner.async_geocode_address(hass, wp_str)
+            if wp_coords is None:
+                _LOGGER.warning("plan_route: could not geocode waypoint '%s', skipping", wp_str)
+                continue
+            waypoint_coords.append(wp_coords)
+
+        # Determine origin (explicit → vehicle position → HA home)
+        coordinator = hass.data[DOMAIN][entry_id].get("coordinator")
+        origin_coords: tuple[float, float] | None = None
+        if origin_str:
+            geocoded_origin = await route_planner.async_geocode_address(hass, origin_str)
+            if geocoded_origin is not None:
+                origin_coords = geocoded_origin
+        if origin_coords is None and coordinator and coordinator.data:
+            vehicle_data = coordinator.data.get("vehicle_data") or {}
+            vlat = vehicle_data.get("latitude") or vehicle_data.get("lat")
+            vlon = vehicle_data.get("longitude") or vehicle_data.get("lon")
+            if vlat and vlon:
+                origin_coords = (float(vlat), float(vlon))
+        if origin_coords is None:
+            origin_coords = (hass.config.latitude, hass.config.longitude)
+
+        # Calculate basic route (distance + duration, no corridor station search)
+        route_result = await route_planner.async_calculate_route(
+            hass,
+            origin=origin_coords,
+            destination=dest_coords,
+            waypoints=waypoint_coords or None,
+            provider=routing_provider,
+            api_key=google_api_key or None,
+        )
+
+        total_distance_km: float | None = None
+        if route_result and route_result.get("distance_km") is not None:
+            total_distance_km = round(float(route_result["distance_km"]), 1)
+
+        from homeassistant.util import dt as _dt_util
+        import random as _random
+        route_entry = {
+            "route_id": int(_time.time() * 1000) * 1000 + _random.randint(0, 999),
+            "created_at": _dt_util.now().isoformat(timespec="seconds"),
+            "destination": destination_str,
+            "origin": origin_str or "",
+            "waypoints": waypoint_strings,
+            "corridor_width_km": corridor_width_km,
+            "routing_provider": routing_provider,
+            "departure_time": departure_time_str or "",
+            "total_distance_km": total_distance_km,
+            "status": "planned",
+        }
+
+        if coordinator:
+            await coordinator.async_add_to_saved_routes(route_entry)
+            # Notify the PlannedRoutesSensor listeners
+            coordinator.async_update_listeners()
+
+        # Send Telegram notification
+        telegram_token = entry.data.get("telegram_token", "")
+        telegram_chat_id = entry.data.get("telegram_chat_id", "")
+        if telegram_token and telegram_chat_id:
+            try:
+                from .messaging.telegram import TelegramNotifier
+                notifier = TelegramNotifier(
+                    bot_token=telegram_token,
+                    chat_id=telegram_chat_id,
+                    hass=hass,
+                )
+                departure_info = f" | Abfahrt: {departure_time_str}" if departure_time_str else ""
+                distance_info = f" ({total_distance_km} km)" if total_distance_km else ""
+                msg = (
+                    f"📅 <b>Route geplant</b>\n"
+                    f"🎯 Ziel: <b>{destination_str}</b>{distance_info}\n"
+                    f"⚙️ Korridor: {corridor_width_km} km"
+                    f"{departure_info}"
+                )
+                await notifier.send_message(msg)
+            except Exception as tg_err:
+                _LOGGER.warning("plan_route: Telegram notification failed: %s", tg_err)
+
+        # Fire HA event
+        hass.bus.async_fire(
+            f"{DOMAIN}_route_planned",
+            {
+                "entry_id": entry_id,
+                "destination": destination_str,
+                "total_distance_km": total_distance_km,
+                "departure_time": departure_time_str or None,
+            },
+        )
+
+        return {"success": True, "route_entry": route_entry, "error": ""}
+
     async def handle_get_saved_routes(call: ServiceCall) -> ServiceResponse:
         """Return the list of all saved/planned routes for the given config entry.
 
@@ -2063,6 +2215,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     hass.services.async_register(
         DOMAIN, SERVICE_DELETE_SAVED_ROUTE, handle_delete_saved_route,
         schema=SCHEMA_DELETE_SAVED_ROUTE, supports_response=True
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_PLAN_ROUTE, handle_plan_route, schema=SCHEMA_PLAN_ROUTE, supports_response=True
     )
 
     return True

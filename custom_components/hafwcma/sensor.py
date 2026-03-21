@@ -312,6 +312,7 @@ async def async_setup_entry(
         TripLogSensor(coordinator, config_entry, vehicle_name),
         CurrentTripSensor(coordinator, config_entry, vehicle_name),
         ActiveRouteSensor(coordinator, config_entry, vehicle_name),
+        PlannedRoutesSensor(coordinator, config_entry, vehicle_name),
         PredictedFuelStopSensor(coordinator, config_entry, vehicle_name),
         CorridorBestStationSensor(coordinator, config_entry, vehicle_name),
         CorridorStationsSensor(coordinator, config_entry, vehicle_name),
@@ -5473,6 +5474,58 @@ class CorridorStationsSensor(CoordinatorEntity, SensorEntity):
             "stations": route_data.get("corridor_stations", []),
             ATTR_ROUTE_CORRIDOR_WIDTH_KM: route_data.get("corridor_width_km"),
             ATTR_SEARCH_WINDOW_KM: route_data.get("search_window_km"),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class PlannedRoutesSensor(CoordinatorEntity, SensorEntity):
+    """Sensor exposing all planned/saved routes.
+
+    State: number of planned routes.
+    Attributes: ``routes`` list (lightweight – no polyline) sorted newest-first,
+    plus ``count`` for convenience.  The list is persisted across restarts via
+    the coordinator's ``_saved_routes_list`` store.
+    """
+
+    _attr_icon = "mdi:map-marker-multiple"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Planned Routes"
+        self._attr_unique_id = f"{config_entry.entry_id}_planned_routes"
+        self._config_entry = config_entry
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> int:
+        """Return the total number of planned/saved routes."""
+        return len(self.coordinator._saved_routes_list)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return all planned routes sorted newest-first."""
+        routes = list(self.coordinator._saved_routes_list)
+        routes_sorted = sorted(routes, key=lambda r: r.get("route_id", 0), reverse=True)
+        return {
+            "routes": routes_sorted,
+            "count": len(routes_sorted),
+            "config_entry_id": self._config_entry.entry_id,
         }
 
     @property

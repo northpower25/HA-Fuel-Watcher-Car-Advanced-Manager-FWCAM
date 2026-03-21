@@ -28,13 +28,15 @@ CMD_REFUEL = "/refuel"
 CMD_STATUS = "/status"
 CMD_HELP = "/help"
 CMD_ROUTE = "/route"
+CMD_ROUTE_PLAN = "/routeplan"
+CMD_ROUTE_LIST = "/routelist"
 CMD_ROUTE_STATUS = "/routestatus"
 CMD_ROUTE_CANCEL = "/routecancel"
 CMD_CORRIDOR = "/corridor"
 CMD_TANKENJETZT = "/tankenjetzt"
 
 # All supported commands
-SUPPORTED_COMMANDS = [CMD_REFUEL, CMD_STATUS, CMD_HELP, CMD_ROUTE, CMD_ROUTE_STATUS, CMD_ROUTE_CANCEL, CMD_CORRIDOR, CMD_TANKENJETZT]
+SUPPORTED_COMMANDS = [CMD_REFUEL, CMD_STATUS, CMD_HELP, CMD_ROUTE, CMD_ROUTE_PLAN, CMD_ROUTE_LIST, CMD_ROUTE_STATUS, CMD_ROUTE_CANCEL, CMD_CORRIDOR, CMD_TANKENJETZT]
 
 # Pattern helpers ─────────────────────────────────────────────────────────────
 
@@ -153,6 +155,10 @@ class TelegramEventHandler:
             self.hass.async_create_task(self._handle_refuel_command(event_data, args))
         elif command == CMD_ROUTE:
             self.hass.async_create_task(self._handle_route_command(event_data, args))
+        elif command == CMD_ROUTE_PLAN:
+            self.hass.async_create_task(self._handle_routeplan_command(event_data, args))
+        elif command == CMD_ROUTE_LIST:
+            self.hass.async_create_task(self._handle_routelist_command(event_data))
         elif command == CMD_ROUTE_STATUS:
             self.hass.async_create_task(self._handle_routestatus_command(event_data))
         elif command == CMD_ROUTE_CANCEL:
@@ -227,13 +233,18 @@ class TelegramEventHandler:
             f"{CMD_REFUEL} – Tankvorgang protokollieren (demnächst)\n\n"
             "<b>🗺️ Routenplanung</b>\n"
             f"<code>{CMD_ROUTE} start &lt;Adresse&gt; [km] [Abfahrt]</code>\n"
-            f"  Route starten, optional mit Korridor-Breite in km und Abfahrtszeit\n"
+            f"  Route sofort starten, optional mit Korridor-Breite in km und Abfahrtszeit\n"
             f"  Beispiele:\n"
             f"  <code>{CMD_ROUTE} start München Hbf 10</code>\n"
             f"  <code>{CMD_ROUTE} start München Hbf 10 08:30</code>\n"
             f"  <code>{CMD_ROUTE} start München Hbf 10 2026-03-20T08:30</code>\n"
             f"<code>{CMD_ROUTE} stop</code>\n"
             f"  Aktive Route beenden\n"
+            f"<code>{CMD_ROUTE_PLAN} &lt;Adresse&gt; [km] [Abfahrt]</code>\n"
+            f"  Route für später planen (wird nicht sofort aktiviert)\n"
+            f"  Beispiele:\n"
+            f"  <code>{CMD_ROUTE_PLAN} München Hbf 10 08:30</code>\n"
+            f"{CMD_ROUTE_LIST} – Alle geplanten Routen anzeigen\n"
             f"{CMD_ROUTE_STATUS} – Aktuellen Routenstatus anzeigen\n"
             f"{CMD_ROUTE_CANCEL} – Aktive Route abbrechen\n"
             f"{CMD_CORRIDOR} [km] – Korridor-Breite ändern (z. B. /corridor 10)\n\n"
@@ -584,6 +595,143 @@ class TelegramEventHandler:
             await self._send_telegram_message(
                 f"❌ Fehler beim Beenden der Route: {html.escape(str(err))}"
             )
+
+    async def _handle_routeplan_command(
+        self,
+        event_data: dict[str, Any],
+        args: list[str],
+    ) -> None:
+        """Handle /routeplan command – save a route for later without activating it.
+
+        Syntax:
+          /routeplan <address> [corridor_km] [departure_time]
+
+        Args:
+            event_data: Event data from Telegram.
+            args: Command arguments (words after /routeplan).
+        """
+        if not args:
+            await self._send_telegram_message(
+                f"ℹ️ <b>Route planen</b>\n\n"
+                f"<code>{CMD_ROUTE_PLAN} &lt;Adresse&gt; [km] [Abfahrtszeit]</code>\n"
+                f"  Route für später speichern (wird nicht sofort aktiviert)\n"
+                f"  Beispiele:\n"
+                f"  <code>{CMD_ROUTE_PLAN} München Hbf</code>\n"
+                f"  <code>{CMD_ROUTE_PLAN} München Hbf 10 08:30</code>\n\n"
+                f"{CMD_ROUTE_LIST} – Alle geplanten Routen anzeigen\n"
+                f"Tipp: {CMD_HELP} für alle Befehle"
+            )
+            return
+
+        route_args = list(args)
+
+        # Check whether the last token looks like a departure time (HH:MM or ISO)
+        departure_time: str | None = None
+        if route_args and _is_time_token(route_args[-1]):
+            departure_time = route_args[-1]
+            route_args = route_args[:-1]
+
+        # Check whether the last remaining token is a numeric corridor width
+        corridor_km: float | None = None
+        try:
+            candidate = float(route_args[-1])
+            if 1 <= candidate <= 50:
+                corridor_km = candidate
+                route_args = route_args[:-1]
+            elif route_args[-1].replace(".", "", 1).isdigit():
+                await self._send_telegram_message(
+                    "⚠️ Korridorbreite muss zwischen 1 und 50 km liegen.\n"
+                    f"Beispiel: <code>{CMD_ROUTE_PLAN} München Hbf 10 08:30</code>"
+                )
+                return
+        except (ValueError, IndexError):
+            pass
+
+        if not route_args:
+            await self._send_telegram_message(
+                f"ℹ️ Bitte Zieladresse angeben.\n"
+                f"Beispiel: <code>{CMD_ROUTE_PLAN} München Hbf</code>"
+            )
+            return
+
+        destination = " ".join(route_args)
+        entry_id = self.config_entry.entry_id
+
+        service_data: dict[str, Any] = {
+            "config_entry_id": entry_id,
+            "destination": destination,
+        }
+        if corridor_km is not None:
+            service_data["corridor_width_km"] = corridor_km
+        if departure_time is not None:
+            service_data["departure_time"] = departure_time
+
+        corridor_info = f" (Korridor: {corridor_km} km)" if corridor_km is not None else ""
+        departure_info = f" | Abfahrt: {departure_time}" if departure_time else ""
+        await self._send_telegram_message(
+            f"📅 Route wird geplant nach <b>{html.escape(destination)}</b>"
+            f"{html.escape(corridor_info)}{html.escape(departure_info)}…"
+        )
+
+        try:
+            result = await self.hass.services.async_call(
+                DOMAIN,
+                "plan_route",
+                service_data,
+                blocking=True,
+                return_response=True,
+            )
+            if not result or not result.get("success"):
+                error = result.get("error", "Unbekannter Fehler") if result else "Keine Antwort"
+                await self._send_telegram_message(
+                    f"❌ Route konnte nicht geplant werden: {html.escape(str(error))}"
+                )
+            # On success the plan_route service sends a Telegram notification itself.
+        except Exception as err:
+            _LOGGER.error("Error in _handle_routeplan_command: %s", err)
+            await self._send_telegram_message(
+                f"❌ Fehler beim Planen der Route: {html.escape(str(err))}"
+            )
+
+    async def _handle_routelist_command(self, event_data: dict[str, Any]) -> None:
+        """Handle /routelist command – display all planned/saved routes.
+
+        Args:
+            event_data: Event data from Telegram.
+        """
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        coordinator = entry_data.get("coordinator")
+        routes: list[dict[str, Any]] = []
+        if coordinator:
+            routes = list(coordinator._saved_routes_list)
+
+        if not routes:
+            await self._send_telegram_message(
+                f"📋 <b>Geplante Routen</b>\n\nKeine geplanten Routen vorhanden.\n\n"
+                f"Route planen mit: <code>{CMD_ROUTE_PLAN} &lt;Zieladresse&gt;</code>"
+            )
+            return
+
+        # Sort newest-first
+        routes_sorted = sorted(routes, key=lambda r: r.get("route_id", 0), reverse=True)
+
+        lines = [f"📋 <b>Geplante Routen ({len(routes_sorted)})</b>\n"]
+        for i, r in enumerate(routes_sorted[:10], start=1):  # Show up to 10
+            dest = html.escape(str(r.get("destination", "N/A")))
+            dist = f"{r['total_distance_km']} km" if r.get("total_distance_km") else "—"
+            departure = html.escape(str(r.get("departure_time", ""))) if r.get("departure_time") else "—"
+            corridor = r.get("corridor_width_km", 5)
+            waypoints = r.get("waypoints", [])
+            wp_str = f" ↪ {html.escape(', '.join(waypoints))}" if waypoints else ""
+            lines.append(
+                f"{i}. <b>{dest}</b>{wp_str}\n"
+                f"   📏 {dist} | ⚙️ {corridor} km Korridor | 🕐 {departure}"
+            )
+        if len(routes_sorted) > 10:
+            lines.append(f"\n…und {len(routes_sorted) - 10} weitere Routen (in der Lovelace-Karte sichtbar)")
+        lines.append(f"\nRoute starten: <code>{CMD_ROUTE} start &lt;Zieladresse&gt;</code>")
+
+        await self._send_telegram_message("\n".join(lines))
 
     async def _handle_corridor_command(
         self,
