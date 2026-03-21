@@ -392,6 +392,11 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         # Populated by async_load_route_data() at startup and updated by the set/cancel
         # route service handlers in __init__.py.
         self._stored_route_data: dict | None = None
+
+        # Saved routes list – persists across restarts via a separate Store.
+        # Each entry is a lightweight planning-params dict (no polyline) with a
+        # unique ``route_id`` (ms timestamp) so routes can be identified.
+        self._saved_routes_list: list[dict] = []
         
         # Entity availability and caching
         self._cached_vehicle_data = {}  # Cache last known vehicle data
@@ -472,6 +477,72 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.warning("Could not clear route data from storage: %s", err)
 
+    # ── Saved-routes-list persistence helpers ───────────────────────────────
+
+    def _saved_routes_store(self):
+        """Return the HA Store used to persist the saved-routes list."""
+        return Store(self.hass, 1, f"hafwcma_saved_routes_{self.config_entry.entry_id}")
+
+    async def async_load_saved_routes(self) -> None:
+        """Load the persisted saved-routes list from HA storage.
+
+        Called once during integration setup so that planned routes survive
+        Home Assistant restarts.
+        """
+        try:
+            stored = await self._saved_routes_store().async_load()
+            if isinstance(stored, list):
+                self._saved_routes_list = stored
+                _LOGGER.debug(
+                    "Loaded %d saved route(s) from storage",
+                    len(self._saved_routes_list),
+                )
+        except Exception as err:
+            _LOGGER.warning("Could not load saved routes from storage: %s", err)
+
+    async def async_save_routes_list(self) -> None:
+        """Persist the current saved-routes list to HA storage."""
+        try:
+            await self._saved_routes_store().async_save(self._saved_routes_list)
+            _LOGGER.debug(
+                "Saved-routes list persisted (%d routes)", len(self._saved_routes_list)
+            )
+        except Exception as err:
+            _LOGGER.warning("Could not persist saved routes list: %s", err)
+
+    async def async_add_to_saved_routes(self, route_entry: dict) -> None:
+        """Append a new entry to the saved-routes list and persist it.
+
+        Each ``route_entry`` must contain a unique ``route_id`` key.  If an
+        entry with the same ``route_id`` already exists it is replaced.
+        """
+        route_id = route_entry.get("route_id")
+        if route_id is not None:
+            self._saved_routes_list = [
+                r for r in self._saved_routes_list if r.get("route_id") != route_id
+            ]
+        self._saved_routes_list.append(route_entry)
+        await self.async_save_routes_list()
+
+    async def async_delete_saved_route(self, route_id: int | str) -> bool:
+        """Remove a saved route by its ``route_id`` and persist the list.
+
+        Returns ``True`` when the route was found and removed, ``False``
+        otherwise.  Route IDs are compared as strings to prevent int/str
+        mismatches when the frontend passes the id as a text value.
+        """
+        str_id = str(route_id)
+        before = len(self._saved_routes_list)
+        self._saved_routes_list = [
+            r for r in self._saved_routes_list if str(r.get("route_id", "")) != str_id
+        ]
+        removed = len(self._saved_routes_list) < before
+        if removed:
+            await self.async_save_routes_list()
+            _LOGGER.debug("Saved route %s deleted", route_id)
+        else:
+            _LOGGER.warning("delete_saved_route: route_id %s not found", route_id)
+        return removed
 
     def _get_randomized_interval(self, base_minutes: int) -> timedelta:
         """Calculate a randomized update interval to avoid simultaneous API calls.

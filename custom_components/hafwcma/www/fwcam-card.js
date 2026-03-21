@@ -66,6 +66,9 @@ class FWCAMCard extends HTMLElement {
     // State for layout edit mode (drag & drop section reordering)
     this._editLayoutMode = false;
     this._dragSrcSection = null;
+    // State for saved routes (route planner list)
+    this._savedRoutes = [];
+    this._savedRoutesLoaded = false;
     // Re-render when the browser tab becomes visible again to avoid blank screen
     this._visibilityChangeHandler = () => {
       if (document.visibilityState === 'visible' && this._hass && this._config.entity) {
@@ -914,6 +917,8 @@ class FWCAMCard extends HTMLElement {
     try {
       await this.callService('hafwcma', 'set_route', serviceData);
       this.forceRender();
+      // Refresh saved routes list after a short delay (backend persists asynchronously)
+      setTimeout(() => this._fetchSavedRoutes(), 1200);
     } catch (err) {
       console.error('FWCAM: set_route failed', err);
       alert(`Could not start route: ${err.message || err}`);
@@ -933,6 +938,82 @@ class FWCAMCard extends HTMLElement {
       console.error('FWCAM: cancel_route failed', err);
       alert(`Could not cancel route: ${err.message || err}`);
     }
+  }
+
+  /**
+   * Fetch all saved routes from the backend and store them in _savedRoutes.
+   * Updates the saved-routes sub-section in place when possible.
+   */
+  async _fetchSavedRoutes() {
+    try {
+      const entryId = this.getConfigEntryId();
+      const result = await this.callService('hafwcma', 'get_saved_routes', { config_entry_id: entryId });
+      this._savedRoutes = (result && Array.isArray(result.routes)) ? result.routes : [];
+      this._savedRoutesLoaded = true;
+      this._updateSavedRoutesSection();
+    } catch (err) {
+      console.error('FWCAM: get_saved_routes failed', err);
+    }
+  }
+
+  /**
+   * Delete a saved route by route_id, then refresh the list.
+   */
+  async _deleteSavedRoute(routeId) {
+    const lang = this.getUserLanguage ? this.getUserLanguage() : 'en';
+    const confirmMsg = lang === 'de'
+      ? 'Route wirklich löschen?'
+      : 'Delete this route?';
+    if (!confirm(confirmMsg)) return;
+    try {
+      const entryId = this.getConfigEntryId();
+      await this.callService('hafwcma', 'delete_saved_route', {
+        config_entry_id: entryId,
+        route_id: routeId,
+      });
+      await this._fetchSavedRoutes();
+    } catch (err) {
+      console.error('FWCAM: delete_saved_route failed', err);
+    }
+  }
+
+  /**
+   * Load a saved route's parameters into the route-planner form so the user
+   * can review or modify them before re-running the route.
+   */
+  _editSavedRoute(route) {
+    const originEl = this.shadowRoot.getElementById('route-origin-input');
+    const destinationEl = this.shadowRoot.getElementById('route-destination-input');
+    const waypointsEl = this.shadowRoot.getElementById('route-waypoints-input');
+    const corridorEl = this.shadowRoot.getElementById('route-corridor-input');
+    const providerEl = this.shadowRoot.getElementById('route-provider-select');
+    const departureDateEl = this.shadowRoot.getElementById('route-departure-date');
+    const departureTimeEl = this.shadowRoot.getElementById('route-departure-time');
+
+    if (originEl) originEl.value = route.origin || '';
+    if (destinationEl) destinationEl.value = route.destination || '';
+    if (waypointsEl) waypointsEl.value = Array.isArray(route.waypoints) ? route.waypoints.join(', ') : (route.waypoints || '');
+    if (corridorEl) corridorEl.value = route.corridor_width_km != null ? route.corridor_width_km : 5;
+    if (providerEl) providerEl.value = route.routing_provider || 'osrm';
+    if (route.departure_time && departureDateEl && departureTimeEl) {
+      const parts = route.departure_time.split(' ');
+      if (parts.length === 2) {
+        departureDateEl.value = parts[0];
+        departureTimeEl.value = parts[1];
+      }
+    }
+    // Scroll the form into view
+    const section = this.shadowRoot.querySelector('[data-fwcam-section="route_planner"]');
+    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /**
+   * Re-render only the saved-routes sub-section inside the route_planner wrapper.
+   */
+  _updateSavedRoutesSection() {
+    const placeholder = this.shadowRoot.querySelector('[data-fwcam-section="saved_routes"]');
+    if (!placeholder) return;
+    placeholder.innerHTML = this._renderSavedRoutesList();
   }
 
   /**
@@ -2150,6 +2231,81 @@ class FWCAMCard extends HTMLElement {
         ${activeStatusHtml}
         ${bestStationHtml}
         ${topStationsHtml}
+
+        <div data-fwcam-section="saved_routes">
+          ${this._renderSavedRoutesList()}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render the list of all saved/planned routes.
+   * Each row shows destination, optional waypoints, distance and settings,
+   * plus Edit (load into form) and Delete buttons.
+   */
+  _renderSavedRoutesList() {
+    const routes = this._savedRoutes || [];
+    const lang = this.getUserLanguage ? this.getUserLanguage() : 'en';
+    const labels = {
+      de: { title: '📋 Gespeicherte Routen', noRoutes: 'Keine gespeicherten Routen.', destination: 'Ziel', via: 'Via', distance: 'Distanz', corridor: 'Korridor', provider: 'Anbieter', edit: 'Laden', delete: 'Löschen', created: 'Erstellt' },
+      en: { title: '📋 Saved Routes', noRoutes: 'No saved routes yet.', destination: 'Destination', via: 'Via', distance: 'Distance', corridor: 'Corridor', provider: 'Provider', edit: 'Load', delete: 'Delete', created: 'Created' },
+    };
+    const t = labels[lang] || labels['en'];
+
+    if (!this._savedRoutesLoaded) {
+      return `<div style="margin-top:1rem;font-size:0.85rem;color:var(--secondary-text-color,#888);">Loading saved routes…</div>`;
+    }
+
+    const rowsHtml = routes.length === 0
+      ? `<div style="padding:0.5rem 0;font-size:0.85rem;color:var(--secondary-text-color,#888);">${t.noRoutes}</div>`
+      : routes.slice().reverse().map(r => {
+          const waypointsStr = Array.isArray(r.waypoints) && r.waypoints.length
+            ? r.waypoints.join(' → ')
+            : (r.waypoints || '');
+          const distanceStr = r.total_distance_km != null ? `${r.total_distance_km} km` : '—';
+          const createdStr = r.created_at ? r.created_at.replace('T', ' ').slice(0, 16) : '—';
+          const routeJson = this._esc(JSON.stringify(r));
+          return `
+            <tr style="border-bottom:1px solid var(--divider-color,#eee);font-size:0.82rem;">
+              <td style="padding:4px 6px;vertical-align:top;">
+                <div style="font-weight:600;">${this._esc(r.destination || '—')}</div>
+                ${waypointsStr ? `<div style="font-size:0.78rem;color:var(--secondary-text-color,#888);">↪ ${this._esc(waypointsStr)}</div>` : ''}
+                <div style="font-size:0.78rem;color:var(--secondary-text-color,#888);">${createdStr}</div>
+              </td>
+              <td style="padding:4px 6px;white-space:nowrap;vertical-align:top;">${distanceStr}</td>
+              <td style="padding:4px 6px;white-space:nowrap;vertical-align:top;">${r.corridor_width_km != null ? r.corridor_width_km + ' km' : '—'}</td>
+              <td style="padding:4px 6px;vertical-align:top;">
+                <div style="display:flex;gap:4px;">
+                  <button class="action-button" data-action="saved-route-edit" data-route-json="${routeJson}"
+                    title="${t.edit}" style="padding:2px 6px;font-size:0.78rem;">
+                    <ha-icon icon="mdi:pencil" style="--mdi-icon-size:14px;"></ha-icon>
+                  </button>
+                  <button class="action-button delete-button" data-action="saved-route-delete" data-route-id="${this._esc(String(r.route_id))}"
+                    title="${t.delete}" style="padding:2px 6px;font-size:0.78rem;">
+                    <ha-icon icon="mdi:delete" style="--mdi-icon-size:14px;"></ha-icon>
+                  </button>
+                </div>
+              </td>
+            </tr>`;
+        }).join('')
+    ;
+
+    return `
+      <div style="margin-top:1rem;">
+        <div style="font-weight:600;margin-bottom:0.4rem;">${t.title} (${routes.length})</div>
+        ${routes.length > 0 ? `
+        <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+          <thead>
+            <tr style="text-align:left;border-bottom:1px solid var(--divider-color,#ccc);font-size:0.78rem;color:var(--secondary-text-color,#888);">
+              <th style="padding:2px 6px;">${t.destination}</th>
+              <th style="padding:2px 6px;">${t.distance}</th>
+              <th style="padding:2px 6px;">${t.corridor}</th>
+              <th style="padding:2px 6px;"></th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>` : rowsHtml}
       </div>
     `;
   }
@@ -3182,6 +3338,32 @@ class FWCAMCard extends HTMLElement {
     const routeCancelBtn = this.shadowRoot.querySelector('[data-action="route-cancel"]');
     if (routeCancelBtn) {
       routeCancelBtn.addEventListener('click', () => this._handleRouteCancel());
+    }
+
+    // Saved-routes list event delegation (attached to the persistent section wrapper)
+    const routePlannerSection = this.shadowRoot.querySelector('[data-fwcam-section="route_planner"]');
+    if (routePlannerSection) {
+      routePlannerSection.addEventListener('click', (e) => {
+        const actionEl = e.target.closest('[data-action]');
+        if (!actionEl) return;
+        const action = actionEl.dataset.action;
+        if (action === 'saved-route-delete') {
+          const routeId = actionEl.dataset.routeId;
+          this._deleteSavedRoute(routeId);
+        } else if (action === 'saved-route-edit') {
+          try {
+            const route = JSON.parse(actionEl.dataset.routeJson);
+            this._editSavedRoute(route);
+          } catch (err) {
+            console.error('FWCAM: could not parse route JSON', err);
+          }
+        }
+      });
+    }
+
+    // Kick off an async fetch of saved routes whenever the section is present
+    if (routePlannerSection) {
+      this._fetchSavedRoutes();
     }
   }
 
