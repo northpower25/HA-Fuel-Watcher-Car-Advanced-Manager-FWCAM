@@ -231,6 +231,7 @@ ROUTE_PROVIDER_ORS: Final           = "openrouteservice"
 DEFAULT_ROUTE_PROVIDER: Final        = ROUTE_PROVIDER_OSRM
 
 # Route corridor sensor attributes
+ATTR_ROUTE_ORIGIN: Final             = "origin"
 ATTR_ROUTE_DESTINATION: Final        = "destination"
 ATTR_ROUTE_WAYPOINTS: Final          = "waypoints"
 ATTR_ROUTE_TOTAL_DISTANCE_KM: Final  = "total_distance_km"
