@@ -939,8 +939,15 @@ class FWCAMCard extends HTMLElement {
   async _fetchSavedRoutes() {
     try {
       const entryId = this.getConfigEntryId();
-      const result = await this.callService('hafwcma', 'get_saved_routes', { config_entry_id: entryId });
-      this._savedRoutes = (result && Array.isArray(result.routes)) ? result.routes : [];
+      const result = await this._hass.callService(
+        'hafwcma',
+        'get_saved_routes',
+        { config_entry_id: entryId },
+        {},     // target
+        true,   // notifyOnError
+        true    // returnResponse
+      );
+      this._savedRoutes = (result && Array.isArray(result.response?.routes)) ? result.response.routes : [];
       this._savedRoutesLoaded = true;
       this._updateSavedRoutesSection();
     } catch (err) {
