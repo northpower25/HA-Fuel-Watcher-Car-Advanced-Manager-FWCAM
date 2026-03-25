@@ -151,6 +151,12 @@ DEFAULT_HISTORICAL_IMPORT_TYPE = "none"
 PENDING_TRIP_NOTIFY_COOLDOWN_HOURS = 6.0  # Notify at most every 6 hours
 PENDING_TRIP_NOTIFY_THRESHOLD_HOURS = 24   # Trips older than 24 h trigger notification
 
+# Active-route during-trip monitoring constants
+_ROUTE_MONITOR_COOLDOWN_S = 600       # 10-minute cooldown between checks (seconds)
+_ROUTE_MONITOR_LOOKAHEAD_KM = 25.0   # Station search lookahead radius around vehicle position
+_ROUTE_MONITOR_RANGE_WARNING_KM = 20  # Trigger range warning when ≤ this many km from fuel stop
+_ROUTE_MONITOR_PRICE_THRESHOLD = 0.01  # Min price drop (€/l) to trigger a Telegram update
+
 # State restoration and data staleness constants
 DATA_STALENESS_THRESHOLD_HOURS = 1  # Hours before showing staleness warning
 STATE_RESTORED_DATA_SOURCE = "restored_from_previous_state"  # Data source marker for restored state
@@ -393,6 +399,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         # Populated by async_load_route_data() at startup and updated by the set/cancel
         # route service handlers in __init__.py.
         self._stored_route_data: dict | None = None
+
+        # During-trip route monitoring state
+        self._last_route_monitor_check: "datetime | None" = None
+        self._route_monitor_last_price: float | None = None  # cheapest price at last check
 
         # Saved routes list – persists across restarts via a separate Store.
         # Each entry is a lightweight planning-params dict (no polyline) with a
@@ -1294,6 +1304,225 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
 
         except Exception as err:
             _LOGGER.warning("Error during pending trip notification: %s", err)
+
+    async def _async_check_active_route(self) -> None:
+        """Monitor active route during trip: check for better stations and range warnings.
+
+        Runs at most once every 10 minutes (``_ROUTE_MONITOR_COOLDOWN_S``).
+        Searches for fuel stations in a 25 km lookahead around the vehicle position,
+        sends a Telegram update when cheaper stations are found (>= 0.01 €/l drop),
+        and sends a range warning when <= 20 km remain to the predicted fuel stop.
+        """
+        route_data = self._stored_route_data
+        if not route_data or not route_data.get("is_active"):
+            return
+
+        from homeassistant.util import dt as dt_util
+        now = dt_util.now()
+
+        # Cooldown: skip if checked less than 10 minutes ago
+        if self._last_route_monitor_check is not None:
+            elapsed = (now - self._last_route_monitor_check).total_seconds()
+            if elapsed < _ROUTE_MONITOR_COOLDOWN_S:
+                return
+
+        try:
+            from .const import (
+                CONF_API_KEY,
+                CONF_FUEL_TYPE,
+                CONF_TANK_CAPACITY,
+                DEFAULT_TANK_CAPACITY,
+                PROVIDER_TANKERKONIG,
+                CONF_PROVIDER,
+            )
+            config = self.config_entry.data
+            options = self.config_entry.options
+
+            if not self.data:
+                return
+            vehicle_data = self.data.get("vehicle_data") or {}
+            vehicle_lat = vehicle_data.get("latitude") or vehicle_data.get("lat")
+            vehicle_lon = vehicle_data.get("longitude") or vehicle_data.get("lon")
+            tank_level_liters: float | None = self.data.get("tank_level")
+            range_km: float | None = self.data.get("range")
+
+            if not vehicle_lat or not vehicle_lon:
+                return
+
+            vehicle_lat = float(vehicle_lat)
+            vehicle_lon = float(vehicle_lon)
+
+            corridor_km = float(route_data.get("corridor_width_km", 5))
+            destination = route_data.get("destination", "")
+            total_distance_km = route_data.get("total_distance_km")
+            fuel_type = str(options.get(CONF_FUEL_TYPE) or config.get(CONF_FUEL_TYPE, "e5"))
+            api_key = config.get(CONF_API_KEY)
+            provider_name = options.get(CONF_PROVIDER) or config.get(CONF_PROVIDER, PROVIDER_TANKERKONIG)
+            tank_capacity = float(
+                options.get(CONF_TANK_CAPACITY) or config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
+            )
+
+            categorized_stations: dict = {}
+            predicted_stop_km: float | None = None
+            new_best_price: float | None = None
+
+            # ── Search for stations near the vehicle ────────────────────────
+            if api_key and provider_name == PROVIDER_TANKERKONIG:
+                try:
+                    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+                    from .providers.tankerkonig import TankerkoenigProvider
+                    from .utils.route_planner import (
+                        CorridorStationRanker,
+                        async_enrich_stations_with_road_detour,
+                        select_categorized_stations,
+                        DETOUR_LOOKAHEAD_KM,
+                    )
+                    from .utils.geolocation import get_navigation_urls
+
+                    _session = async_get_clientsession(self.hass)
+                    tk_provider = TankerkoenigProvider(api_key, _session)
+                    nearby = await tk_provider.get_stations_nearby(
+                        vehicle_lat, vehicle_lon, _ROUTE_MONITOR_LOOKAHEAD_KM, fuel_type
+                    )
+                    if nearby:
+                        polyline = route_data.get("route_polyline") or []
+                        consumption_pred = self.data.get("consumption_prediction") or {}
+                        avg_consumption = consumption_pred.get("avg_consumption_rate")
+                        if avg_consumption is None and tank_level_liters and range_km and tank_level_liters > 0:
+                            avg_consumption = (tank_level_liters / range_km) * 100.0
+
+                        stations_dicts = []
+                        for st in nearby[:15]:
+                            price = st.get_price(fuel_type) if hasattr(st, "get_price") else getattr(st, "price", None)
+                            if price is None:
+                                continue
+                            st_lat = getattr(st, "latitude", vehicle_lat)
+                            st_lon = getattr(st, "longitude", vehicle_lon)
+                            d = {
+                                "id": getattr(st, "station_id", ""),
+                                "name": getattr(st, "name", ""),
+                                "brand": getattr(st, "brand", ""),
+                                "lat": st_lat,
+                                "lng": st_lon,
+                                "city": getattr(st, "city", ""),
+                                "street": getattr(st, "street", ""),
+                                "price": price,
+                                "is_open": getattr(st, "is_open", True),
+                            }
+                            d["navigation_urls"] = get_navigation_urls(st_lat, st_lon, d["name"])
+                            stations_dicts.append(d)
+
+                        if polyline and stations_dicts:
+                            stations_dicts = await async_enrich_stations_with_road_detour(
+                                stations_dicts,
+                                polyline=polyline,
+                                lookahead_km=DETOUR_LOOKAHEAD_KM,
+                            )
+
+                        if stations_dicts and avg_consumption and avg_consumption > 0:
+                            fuel_needed = max(tank_capacity - (tank_level_liters or 0.0), 10.0)
+                            ranker = CorridorStationRanker()
+                            ranked = ranker.rank_stations(
+                                stations_dicts,
+                                fuel_needed_liters=fuel_needed,
+                                consumption_l_per_100km=avg_consumption,
+                            )
+                            categorized_stations = select_categorized_stations(ranked)
+                            cheapest = categorized_stations.get("cheapest")
+                            if cheapest and cheapest.get("price") is not None:
+                                new_best_price = float(cheapest["price"])
+                except Exception as search_err:
+                    _LOGGER.debug("_async_check_active_route: station search failed: %s", search_err)
+
+            # ── Recalculate fuel stop prediction with current tank level ────
+            if tank_level_liters and tank_level_liters > 0:
+                try:
+                    from .utils.route_planner import FuelStopPredictor
+                    consumption_pred = self.data.get("consumption_prediction") or {}
+                    avg_consumption = consumption_pred.get("avg_consumption_rate")
+                    if avg_consumption is None and range_km and range_km > 0:
+                        avg_consumption = (tank_level_liters / range_km) * 100.0
+                    polyline = route_data.get("route_polyline") or []
+                    if polyline and avg_consumption and avg_consumption > 0:
+                        predictor = FuelStopPredictor()
+                        stop_info = predictor.predict_fuel_stop(
+                            polyline=polyline,
+                            current_position=(vehicle_lat, vehicle_lon),
+                            tank_level_liters=tank_level_liters,
+                            tank_capacity=tank_capacity,
+                            consumption_l_per_100km=avg_consumption,
+                        )
+                        if stop_info:
+                            route_data["fuel_stop"] = stop_info
+                            predicted_stop_km = stop_info.get("km_remaining_to_stop")
+                            self._stored_route_data = route_data
+                            await self.async_save_route_data(route_data)
+
+                            # Range warning when approaching the predicted stop
+                            if predicted_stop_km is not None and predicted_stop_km <= _ROUTE_MONITOR_RANGE_WARNING_KM:
+                                try:
+                                    _tok = self.config_entry.data.get("telegram_token", "")
+                                    _cid = self.config_entry.data.get("telegram_chat_id", "")
+                                    if _tok and _cid:
+                                        from .messaging.telegram import TelegramNotifier
+                                        _notifier = TelegramNotifier(
+                                            bot_token=_tok, chat_id=_cid, hass=self.hass
+                                        )
+                                        _nearest = (
+                                            categorized_stations.get("nearest")
+                                            or categorized_stations.get("cheapest")
+                                        )
+                                        await _notifier.send_range_warning(
+                                            range_km=predicted_stop_km,
+                                            nearest_recommended_station=_nearest,
+                                            fuel_type=fuel_type.upper(),
+                                        )
+                                except Exception as warn_err:
+                                    _LOGGER.debug(
+                                        "_async_check_active_route: range warning failed: %s", warn_err
+                                    )
+                except Exception as pred_err:
+                    _LOGGER.debug(
+                        "_async_check_active_route: fuel stop recalculation failed: %s", pred_err
+                    )
+
+            # ── Notify when cheaper stations are found ──────────────────────
+            should_notify = False
+            if new_best_price is not None:
+                if self._route_monitor_last_price is None:
+                    should_notify = bool(categorized_stations)
+                elif new_best_price < self._route_monitor_last_price - _ROUTE_MONITOR_PRICE_THRESHOLD:
+                    should_notify = True
+
+            if should_notify and categorized_stations:
+                try:
+                    _tok = self.config_entry.data.get("telegram_token", "")
+                    _cid = self.config_entry.data.get("telegram_chat_id", "")
+                    if _tok and _cid:
+                        from .messaging.telegram import TelegramNotifier
+                        _notifier = TelegramNotifier(
+                            bot_token=_tok, chat_id=_cid, hass=self.hass
+                        )
+                        await _notifier.send_route_update(
+                            destination=destination,
+                            total_distance_km=total_distance_km,
+                            predicted_stop_km=predicted_stop_km,
+                            categorized_stations=categorized_stations,
+                            corridor_km=corridor_km,
+                            fuel_type=fuel_type.upper(),
+                            current_time=now.strftime("%Y-%m-%d %H:%M"),
+                        )
+                except Exception as tg_err:
+                    _LOGGER.debug(
+                        "_async_check_active_route: Telegram update failed: %s", tg_err
+                    )
+
+            self._last_route_monitor_check = now
+            if new_best_price is not None:
+                self._route_monitor_last_price = new_best_price
+
+        except Exception as err:
+            _LOGGER.warning("_async_check_active_route: unexpected error: %s", err)
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from providers.
@@ -2540,6 +2769,12 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
         )
         self.update_interval = self._get_randomized_interval(current_base_interval)
+
+        # During-trip route monitoring (cooldown handled inside the method)
+        try:
+            await self._async_check_active_route()
+        except Exception as route_mon_err:
+            _LOGGER.warning("Error during active route monitoring: %s", route_mon_err)
 
         return data
     

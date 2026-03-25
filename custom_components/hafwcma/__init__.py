@@ -1645,6 +1645,20 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     if stop_info:
                         predicted_stop_km = stop_info.get("km_remaining_to_stop")
                         route_data["fuel_stop"] = stop_info
+                        # Multi-stop prediction for long routes (assumes full-tank refuel at each stop)
+                        try:
+                            multi_stops = predictor.predict_fuel_stops_multi(
+                                polyline=route_result["polyline"],
+                                current_position=origin_coords,
+                                tank_level_liters=tank_level_liters,
+                                tank_capacity=float(tank_capacity),
+                                consumption_l_per_100km=avg_consumption,
+                                safety_buffer_pct=safety_buffer_pct,
+                            )
+                            route_data["fuel_stops"] = multi_stops
+                        except Exception as _multi_err:
+                            _LOGGER.debug("set_route: multi-stop prediction failed: %s", _multi_err)
+                            route_data["fuel_stops"] = []
 
                         # Compute estimated time of arrival at fuel stop
                         if departure_dt is not None:
@@ -1957,6 +1971,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     departure_time=departure_time_str or None,
                     eta_at_stop=eta_at_stop,
                     abroad_fuel_stop=bool(route_data.get("abroad_fuel_stop")),
+                    fuel_type=str(fuel_type).upper(),
                 )
             except Exception as tg_err:
                 _LOGGER.warning("set_route: Telegram notification failed: %s", tg_err)
@@ -2124,6 +2139,42 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         if route_result and route_result.get("distance_km") is not None:
             total_distance_km = round(float(route_result["distance_km"]), 1)
 
+        # Fuel stop prediction using a full tank (advance planning — vehicle not yet driving)
+        planned_fuel_stops: list = []
+        _plan_fuel_type = "E5"
+        try:
+            if route_result and route_result.get("polyline"):
+                from .utils.route_planner import FuelStopPredictor
+                from .const import CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY, CONF_FUEL_TYPE
+                _options = entry.options
+                _config = entry.data
+                _plan_fuel_type = str(
+                    _options.get(CONF_FUEL_TYPE) or _config.get(CONF_FUEL_TYPE, "E5")
+                ).upper()
+                _tank_cap = float(
+                    _options.get(CONF_TANK_CAPACITY) or _config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
+                )
+                _avg_cons: float | None = None
+                if coordinator and coordinator.data:
+                    _cpred = coordinator.data.get("consumption_prediction") or {}
+                    _avg_cons = _cpred.get("avg_consumption_rate")
+                    if _avg_cons is None:
+                        _tlv = coordinator.data.get("tank_level")
+                        _rkm = coordinator.data.get("range")
+                        if _tlv and _rkm and _tlv > 0:
+                            _avg_cons = (_tlv / _rkm) * 100.0
+                if _avg_cons and _avg_cons > 0:
+                    _predictor = FuelStopPredictor()
+                    planned_fuel_stops = _predictor.predict_fuel_stops_multi(
+                        polyline=route_result["polyline"],
+                        current_position=origin_coords,
+                        tank_level_liters=_tank_cap,  # full tank for planning
+                        tank_capacity=_tank_cap,
+                        consumption_l_per_100km=_avg_cons,
+                    )
+        except Exception as _plan_pred_err:
+            _LOGGER.debug("plan_route: fuel stop prediction failed: %s", _plan_pred_err)
+
         from homeassistant.util import dt as _dt_util
         import random as _random
         route_entry = {
@@ -2136,6 +2187,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "routing_provider": routing_provider,
             "departure_time": departure_time_str or "",
             "total_distance_km": total_distance_km,
+            "fuel_stops": planned_fuel_stops,
             "status": "planned",
         }
 
@@ -2155,15 +2207,17 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     chat_id=telegram_chat_id,
                     hass=hass,
                 )
-                departure_info = f" | Abfahrt: {departure_time_str}" if departure_time_str else ""
-                distance_info = f" ({total_distance_km} km)" if total_distance_km else ""
-                msg = (
-                    f"📅 <b>Route geplant</b>\n"
-                    f"🎯 Ziel: <b>{destination_str}</b>{distance_info}\n"
-                    f"⚙️ Korridor: {corridor_width_km} km"
-                    f"{departure_info}"
+                _plan_stop_km: float | None = None
+                if planned_fuel_stops:
+                    _plan_stop_km = planned_fuel_stops[0].get("km_remaining_to_stop")
+                await notifier.send_route_started(
+                    destination=destination_str,
+                    total_distance_km=total_distance_km,
+                    predicted_stop_km=_plan_stop_km,
+                    corridor_km=corridor_width_km,
+                    departure_time=departure_time_str or None,
+                    fuel_type=_plan_fuel_type,
                 )
-                await notifier.send_message(msg)
             except Exception as tg_err:
                 _LOGGER.warning("plan_route: Telegram notification failed: %s", tg_err)
 
