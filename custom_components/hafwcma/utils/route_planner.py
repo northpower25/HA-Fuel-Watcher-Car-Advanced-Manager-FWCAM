@@ -37,6 +37,11 @@ OSRM_TABLE_BASE_URL = "https://router.project-osrm.org/table/v1/driving"
 # stations clearly off the route produce a meaningful positive detour value.
 DETOUR_LOOKAHEAD_KM = 30.0
 
+# Maximum number of refuel stops iterated in predict_fuel_stops_multi().
+_MULTI_STOP_MAX_ITERATIONS = 20
+# A stop is considered at the route end when within this many km of the total distance.
+_ROUTE_END_TOLERANCE_KM = 0.5
+
 
 # ── Internal routing helpers ────────────────────────────────────────────────
 
@@ -1152,6 +1157,62 @@ class FuelStopPredictor:
             "km_remaining_to_stop": round(km_remaining, 2),
             "safety_buffer_pct": safety_buffer_pct,
         }
+
+    def predict_fuel_stops_multi(
+        self,
+        polyline: list[tuple[float, float]],
+        current_position: tuple[float, float],
+        tank_level_liters: float,
+        tank_capacity: float,
+        consumption_l_per_100km: float,
+        safety_buffer_pct: float = 15.0,
+    ) -> list[dict[str, Any]]:
+        """Calculate all predicted refuel stops for a long route.
+
+        The first stop uses the current ``tank_level_liters``; every subsequent
+        stop assumes the vehicle was refuelled to a full tank (``tank_capacity``)
+        at the previous stop.
+
+        Args:
+            polyline: Route as ``(lat, lon)`` list.
+            current_position: Current vehicle ``(lat, lon)``.
+            tank_level_liters: Current fuel level in litres.
+            tank_capacity: Full tank capacity in litres.
+            consumption_l_per_100km: Average consumption rate.
+            safety_buffer_pct: Percentage of fuel to keep in reserve.
+
+        Returns:
+            List of stop dicts (same format as :meth:`predict_fuel_stop`).
+            Empty list when no stop is needed or on invalid input.
+        """
+        if not polyline or consumption_l_per_100km <= 0:
+            return []
+
+        total_route_km = self._total_route_distance(polyline)
+        stops: list[dict[str, Any]] = []
+        current_pos = current_position
+        current_fuel = tank_level_liters
+
+        for _ in range(_MULTI_STOP_MAX_ITERATIONS):
+            stop = self.predict_fuel_stop(
+                polyline=polyline,
+                current_position=current_pos,
+                tank_level_liters=current_fuel,
+                tank_capacity=tank_capacity,
+                consumption_l_per_100km=consumption_l_per_100km,
+                safety_buffer_pct=safety_buffer_pct,
+            )
+            if not stop:
+                break
+            # If the predicted stop is at or beyond the route end, no further stop needed
+            if stop["predicted_distance_km"] >= total_route_km - _ROUTE_END_TOLERANCE_KM:
+                break
+            stops.append(stop)
+            # Assume a full tank refuel; continue from the predicted stop location
+            current_pos = (stop["predicted_lat"], stop["predicted_lon"])
+            current_fuel = tank_capacity
+
+        return stops
 
     def project_position_on_route(
         self,

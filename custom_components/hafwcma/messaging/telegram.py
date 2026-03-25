@@ -267,6 +267,7 @@ class TelegramNotifier(MessageService):
         departure_time: str | None = None,
         eta_at_stop: str | None = None,
         abroad_fuel_stop: bool = False,
+        fuel_type: str = "E5",
     ) -> bool:
         """Send a route-started notification with 3-category station recommendations.
 
@@ -291,6 +292,7 @@ class TelegramNotifier(MessageService):
             abroad_fuel_stop: When ``True`` the predicted stop is outside Germany;
                 station blocks are formatted without price information and use
                 OSM-sourced data.
+            fuel_type: Fuel type label shown in the header (e.g. "E5", "E10", "Diesel").
 
         Returns:
             True if the message was sent successfully.
@@ -298,15 +300,17 @@ class TelegramNotifier(MessageService):
         self._reported_errors = set()
 
         dist_str = f"{total_distance_km:.0f} km" if total_distance_km is not None else "?"
+        fuel_label = html.escape(fuel_type.upper())
         lines = [
-            "🗺️ <b>Route aktiviert!</b>",
+            f"⛽️ <b>Günstigste {fuel_label}-Tankstellen entlang der Route</b>",
+            f"📍 Umkreis: {corridor_km} km | Nur geöffnete Stationen",
             f"📍 Ziel: <b>{html.escape(destination)}</b> ({dist_str})",
         ]
 
         if departure_time:
             lines.append(f"🕐 Abfahrt: <b>{html.escape(departure_time)}</b>")
         if predicted_stop_km is not None:
-            stop_line = f"⛽ Prognose Tankstopp bei: ~{predicted_stop_km:.0f} km"
+            stop_line = f"⛽️ Prognose Tankstopp bei: ~{predicted_stop_km:.0f} km"
             if eta_at_stop:
                 stop_line += f" (~{html.escape(eta_at_stop)} Uhr)"
             lines.append(stop_line)
@@ -323,24 +327,31 @@ class TelegramNotifier(MessageService):
             nearest = (top_stations or [])[1] if (top_stations and len(top_stations) > 1) else None
             middle = (top_stations or [])[2] if (top_stations and len(top_stations) > 2) else None
 
-        def _fmt_station_block(label: str, emoji: str, station: dict) -> list[str]:
+        def _fmt_station_block(number: int, label: str, station: dict, ftype: str) -> list[str]:
             nav = station.get("navigation_urls") or {}
             price = station.get("price")
             detour = station.get("road_detour_km") or station.get("detour_km", 0)
             eff = station.get("effective_price_eur_per_l")
             opening_hours = station.get("opening_hours", "")
-            address = station.get("address", "")
             is_osm = station.get("source") == "osm"
+
+            name = station.get("name", "N/A")
+            city = station.get("city", "")
+            street = station.get("street", "")
+            address = station.get("address", "")
+            if city and street:
+                name_line = f"{html.escape(name)}, {html.escape(city)}, {html.escape(street)}"
+            elif address:
+                name_line = f"{html.escape(name)}, {html.escape(address)}"
+            else:
+                name_line = html.escape(name)
 
             block = [
                 "",
-                f"{emoji} <b>{label}</b>",
-                f"   {html.escape(str(station.get('name', 'N/A')))}",
+                f"{number}. <b>{name_line}</b> ({html.escape(label)})",
             ]
-            if address:
-                block.append(f"   📮 {html.escape(address)}")
             if not is_osm and price is not None:
-                block.append(f"   💰 Preis: <b>{price} €/l</b>")
+                block.append(f"   💰 {html.escape(ftype.upper())}: {price} €/l")
                 block.append(f"   📏 Streckenumweg: {detour} km")
                 if eff is not None:
                     block.append(f"   💶 Effektiv: {eff} €/l (inkl. Umweg)")
@@ -348,7 +359,6 @@ class TelegramNotifier(MessageService):
                 block.append(f"   📏 Streckenumweg: {detour} km")
             if opening_hours:
                 block.append(f"   🕒 Öffnungszeiten: {html.escape(str(opening_hours))}")
-            # All 3 navigation links
             nav_parts = []
             if nav.get("google_maps"):
                 nav_parts.append(f"<a href=\"{nav['google_maps']}\">Google Maps</a>")
@@ -365,50 +375,134 @@ class TelegramNotifier(MessageService):
             if nearest:
                 lines.append("")
                 lines.append("🌍 <b>Tankstellen im Ausland (keine Preisinfo verfügbar)</b>")
-                lines += _fmt_station_block("1. Nächste Tankstelle", "📍", nearest)
+                lines += _fmt_station_block(1, "Nächste Tankstelle", nearest, fuel_type)
             if middle:
-                lines += _fmt_station_block("2. Nächste Tankstelle", "📍", middle)
+                lines += _fmt_station_block(2, "Nächste Tankstelle", middle, fuel_type)
             if cheapest:
-                lines += _fmt_station_block("3. Nächste Tankstelle", "📍", cheapest)
+                lines += _fmt_station_block(3, "Nächste Tankstelle", cheapest, fuel_type)
         else:
             if cheapest:
-                lines += _fmt_station_block("Günstigste Tankstelle (inkl. Umweg)", "🏆", cheapest)
+                lines += _fmt_station_block(1, "Preis Günstigste Tankstelle", cheapest, fuel_type)
             if nearest:
-                lines += _fmt_station_block("Nächste Tankstelle an der Route", "📍", nearest)
+                lines += _fmt_station_block(2, "Strecke günstigste Tankstelle", nearest, fuel_type)
             if middle:
-                lines += _fmt_station_block("Kompromiss (Preis/Entfernung)", "⚖️", middle)
-
-        # Legacy fallback: show remaining top_stations when no categorized_stations
-        if not cats and top_stations:
-            shown_names = {
-                s.get("name") for s in [cheapest, nearest, middle] if s
-            }
-            extras = [s for s in top_stations if s.get("name") not in shown_names]
-            if extras:
-                lines += ["", "📋 <b>Weitere Optionen im Korridor:</b>"]
-                for i, st in enumerate(extras[:2], start=len(shown_names) + 1):
-                    detour = st.get("detour_km", 0)
-                    detour_str = f"{detour} km Umweg" if detour else "direkt an Route"
-                    nav = st.get("navigation_urls") or {}
-                    lines.append(
-                        f"   {i}. {html.escape(str(st.get('name', 'N/A')))} – "
-                        f"{st.get('price', 'N/A')} €/l ({detour_str})"
-                    )
-                    nav_parts = []
-                    if nav.get("google_maps"):
-                        nav_parts.append(f"<a href=\"{nav['google_maps']}\">Google Maps</a>")
-                    if nav.get("apple_maps"):
-                        nav_parts.append(f"<a href=\"{nav['apple_maps']}\">Apple Maps</a>")
-                    if nav.get("waze"):
-                        nav_parts.append(f"<a href=\"{nav['waze']}\">Waze</a>")
-                    if nav_parts:
-                        lines.append(f"      🗺️ {' | '.join(nav_parts)}")
+                lines += _fmt_station_block(3, "Kompromiss aus Preis/Strecke", middle, fuel_type)
 
         lines += [
             "",
             f"⚙️ Korridor: {corridor_km} km | Sicherheitspuffer: {safety_buffer_pct}%",
         ]
 
+        return await self.send_message("\n".join(lines), parse_mode="html")
+
+    async def send_route_update(
+        self,
+        destination: str,
+        total_distance_km: float | None,
+        predicted_stop_km: float | None,
+        categorized_stations: dict | None = None,
+        corridor_km: float = 5,
+        fuel_type: str = "E5",
+        current_time: str | None = None,
+        eta_at_stop: str | None = None,
+        abroad_fuel_stop: bool = False,
+    ) -> bool:
+        """Send a during-trip route update notification with station recommendations.
+
+        Args:
+            destination: Human-readable destination string.
+            total_distance_km: Total route distance in km, or None.
+            predicted_stop_km: Updated distance to predicted fuel stop in km, or None.
+            categorized_stations: Dict with keys ``"cheapest"``, ``"nearest"``,
+                ``"middle"`` – each value is a station dict or ``None``.
+            corridor_km: Corridor half-width in km.
+            fuel_type: Fuel type label (e.g. "E5", "E10", "Diesel").
+            current_time: Current time string for display (e.g. "14:30").
+            eta_at_stop: Estimated arrival time string at fuel stop.
+            abroad_fuel_stop: When ``True`` the predicted stop is outside Germany.
+
+        Returns:
+            True if the message was sent successfully.
+        """
+        dist_str = f"{total_distance_km:.0f} km" if total_distance_km is not None else "?"
+        fuel_label = html.escape(fuel_type.upper())
+        lines = [
+            f"⛽️ <b>Günstigste {fuel_label}-Tankstellen entlang der Route</b>",
+            f"📍 Umkreis: {corridor_km} km | Nur geöffnete Stationen",
+            f"📍 Ziel: <b>{html.escape(destination)}</b> ({dist_str})",
+        ]
+
+        if current_time:
+            lines.append(f"🕐 Aktuelle Zeit: <b>{html.escape(current_time)}</b>")
+        if predicted_stop_km is not None:
+            stop_line = f"⛽️ Prognose Tankstopp bei: ~{predicted_stop_km:.0f} km"
+            if eta_at_stop:
+                stop_line += f" (~{html.escape(eta_at_stop)} Uhr)"
+            lines.append(stop_line)
+
+        cats = categorized_stations or {}
+        cheapest = cats.get("cheapest")
+        nearest = cats.get("nearest")
+        middle = cats.get("middle")
+
+        def _fmt_block(number: int, label: str, station: dict, ftype: str) -> list[str]:
+            nav = station.get("navigation_urls") or {}
+            price = station.get("price")
+            detour = station.get("road_detour_km") or station.get("detour_km", 0)
+            eff = station.get("effective_price_eur_per_l")
+            opening_hours = station.get("opening_hours", "")
+            is_osm = station.get("source") == "osm"
+
+            name = station.get("name", "N/A")
+            city = station.get("city", "")
+            street = station.get("street", "")
+            address = station.get("address", "")
+            if city and street:
+                name_line = f"{html.escape(name)}, {html.escape(city)}, {html.escape(street)}"
+            elif address:
+                name_line = f"{html.escape(name)}, {html.escape(address)}"
+            else:
+                name_line = html.escape(name)
+
+            block = ["", f"{number}. <b>{name_line}</b> ({html.escape(label)})"]
+            if not is_osm and price is not None:
+                block.append(f"   💰 {html.escape(ftype.upper())}: {price} €/l")
+                block.append(f"   📏 Streckenumweg: {detour} km")
+                if eff is not None:
+                    block.append(f"   💶 Effektiv: {eff} €/l (inkl. Umweg)")
+            else:
+                block.append(f"   📏 Streckenumweg: {detour} km")
+            if opening_hours:
+                block.append(f"   🕒 Öffnungszeiten: {html.escape(str(opening_hours))}")
+            nav_parts = []
+            if nav.get("google_maps"):
+                nav_parts.append(f"<a href=\"{nav['google_maps']}\">Google Maps</a>")
+            if nav.get("apple_maps"):
+                nav_parts.append(f"<a href=\"{nav['apple_maps']}\">Apple Maps</a>")
+            if nav.get("waze"):
+                nav_parts.append(f"<a href=\"{nav['waze']}\">Waze</a>")
+            if nav_parts:
+                block.append(f"   🗺️ {' | '.join(nav_parts)}")
+            return block
+
+        if abroad_fuel_stop:
+            if nearest:
+                lines.append("")
+                lines.append("🌍 <b>Tankstellen im Ausland (keine Preisinfo verfügbar)</b>")
+                lines += _fmt_block(1, "Nächste Tankstelle", nearest, fuel_type)
+            if middle:
+                lines += _fmt_block(2, "Nächste Tankstelle", middle, fuel_type)
+            if cheapest:
+                lines += _fmt_block(3, "Nächste Tankstelle", cheapest, fuel_type)
+        else:
+            if cheapest:
+                lines += _fmt_block(1, "Preis Günstigste Tankstelle", cheapest, fuel_type)
+            if nearest:
+                lines += _fmt_block(2, "Strecke günstigste Tankstelle", nearest, fuel_type)
+            if middle:
+                lines += _fmt_block(3, "Kompromiss aus Preis/Strecke", middle, fuel_type)
+
+        lines += ["", f"⚙️ Korridor: {corridor_km} km"]
         return await self.send_message("\n".join(lines), parse_mode="html")
 
     async def send_cheaper_station_alert(
