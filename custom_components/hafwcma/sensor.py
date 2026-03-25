@@ -1377,7 +1377,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         select_categorized_stations,
                         DETOUR_LOOKAHEAD_KM,
                     )
-                    from .utils.geolocation import get_navigation_urls
+                    from .utils.geolocation import get_navigation_urls, calculate_distance
 
                     _session = async_get_clientsession(self.hass)
                     tk_provider = TankerkoenigProvider(api_key, _session)
@@ -1410,6 +1410,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 "is_open": getattr(st, "is_open", True),
                             }
                             d["navigation_urls"] = get_navigation_urls(st_lat, st_lon, d["name"])
+                            d["distance_km"] = round(
+                                calculate_distance(vehicle_lat, vehicle_lon, st_lat, st_lon), 2
+                            )
                             stations_dicts.append(d)
 
                         if polyline and stations_dicts:
@@ -1458,8 +1461,15 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                             self._stored_route_data = route_data
                             await self.async_save_route_data(route_data)
 
-                            # Range warning when approaching the predicted stop
-                            if predicted_stop_km is not None and predicted_stop_km <= _ROUTE_MONITOR_RANGE_WARNING_KM:
+                            # Range warning when approaching the predicted stop.
+                            # Only fire when fuel is actually the limiting factor;
+                            # if the route ends before the tank runs out, there is no
+                            # real fuel stop and the warning would be a false positive.
+                            if (
+                                predicted_stop_km is not None
+                                and predicted_stop_km <= _ROUTE_MONITOR_RANGE_WARNING_KM
+                                and stop_info.get("is_fuel_limited", False)
+                            ):
                                 try:
                                     _tok = self.config_entry.data.get("telegram_token", "")
                                     _cid = self.config_entry.data.get("telegram_chat_id", "")
@@ -5555,10 +5565,18 @@ class PredictedFuelStopSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return km remaining to the predicted fuel stop."""
+        """Return km remaining to the predicted fuel stop.
+
+        Returns ``None`` when there is no active route or when the tank range
+        exceeds the remaining route distance (i.e. no refuel stop needed).
+        """
         if self.coordinator.data is None:
             return None
         fuel_stop = (self.coordinator.data.get("route_data") or {}).get("fuel_stop") or {}
+        # Only show a value when fuel actually limits the range; if the route
+        # ends before the tank runs out, there is no predicted fuel stop.
+        if not fuel_stop.get("is_fuel_limited", False):
+            return None
         km = fuel_stop.get("km_remaining_to_stop")
         if km is None:
             return None
@@ -5578,6 +5596,7 @@ class PredictedFuelStopSensor(CoordinatorEntity, SensorEntity):
             ATTR_PREDICTED_STOP_LON: fuel_stop.get("predicted_lon"),
             ATTR_KM_REMAINING_TO_STOP: fuel_stop.get("km_remaining_to_stop"),
             ATTR_SAFETY_BUFFER_PCT: fuel_stop.get("safety_buffer_pct"),
+            "is_fuel_limited": fuel_stop.get("is_fuel_limited"),
         }
 
     @property
