@@ -156,10 +156,33 @@ _ROUTE_MONITOR_COOLDOWN_S = 600       # 10-minute cooldown between checks (secon
 _ROUTE_MONITOR_LOOKAHEAD_KM = 25.0   # Station search lookahead radius around vehicle position
 _ROUTE_MONITOR_RANGE_WARNING_KM = 20  # Trigger range warning when ≤ this many km from fuel stop
 _ROUTE_MONITOR_PRICE_THRESHOLD = 0.01  # Min price drop (€/l) to trigger a Telegram update
+_ROUTE_MAX_AGE_H = 24                 # Auto-expire active routes older than this many hours
 
 # State restoration and data staleness constants
 DATA_STALENESS_THRESHOLD_HOURS = 1  # Hours before showing staleness warning
 STATE_RESTORED_DATA_SOURCE = "restored_from_previous_state"  # Data source marker for restored state
+
+
+def _route_age_hours(route_data: dict) -> float | None:
+    """Return the age of the route in hours, or None when the timestamp is missing/invalid.
+
+    Uses the ``route_set_at`` field stored as a UTC ISO string by the set_route
+    service handler.  Returns ``None`` (rather than raising) for any parse error so
+    that callers can decide whether to expire or retain a route.
+    """
+    raw = route_data.get("route_set_at")
+    if not raw:
+        return None
+    try:
+        route_set_at = dt_util.parse_datetime(str(raw))
+        if route_set_at is None:
+            return None
+        if route_set_at.tzinfo is None:
+            from datetime import timezone
+            route_set_at = route_set_at.replace(tzinfo=timezone.utc)
+        return (dt_util.utcnow() - route_set_at).total_seconds() / 3600.0
+    except (ValueError, TypeError, OverflowError):
+        return None
 
 
 def check_data_staleness(timestamp: str | datetime | None, data_type: str) -> str | None:
@@ -445,13 +468,24 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         """Load persisted route data from HA storage.
 
         Called once during setup so that an active route survives HA restarts.
-        If stored data is present and marks the route as active it is installed
-        in ``_stored_route_data`` so that ``_async_update_data`` can include it
-        in the coordinator payload from the very first refresh.
+        If stored data is present, marks the route as active, and is younger than
+        ``_ROUTE_MAX_AGE_H`` hours, it is installed in ``_stored_route_data`` so
+        that ``_async_update_data`` can include it in the coordinator payload from
+        the very first refresh.  Stale routes are silently cleared from storage.
         """
         try:
             stored = await self._route_store().async_load()
             if stored and stored.get("is_active"):
+                age_h = _route_age_hours(stored)
+                if age_h is not None and age_h > _ROUTE_MAX_AGE_H:
+                    _LOGGER.info(
+                        "Discarding stale route from storage (age=%.1f h > %d h): destination=%s",
+                        age_h,
+                        _ROUTE_MAX_AGE_H,
+                        stored.get("destination"),
+                    )
+                    await self._route_store().async_remove()
+                    return
                 self._stored_route_data = stored
                 _LOGGER.info(
                     "Restored active route from storage: destination=%s",
@@ -1320,6 +1354,22 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         from homeassistant.util import dt as dt_util
         now = dt_util.now()
 
+        # Auto-expire: deactivate routes older than _ROUTE_MAX_AGE_H hours.
+        # This guards against stale persisted routes being active indefinitely
+        # when the user never explicitly cancelled them (e.g. after an HA restart).
+        age_h = _route_age_hours(route_data)
+        if age_h is not None and age_h > _ROUTE_MAX_AGE_H:
+            _LOGGER.info(
+                "_async_check_active_route: auto-expiring stale route "
+                "(age=%.1f h > %d h, destination=%s). "
+                "Use cancel_route to deactivate routes explicitly.",
+                age_h,
+                _ROUTE_MAX_AGE_H,
+                route_data.get("destination"),
+            )
+            await self.async_clear_route_data()
+            return
+
         # Cooldown: skip if checked less than 10 minutes ago
         if self._last_route_monitor_check is not None:
             elapsed = (now - self._last_route_monitor_check).total_seconds()
@@ -1377,7 +1427,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         select_categorized_stations,
                         DETOUR_LOOKAHEAD_KM,
                     )
-                    from .utils.geolocation import get_navigation_urls
+                    from .utils.geolocation import get_navigation_urls, calculate_distance
 
                     _session = async_get_clientsession(self.hass)
                     tk_provider = TankerkoenigProvider(api_key, _session)
@@ -1410,6 +1460,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 "is_open": getattr(st, "is_open", True),
                             }
                             d["navigation_urls"] = get_navigation_urls(st_lat, st_lon, d["name"])
+                            d["distance_km"] = round(
+                                calculate_distance(vehicle_lat, vehicle_lon, st_lat, st_lon), 2
+                            )
                             stations_dicts.append(d)
 
                         if polyline and stations_dicts:
@@ -1458,8 +1511,15 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                             self._stored_route_data = route_data
                             await self.async_save_route_data(route_data)
 
-                            # Range warning when approaching the predicted stop
-                            if predicted_stop_km is not None and predicted_stop_km <= _ROUTE_MONITOR_RANGE_WARNING_KM:
+                            # Range warning when approaching the predicted stop.
+                            # Only fire when fuel is actually the limiting factor;
+                            # if the route ends before the tank runs out, there is no
+                            # real fuel stop and the warning would be a false positive.
+                            if (
+                                predicted_stop_km is not None
+                                and predicted_stop_km <= _ROUTE_MONITOR_RANGE_WARNING_KM
+                                and stop_info.get("is_fuel_limited", False)
+                            ):
                                 try:
                                     _tok = self.config_entry.data.get("telegram_token", "")
                                     _cid = self.config_entry.data.get("telegram_chat_id", "")
@@ -5555,10 +5615,18 @@ class PredictedFuelStopSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return km remaining to the predicted fuel stop."""
+        """Return km remaining to the predicted fuel stop.
+
+        Returns ``None`` when there is no active route or when the tank range
+        exceeds the remaining route distance (i.e. no refuel stop needed).
+        """
         if self.coordinator.data is None:
             return None
         fuel_stop = (self.coordinator.data.get("route_data") or {}).get("fuel_stop") or {}
+        # Only show a value when fuel actually limits the range; if the route
+        # ends before the tank runs out, there is no predicted fuel stop.
+        if not fuel_stop.get("is_fuel_limited", False):
+            return None
         km = fuel_stop.get("km_remaining_to_stop")
         if km is None:
             return None
@@ -5578,6 +5646,7 @@ class PredictedFuelStopSensor(CoordinatorEntity, SensorEntity):
             ATTR_PREDICTED_STOP_LON: fuel_stop.get("predicted_lon"),
             ATTR_KM_REMAINING_TO_STOP: fuel_stop.get("km_remaining_to_stop"),
             ATTR_SAFETY_BUFFER_PCT: fuel_stop.get("safety_buffer_pct"),
+            "is_fuel_limited": fuel_stop.get("is_fuel_limited"),
         }
 
     @property

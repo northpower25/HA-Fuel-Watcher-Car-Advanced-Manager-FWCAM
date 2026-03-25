@@ -1144,6 +1144,9 @@ class FuelStopPredictor:
         target_dist_km = current_dist_km + max_range_km
 
         predicted_point = self._find_point_at_distance(polyline, target_dist_km)
+        # is_fuel_limited: True when fuel runs out before the route ends.
+        # False when the tank range exceeds the remaining route (route-end reached first).
+        is_fuel_limited = predicted_point is not None
         if predicted_point is None:
             predicted_point = polyline[-1]
             target_dist_km = self._total_route_distance(polyline)
@@ -1156,6 +1159,7 @@ class FuelStopPredictor:
             "predicted_lon": predicted_point[1],
             "km_remaining_to_stop": round(km_remaining, 2),
             "safety_buffer_pct": safety_buffer_pct,
+            "is_fuel_limited": is_fuel_limited,
         }
 
     def predict_fuel_stops_multi(

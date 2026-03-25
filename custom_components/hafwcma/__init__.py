@@ -1564,8 +1564,10 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 "error": "Routing provider returned no route",
             }
 
+        from homeassistant.util import dt as _dt_util
         route_data = {
             "is_active": True,
+            "route_set_at": _dt_util.utcnow().isoformat(),
             "origin": origin_str or None,
             "destination": destination_str,
             "waypoints": waypoint_strings,
