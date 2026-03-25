@@ -156,10 +156,33 @@ _ROUTE_MONITOR_COOLDOWN_S = 600       # 10-minute cooldown between checks (secon
 _ROUTE_MONITOR_LOOKAHEAD_KM = 25.0   # Station search lookahead radius around vehicle position
 _ROUTE_MONITOR_RANGE_WARNING_KM = 20  # Trigger range warning when ≤ this many km from fuel stop
 _ROUTE_MONITOR_PRICE_THRESHOLD = 0.01  # Min price drop (€/l) to trigger a Telegram update
+_ROUTE_MAX_AGE_H = 24                 # Auto-expire active routes older than this many hours
 
 # State restoration and data staleness constants
 DATA_STALENESS_THRESHOLD_HOURS = 1  # Hours before showing staleness warning
 STATE_RESTORED_DATA_SOURCE = "restored_from_previous_state"  # Data source marker for restored state
+
+
+def _route_age_hours(route_data: dict) -> float | None:
+    """Return the age of the route in hours, or None when the timestamp is missing/invalid.
+
+    Uses the ``route_set_at`` field stored as a UTC ISO string by the set_route
+    service handler.  Returns ``None`` (rather than raising) for any parse error so
+    that callers can decide whether to expire or retain a route.
+    """
+    raw = route_data.get("route_set_at")
+    if not raw:
+        return None
+    try:
+        route_set_at = dt_util.parse_datetime(str(raw))
+        if route_set_at is None:
+            return None
+        if route_set_at.tzinfo is None:
+            from datetime import timezone
+            route_set_at = route_set_at.replace(tzinfo=timezone.utc)
+        return (dt_util.utcnow() - route_set_at).total_seconds() / 3600.0
+    except (ValueError, TypeError, OverflowError):
+        return None
 
 
 def check_data_staleness(timestamp: str | datetime | None, data_type: str) -> str | None:
@@ -445,13 +468,24 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         """Load persisted route data from HA storage.
 
         Called once during setup so that an active route survives HA restarts.
-        If stored data is present and marks the route as active it is installed
-        in ``_stored_route_data`` so that ``_async_update_data`` can include it
-        in the coordinator payload from the very first refresh.
+        If stored data is present, marks the route as active, and is younger than
+        ``_ROUTE_MAX_AGE_H`` hours, it is installed in ``_stored_route_data`` so
+        that ``_async_update_data`` can include it in the coordinator payload from
+        the very first refresh.  Stale routes are silently cleared from storage.
         """
         try:
             stored = await self._route_store().async_load()
             if stored and stored.get("is_active"):
+                age_h = _route_age_hours(stored)
+                if age_h is not None and age_h > _ROUTE_MAX_AGE_H:
+                    _LOGGER.info(
+                        "Discarding stale route from storage (age=%.1f h > %d h): destination=%s",
+                        age_h,
+                        _ROUTE_MAX_AGE_H,
+                        stored.get("destination"),
+                    )
+                    await self._route_store().async_remove()
+                    return
                 self._stored_route_data = stored
                 _LOGGER.info(
                     "Restored active route from storage: destination=%s",
@@ -1319,6 +1353,22 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
 
         from homeassistant.util import dt as dt_util
         now = dt_util.now()
+
+        # Auto-expire: deactivate routes older than _ROUTE_MAX_AGE_H hours.
+        # This guards against stale persisted routes being active indefinitely
+        # when the user never explicitly cancelled them (e.g. after an HA restart).
+        age_h = _route_age_hours(route_data)
+        if age_h is not None and age_h > _ROUTE_MAX_AGE_H:
+            _LOGGER.info(
+                "_async_check_active_route: auto-expiring stale route "
+                "(age=%.1f h > %d h, destination=%s). "
+                "Use cancel_route to deactivate routes explicitly.",
+                age_h,
+                _ROUTE_MAX_AGE_H,
+                route_data.get("destination"),
+            )
+            await self.async_clear_route_data()
+            return
 
         # Cooldown: skip if checked less than 10 minutes ago
         if self._last_route_monitor_check is not None:
