@@ -650,7 +650,7 @@ class FWCAMCard extends HTMLElement {
       const result = await this._hass.callService(
         'hafwcma', 'create_backup',
         { config_entry_id: configEntryId },
-        {}, true, true
+        undefined, true, true
       );
       const lang = this.getUserLanguage();
       if (result?.response?.success) {
@@ -688,7 +688,7 @@ class FWCAMCard extends HTMLElement {
       const result = await this._hass.callService(
         'hafwcma', 'list_backups',
         {},
-        {}, true, true
+        undefined, true, true
       );
       this._backupList = result?.response?.backups || [];
     } catch (err) {
@@ -726,7 +726,7 @@ class FWCAMCard extends HTMLElement {
       const result = await this._hass.callService(
         'hafwcma', 'restore_backup',
         { config_entry_id: configEntryId, backup_file_path: filePath },
-        {}, true, true
+        undefined, true, true
       );
       if (result?.response?.success) {
         this._backupMessage = {
@@ -767,7 +767,7 @@ class FWCAMCard extends HTMLElement {
       const result = await this._hass.callService(
         'hafwcma', 'delete_backup',
         { backup_file_path: filePath },
-        {}, true, true
+        undefined, true, true
       );
       if (result?.response?.success) {
         this._backupMessage = {
