@@ -436,7 +436,7 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     const configEntryId = this._getConfigEntryId();
     if (!configEntryId) { this._plannedRoutesLoaded = true; this._updatePlannedRoutesList(); return; }
     try {
-      const result = await this._hass.callService('hafwcma', 'get_saved_routes', { config_entry_id: configEntryId }, {}, true, true);
+      const result = await this._hass.callService('hafwcma', 'get_saved_routes', { config_entry_id: configEntryId }, undefined, true, true);
       this._plannedRoutes = (result && Array.isArray(result.response?.routes)) ? result.response.routes : [];
     } catch (e) { console.error("FWCAM: get_saved_routes failed", e); this._plannedRoutes = []; }
     this._plannedRoutesLoaded = true;

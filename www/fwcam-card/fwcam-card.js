@@ -651,7 +651,7 @@ class FWCAMCard extends HTMLElement {
       const result = await this._hass.callService(
         'hafwcma', 'create_backup',
         { config_entry_id: configEntryId },
-        {}, true, true
+        undefined, true, true
       );
       const lang = this.getUserLanguage();
       if (result?.response?.success) {
@@ -689,7 +689,7 @@ class FWCAMCard extends HTMLElement {
       const result = await this._hass.callService(
         'hafwcma', 'list_backups',
         {},
-        {}, true, true
+        undefined, true, true
       );
       this._backupList = result?.response?.backups || [];
     } catch (err) {
@@ -727,7 +727,7 @@ class FWCAMCard extends HTMLElement {
       const result = await this._hass.callService(
         'hafwcma', 'restore_backup',
         { config_entry_id: configEntryId, backup_file_path: filePath },
-        {}, true, true
+        undefined, true, true
       );
       if (result?.response?.success) {
         this._backupMessage = {
@@ -768,7 +768,7 @@ class FWCAMCard extends HTMLElement {
       const result = await this._hass.callService(
         'hafwcma', 'delete_backup',
         { backup_file_path: filePath },
-        {}, true, true
+        undefined, true, true
       );
       if (result?.response?.success) {
         this._backupMessage = {
@@ -1038,9 +1038,9 @@ class FWCAMCard extends HTMLElement {
         'hafwcma',
         'get_saved_routes',
         { config_entry_id: entryId },
-        {},   // no entity target
-        true, // notifyOnError
-        true  // returnResponse
+        undefined, // no entity target
+        true,      // notifyOnError
+        true       // returnResponse
       );
       this._savedRoutes = (result && Array.isArray(result.response?.routes)) ? result.response.routes : [];
       this._savedRoutesLoaded = true;
