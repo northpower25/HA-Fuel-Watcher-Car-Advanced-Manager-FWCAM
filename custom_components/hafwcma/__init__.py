@@ -2144,6 +2144,8 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         # Fuel stop prediction using a full tank (advance planning — vehicle not yet driving)
         planned_fuel_stops: list = []
         _plan_fuel_type = "E5"
+        _avg_cons: float | None = None
+        _tank_cap: float = 50.0
         try:
             if route_result and route_result.get("polyline"):
                 from .utils.route_planner import FuelStopPredictor
@@ -2156,7 +2158,6 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 _tank_cap = float(
                     _options.get(CONF_TANK_CAPACITY) or _config.get(CONF_TANK_CAPACITY, DEFAULT_TANK_CAPACITY)
                 )
-                _avg_cons: float | None = None
                 if coordinator and coordinator.data:
                     _cpred = coordinator.data.get("consumption_prediction") or {}
                     _avg_cons = _cpred.get("avg_consumption_rate")
@@ -2210,14 +2211,188 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     hass=hass,
                 )
                 _plan_stop_km: float | None = None
+                _plan_eta_at_stop: str | None = None
+                _plan_eta_dt = None
+                _plan_categorized_stations: dict = {}
+                _plan_initial_stations: list = []
+
                 if planned_fuel_stops:
                     _plan_stop_km = planned_fuel_stops[0].get("km_remaining_to_stop")
+
+                # Compute ETA at fuel stop from departure time + proportional route duration
+                _depart_dt = _parse_departure_time(departure_time_str)
+                if _depart_dt is not None and planned_fuel_stops and route_result:
+                    _stop_info0 = planned_fuel_stops[0]
+                    _duration_s = route_result.get("duration_s", 0) or 0
+                    _stop_frac = 0.0
+                    if total_distance_km and total_distance_km > 0:
+                        _stop_dist_km = _stop_info0.get("predicted_distance_km", 0) or 0
+                        _stop_frac = min(_stop_dist_km / total_distance_km, 1.0)
+                    from datetime import timedelta as _td2
+                    _plan_eta_dt = _depart_dt + _td2(seconds=_duration_s * _stop_frac)
+                    _plan_eta_at_stop = _plan_eta_dt.strftime("%H:%M")
+
+                # Fetch corridor stations near the predicted fuel stop
+                if planned_fuel_stops and route_result and route_result.get("polyline"):
+                    try:
+                        from .utils.route_planner import (
+                            CorridorStationRanker,
+                            async_enrich_stations_with_road_detour,
+                            select_categorized_stations,
+                            DETOUR_LOOKAHEAD_KM,
+                        )
+                        from .const import CONF_API_KEY, CONF_PROVIDER, PROVIDER_TANKERKONIG
+                        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+                        _stop_info0 = planned_fuel_stops[0]
+                        _stop_lat = _stop_info0.get("predicted_lat")
+                        _stop_lon = _stop_info0.get("predicted_lon")
+                        _plan_api_key = entry.options.get(CONF_API_KEY) or entry.data.get(CONF_API_KEY, "")
+                        _plan_provider = (
+                            entry.options.get(CONF_PROVIDER)
+                            or entry.data.get(CONF_PROVIDER, PROVIDER_TANKERKONIG)
+                        )
+                        _session = async_get_clientsession(hass)
+                        _stop_in_germany = bool(
+                            _stop_lat and _stop_lon
+                            and _is_in_germany(float(_stop_lat), float(_stop_lon))
+                        )
+
+                        if _stop_in_germany and _plan_api_key and _plan_provider == PROVIDER_TANKERKONIG:
+                            from .providers.tankerkonig import (
+                                TankerkoenigProvider,
+                                is_station_open_at,
+                                format_opening_hours,
+                            )
+                            from .utils.geolocation import calculate_distance
+                            _tk = TankerkoenigProvider(_plan_api_key, _session)
+                            _nearby = await _tk.get_stations_nearby(
+                                _stop_lat, _stop_lon, corridor_width_km, _plan_fuel_type.lower()
+                            )
+                            if _nearby:
+                                _top_nearby = _nearby[:10]
+                                _top_ids = [
+                                    getattr(_st, "station_id", "")
+                                    for _st in _top_nearby
+                                    if getattr(_st, "station_id", "")
+                                ]
+                                _oh_map: dict = {}
+                                if _top_ids and _plan_eta_dt is not None:
+                                    try:
+                                        _oh_map = await _tk.get_opening_hours_batch(_top_ids)
+                                    except Exception as _oh_err:
+                                        _LOGGER.debug(
+                                            "plan_route: opening hours fetch failed: %s", _oh_err
+                                        )
+                                _eta_open: list[dict] = []
+                                _is_open: list[dict] = []
+                                for _st in _top_nearby:
+                                    _price = (
+                                        _st.get_price(_plan_fuel_type.lower())
+                                        if hasattr(_st, "get_price")
+                                        else getattr(_st, "price", None)
+                                    )
+                                    if _price is None:
+                                        continue
+                                    _cur_open = getattr(_st, "is_open", True)
+                                    _sid = getattr(_st, "station_id", "")
+                                    _ot, _wd = _oh_map.get(_sid, (None, False))
+                                    _dist = calculate_distance(
+                                        _stop_lat, _stop_lon,
+                                        getattr(_st, "latitude", 0),
+                                        getattr(_st, "longitude", 0),
+                                    )
+                                    _cand = {
+                                        "station_id": _sid,
+                                        "name": getattr(_st, "name", "Unknown"),
+                                        "lat": getattr(_st, "latitude", _stop_lat),
+                                        "lng": getattr(_st, "longitude", _stop_lon),
+                                        "price": _price,
+                                        "detour_km": round(_dist * 2.0, 2),
+                                        "is_open": _cur_open,
+                                        "opening_hours": format_opening_hours(_ot, _wd),
+                                    }
+                                    if _plan_eta_dt is not None and (_ot is not None or _wd):
+                                        if is_station_open_at(_ot, _wd, _plan_eta_dt):
+                                            _eta_open.append(_cand)
+                                    elif _plan_eta_dt is not None and _sid in _oh_map:
+                                        if _cur_open:
+                                            _eta_open.append(_cand)
+                                    else:
+                                        if _cur_open:
+                                            _eta_open.append(_cand)
+                                    if _cur_open:
+                                        _is_open.append(_cand)
+                                _station_dicts = _eta_open or _is_open
+                                if _station_dicts:
+                                    _station_dicts = await async_enrich_stations_with_road_detour(
+                                        _station_dicts,
+                                        polyline=route_result["polyline"],
+                                        lookahead_km=DETOUR_LOOKAHEAD_KM,
+                                    )
+                                    _ranked = CorridorStationRanker().rank_stations(
+                                        _station_dicts,
+                                        fuel_needed_liters=10.0,
+                                        consumption_l_per_100km=_avg_cons or 8.0,
+                                    )
+                                    _plan_categorized_stations = select_categorized_stations(_ranked)
+                                    _plan_initial_stations = _ranked[:5]
+                        elif _stop_lat and _stop_lon:
+                            # OSM fallback for abroad stops or when no Tankerkönig key
+                            from .providers.osm_fuel import (
+                                fetch_osm_fuel_stations,
+                                is_osm_station_open_at,
+                            )
+                            from .utils.geolocation import get_navigation_urls
+                            _radius_m = max(int(corridor_width_km * 1000), 3000)
+                            _osm_raw = await fetch_osm_fuel_stations(
+                                _session, float(_stop_lat), float(_stop_lon),
+                                radius_m=_radius_m, max_stations=10,
+                            )
+                            if _osm_raw:
+                                if _plan_eta_dt is not None:
+                                    _osm_open2: list[dict] = [
+                                        _st for _st in _osm_raw
+                                        if is_osm_station_open_at(
+                                            _st.get("opening_hours", ""), _plan_eta_dt
+                                        ) is not False
+                                    ]
+                                    _osm_cands = _osm_open2 or _osm_raw
+                                else:
+                                    _osm_cands = _osm_raw
+                                _osm_cands = await async_enrich_stations_with_road_detour(
+                                    _osm_cands,
+                                    polyline=route_result["polyline"],
+                                    lookahead_km=DETOUR_LOOKAHEAD_KM,
+                                )
+                                _osm_cands.sort(
+                                    key=lambda s: s.get("road_detour_km", float("inf"))
+                                )
+                                for _st in _osm_cands:
+                                    _st["navigation_urls"] = get_navigation_urls(
+                                        _st["lat"], _st["lng"], _st.get("name", "")
+                                    )
+                                _top3 = _osm_cands[:3]
+                                if _top3:
+                                    _plan_categorized_stations = {
+                                        "nearest": _top3[0] if len(_top3) > 0 else None,
+                                        "middle": _top3[1] if len(_top3) > 1 else None,
+                                        "cheapest": _top3[2] if len(_top3) > 2 else None,
+                                    }
+                                    _plan_initial_stations = _top3
+                    except Exception as _stn_err:
+                        _LOGGER.warning("plan_route: corridor station fetch failed: %s", _stn_err)
+
                 await notifier.send_route_started(
                     destination=destination_str,
                     total_distance_km=total_distance_km,
                     predicted_stop_km=_plan_stop_km,
+                    categorized_stations=_plan_categorized_stations or None,
+                    top_stations=_plan_initial_stations or None,
                     corridor_km=corridor_width_km,
+                    safety_buffer_pct=15.0,
                     departure_time=departure_time_str or None,
+                    eta_at_stop=_plan_eta_at_stop,
                     fuel_type=_plan_fuel_type,
                 )
             except Exception as tg_err:

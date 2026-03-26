@@ -1038,9 +1038,9 @@ class FWCAMCard extends HTMLElement {
         'hafwcma',
         'get_saved_routes',
         { config_entry_id: entryId },
-        undefined,  // no entity target
-        true,       // notifyOnError
-        true        // returnResponse
+        {},   // no entity target
+        true, // notifyOnError
+        true  // returnResponse
       );
       this._savedRoutes = (result && Array.isArray(result.response?.routes)) ? result.response.routes : [];
       this._savedRoutesLoaded = true;
