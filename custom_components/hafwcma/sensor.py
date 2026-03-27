@@ -158,6 +158,11 @@ _ROUTE_MONITOR_RANGE_WARNING_KM = 20  # Trigger range warning when ≤ this many
 _ROUTE_MONITOR_PRICE_THRESHOLD = 0.01  # Min price drop (€/l) to trigger a Telegram update
 _ROUTE_MAX_AGE_H = 24                 # Auto-expire active routes older than this many hours
 
+# Ahead-station lookahead constants (TankerKönig max radius = 25 km)
+_ROUTE_AHEAD_SEARCH_RADIUS_KM = 25.0   # Query radius passed to TankerKönig for ahead lookups
+# Position-history maximum entries (10 min × 200 = ~33 h)
+_ROUTE_POSITION_HISTORY_MAX = 200
+
 # State restoration and data staleness constants
 DATA_STALENESS_THRESHOLD_HOURS = 1  # Hours before showing staleness warning
 STATE_RESTORED_DATA_SOURCE = "restored_from_previous_state"  # Data source marker for restored state
@@ -261,6 +266,59 @@ def _format_costsaving_attribute(radius_comparison: dict | None) -> str:
     return "Waiting for more data"
 
 
+def _is_point_in_germany(lat: float, lon: float) -> bool:
+    """Fast bounding-box check: return True when (lat, lon) is inside Germany."""
+    return 47.27 <= lat <= 55.09 and 5.87 <= lon <= 15.04
+
+
+def _min_dist_to_polyline(
+    lat: float,
+    lon: float,
+    polyline: list[tuple[float, float]],
+) -> float:
+    """Return the minimum distance (km) from point (lat, lon) to the nearest point on the polyline."""
+    from .utils.geolocation import calculate_distance
+
+    if not polyline:
+        return float("inf")
+    if len(polyline) == 1:
+        return calculate_distance(lat, lon, polyline[0][0], polyline[0][1])
+
+    min_dist = float("inf")
+    for i in range(len(polyline) - 1):
+        lat1, lon1 = polyline[i]
+        lat2, lon2 = polyline[i + 1]
+        dx = lat2 - lat1
+        dy = lon2 - lon1
+        len_sq = dx * dx + dy * dy
+        if len_sq < 1e-12:
+            d = calculate_distance(lat, lon, lat1, lon1)
+        else:
+            t = max(0.0, min(1.0, ((lat - lat1) * dx + (lon - lon1) * dy) / len_sq))
+            proj_lat = lat1 + t * dx
+            proj_lon = lon1 + t * dy
+            d = calculate_distance(lat, lon, proj_lat, proj_lon)
+        if d < min_dist:
+            min_dist = d
+    return min_dist
+
+
+def _calc_route_avg_speed(position_history: list[dict]) -> float | None:
+    """Calculate average driving speed (km/h) from position history.
+
+    Each entry in *position_history* may carry ``delta_km`` and ``delta_s`` keys
+    that represent the incremental distance (km) and time (s) of that step.
+    Only segments where the vehicle actually moved are considered.
+
+    Returns None when there is insufficient movement data.
+    """
+    total_km = sum(e.get("delta_km", 0.0) for e in position_history)
+    total_s = sum(e.get("delta_s", 0.0) for e in position_history)
+    if total_s <= 0 or total_km <= 0:
+        return None
+    return (total_km / total_s) * 3600.0
+
+
 def _get_best_station_from_comparison(
     radius_comparison: dict | None,
     fallback_station: dict | None = None,
@@ -345,6 +403,10 @@ async def async_setup_entry(
         PredictedFuelStopSensor(coordinator, config_entry, vehicle_name),
         CorridorBestStationSensor(coordinator, config_entry, vehicle_name),
         CorridorStationsSensor(coordinator, config_entry, vehicle_name),
+        RouteAverageSpeedSensor(coordinator, config_entry, vehicle_name),
+        RouteAheadStation25Sensor(coordinator, config_entry, vehicle_name),
+        RouteAheadStation50Sensor(coordinator, config_entry, vehicle_name),
+        RouteAheadStation100Sensor(coordinator, config_entry, vehicle_name),
     ]
 
     # Add entities immediately - they will start in unavailable state
@@ -426,6 +488,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
         # During-trip route monitoring state
         self._last_route_monitor_check: "datetime | None" = None
         self._route_monitor_last_price: float | None = None  # cheapest price at last check
+
+        # Speed-tracking and ahead-station state (reset when a new route is set)
+        self._route_position_history: list[dict] = []  # [{lat, lon, ts, route_km, delta_km, delta_s}]
+        self._current_route_set_at: str | None = None  # route_set_at of the tracked route
 
         # Saved routes list – persists across restarts via a separate Store.
         # Each entry is a lightweight planning-params dict (no polyline) with a
@@ -1416,6 +1482,57 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             predicted_stop_km: float | None = None
             new_best_price: float | None = None
 
+            # ── Speed tracking ──────────────────────────────────────────────
+            # Maintain a position history keyed to the active route so that
+            # average driving speed can be derived from route-projected distance
+            # vs. elapsed time for movement-only segments.
+            polyline_for_speed = route_data.get("route_polyline") or []
+            route_set_at_key = route_data.get("route_set_at", "")
+            if route_set_at_key != self._current_route_set_at:
+                # New route started – reset position history
+                self._route_position_history = []
+                self._current_route_set_at = route_set_at_key
+
+            avg_speed_kmh: float | None = None
+            current_route_km: float = 0.0
+            if polyline_for_speed:
+                try:
+                    from .utils.route_planner import FuelStopPredictor as _FuelStopPredictor
+                    _sp_pred = _FuelStopPredictor()
+                    _proj = _sp_pred.project_position_on_route(
+                        polyline_for_speed, vehicle_lat, vehicle_lon
+                    )
+                    current_route_km = _proj["distance_along_route_km"]
+                except Exception as _sp_err:
+                    _LOGGER.debug(
+                        "_async_check_active_route: route projection failed: %s", _sp_err
+                    )
+
+            _new_pos: dict = {
+                "lat": vehicle_lat,
+                "lon": vehicle_lon,
+                "ts": now.timestamp(),
+                "route_km": current_route_km,
+            }
+            if self._route_position_history:
+                _prev_pos = self._route_position_history[-1]
+                _d_km = current_route_km - _prev_pos.get("route_km", 0.0)
+                _d_s = _new_pos["ts"] - _prev_pos.get("ts", _new_pos["ts"])
+                # Record segment only when vehicle moved forward on route
+                if _d_km > 0.05 and _d_s > 0:
+                    _new_pos["delta_km"] = _d_km
+                    _new_pos["delta_s"] = _d_s
+            self._route_position_history.append(_new_pos)
+            if len(self._route_position_history) > _ROUTE_POSITION_HISTORY_MAX:
+                self._route_position_history = (
+                    self._route_position_history[-_ROUTE_POSITION_HISTORY_MAX:]
+                )
+
+            avg_speed_kmh = _calc_route_avg_speed(self._route_position_history)
+            route_data["avg_speed_kmh"] = (
+                round(avg_speed_kmh, 1) if avg_speed_kmh is not None else None
+            )
+
             # ── Search for stations near the vehicle ────────────────────────
             if api_key and provider_name == PROVIDER_TANKERKONIG:
                 try:
@@ -1486,6 +1603,118 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                 new_best_price = float(cheapest["price"])
                 except Exception as search_err:
                     _LOGGER.debug("_async_check_active_route: station search failed: %s", search_err)
+
+            # ── Ahead station lookups (25 / 50 / 100 km) ────────────────────
+            # Query TankerKönig at 3 points ahead on the route (≤ 25 km radius
+            # per query because of API limits).  Results are stored in
+            # route_data so the three sensors below can read them without
+            # triggering additional API calls.  The queries run at most once
+            # every 10 min because this whole method is throttled by
+            # _ROUTE_MONITOR_COOLDOWN_S.
+            if api_key and provider_name == PROVIDER_TANKERKONIG and polyline_for_speed:
+                try:
+                    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+                    from .providers.tankerkonig import TankerkoenigProvider as _TKProvider2
+                    from .utils.route_planner import FuelStopPredictor as _FuelStopPredictor2
+                    from .utils.geolocation import get_navigation_urls as _get_nav_urls
+
+                    _session2 = async_get_clientsession(self.hass)
+                    _tk2 = _TKProvider2(api_key, _session2)
+                    _pred2 = _FuelStopPredictor2()
+                    _total_route_km = _pred2._total_route_distance(polyline_for_speed)
+
+                    # Projected position: current route km + expected travel until
+                    # next update (~10 min at average speed).
+                    _next_update_min = 10.0
+                    _extra_km = (avg_speed_kmh or 0.0) * (_next_update_min / 60.0)
+                    _projected_km = current_route_km + _extra_km
+
+                    # Horizon → route offset for query centre (TK radius = 25 km):
+                    #   25 km  → query at projected + 0 km   (covers ≈0–25 km ahead)
+                    #   50 km  → query at projected + 25 km  (covers ≈25–50 km ahead)
+                    #  100 km  → query at projected + 75 km  (covers ≈75–100 km ahead)
+                    for _cache_key, _offset_km in (
+                        ("ahead_station_25km", 0.0),
+                        ("ahead_station_50km", 25.0),
+                        ("ahead_station_100km", 75.0),
+                    ):
+                        _query_km = _projected_km + _offset_km
+                        if _query_km >= _total_route_km:
+                            route_data[_cache_key] = None
+                            continue
+                        _qpt = _pred2._find_point_at_distance(polyline_for_speed, _query_km)
+                        if not _qpt:
+                            route_data[_cache_key] = None
+                            continue
+                        _q_lat, _q_lon = _qpt
+                        if not _is_point_in_germany(_q_lat, _q_lon):
+                            route_data[_cache_key] = None
+                            continue
+                        try:
+                            _nearby2 = await _tk2.get_stations_nearby(
+                                _q_lat, _q_lon, _ROUTE_AHEAD_SEARCH_RADIUS_KM, fuel_type
+                            )
+                            if not _nearby2:
+                                route_data[_cache_key] = None
+                                continue
+                            _best_ah: dict | None = None
+                            _best_ah_price = float("inf")
+                            for _st2 in _nearby2:
+                                _p2 = (
+                                    _st2.get_price(fuel_type)
+                                    if hasattr(_st2, "get_price")
+                                    else getattr(_st2, "price", None)
+                                )
+                                if _p2 is None:
+                                    continue
+                                if not getattr(_st2, "is_open", True):
+                                    continue
+                                _sl = getattr(_st2, "latitude", None)
+                                _sn = getattr(_st2, "longitude", None)
+                                if _sl is None or _sn is None:
+                                    continue
+                                # Only include stations within the route corridor
+                                if _min_dist_to_polyline(_sl, _sn, polyline_for_speed) > corridor_km:
+                                    continue
+                                if _p2 < _best_ah_price:
+                                    _best_ah_price = _p2
+                                    _best_ah = {
+                                        "name": getattr(_st2, "name", ""),
+                                        "station_id": getattr(_st2, "station_id", ""),
+                                        "lat": _sl,
+                                        "lng": _sn,
+                                        "price": _p2,
+                                        "is_open": getattr(_st2, "is_open", True),
+                                        "brand": getattr(_st2, "brand", ""),
+                                        "street": getattr(_st2, "street", ""),
+                                        "city": getattr(_st2, "city", ""),
+                                        "query_center_lat": _q_lat,
+                                        "query_center_lon": _q_lon,
+                                        "query_offset_km": _offset_km,
+                                        "navigation_urls": _get_nav_urls(
+                                            _sl, _sn, getattr(_st2, "name", "")
+                                        ),
+                                    }
+                            route_data[_cache_key] = _best_ah
+                        except Exception as _ah_err:
+                            _LOGGER.debug(
+                                "_async_check_active_route: ahead station query (%s) failed: %s",
+                                _cache_key,
+                                _ah_err,
+                            )
+                except Exception as _ahead_err:
+                    _LOGGER.debug(
+                        "_async_check_active_route: ahead station section failed: %s", _ahead_err
+                    )
+
+            # Persist updated route_data (avg_speed_kmh + ahead stations)
+            self._stored_route_data = route_data
+            try:
+                await self.async_save_route_data(route_data)
+            except Exception as _save_err:
+                _LOGGER.debug(
+                    "_async_check_active_route: route_data save failed: %s", _save_err
+                )
 
             # ── Recalculate fuel stop prediction with current tank level ────
             if tank_level_liters and tank_level_liters > 0:
@@ -5831,6 +6060,274 @@ class PlannedRoutesSensor(CoordinatorEntity, SensorEntity):
             "count": len(routes_sorted),
             "config_entry_id": self._config_entry.entry_id,
         }
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class RouteAverageSpeedSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the average driving speed since the route was started.
+
+    State: average speed in km/h since the start of the active route,
+    calculated from position changes projected onto the route polyline.
+    Returns None when no route is active or insufficient data is available.
+    """
+
+    _attr_icon = "mdi:speedometer"
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = "km/h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Route Average Speed"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_avg_speed"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the average speed (km/h) since route start."""
+        if self.coordinator.data is None:
+            return None
+        route_data = self.coordinator.data.get("route_data") or {}
+        if not route_data.get("is_active"):
+            return None
+        speed = route_data.get("avg_speed_kmh")
+        if speed is None:
+            return None
+        try:
+            return round(float(speed), 1)
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return route and speed details."""
+        if self.coordinator.data is None:
+            return {}
+        route_data = self.coordinator.data.get("route_data") or {}
+        return {
+            "is_active": route_data.get("is_active", False),
+            "route_set_at": route_data.get("route_set_at"),
+            "destination": route_data.get("destination"),
+            "total_distance_km": route_data.get("total_distance_km"),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+def _make_ahead_station_sensor_attrs(station: dict | None) -> dict[str, Any]:
+    """Return common attribute dict for ahead-station sensors."""
+    if not station:
+        return {}
+    nav = station.get("navigation_urls") or {}
+    return {
+        "station_name": station.get("name"),
+        "station_id": station.get("station_id"),
+        "station_lat": station.get("lat"),
+        "station_lon": station.get("lng"),
+        "price": station.get("price"),
+        "brand": station.get("brand"),
+        "street": station.get("street"),
+        "city": station.get("city"),
+        "is_open": station.get("is_open"),
+        "query_center_lat": station.get("query_center_lat"),
+        "query_center_lon": station.get("query_center_lon"),
+        "query_offset_km": station.get("query_offset_km"),
+        "google_maps_url": nav.get("google_maps"),
+        "waze_url": nav.get("waze"),
+        "apple_maps_url": nav.get("apple_maps"),
+    }
+
+
+class RouteAheadStation25Sensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the cheapest fuel station within 25 km ahead on the route.
+
+    The query centre is the projected vehicle position (current position on
+    route + expected travel over the next update interval at average speed).
+    The TankerKönig API is queried with a 25 km radius and only stations
+    within the route corridor are considered.
+
+    State: price per litre (EUR/L) of the cheapest matching station,
+    or None when no route is active or no station is found.
+    """
+
+    _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = f"{CURRENCY_EURO}/L"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Route Ahead Station 25 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_25km"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the price per litre of the cheapest station within 25 km ahead."""
+        if self.coordinator.data is None:
+            return None
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_25km")
+        if not station:
+            return None
+        try:
+            return round(float(station["price"]), 4)
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return station details and navigation URLs."""
+        if self.coordinator.data is None:
+            return {}
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_25km")
+        return _make_ahead_station_sensor_attrs(station)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class RouteAheadStation50Sensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the cheapest fuel station within 50 km ahead on the route.
+
+    The query centre is offset 25 km beyond the projected vehicle position
+    (TankerKönig API radius = 25 km), covering roughly 25–50 km ahead.
+
+    State: price per litre (EUR/L) of the cheapest matching station,
+    or None when no route is active or no station is found.
+    """
+
+    _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = f"{CURRENCY_EURO}/L"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Route Ahead Station 50 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_50km"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the price per litre of the cheapest station within 50 km ahead."""
+        if self.coordinator.data is None:
+            return None
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_50km")
+        if not station:
+            return None
+        try:
+            return round(float(station["price"]), 4)
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return station details and navigation URLs."""
+        if self.coordinator.data is None:
+            return {}
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_50km")
+        return _make_ahead_station_sensor_attrs(station)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class RouteAheadStation100Sensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the cheapest fuel station within 100 km ahead on the route.
+
+    The query centre is offset 75 km beyond the projected vehicle position
+    (TankerKönig API radius = 25 km), covering roughly 75–100 km ahead.
+
+    State: price per litre (EUR/L) of the cheapest matching station,
+    or None when no route is active or no station is found.
+    """
+
+    _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = f"{CURRENCY_EURO}/L"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Route Ahead Station 100 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_100km"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the price per litre of the cheapest station within 100 km ahead."""
+        if self.coordinator.data is None:
+            return None
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_100km")
+        if not station:
+            return None
+        try:
+            return round(float(station["price"]), 4)
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return station details and navigation URLs."""
+        if self.coordinator.data is None:
+            return {}
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_100km")
+        return _make_ahead_station_sensor_attrs(station)
 
     @property
     def available(self) -> bool:
