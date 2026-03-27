@@ -253,6 +253,9 @@ SCHEMA_SET_ROUTE = vol.Schema({
     vol.Optional("routing_provider", default="osrm"): cv.string,
     vol.Optional("google_api_key", default=""): cv.string,
     vol.Optional("departure_time", default=""): cv.string,
+    vol.Optional("avoid_highways", default=False): cv.boolean,
+    vol.Optional("avoid_tolls", default=False): cv.boolean,
+    vol.Optional("avoid_ferries", default=False): cv.boolean,
 })
 
 SCHEMA_PLAN_ROUTE = vol.Schema({
@@ -264,6 +267,9 @@ SCHEMA_PLAN_ROUTE = vol.Schema({
     vol.Optional("routing_provider", default="osrm"): cv.string,
     vol.Optional("google_api_key", default=""): cv.string,
     vol.Optional("departure_time", default=""): cv.string,
+    vol.Optional("avoid_highways", default=False): cv.boolean,
+    vol.Optional("avoid_tolls", default=False): cv.boolean,
+    vol.Optional("avoid_ferries", default=False): cv.boolean,
 })
 
 SCHEMA_CANCEL_ROUTE = vol.Schema({
@@ -1496,6 +1502,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         if not google_api_key:
             google_api_key = entry.options.get(CONF_GOOGLE_MAPS_API_KEY, "") or entry.data.get(CONF_GOOGLE_MAPS_API_KEY, "")
         departure_time_str: str = call.data.get("departure_time", "")
+        avoid_highways: bool = bool(call.data.get("avoid_highways", False))
+        avoid_tolls: bool = bool(call.data.get("avoid_tolls", False))
+        avoid_ferries: bool = bool(call.data.get("avoid_ferries", False))
 
         # Parse departure_time string → datetime (naive/local)
         departure_dt = _parse_departure_time(departure_time_str)
@@ -1555,6 +1564,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             waypoints=waypoint_coords or None,
             provider=routing_provider,
             api_key=google_api_key or None,
+            avoid_highways=avoid_highways,
+            avoid_tolls=avoid_tolls,
+            avoid_ferries=avoid_ferries,
         )
 
         if not route_result or not route_result.get("polyline"):
@@ -1573,6 +1585,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "waypoints": waypoint_strings,
             "corridor_width_km": corridor_width_km,
             "routing_provider": routing_provider,
+            "avoid_highways": avoid_highways,
+            "avoid_tolls": avoid_tolls,
+            "avoid_ferries": avoid_ferries,
             "total_distance_km": round(route_result["distance_km"], 2),
             "duration_s": route_result.get("duration_s", 0),
             "route_polyline": route_result["polyline"],
@@ -1946,6 +1961,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "waypoints": waypoint_strings,
             "corridor_width_km": corridor_width_km,
             "routing_provider": routing_provider,
+            "avoid_highways": avoid_highways,
+            "avoid_tolls": avoid_tolls,
+            "avoid_ferries": avoid_ferries,
             "departure_time": departure_time_str or "",
             "total_distance_km": route_data.get("total_distance_km"),
         }
@@ -2087,6 +2105,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         if not google_api_key:
             google_api_key = entry.options.get(CONF_GOOGLE_MAPS_API_KEY, "") or entry.data.get(CONF_GOOGLE_MAPS_API_KEY, "")
         departure_time_str: str = call.data.get("departure_time", "")
+        avoid_highways: bool = bool(call.data.get("avoid_highways", False))
+        avoid_tolls: bool = bool(call.data.get("avoid_tolls", False))
+        avoid_ferries: bool = bool(call.data.get("avoid_ferries", False))
 
         # Retrieve or create the RoutePlanner for this entry
         if "route_planner" not in hass.data[DOMAIN][entry_id]:
@@ -2135,6 +2156,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             waypoints=waypoint_coords or None,
             provider=routing_provider,
             api_key=google_api_key or None,
+            avoid_highways=avoid_highways,
+            avoid_tolls=avoid_tolls,
+            avoid_ferries=avoid_ferries,
         )
 
         total_distance_km: float | None = None
@@ -2188,6 +2212,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             "waypoints": waypoint_strings,
             "corridor_width_km": corridor_width_km,
             "routing_provider": routing_provider,
+            "avoid_highways": avoid_highways,
+            "avoid_tolls": avoid_tolls,
+            "avoid_ferries": avoid_ferries,
             "departure_time": departure_time_str or "",
             "total_distance_km": total_distance_km,
             "fuel_stops": planned_fuel_stops,
