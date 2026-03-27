@@ -29,6 +29,7 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     this._entities = {};
     this._plannedRoutes = [];
     this._plannedRoutesLoaded = false;
+    this._suggestionTimers = {};
   }
 
   setConfig(config) {
@@ -154,13 +155,19 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     return `
       <div style="display:flex;flex-direction:column;gap:0.5rem;">
         <label style="font-size:0.85rem;font-weight:500;">Startadresse <small style="font-weight:normal;">(optional)</small></label>
-        <input id="rp-origin" type="text" class="setting-input"
-          placeholder="z.B. Berlin Hauptbahnhof (leer = Fahrzeugposition)"
-          style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+        <div style="position:relative;">
+          <input id="rp-origin" type="text" class="setting-input"
+            placeholder="z.B. Berlin Hauptbahnhof (leer = Fahrzeugposition)"
+            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+          <div id="rp-origin-suggestions" class="geo-dropdown" style="display:none;"></div>
+        </div>
         <label style="font-size:0.85rem;font-weight:500;">Zieladresse</label>
-        <input id="rp-destination" type="text" class="setting-input"
-          placeholder="z.B. M\u00fcnchen Hauptbahnhof"
-          style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+        <div style="position:relative;">
+          <input id="rp-destination" type="text" class="setting-input"
+            placeholder="z.B. M\u00fcnchen Hauptbahnhof"
+            style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+          <div id="rp-destination-suggestions" class="geo-dropdown" style="display:none;"></div>
+        </div>
         <label style="font-size:0.85rem;font-weight:500;">Zwischenstopps <small style="font-weight:normal;">(optional, kommagetrennt)</small></label>
         <input id="rp-waypoints" type="text" class="setting-input"
           placeholder="z.B. Augsburg, Ingolstadt"
@@ -347,7 +354,62 @@ class FWCAMRoutePlannerCard extends HTMLElement {
       providerSelect.addEventListener('change', upd);
       upd();
     }
+    this._setupSuggestionInput('rp-origin', 'rp-origin-suggestions');
+    this._setupSuggestionInput('rp-destination', 'rp-destination-suggestions');
     this._attachPlannedRoutesListeners();
+  }
+
+  _setupSuggestionInput(inputId, dropdownId) {
+    const input = this.shadowRoot.getElementById(inputId);
+    const dropdown = this.shadowRoot.getElementById(dropdownId);
+    if (!input || !dropdown) return;
+    input.addEventListener('input', () => {
+      const val = input.value.trim();
+      clearTimeout(this._suggestionTimers[inputId]);
+      if (val.length < 3) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; return; }
+      this._suggestionTimers[inputId] = setTimeout(() => {
+        this._fetchAndShowSuggestions(val, inputId, dropdownId);
+      }, 400);
+    });
+    // Hide dropdown when focus leaves the input (small delay so mousedown on item fires first)
+    input.addEventListener('blur', () => {
+      setTimeout(() => { dropdown.style.display = 'none'; }, 200);
+    });
+    input.addEventListener('focus', () => {
+      if (dropdown.children.length > 0) dropdown.style.display = 'block';
+    });
+  }
+
+  async _fetchAndShowSuggestions(address, inputId, dropdownId) {
+    const dropdown = this.shadowRoot.getElementById(dropdownId);
+    if (!dropdown) return;
+    const configEntryId = this._getConfigEntryId();
+    if (!configEntryId) return;
+    try {
+      const result = await this._hass.callService(
+        'hafwcma', 'geocode_suggestions',
+        { config_entry_id: configEntryId, address, limit: 5 },
+        undefined, true, true
+      );
+      const suggestions = (result && Array.isArray(result.response?.suggestions)) ? result.response.suggestions : [];
+      if (!suggestions.length) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; return; }
+      dropdown.innerHTML = suggestions.map((s) =>
+        `<div class="geo-dropdown-item" data-display="${this._esc(s.display_name)}">${this._esc(s.short_name || s.display_name)}</div>`
+      ).join('');
+      dropdown.style.display = 'block';
+      dropdown.querySelectorAll('.geo-dropdown-item').forEach(item => {
+        item.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // prevent blur from hiding dropdown before click
+          const input = this.shadowRoot.getElementById(inputId);
+          if (input) { input.value = item.dataset.display; }
+          dropdown.style.display = 'none';
+          dropdown.innerHTML = '';
+        });
+      });
+    } catch (err) {
+      console.debug('FWCAM: geocode_suggestions failed', err);
+      dropdown.style.display = 'none';
+    }
   }
 
   _attachPlannedRoutesListeners() {
@@ -514,6 +576,10 @@ class FWCAMRoutePlannerCard extends HTMLElement {
       .activate-button { color:var(--primary-color,#039be5); }
       .delete-button { color:var(--error-color,#d32f2f); }
       .setting-input { background:var(--primary-background-color);color:var(--primary-text-color); }
+      .geo-dropdown { position:absolute;top:100%;left:0;right:0;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#ccc);border-top:none;border-radius:0 0 4px 4px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 8px rgba(0,0,0,0.15); }
+      .geo-dropdown-item { padding:0.45rem 0.6rem;cursor:pointer;font-size:0.85rem;border-bottom:1px solid var(--divider-color,#eee);color:var(--primary-text-color); }
+      .geo-dropdown-item:last-child { border-bottom:none; }
+      .geo-dropdown-item:hover { background:var(--secondary-background-color,#f0f0f0); }
     </style>`;
   }
 

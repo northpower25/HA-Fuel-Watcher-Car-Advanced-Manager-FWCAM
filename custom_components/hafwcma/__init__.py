@@ -75,6 +75,7 @@ SERVICE_PLAN_ROUTE = "plan_route"
 SERVICE_CANCEL_ROUTE = "cancel_route"
 SERVICE_GET_SAVED_ROUTES = "get_saved_routes"
 SERVICE_DELETE_SAVED_ROUTE = "delete_saved_route"
+SERVICE_GEOCODE_SUGGESTIONS = "geocode_suggestions"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -277,6 +278,12 @@ SCHEMA_GET_SAVED_ROUTES = vol.Schema({
 SCHEMA_DELETE_SAVED_ROUTE = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
     vol.Required("route_id"): vol.Any(int, cv.string),
+})
+
+SCHEMA_GEOCODE_SUGGESTIONS = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("address"): cv.string,
+    vol.Optional("limit", default=5): vol.All(int, vol.Range(min=1, max=10)),
 })
 
 
@@ -2463,6 +2470,40 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_PLAN_ROUTE, handle_plan_route, schema=SCHEMA_PLAN_ROUTE, supports_response=True
+    )
+
+    async def handle_geocode_suggestions(call: ServiceCall) -> ServiceResponse:
+        """Return multiple geocoding candidates for an address string.
+
+        Useful for address disambiguation in the frontend card (live-suggestions
+        dropdown) and via Telegram (numbered choice list).
+
+        Returns:
+            ServiceResponse with ``suggestions`` (list of candidate dicts, each
+            containing ``display_name``, ``short_name``, ``lat``, ``lon``,
+            ``type``, ``importance``) and ``error`` string (empty on success).
+        """
+        from .utils.route_planner import RoutePlanner
+
+        entry_id = call.data["config_entry_id"]
+        address = call.data["address"]
+        limit = call.data.get("limit", 5)
+
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if not entry:
+            _LOGGER.error("geocode_suggestions: config entry %s not found", entry_id)
+            return {"suggestions": [], "error": "Config entry not found"}
+
+        if "route_planner" not in hass.data.get(DOMAIN, {}).get(entry_id, {}):
+            hass.data[DOMAIN].setdefault(entry_id, {})["route_planner"] = RoutePlanner()
+        route_planner: RoutePlanner = hass.data[DOMAIN][entry_id]["route_planner"]
+
+        suggestions = await route_planner.async_geocode_multi(hass, address, limit=limit)
+        return {"suggestions": suggestions, "error": ""}
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_GEOCODE_SUGGESTIONS, handle_geocode_suggestions,
+        schema=SCHEMA_GEOCODE_SUGGESTIONS, supports_response=True,
     )
 
     return True

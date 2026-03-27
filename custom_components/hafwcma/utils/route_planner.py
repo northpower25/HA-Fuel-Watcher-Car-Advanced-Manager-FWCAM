@@ -41,6 +41,8 @@ DETOUR_LOOKAHEAD_KM = 30.0
 _MULTI_STOP_MAX_ITERATIONS = 20
 # A stop is considered at the route end when within this many km of the total distance.
 _ROUTE_END_TOLERANCE_KM = 0.5
+# Maximum number of geocoding candidates returned by async_geocode_multi().
+MAX_GEOCODE_CANDIDATES = 10
 
 
 # ── Internal routing helpers ────────────────────────────────────────────────
@@ -961,6 +963,73 @@ class RoutePlanner:
         except Exception as err:
             _LOGGER.error("Error geocoding address '%s': %s", address, err)
             return None
+
+    async def async_geocode_multi(
+        self,
+        hass: HomeAssistant,
+        address: str,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Forward-geocode with multiple candidates for address disambiguation.
+
+        Args:
+            hass: Home Assistant instance for shared aiohttp session.
+            address: Free-form address string.
+            limit: Maximum number of candidates to return (1–10).
+
+        Returns:
+            List of candidate dicts with keys ``display_name``, ``short_name``,
+            ``lat``, ``lon``, ``type``, ``importance``.  Empty list on error.
+        """
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+        session = async_get_clientsession(hass)
+        try:
+            params: dict = {
+                "q": address,
+                "format": "json",
+                "limit": min(max(int(limit), 1), MAX_GEOCODE_CANDIDATES),
+                "addressdetails": "1",
+            }
+            if hass is not None:
+                home_lat = hass.config.latitude
+                home_lon = hass.config.longitude
+                if home_lat and home_lon:
+                    _delta = 10.0
+                    params["viewbox"] = (
+                        f"{home_lon - _delta},{home_lat + _delta},"
+                        f"{home_lon + _delta},{home_lat - _delta}"
+                    )
+                    params["bounded"] = "0"
+            async with session.get(
+                NOMINATIM_SEARCH_URL,
+                params=params,
+                headers={"User-Agent": NOMINATIM_USER_AGENT},
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+            ) as resp:
+                if resp.status != 200:
+                    _LOGGER.error(
+                        "Nominatim multi-geocode returned HTTP %d", resp.status
+                    )
+                    return []
+                data = await resp.json()
+            results: list[dict[str, Any]] = []
+            for item in (data or []):
+                display_name = item.get("display_name", "")
+                # Build a compact label: first 2 comma-separated components
+                parts = [p.strip() for p in display_name.split(",") if p.strip()]
+                short_name = ", ".join(parts[:2]) if parts else display_name
+                results.append({
+                    "display_name": display_name,
+                    "short_name": short_name,
+                    "lat": float(item["lat"]),
+                    "lon": float(item["lon"]),
+                    "type": item.get("type", ""),
+                    "importance": item.get("importance", 0.0),
+                })
+            return results
+        except Exception as err:
+            _LOGGER.error("Error in async_geocode_multi for '%s': %s", address, err)
+            return []
 
     async def async_calculate_route(
         self,
