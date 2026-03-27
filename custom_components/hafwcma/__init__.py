@@ -1597,6 +1597,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         safety_buffer_pct: float = 15.0
         eta_at_stop: str | None = None
         eta_dt = None  # datetime at predicted fuel stop (set when departure_dt known)
+        _consumption_data_available: bool = False  # True when avg_consumption was computable
         try:
             from .utils.route_planner import (
                 FuelStopPredictor, CorridorStationRanker,
@@ -1635,6 +1636,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 )
 
                 if tank_level_liters and avg_consumption and avg_consumption > 0:
+                    _consumption_data_available = True
                     predictor = FuelStopPredictor()
                     stop_info = predictor.predict_fuel_stop(
                         polyline=route_result["polyline"],
@@ -1974,6 +1976,11 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     eta_at_stop=eta_at_stop,
                     abroad_fuel_stop=bool(route_data.get("abroad_fuel_stop")),
                     fuel_type=str(fuel_type).upper(),
+                    no_refuel_needed=bool(
+                        _consumption_data_available
+                        and predicted_stop_km is None
+                        and (route_data.get("total_distance_km") or 0) > 0
+                    ),
                 )
             except Exception as tg_err:
                 _LOGGER.warning("set_route: Telegram notification failed: %s", tg_err)
@@ -2215,6 +2222,12 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 _plan_eta_dt = None
                 _plan_categorized_stations: dict = {}
                 _plan_initial_stations: list = []
+                # True when consumption data was available and prediction shows a
+                # full tank is sufficient for the whole route (no stops needed).
+                _plan_no_refuel_needed: bool = bool(
+                    _avg_cons and _avg_cons > 0 and not planned_fuel_stops
+                    and total_distance_km is not None and total_distance_km > 0
+                )
 
                 if planned_fuel_stops:
                     _plan_stop_km = planned_fuel_stops[0].get("km_remaining_to_stop")
@@ -2394,6 +2407,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     departure_time=departure_time_str or None,
                     eta_at_stop=_plan_eta_at_stop,
                     fuel_type=_plan_fuel_type,
+                    no_refuel_needed=_plan_no_refuel_needed,
                 )
             except Exception as tg_err:
                 _LOGGER.warning("plan_route: Telegram notification failed: %s", tg_err)

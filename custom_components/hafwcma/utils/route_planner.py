@@ -926,9 +926,26 @@ class RoutePlanner:
         from homeassistant.helpers.aiohttp_client import async_get_clientsession
         session = async_get_clientsession(hass)
         try:
+            params: dict = {"q": address, "format": "json", "limit": 1}
+            # Bias Nominatim results toward the user's home location so that
+            # ambiguous place names (e.g. "Stammheim" exists in Stuttgart AND
+            # in Kanton Zürich, Switzerland) resolve to the nearest match
+            # instead of an arbitrary distant one.  viewbox with bounded=0
+            # gives preference to results inside the box without restricting
+            # foreign destinations.
+            if hass is not None:
+                home_lat = hass.config.latitude
+                home_lon = hass.config.longitude
+                if home_lat and home_lon:
+                    _delta = 10.0  # ±10° ≈ ±1100 km – broad enough for all local names
+                    params["viewbox"] = (
+                        f"{home_lon - _delta},{home_lat + _delta},"
+                        f"{home_lon + _delta},{home_lat - _delta}"
+                    )
+                    params["bounded"] = "0"
             async with session.get(
                 NOMINATIM_SEARCH_URL,
-                params={"q": address, "format": "json", "limit": 1},
+                params=params,
                 headers={"User-Agent": NOMINATIM_USER_AGENT},
                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
             ) as resp:
