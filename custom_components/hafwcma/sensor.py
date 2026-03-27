@@ -162,6 +162,8 @@ _ROUTE_MAX_AGE_H = 24                 # Auto-expire active routes older than thi
 _ROUTE_AHEAD_SEARCH_RADIUS_KM = 25.0   # Query radius passed to TankerKönig for ahead lookups
 # Position-history maximum entries (10 min × 200 = ~33 h)
 _ROUTE_POSITION_HISTORY_MAX = 200
+# Minimum forward movement on route (km) to count a segment as "driving"
+_ROUTE_MIN_MOVEMENT_KM = 0.05
 
 # State restoration and data staleness constants
 DATA_STALENESS_THRESHOLD_HOURS = 1  # Hours before showing staleness warning
@@ -1519,7 +1521,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 _d_km = current_route_km - _prev_pos.get("route_km", 0.0)
                 _d_s = _new_pos["ts"] - _prev_pos.get("ts", _new_pos["ts"])
                 # Record segment only when vehicle moved forward on route
-                if _d_km > 0.05 and _d_s > 0:
+                if _d_km > _ROUTE_MIN_MOVEMENT_KM and _d_s > 0:
                     _new_pos["delta_km"] = _d_km
                     _new_pos["delta_s"] = _d_s
             self._route_position_history.append(_new_pos)
@@ -1613,6 +1615,7 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
             # _ROUTE_MONITOR_COOLDOWN_S.
             if api_key and provider_name == PROVIDER_TANKERKONIG and polyline_for_speed:
                 try:
+                    import asyncio as _asyncio
                     from homeassistant.helpers.aiohttp_client import async_get_clientsession
                     from .providers.tankerkonig import TankerkoenigProvider as _TKProvider2
                     from .utils.route_planner import FuelStopPredictor as _FuelStopPredictor2
@@ -1624,8 +1627,8 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     _total_route_km = _pred2._total_route_distance(polyline_for_speed)
 
                     # Projected position: current route km + expected travel until
-                    # next update (~10 min at average speed).
-                    _next_update_min = 10.0
+                    # next update (cooldown period at average speed).
+                    _next_update_min = _ROUTE_MONITOR_COOLDOWN_S / 60.0
                     _extra_km = (avg_speed_kmh or 0.0) * (_next_update_min / 60.0)
                     _projected_km = current_route_km + _extra_km
 
@@ -1633,6 +1636,9 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                     #   25 km  → query at projected + 0 km   (covers ≈0–25 km ahead)
                     #   50 km  → query at projected + 25 km  (covers ≈25–50 km ahead)
                     #  100 km  → query at projected + 75 km  (covers ≈75–100 km ahead)
+
+                    # Build query points for all horizons first
+                    _ah_queries: list[tuple[str, float, float, float]] = []  # (key, q_lat, q_lon, offset)
                     for _cache_key, _offset_km in (
                         ("ahead_station_25km", 0.0),
                         ("ahead_station_50km", 25.0),
@@ -1646,14 +1652,29 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                         if not _qpt:
                             route_data[_cache_key] = None
                             continue
-                        _q_lat, _q_lon = _qpt
-                        if not _is_point_in_germany(_q_lat, _q_lon):
+                        _q_lat2, _q_lon2 = _qpt
+                        if not _is_point_in_germany(_q_lat2, _q_lon2):
                             route_data[_cache_key] = None
                             continue
-                        try:
-                            _nearby2 = await _tk2.get_stations_nearby(
-                                _q_lat, _q_lon, _ROUTE_AHEAD_SEARCH_RADIUS_KM, fuel_type
-                            )
+                        _ah_queries.append((_cache_key, _q_lat2, _q_lon2, _offset_km))
+
+                    # Issue all valid queries concurrently
+                    if _ah_queries:
+                        async def _fetch_ahead(_q_lat, _q_lon):
+                            try:
+                                return await _tk2.get_stations_nearby(
+                                    _q_lat, _q_lon, _ROUTE_AHEAD_SEARCH_RADIUS_KM, fuel_type
+                                )
+                            except Exception:
+                                return None
+
+                        _results = await _asyncio.gather(
+                            *[_fetch_ahead(_ql, _qn) for _, _ql, _qn, _ in _ah_queries]
+                        )
+
+                        for (_cache_key, _q_lat2, _q_lon2, _offset_km), _nearby2 in zip(
+                            _ah_queries, _results
+                        ):
                             if not _nearby2:
                                 route_data[_cache_key] = None
                                 continue
@@ -1688,20 +1709,14 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                                         "brand": getattr(_st2, "brand", ""),
                                         "street": getattr(_st2, "street", ""),
                                         "city": getattr(_st2, "city", ""),
-                                        "query_center_lat": _q_lat,
-                                        "query_center_lon": _q_lon,
+                                        "query_center_lat": _q_lat2,
+                                        "query_center_lon": _q_lon2,
                                         "query_offset_km": _offset_km,
                                         "navigation_urls": _get_nav_urls(
                                             _sl, _sn, getattr(_st2, "name", "")
                                         ),
                                     }
                             route_data[_cache_key] = _best_ah
-                        except Exception as _ah_err:
-                            _LOGGER.debug(
-                                "_async_check_active_route: ahead station query (%s) failed: %s",
-                                _cache_key,
-                                _ah_err,
-                            )
                 except Exception as _ahead_err:
                     _LOGGER.debug(
                         "_async_check_active_route: ahead station section failed: %s", _ahead_err
