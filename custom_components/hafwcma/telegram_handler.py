@@ -501,7 +501,7 @@ class TelegramEventHandler:
         departure_info = f" | Abfahrt: {departure_time}" if departure_time else ""
         avoid_parts = []
         if avoid_flags.get("avoid_highways"):
-            avoid_parts.append("kein Autobahn")
+            avoid_parts.append("keine Autobahn")
         if avoid_flags.get("avoid_tolls"):
             avoid_parts.append("keine Maut")
         if avoid_flags.get("avoid_ferries"):
@@ -739,7 +739,7 @@ class TelegramEventHandler:
         departure_info = f" | Abfahrt: {departure_time}" if departure_time else ""
         avoid_parts = []
         if avoid_flags.get("avoid_highways"):
-            avoid_parts.append("kein Autobahn")
+            avoid_parts.append("keine Autobahn")
         if avoid_flags.get("avoid_tolls"):
             avoid_parts.append("keine Maut")
         if avoid_flags.get("avoid_ferries"):
