@@ -409,6 +409,12 @@ async def async_setup_entry(
         RouteAheadStation25Sensor(coordinator, config_entry, vehicle_name),
         RouteAheadStation50Sensor(coordinator, config_entry, vehicle_name),
         RouteAheadStation100Sensor(coordinator, config_entry, vehicle_name),
+        RouteAheadStationName25Sensor(coordinator, config_entry, vehicle_name),
+        RouteAheadStationName50Sensor(coordinator, config_entry, vehicle_name),
+        RouteAheadStationName100Sensor(coordinator, config_entry, vehicle_name),
+        RouteAheadStationGoogleLink25Sensor(coordinator, config_entry, vehicle_name),
+        RouteAheadStationGoogleLink50Sensor(coordinator, config_entry, vehicle_name),
+        RouteAheadStationGoogleLink100Sensor(coordinator, config_entry, vehicle_name),
     ]
 
     # Add entities immediately - they will start in unavailable state
@@ -6172,7 +6178,7 @@ def _make_ahead_station_sensor_attrs(station: dict | None) -> dict[str, Any]:
 
 
 class RouteAheadStation25Sensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing the cheapest fuel station within 25 km ahead on the route.
+    """Sensor showing the price of the cheapest fuel station within 25 km ahead on the route.
 
     The query centre is the projected vehicle position (current position on
     route + expected travel over the next update interval at average speed).
@@ -6196,8 +6202,8 @@ class RouteAheadStation25Sensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         """Initialise the sensor."""
         super().__init__(coordinator)
-        self._attr_name = "Route Ahead Station 25 km"
-        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_25km"
+        self._attr_name = "Route Ahead Price 25 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_price_25km"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, config_entry.entry_id)},
             "name": vehicle_name,
@@ -6233,7 +6239,7 @@ class RouteAheadStation25Sensor(CoordinatorEntity, SensorEntity):
 
 
 class RouteAheadStation50Sensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing the cheapest fuel station within 50 km ahead on the route.
+    """Sensor showing the price of the cheapest fuel station within 50 km ahead on the route.
 
     The query centre is offset 25 km beyond the projected vehicle position
     (TankerKönig API radius = 25 km), covering roughly 25–50 km ahead.
@@ -6255,8 +6261,8 @@ class RouteAheadStation50Sensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         """Initialise the sensor."""
         super().__init__(coordinator)
-        self._attr_name = "Route Ahead Station 50 km"
-        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_50km"
+        self._attr_name = "Route Ahead Price 50 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_price_50km"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, config_entry.entry_id)},
             "name": vehicle_name,
@@ -6292,7 +6298,7 @@ class RouteAheadStation50Sensor(CoordinatorEntity, SensorEntity):
 
 
 class RouteAheadStation100Sensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing the cheapest fuel station within 100 km ahead on the route.
+    """Sensor showing the price of the cheapest fuel station within 100 km ahead on the route.
 
     The query centre is offset 75 km beyond the projected vehicle position
     (TankerKönig API radius = 25 km), covering roughly 75–100 km ahead.
@@ -6314,8 +6320,8 @@ class RouteAheadStation100Sensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         """Initialise the sensor."""
         super().__init__(coordinator)
-        self._attr_name = "Route Ahead Station 100 km"
-        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_100km"
+        self._attr_name = "Route Ahead Price 100 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_price_100km"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, config_entry.entry_id)},
             "name": vehicle_name,
@@ -6335,6 +6341,324 @@ class RouteAheadStation100Sensor(CoordinatorEntity, SensorEntity):
             return round(float(station["price"]), 4)
         except (KeyError, TypeError, ValueError):
             return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return station details and navigation URLs."""
+        if self.coordinator.data is None:
+            return {}
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_100km")
+        return _make_ahead_station_sensor_attrs(station)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class RouteAheadStationName25Sensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the name of the cheapest fuel station within 25 km ahead on the route.
+
+    State: "[Brand] [City] [Street]" of the cheapest matching station,
+    or None when no route is active or no station is found.
+    """
+
+    _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Route Ahead Station Name 25 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_name_25km"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return brand, city and street of the cheapest station within 25 km ahead."""
+        if self.coordinator.data is None:
+            return None
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_25km")
+        if not station:
+            return None
+        brand = station.get("brand") or ""
+        city = station.get("city") or ""
+        street = station.get("street") or ""
+        return f"{brand} {city} {street}".strip() or None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return station details and navigation URLs."""
+        if self.coordinator.data is None:
+            return {}
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_25km")
+        return _make_ahead_station_sensor_attrs(station)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class RouteAheadStationName50Sensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the name of the cheapest fuel station within 50 km ahead on the route.
+
+    State: "[Brand] [City] [Street]" of the cheapest matching station,
+    or None when no route is active or no station is found.
+    """
+
+    _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Route Ahead Station Name 50 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_name_50km"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return brand, city and street of the cheapest station within 50 km ahead."""
+        if self.coordinator.data is None:
+            return None
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_50km")
+        if not station:
+            return None
+        brand = station.get("brand") or ""
+        city = station.get("city") or ""
+        street = station.get("street") or ""
+        return f"{brand} {city} {street}".strip() or None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return station details and navigation URLs."""
+        if self.coordinator.data is None:
+            return {}
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_50km")
+        return _make_ahead_station_sensor_attrs(station)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class RouteAheadStationName100Sensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the name of the cheapest fuel station within 100 km ahead on the route.
+
+    State: "[Brand] [City] [Street]" of the cheapest matching station,
+    or None when no route is active or no station is found.
+    """
+
+    _attr_icon = "mdi:gas-station"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Route Ahead Station Name 100 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_name_100km"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return brand, city and street of the cheapest station within 100 km ahead."""
+        if self.coordinator.data is None:
+            return None
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_100km")
+        if not station:
+            return None
+        brand = station.get("brand") or ""
+        city = station.get("city") or ""
+        street = station.get("street") or ""
+        return f"{brand} {city} {street}".strip() or None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return station details and navigation URLs."""
+        if self.coordinator.data is None:
+            return {}
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_100km")
+        return _make_ahead_station_sensor_attrs(station)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class RouteAheadStationGoogleLink25Sensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the Google Maps navigation URL for the cheapest station within 25 km ahead.
+
+    State: Google Maps URL of the cheapest matching station,
+    or None when no route is active or no station is found.
+    """
+
+    _attr_icon = "mdi:google-maps"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Route Ahead Station Google Link 25 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_google_link_25km"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return Google Maps URL of the cheapest station within 25 km ahead."""
+        if self.coordinator.data is None:
+            return None
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_25km")
+        if not station:
+            return None
+        nav = station.get("navigation_urls") or {}
+        return nav.get("google_maps") or None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return station details and navigation URLs."""
+        if self.coordinator.data is None:
+            return {}
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_25km")
+        return _make_ahead_station_sensor_attrs(station)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class RouteAheadStationGoogleLink50Sensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the Google Maps navigation URL for the cheapest station within 50 km ahead.
+
+    State: Google Maps URL of the cheapest matching station,
+    or None when no route is active or no station is found.
+    """
+
+    _attr_icon = "mdi:google-maps"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Route Ahead Station Google Link 50 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_google_link_50km"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return Google Maps URL of the cheapest station within 50 km ahead."""
+        if self.coordinator.data is None:
+            return None
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_50km")
+        if not station:
+            return None
+        nav = station.get("navigation_urls") or {}
+        return nav.get("google_maps") or None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return station details and navigation URLs."""
+        if self.coordinator.data is None:
+            return {}
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_50km")
+        return _make_ahead_station_sensor_attrs(station)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+
+class RouteAheadStationGoogleLink100Sensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the Google Maps navigation URL for the cheapest station within 100 km ahead.
+
+    State: Google Maps URL of the cheapest matching station,
+    or None when no route is active or no station is found.
+    """
+
+    _attr_icon = "mdi:google-maps"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HaFWCMACoordinator,
+        config_entry: ConfigEntry,
+        vehicle_name: str,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Route Ahead Station Google Link 100 km"
+        self._attr_unique_id = f"{config_entry.entry_id}_route_ahead_station_google_link_100km"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, config_entry.entry_id)},
+            "name": vehicle_name,
+            "manufacturer": "haFWCMA",
+            "model": "Fuel Watcher Car Advanced Manager",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return Google Maps URL of the cheapest station within 100 km ahead."""
+        if self.coordinator.data is None:
+            return None
+        station = (self.coordinator.data.get("route_data") or {}).get("ahead_station_100km")
+        if not station:
+            return None
+        nav = station.get("navigation_urls") or {}
+        return nav.get("google_maps") or None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
