@@ -11,6 +11,7 @@ from __future__ import annotations
 import html
 import logging
 import re as _re
+import time as _time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, HomeAssistant, callback
@@ -37,6 +38,9 @@ CMD_TANKENJETZT = "/tankenjetzt"
 
 # All supported commands
 SUPPORTED_COMMANDS = [CMD_REFUEL, CMD_STATUS, CMD_HELP, CMD_ROUTE, CMD_ROUTE_PLAN, CMD_ROUTE_LIST, CMD_ROUTE_STATUS, CMD_ROUTE_CANCEL, CMD_CORRIDOR, CMD_TANKENJETZT]
+
+# Seconds a pending address-disambiguation question remains valid before expiring.
+_DISAMBIGUATION_TIMEOUT_S = 300
 
 # Pattern helpers ─────────────────────────────────────────────────────────────
 
@@ -81,6 +85,15 @@ class TelegramEventHandler:
         self.config_entry = config_entry
         self.chat_id = chat_id
         self._remove_listeners: list = []
+        # Pending address-disambiguation context (set when a route command produces
+        # multiple geocoding candidates and we're waiting for the user's choice).
+        # Structure: {
+        #   "type": "route" | "routeplan",
+        #   "candidates": list[dict],   # each with display_name, short_name
+        #   "service_data": dict,        # full service_data for the route call
+        #   "expires_at": float,         # unix timestamp after which it is discarded
+        # }
+        self._pending_choice: dict | None = None
 
     async def async_setup(self) -> bool:
         """Set up the Telegram event handler.
@@ -192,12 +205,11 @@ class TelegramEventHandler:
         text = event_data.get("text", "")
         
         _LOGGER.debug("Received Telegram text: %s", text[:50])
-        
-        # Future: Could implement conversational AI or parsing for refueling data
-        # For now, just acknowledge
-        # self.hass.async_create_task(
-        #     self._send_telegram_message("Message received. Use commands to interact.")
-        # )
+
+        # If there is a pending address-disambiguation choice, handle the reply.
+        if self._pending_choice is not None:
+            self.hass.async_create_task(self._handle_pending_choice_reply(text))
+            return
 
     @callback
     def _handle_telegram_callback(self, event: Event) -> None:
@@ -218,6 +230,137 @@ class TelegramEventHandler:
         
         # Future: Handle inline keyboard callbacks
         # For now, just log
+
+    # ── Address disambiguation helpers ───────────────────────────────────────
+
+    async def _resolve_destination_or_ask(
+        self,
+        destination: str,
+        service_data: dict[str, Any],
+        service_type: str,
+    ) -> bool:
+        """Geocode *destination* and, if ambiguous, ask the user to choose.
+
+        Args:
+            destination: Raw address string typed by the user.
+            service_data: Full service_data dict (already includes
+                ``destination`` key with the original string).
+            service_type: ``"route"`` or ``"routeplan"``.
+
+        Returns:
+            ``True`` when a disambiguation question was sent to Telegram
+            (caller must return without calling the route service).
+            ``False`` when the address is unambiguous – caller proceeds
+            normally with the original ``destination`` string.
+        """
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        route_planner = entry_data.get("route_planner")
+        if route_planner is None:
+            from .utils.route_planner import RoutePlanner
+            route_planner = RoutePlanner()
+            entry_data["route_planner"] = route_planner
+
+        try:
+            candidates = await route_planner.async_geocode_multi(
+                self.hass, destination, limit=5
+            )
+        except Exception as _err:
+            _LOGGER.debug("_resolve_destination_or_ask: geocode_multi failed: %s", _err)
+            return False  # fall back to normal single-geocode path
+
+        # No results or single result → no disambiguation needed
+        if len(candidates) <= 1:
+            return False
+
+        # Check if top-2 results are meaningfully different
+        first_short = candidates[0].get("short_name", "")
+        second_short = candidates[1].get("short_name", "")
+        if first_short == second_short:
+            return False
+
+        # Multiple distinct results – save context and ask the user
+        self._pending_choice = {
+            "type": service_type,
+            "candidates": candidates[:5],
+            "service_data": service_data,
+            "expires_at": _time.time() + _DISAMBIGUATION_TIMEOUT_S,
+        }
+        lines = [
+            f"🔍 <b>Mehrere Orte gefunden für: {html.escape(destination)}</b>",
+            "",
+            "Bitte antworte mit der Nummer deiner Wahl:",
+            "",
+        ]
+        for i, c in enumerate(candidates[:5], 1):
+            lines.append(f"  <b>{i}.</b> {html.escape(c.get('short_name', c.get('display_name', '')))}")
+        lines += ["", "Oder <code>x</code> zum Abbrechen."]
+        await self._send_telegram_message("\n".join(lines))
+        return True  # disambiguation question sent
+
+    async def _handle_pending_choice_reply(self, text: str) -> None:
+        """Process the user's numeric reply to an address disambiguation question.
+
+        Args:
+            text: Raw text message sent by the user.
+        """
+        if self._pending_choice is None:
+            return
+
+        # Expire stale contexts
+        if _time.time() > self._pending_choice["expires_at"]:
+            self._pending_choice = None
+            return
+
+        text = text.strip()
+
+        # Allow user to cancel
+        if text.lower() in ("x", "abbrechen", "cancel"):
+            self._pending_choice = None
+            await self._send_telegram_message("❌ Adressauswahl abgebrochen.")
+            return
+
+        candidates = self._pending_choice["candidates"]
+        try:
+            choice_num = int(text)
+        except ValueError:
+            await self._send_telegram_message(
+                f"⚠️ Bitte antworte mit einer Zahl (1–{len(candidates)}) "
+                f"oder <code>x</code> zum Abbrechen."
+            )
+            return
+
+        if not (1 <= choice_num <= len(candidates)):
+            await self._send_telegram_message(
+                f"⚠️ Ungültige Auswahl. Bitte eine Zahl zwischen 1 und {len(candidates)} eingeben."
+            )
+            return
+
+        chosen = candidates[choice_num - 1]
+        service_data = dict(self._pending_choice["service_data"])
+        service_data["destination"] = chosen["display_name"]
+        svc_type = self._pending_choice["type"]
+        self._pending_choice = None
+
+        short = html.escape(chosen.get("short_name", chosen.get("display_name", "")))
+        await self._send_telegram_message(
+            f"✅ Gewählt: <b>{short}</b>\n"
+            f"{'🗺️ Route wird berechnet' if svc_type == 'route' else '📅 Route wird geplant'}…"
+        )
+        service_name = "set_route" if svc_type == "route" else "plan_route"
+        try:
+            result = await self.hass.services.async_call(
+                DOMAIN, service_name, service_data, blocking=True, return_response=True
+            )
+            if not result or not result.get("success"):
+                error = result.get("error", "Unbekannter Fehler") if result else "Keine Antwort"
+                await self._send_telegram_message(
+                    f"❌ Route konnte nicht berechnet werden: {html.escape(str(error))}"
+                )
+        except Exception as err:
+            _LOGGER.error("_handle_pending_choice_reply: service call failed: %s", err)
+            await self._send_telegram_message(
+                f"❌ Fehler beim Berechnen der Route: {html.escape(str(err))}"
+            )
 
     async def _handle_help_command(self, event_data: dict[str, Any]) -> None:
         """Handle /help command.
@@ -447,6 +590,10 @@ class TelegramEventHandler:
         if departure_time is not None:
             service_data["departure_time"] = departure_time
 
+        # Check for ambiguous place names before sending to the routing service
+        if await self._resolve_destination_or_ask(destination, service_data, "route"):
+            return  # disambiguation question sent; wait for user's reply
+
         corridor_info = f" (Korridor: {corridor_km} km)" if corridor_km is not None else ""
         departure_info = f" | Abfahrt: {departure_time}" if departure_time else ""
         await self._send_telegram_message(
@@ -665,6 +812,10 @@ class TelegramEventHandler:
             service_data["corridor_width_km"] = corridor_km
         if departure_time is not None:
             service_data["departure_time"] = departure_time
+
+        # Check for ambiguous place names before sending to the routing service
+        if await self._resolve_destination_or_ask(destination, service_data, "routeplan"):
+            return  # disambiguation question sent; wait for user's reply
 
         corridor_info = f" (Korridor: {corridor_km} km)" if corridor_km is not None else ""
         departure_info = f" | Abfahrt: {departure_time}" if departure_time else ""

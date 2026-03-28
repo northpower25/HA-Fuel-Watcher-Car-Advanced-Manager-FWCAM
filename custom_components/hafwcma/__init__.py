@@ -75,6 +75,7 @@ SERVICE_PLAN_ROUTE = "plan_route"
 SERVICE_CANCEL_ROUTE = "cancel_route"
 SERVICE_GET_SAVED_ROUTES = "get_saved_routes"
 SERVICE_DELETE_SAVED_ROUTE = "delete_saved_route"
+SERVICE_GEOCODE_SUGGESTIONS = "geocode_suggestions"
 
 SCHEMA_ADD_REFUEL_EVENT = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
@@ -277,6 +278,12 @@ SCHEMA_GET_SAVED_ROUTES = vol.Schema({
 SCHEMA_DELETE_SAVED_ROUTE = vol.Schema({
     vol.Required("config_entry_id"): cv.string,
     vol.Required("route_id"): vol.Any(int, cv.string),
+})
+
+SCHEMA_GEOCODE_SUGGESTIONS = vol.Schema({
+    vol.Required("config_entry_id"): cv.string,
+    vol.Required("address"): cv.string,
+    vol.Optional("limit", default=5): vol.All(int, vol.Range(min=1, max=10)),
 })
 
 
@@ -1597,6 +1604,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         safety_buffer_pct: float = 15.0
         eta_at_stop: str | None = None
         eta_dt = None  # datetime at predicted fuel stop (set when departure_dt known)
+        _consumption_data_available: bool = False  # True when avg_consumption was computable
         try:
             from .utils.route_planner import (
                 FuelStopPredictor, CorridorStationRanker,
@@ -1635,6 +1643,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 )
 
                 if tank_level_liters and avg_consumption and avg_consumption > 0:
+                    _consumption_data_available = True
                     predictor = FuelStopPredictor()
                     stop_info = predictor.predict_fuel_stop(
                         polyline=route_result["polyline"],
@@ -1974,6 +1983,11 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     eta_at_stop=eta_at_stop,
                     abroad_fuel_stop=bool(route_data.get("abroad_fuel_stop")),
                     fuel_type=str(fuel_type).upper(),
+                    no_refuel_needed=bool(
+                        _consumption_data_available
+                        and predicted_stop_km is None
+                        and (route_data.get("total_distance_km") or 0) > 0
+                    ),
                 )
             except Exception as tg_err:
                 _LOGGER.warning("set_route: Telegram notification failed: %s", tg_err)
@@ -2215,6 +2229,12 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 _plan_eta_dt = None
                 _plan_categorized_stations: dict = {}
                 _plan_initial_stations: list = []
+                # True when consumption data was available and prediction shows a
+                # full tank is sufficient for the whole route (no stops needed).
+                _plan_no_refuel_needed: bool = bool(
+                    _avg_cons and _avg_cons > 0 and not planned_fuel_stops
+                    and total_distance_km is not None and total_distance_km > 0
+                )
 
                 if planned_fuel_stops:
                     _plan_stop_km = planned_fuel_stops[0].get("km_remaining_to_stop")
@@ -2394,6 +2414,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     departure_time=departure_time_str or None,
                     eta_at_stop=_plan_eta_at_stop,
                     fuel_type=_plan_fuel_type,
+                    no_refuel_needed=_plan_no_refuel_needed,
                 )
             except Exception as tg_err:
                 _LOGGER.warning("plan_route: Telegram notification failed: %s", tg_err)
@@ -2449,6 +2470,40 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_PLAN_ROUTE, handle_plan_route, schema=SCHEMA_PLAN_ROUTE, supports_response=True
+    )
+
+    async def handle_geocode_suggestions(call: ServiceCall) -> ServiceResponse:
+        """Return multiple geocoding candidates for an address string.
+
+        Useful for address disambiguation in the frontend card (live-suggestions
+        dropdown) and via Telegram (numbered choice list).
+
+        Returns:
+            ServiceResponse with ``suggestions`` (list of candidate dicts, each
+            containing ``display_name``, ``short_name``, ``lat``, ``lon``,
+            ``type``, ``importance``) and ``error`` string (empty on success).
+        """
+        from .utils.route_planner import RoutePlanner
+
+        entry_id = call.data["config_entry_id"]
+        address = call.data["address"]
+        limit = call.data.get("limit", 5)
+
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if not entry:
+            _LOGGER.error("geocode_suggestions: config entry %s not found", entry_id)
+            return {"suggestions": [], "error": "Config entry not found"}
+
+        if "route_planner" not in hass.data.get(DOMAIN, {}).get(entry_id, {}):
+            hass.data[DOMAIN].setdefault(entry_id, {})["route_planner"] = RoutePlanner()
+        route_planner: RoutePlanner = hass.data[DOMAIN][entry_id]["route_planner"]
+
+        suggestions = await route_planner.async_geocode_multi(hass, address, limit=limit)
+        return {"suggestions": suggestions, "error": ""}
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_GEOCODE_SUGGESTIONS, handle_geocode_suggestions,
+        schema=SCHEMA_GEOCODE_SUGGESTIONS, supports_response=True,
     )
 
     return True
