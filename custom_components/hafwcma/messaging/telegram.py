@@ -268,6 +268,7 @@ class TelegramNotifier(MessageService):
         eta_at_stop: str | None = None,
         abroad_fuel_stop: bool = False,
         fuel_type: str = "E5",
+        no_refuel_needed: bool = False,
     ) -> bool:
         """Send a route-started notification with 3-category station recommendations.
 
@@ -293,6 +294,8 @@ class TelegramNotifier(MessageService):
                 station blocks are formatted without price information and use
                 OSM-sourced data.
             fuel_type: Fuel type label shown in the header (e.g. "E5", "E10", "Diesel").
+            no_refuel_needed: When ``True`` the full tank is sufficient for the
+                entire route; a notice is shown instead of station blocks.
 
         Returns:
             True if the message was sent successfully.
@@ -370,7 +373,14 @@ class TelegramNotifier(MessageService):
                 block.append(f"   🗺️ {' | '.join(nav_parts)}")
             return block
 
-        if abroad_fuel_stop:
+        if no_refuel_needed:
+            lines += [
+                "",
+                "✅ <b>Voraussichtlich keine Betankung erforderlich</b>",
+                "ℹ️ Bei einem vollen Tank bei Routenstart reicht der Kraftstoff "
+                "voraussichtlich für die gesamte Strecke.",
+            ]
+        elif abroad_fuel_stop:
             # International stop: show up to 3 nearest OSM stations without price
             if nearest:
                 lines.append("")
