@@ -207,6 +207,23 @@ class FWCAMRoutePlannerCard extends HTMLElement {
               style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
           </div>
         </div>
+        <div style="display:flex;flex-direction:column;gap:0.3rem;margin-top:0.25rem;">
+          <label style="font-size:0.85rem;font-weight:500;">Vermeiden <small style="font-weight:normal;">(ORS &amp; Google)</small></label>
+          <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+            <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.85rem;cursor:pointer;">
+              <input id="rp-avoid-highways" type="checkbox" style="width:16px;height:16px;cursor:pointer;">
+              Autobahn
+            </label>
+            <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.85rem;cursor:pointer;">
+              <input id="rp-avoid-tolls" type="checkbox" style="width:16px;height:16px;cursor:pointer;">
+              Mautstraßen
+            </label>
+            <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.85rem;cursor:pointer;">
+              <input id="rp-avoid-ferries" type="checkbox" style="width:16px;height:16px;cursor:pointer;">
+              Fähren
+            </label>
+          </div>
+        </div>
         <div style="display:flex;gap:0.5rem;margin-top:0.25rem;flex-wrap:wrap;">
           <button id="rp-start-btn" class="control-button" style="flex:1;justify-content:center;">
             <ha-icon icon="mdi:map-marker-path"></ha-icon>
@@ -435,6 +452,7 @@ class FWCAMRoutePlannerCard extends HTMLElement {
 
   _collectFormData() {
     const get = id => (this.shadowRoot.getElementById(id) || {}).value || '';
+    const getChecked = id => !!(this.shadowRoot.getElementById(id) || {}).checked;
     const origin = get('rp-origin').trim();
     const destination = get('rp-destination').trim();
     const waypointsRaw = get('rp-waypoints').trim();
@@ -445,7 +463,10 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     const departureDate = get('rp-departure-date');
     const departureTime = get('rp-departure-time');
     const departureTimeStr = (departureDate && departureTime) ? `${departureDate} ${departureTime}` : '';
-    return { origin, destination, waypoints, corridorWidth, provider, googleApiKey, departureTimeStr };
+    const avoidHighways = getChecked('rp-avoid-highways');
+    const avoidTolls = getChecked('rp-avoid-tolls');
+    const avoidFerries = getChecked('rp-avoid-ferries');
+    return { origin, destination, waypoints, corridorWidth, provider, googleApiKey, departureTimeStr, avoidHighways, avoidTolls, avoidFerries };
   }
 
   async _handleRouteStart() {
@@ -456,6 +477,9 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     if (fd.origin) serviceData.origin = fd.origin;
     if (fd.googleApiKey) serviceData.google_api_key = fd.googleApiKey;
     if (fd.departureTimeStr) serviceData.departure_time = fd.departureTimeStr;
+    if (fd.avoidHighways) serviceData.avoid_highways = true;
+    if (fd.avoidTolls) serviceData.avoid_tolls = true;
+    if (fd.avoidFerries) serviceData.avoid_ferries = true;
     try {
       await this._hass.callService('hafwcma', 'set_route', serviceData);
       setTimeout(() => this._fetchPlannedRoutes(), 1500);
@@ -473,6 +497,9 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     if (fd.origin) serviceData.origin = fd.origin;
     if (fd.googleApiKey) serviceData.google_api_key = fd.googleApiKey;
     if (fd.departureTimeStr) serviceData.departure_time = fd.departureTimeStr;
+    if (fd.avoidHighways) serviceData.avoid_highways = true;
+    if (fd.avoidTolls) serviceData.avoid_tolls = true;
+    if (fd.avoidFerries) serviceData.avoid_ferries = true;
     try {
       await this._hass.callService('hafwcma', 'plan_route', serviceData);
       const destEl = this.shadowRoot.getElementById('rp-destination');
@@ -519,6 +546,7 @@ class FWCAMRoutePlannerCard extends HTMLElement {
 
   _editPlannedRoute(route) {
     const set = (id, val) => { const el = this.shadowRoot.getElementById(id); if (el && val != null) el.value = val; };
+    const setChecked = (id, val) => { const el = this.shadowRoot.getElementById(id); if (el) el.checked = !!val; };
     set('rp-destination', route.destination || '');
     set('rp-origin', route.origin || '');
     set('rp-waypoints', Array.isArray(route.waypoints) ? route.waypoints.join(', ') : (route.waypoints || ''));
@@ -530,6 +558,9 @@ class FWCAMRoutePlannerCard extends HTMLElement {
       set('rp-departure-date', parts[0] || '');
       set('rp-departure-time', parts[1] ? parts[1].slice(0, 5) : '');
     }
+    setChecked('rp-avoid-highways', route.avoid_highways);
+    setChecked('rp-avoid-tolls', route.avoid_tolls);
+    setChecked('rp-avoid-ferries', route.avoid_ferries);
     const formSection = this.shadowRoot.querySelector('.section');
     if (formSection) formSection.scrollIntoView({ behavior: 'smooth' });
   }
@@ -546,6 +577,9 @@ class FWCAMRoutePlannerCard extends HTMLElement {
     };
     if (route.origin) serviceData.origin = route.origin;
     if (route.departure_time) serviceData.departure_time = route.departure_time;
+    if (route.avoid_highways) serviceData.avoid_highways = true;
+    if (route.avoid_tolls) serviceData.avoid_tolls = true;
+    if (route.avoid_ferries) serviceData.avoid_ferries = true;
     try {
       await this._hass.callService('hafwcma', 'set_route', serviceData);
     } catch (err) {

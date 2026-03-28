@@ -53,6 +53,9 @@ async def _fetch_route_osrm(
     waypoints: list[tuple[float, float]] | None = None,
     *,
     session: aiohttp.ClientSession | None = None,
+    avoid_highways: bool = False,
+    avoid_tolls: bool = False,
+    avoid_ferries: bool = False,
 ) -> dict[str, Any]:
     """Fetch route from the OSRM public endpoint.
 
@@ -63,11 +66,22 @@ async def _fetch_route_osrm(
         session: Optional aiohttp session to reuse.  Pass the HA-managed
             session (``async_get_clientsession(hass)``) to avoid blocking
             ``ssl.load_verify_locations`` calls in the event loop.
+        avoid_highways: Not supported by the free OSRM endpoint – ignored.
+        avoid_tolls: Not supported by the free OSRM endpoint – ignored.
+        avoid_ferries: Not supported by the free OSRM endpoint – ignored.
 
     Returns:
         Dict with ``polyline`` (list of (lat, lon)), ``distance_km`` and
         ``duration_s``, or an empty dict on error.
     """
+    if avoid_highways or avoid_tolls or avoid_ferries:
+        _LOGGER.debug(
+            "OSRM: avoidance options (highways=%s, tolls=%s, ferries=%s) are not "
+            "supported by the free public OSRM endpoint and will be ignored.",
+            avoid_highways,
+            avoid_tolls,
+            avoid_ferries,
+        )
     points = [origin] + (waypoints or []) + [destination]
     coords = ";".join(f"{lon},{lat}" for lat, lon in points)
     url = f"{OSRM_BASE_URL}/{coords}"
@@ -115,6 +129,9 @@ async def _fetch_route_openrouteservice(
     api_key: str = "",
     *,
     session: aiohttp.ClientSession | None = None,
+    avoid_highways: bool = False,
+    avoid_tolls: bool = False,
+    avoid_ferries: bool = False,
 ) -> dict[str, Any]:
     """Fetch route from OpenRouteService API.
 
@@ -126,6 +143,9 @@ async def _fetch_route_openrouteservice(
         session: Optional aiohttp session to reuse.  Pass the HA-managed
             session (``async_get_clientsession(hass)``) to avoid blocking
             ``ssl.load_verify_locations`` calls in the event loop.
+        avoid_highways: Avoid motorways/highways.
+        avoid_tolls: Avoid toll roads.
+        avoid_ferries: Avoid ferry connections.
 
     Returns:
         Dict with ``polyline``, ``distance_km``, ``duration_s``, or empty dict.
@@ -138,6 +158,19 @@ async def _fetch_route_openrouteservice(
 
     headers = {"Authorization": api_key, "Content-Type": "application/json"}
 
+    # Build request body
+    body: dict[str, Any] = {"coordinates": coords}
+    # ORS avoid_features: "highways", "tollways", "ferries"
+    avoid_features: list[str] = []
+    if avoid_highways:
+        avoid_features.append("highways")
+    if avoid_tolls:
+        avoid_features.append("tollways")
+    if avoid_ferries:
+        avoid_features.append("ferries")
+    if avoid_features:
+        body["options"] = {"avoid_features": avoid_features}
+
     _own_session: aiohttp.ClientSession | None = None
     try:
         if session is None:
@@ -145,7 +178,7 @@ async def _fetch_route_openrouteservice(
             session = _own_session
         async with session.post(
             ORS_DIRECTIONS_URL,
-            json={"coordinates": coords},
+            json=body,
             headers=headers,
             timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
         ) as resp:
@@ -183,6 +216,9 @@ async def _fetch_route_google(
     api_key: str = "",
     *,
     session: aiohttp.ClientSession | None = None,
+    avoid_highways: bool = False,
+    avoid_tolls: bool = False,
+    avoid_ferries: bool = False,
 ) -> dict[str, Any]:
     """Fetch route from Google Maps Directions API.
 
@@ -194,6 +230,9 @@ async def _fetch_route_google(
         session: Optional aiohttp session to reuse.  Pass the HA-managed
             session (``async_get_clientsession(hass)``) to avoid blocking
             ``ssl.load_verify_locations`` calls in the event loop.
+        avoid_highways: Avoid highways/motorways.
+        avoid_tolls: Avoid toll roads.
+        avoid_ferries: Avoid ferry connections.
 
     Returns:
         Dict with ``polyline``, ``distance_km``, ``duration_s``, or empty dict.
@@ -205,6 +244,17 @@ async def _fetch_route_google(
     }
     if waypoints:
         params["waypoints"] = "|".join(f"{lat},{lon}" for lat, lon in waypoints)
+    # Google Directions API "avoid" parameter accepts pipe-separated values:
+    # highways, tolls, ferries
+    avoid_parts: list[str] = []
+    if avoid_highways:
+        avoid_parts.append("highways")
+    if avoid_tolls:
+        avoid_parts.append("tolls")
+    if avoid_ferries:
+        avoid_parts.append("ferries")
+    if avoid_parts:
+        params["avoid"] = "|".join(avoid_parts)
 
     _own_session: aiohttp.ClientSession | None = None
     try:
@@ -1039,6 +1089,9 @@ class RoutePlanner:
         waypoints: list[tuple[float, float]] | None = None,
         provider: str = "osrm",
         api_key: str | None = None,
+        avoid_highways: bool = False,
+        avoid_tolls: bool = False,
+        avoid_ferries: bool = False,
     ) -> dict[str, Any]:
         """Calculate a route and return polyline + metadata.
 
@@ -1051,6 +1104,9 @@ class RoutePlanner:
             provider: Routing provider – ``"osrm"``, ``"openrouteservice"``, or
                 ``"google"``.
             api_key: API key required by ORS and Google providers.
+            avoid_highways: Avoid highways/motorways (ORS and Google only).
+            avoid_tolls: Avoid toll roads (ORS and Google only).
+            avoid_ferries: Avoid ferry connections (ORS and Google only).
 
         Returns:
             Dict with ``polyline``, ``distance_km``, ``duration_s`` on success,
@@ -1059,12 +1115,36 @@ class RoutePlanner:
         from homeassistant.helpers.aiohttp_client import async_get_clientsession
         session = async_get_clientsession(hass)
         if provider == "google":
-            return await _fetch_route_google(origin, destination, waypoints, api_key or "", session=session)
+            return await _fetch_route_google(
+                origin,
+                destination,
+                waypoints,
+                api_key or "",
+                session=session,
+                avoid_highways=avoid_highways,
+                avoid_tolls=avoid_tolls,
+                avoid_ferries=avoid_ferries,
+            )
         if provider == "openrouteservice":
             return await _fetch_route_openrouteservice(
-                origin, destination, waypoints, api_key or "", session=session
+                origin,
+                destination,
+                waypoints,
+                api_key or "",
+                session=session,
+                avoid_highways=avoid_highways,
+                avoid_tolls=avoid_tolls,
+                avoid_ferries=avoid_ferries,
             )
-        return await _fetch_route_osrm(origin, destination, waypoints, session=session)
+        return await _fetch_route_osrm(
+            origin,
+            destination,
+            waypoints,
+            session=session,
+            avoid_highways=avoid_highways,
+            avoid_tolls=avoid_tolls,
+            avoid_ferries=avoid_ferries,
+        )
 
     async def async_set_route(self, route_data: dict[str, Any]) -> None:
         """Persist new route data as the active route.

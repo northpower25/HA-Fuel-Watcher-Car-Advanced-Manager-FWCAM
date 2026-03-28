@@ -55,6 +55,39 @@ def _is_time_token(token: str) -> bool:
     return bool(_TIME_RE.match(token.strip()))
 
 
+# Avoidance flags accepted in route commands (case-insensitive prefix matching)
+_AVOID_FLAGS: dict[str, str] = {
+    "--kein-autobahn": "avoid_highways",
+    "--keine-maut": "avoid_tolls",
+    "--keine-faehre": "avoid_ferries",
+    "--no-highways": "avoid_highways",
+    "--no-tolls": "avoid_tolls",
+    "--no-ferries": "avoid_ferries",
+}
+
+
+def _extract_avoid_flags(tokens: list[str]) -> tuple[list[str], dict[str, bool]]:
+    """Remove avoidance flag tokens from *tokens* and return the remainder plus a flags dict.
+
+    Args:
+        tokens: Raw argument tokens (words).
+
+    Returns:
+        Tuple of (remaining_tokens, avoid_flags) where avoid_flags is a dict
+        with keys ``avoid_highways``, ``avoid_tolls``, ``avoid_ferries`` set to
+        ``True`` when the corresponding flag was present.
+    """
+    flags: dict[str, bool] = {}
+    remaining: list[str] = []
+    for tok in tokens:
+        key = _AVOID_FLAGS.get(tok.lower())
+        if key:
+            flags[key] = True
+        else:
+            remaining.append(tok)
+    return remaining, flags
+
+
 class TelegramEventHandler:
     """Handle Telegram events for haFWCMA integration.
     
@@ -375,22 +408,28 @@ class TelegramEventHandler:
             f"{CMD_STATUS} – Fahrzeug- und Kraftstoffstatus anzeigen\n"
             f"{CMD_REFUEL} – Tankvorgang protokollieren (demnächst)\n\n"
             "<b>🗺️ Routenplanung</b>\n"
-            f"<code>{CMD_ROUTE} start &lt;Adresse&gt; [km] [Abfahrt]</code>\n"
+            f"<code>{CMD_ROUTE} start &lt;Adresse&gt; [km] [Abfahrt] [Flags]</code>\n"
             f"  Route sofort starten, optional mit Korridor-Breite in km und Abfahrtszeit\n"
             f"  Beispiele:\n"
             f"  <code>{CMD_ROUTE} start München Hbf 10</code>\n"
             f"  <code>{CMD_ROUTE} start München Hbf 10 08:30</code>\n"
             f"  <code>{CMD_ROUTE} start München Hbf 10 2026-03-20T08:30</code>\n"
+            f"  <code>{CMD_ROUTE} start München Hbf --kein-autobahn --keine-maut</code>\n"
             f"<code>{CMD_ROUTE} stop</code>\n"
             f"  Aktive Route beenden\n"
-            f"<code>{CMD_ROUTE_PLAN} &lt;Adresse&gt; [km] [Abfahrt]</code>\n"
+            f"<code>{CMD_ROUTE_PLAN} &lt;Adresse&gt; [km] [Abfahrt] [Flags]</code>\n"
             f"  Route für später planen (wird nicht sofort aktiviert)\n"
             f"  Beispiele:\n"
             f"  <code>{CMD_ROUTE_PLAN} München Hbf 10 08:30</code>\n"
+            f"  <code>{CMD_ROUTE_PLAN} München Hbf --keine-faehre</code>\n"
             f"{CMD_ROUTE_LIST} – Alle geplanten Routen anzeigen\n"
             f"{CMD_ROUTE_STATUS} – Aktuellen Routenstatus anzeigen\n"
             f"{CMD_ROUTE_CANCEL} – Aktive Route abbrechen\n"
             f"{CMD_CORRIDOR} [km] – Korridor-Breite ändern (z. B. /corridor 10)\n\n"
+            "<b>🚫 Vermeidungs-Flags (ORS &amp; Google)</b>\n"
+            f"  <code>--kein-autobahn</code> / <code>--no-highways</code> – Autobahn meiden\n"
+            f"  <code>--keine-maut</code>     / <code>--no-tolls</code>    – Mautstraßen meiden\n"
+            f"  <code>--keine-faehre</code>   / <code>--no-ferries</code>  – Fähren meiden\n\n"
             "<b>⛽ Tanken jetzt</b>\n"
             f"{CMD_TANKENJETZT} – Günstigste geöffnete Tankstellen an der aktuellen\n"
             f"  Fahrzeugposition anzeigen (sortiert nach Preis)\n\n"
@@ -503,8 +542,13 @@ class TelegramEventHandler:
         """Handle /route command with start/stop subcommands.
 
         Supported syntax:
-          /route start <address> [corridor_km] [departure_time]  – start a new route
-          /route stop                                            – stop/cancel the active route
+          /route start <address> [corridor_km] [departure_time] [flags]
+          /route stop
+
+        Avoidance flags (can appear anywhere in the arguments):
+          --kein-autobahn  /  --no-highways  – avoid highways
+          --keine-maut     /  --no-tolls     – avoid toll roads
+          --keine-faehre   /  --no-ferries   – avoid ferries
 
         For backwards compatibility a bare ``/route <destination>`` (without a
         ``start``/``stop`` keyword) is still treated as ``/route start``.
@@ -520,9 +564,11 @@ class TelegramEventHandler:
                 f"  Route starten (optional: Korridorbreite in km, Abfahrtszeit)\n"
                 f"  Beispiele:\n"
                 f"  <code>{CMD_ROUTE} start München Hbf 10</code>\n"
-                f"  <code>{CMD_ROUTE} start München Hbf 10 08:30</code>\n\n"
+                f"  <code>{CMD_ROUTE} start München Hbf 10 08:30</code>\n"
+                f"  <code>{CMD_ROUTE} start München Hbf --kein-autobahn --keine-maut</code>\n\n"
                 f"<code>{CMD_ROUTE} stop</code>\n"
                 f"  Aktive Route beenden\n\n"
+                f"Vermeidungs-Flags: <code>--kein-autobahn</code> <code>--keine-maut</code> <code>--keine-faehre</code>\n"
                 f"Tipp: {CMD_HELP} für alle Befehle"
             )
             return
@@ -534,7 +580,7 @@ class TelegramEventHandler:
             await self._handle_routecancel_command(event_data)
             return
 
-        # ── /route start <address> [corridor_km] [departure_time] ───────────
+        # ── /route start <address> [corridor_km] [departure_time] [flags] ───
         # Accept both "start <address>" and bare "<address>" for compatibility.
         if subcommand == "start":
             route_args = args[1:]
@@ -547,6 +593,9 @@ class TelegramEventHandler:
                 f"Beispiel: <code>{CMD_ROUTE} start München Hbf</code>"
             )
             return
+
+        # Extract avoidance flags first (they can appear anywhere)
+        route_args, avoid_flags = _extract_avoid_flags(route_args)
 
         # Check whether the last token looks like a departure time (HH:MM or ISO)
         departure_time: str | None = None
@@ -589,6 +638,11 @@ class TelegramEventHandler:
             service_data["corridor_width_km"] = corridor_km
         if departure_time is not None:
             service_data["departure_time"] = departure_time
+        service_data.update(avoid_flags)
+
+        # Check for ambiguous place names before sending to the routing service
+        if await self._resolve_destination_or_ask(destination, service_data, "route"):
+            return  # disambiguation question sent; wait for user's reply
 
         # Check for ambiguous place names before sending to the routing service
         if await self._resolve_destination_or_ask(destination, service_data, "route"):
@@ -596,9 +650,17 @@ class TelegramEventHandler:
 
         corridor_info = f" (Korridor: {corridor_km} km)" if corridor_km is not None else ""
         departure_info = f" | Abfahrt: {departure_time}" if departure_time else ""
+        avoid_parts = []
+        if avoid_flags.get("avoid_highways"):
+            avoid_parts.append("keine Autobahn")
+        if avoid_flags.get("avoid_tolls"):
+            avoid_parts.append("keine Maut")
+        if avoid_flags.get("avoid_ferries"):
+            avoid_parts.append("keine Fähren")
+        avoid_info = f" | {', '.join(avoid_parts)}" if avoid_parts else ""
         await self._send_telegram_message(
             f"🗺️ Route wird berechnet nach <b>{html.escape(destination)}</b>"
-            f"{html.escape(corridor_info)}{html.escape(departure_info)}…"
+            f"{html.escape(corridor_info)}{html.escape(departure_info)}{html.escape(avoid_info)}…"
         )
 
         try:
@@ -751,7 +813,12 @@ class TelegramEventHandler:
         """Handle /routeplan command – save a route for later without activating it.
 
         Syntax:
-          /routeplan <address> [corridor_km] [departure_time]
+          /routeplan <address> [corridor_km] [departure_time] [flags]
+
+        Avoidance flags (can appear anywhere in the arguments):
+          --kein-autobahn  /  --no-highways  – avoid highways
+          --keine-maut     /  --no-tolls     – avoid toll roads
+          --keine-faehre   /  --no-ferries   – avoid ferries
 
         Args:
             event_data: Event data from Telegram.
@@ -764,13 +831,18 @@ class TelegramEventHandler:
                 f"  Route für später speichern (wird nicht sofort aktiviert)\n"
                 f"  Beispiele:\n"
                 f"  <code>{CMD_ROUTE_PLAN} München Hbf</code>\n"
-                f"  <code>{CMD_ROUTE_PLAN} München Hbf 10 08:30</code>\n\n"
+                f"  <code>{CMD_ROUTE_PLAN} München Hbf 10 08:30</code>\n"
+                f"  <code>{CMD_ROUTE_PLAN} München Hbf --kein-autobahn</code>\n\n"
                 f"{CMD_ROUTE_LIST} – Alle geplanten Routen anzeigen\n"
+                f"Vermeidungs-Flags: <code>--kein-autobahn</code> <code>--keine-maut</code> <code>--keine-faehre</code>\n"
                 f"Tipp: {CMD_HELP} für alle Befehle"
             )
             return
 
         route_args = list(args)
+
+        # Extract avoidance flags first (they can appear anywhere)
+        route_args, avoid_flags = _extract_avoid_flags(route_args)
 
         # Check whether the last token looks like a departure time (HH:MM or ISO)
         departure_time: str | None = None
@@ -812,6 +884,11 @@ class TelegramEventHandler:
             service_data["corridor_width_km"] = corridor_km
         if departure_time is not None:
             service_data["departure_time"] = departure_time
+        service_data.update(avoid_flags)
+
+        # Check for ambiguous place names before sending to the routing service
+        if await self._resolve_destination_or_ask(destination, service_data, "routeplan"):
+            return  # disambiguation question sent; wait for user's reply
 
         # Check for ambiguous place names before sending to the routing service
         if await self._resolve_destination_or_ask(destination, service_data, "routeplan"):
@@ -819,9 +896,17 @@ class TelegramEventHandler:
 
         corridor_info = f" (Korridor: {corridor_km} km)" if corridor_km is not None else ""
         departure_info = f" | Abfahrt: {departure_time}" if departure_time else ""
+        avoid_parts = []
+        if avoid_flags.get("avoid_highways"):
+            avoid_parts.append("keine Autobahn")
+        if avoid_flags.get("avoid_tolls"):
+            avoid_parts.append("keine Maut")
+        if avoid_flags.get("avoid_ferries"):
+            avoid_parts.append("keine Fähren")
+        avoid_info = f" | {', '.join(avoid_parts)}" if avoid_parts else ""
         await self._send_telegram_message(
             f"📅 Route wird geplant nach <b>{html.escape(destination)}</b>"
-            f"{html.escape(corridor_info)}{html.escape(departure_info)}…"
+            f"{html.escape(corridor_info)}{html.escape(departure_info)}{html.escape(avoid_info)}…"
         )
 
         try:

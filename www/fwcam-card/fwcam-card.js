@@ -877,6 +877,9 @@ class FWCAMCard extends HTMLElement {
     const providerEl = this.shadowRoot.getElementById('route-provider-select');
     const departureDateEl = this.shadowRoot.getElementById('route-departure-date');
     const departureTimeEl = this.shadowRoot.getElementById('route-departure-time');
+    const avoidHighwaysEl = this.shadowRoot.getElementById('route-avoid-highways');
+    const avoidTollsEl = this.shadowRoot.getElementById('route-avoid-tolls');
+    const avoidFerriesEl = this.shadowRoot.getElementById('route-avoid-ferries');
 
     const origin = originEl ? originEl.value.trim() : '';
     const destination = destinationEl ? destinationEl.value.trim() : '';
@@ -914,6 +917,9 @@ class FWCAMCard extends HTMLElement {
     if (departureTimeStr) {
       serviceData.departure_time = departureTimeStr;
     }
+    if (avoidHighwaysEl && avoidHighwaysEl.checked) serviceData.avoid_highways = true;
+    if (avoidTollsEl && avoidTollsEl.checked) serviceData.avoid_tolls = true;
+    if (avoidFerriesEl && avoidFerriesEl.checked) serviceData.avoid_ferries = true;
 
     try {
       await this.callService('hafwcma', 'set_route', serviceData);
@@ -938,6 +944,9 @@ class FWCAMCard extends HTMLElement {
     const providerEl = this.shadowRoot.getElementById('route-provider-select');
     const departureDateEl = this.shadowRoot.getElementById('route-departure-date');
     const departureTimeEl = this.shadowRoot.getElementById('route-departure-time');
+    const avoidHighwaysEl = this.shadowRoot.getElementById('route-avoid-highways');
+    const avoidTollsEl = this.shadowRoot.getElementById('route-avoid-tolls');
+    const avoidFerriesEl = this.shadowRoot.getElementById('route-avoid-ferries');
 
     const origin = originEl ? originEl.value.trim() : '';
     const destination = destinationEl ? destinationEl.value.trim() : '';
@@ -969,6 +978,9 @@ class FWCAMCard extends HTMLElement {
     };
     if (origin) serviceData.origin = origin;
     if (departureTimeStr) serviceData.departure_time = departureTimeStr;
+    if (avoidHighwaysEl && avoidHighwaysEl.checked) serviceData.avoid_highways = true;
+    if (avoidTollsEl && avoidTollsEl.checked) serviceData.avoid_tolls = true;
+    if (avoidFerriesEl && avoidFerriesEl.checked) serviceData.avoid_ferries = true;
 
     try {
       await this.callService('hafwcma', 'plan_route', serviceData);
@@ -1000,6 +1012,9 @@ class FWCAMCard extends HTMLElement {
     };
     if (route.origin) serviceData.origin = route.origin;
     if (route.departure_time) serviceData.departure_time = route.departure_time;
+    if (route.avoid_highways) serviceData.avoid_highways = true;
+    if (route.avoid_tolls) serviceData.avoid_tolls = true;
+    if (route.avoid_ferries) serviceData.avoid_ferries = true;
     try {
       await this.callService('hafwcma', 'set_route', serviceData);
       this.forceRender();
@@ -1102,6 +1117,9 @@ class FWCAMCard extends HTMLElement {
     const providerEl = this.shadowRoot.getElementById('route-provider-select');
     const departureDateEl = this.shadowRoot.getElementById('route-departure-date');
     const departureTimeEl = this.shadowRoot.getElementById('route-departure-time');
+    const avoidHighwaysEl = this.shadowRoot.getElementById('route-avoid-highways');
+    const avoidTollsEl = this.shadowRoot.getElementById('route-avoid-tolls');
+    const avoidFerriesEl = this.shadowRoot.getElementById('route-avoid-ferries');
 
     if (originEl) originEl.value = route.origin || '';
     if (destinationEl) destinationEl.value = route.destination || '';
@@ -1115,6 +1133,9 @@ class FWCAMCard extends HTMLElement {
         departureTimeEl.value = parts[1];
       }
     }
+    if (avoidHighwaysEl) avoidHighwaysEl.checked = !!route.avoid_highways;
+    if (avoidTollsEl) avoidTollsEl.checked = !!route.avoid_tolls;
+    if (avoidFerriesEl) avoidFerriesEl.checked = !!route.avoid_ferries;
     // Scroll the form into view
     const section = this.shadowRoot.querySelector('[data-fwcam-section="route_planner"]');
     if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2320,6 +2341,24 @@ class FWCAMCard extends HTMLElement {
               <label style="font-size:0.85rem;font-weight:500;">Departure Time <small style="font-weight:normal;">(24h)</small></label>
               <input id="route-departure-time" type="time" class="setting-input"
                 style="padding:0.4rem 0.6rem;border:1px solid var(--divider-color,#ccc);border-radius:4px;font-size:0.9rem;width:100%;box-sizing:border-box;">
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:0.3rem;margin-top:0.25rem;">
+            <label style="font-size:0.85rem;font-weight:500;">Avoid <small style="font-weight:normal;">(ORS &amp; Google)</small></label>
+            <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.85rem;cursor:pointer;">
+                <input id="route-avoid-highways" type="checkbox" style="width:16px;height:16px;cursor:pointer;">
+                Highways
+              </label>
+              <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.85rem;cursor:pointer;">
+                <input id="route-avoid-tolls" type="checkbox" style="width:16px;height:16px;cursor:pointer;">
+                Toll Roads
+              </label>
+              <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.85rem;cursor:pointer;">
+                <input id="route-avoid-ferries" type="checkbox" style="width:16px;height:16px;cursor:pointer;">
+                Ferries
+              </label>
             </div>
           </div>
 
