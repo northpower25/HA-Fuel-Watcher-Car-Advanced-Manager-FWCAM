@@ -1496,7 +1496,7 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_TANK_CAPACITY,
-                    description={"suggested_value": tank_capacity_value},
+                    description={"suggested_value": str(tank_capacity_value) if tank_capacity_value is not None else ""},
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(
                         type=selector.TextSelectorType.TEXT,
@@ -1504,7 +1504,7 @@ class HaFWCMAOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_INITIAL_CONSUMPTION,
-                    description={"suggested_value": initial_consumption_value},
+                    description={"suggested_value": str(initial_consumption_value) if initial_consumption_value is not None else ""},
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(
                         type=selector.TextSelectorType.TEXT,
