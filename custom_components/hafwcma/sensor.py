@@ -1904,9 +1904,17 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 silent=silent_mode,
             )
             
-            # Mark first successful fetch if we got any actual data
-            # async_get_vehicle_data always returns a dict, check if any value is not None
-            if any(v is not None for v in vehicle_data.values()):
+            # Mark first successful fetch only when we have actual numeric vehicle data.
+            # vehicle_data may contain non-None metadata (e.g. tank_level_unit from entity
+            # attributes) even while entity states are still "unavailable" right after an HA
+            # restart.  Checking any non-None value would incorrectly trigger
+            # _first_successful_fetch and run the consumption prediction with no real data,
+            # causing it to fall back to the 50%-tank assumption and show a too-low result.
+            has_numeric_vehicle_data = any(
+                vehicle_data.get(k) is not None
+                for k in ("odometer_km", "tank_level", "range_km")
+            )
+            if has_numeric_vehicle_data:
                 if not self._first_successful_fetch:
                     _LOGGER.info("First successful vehicle data fetch completed")
                     self._first_successful_fetch = True
@@ -1920,8 +1928,10 @@ class HaFWCMACoordinator(DataUpdateCoordinator):
                 except Exception as err:
                     _LOGGER.warning("Failed to save vehicle data to storage: %s", err)
             else:
-                # No live data available - use cached data if available to ensure continuity
-                # This is important after HA restart when entities haven't restored state yet
+                # No numeric live data available - use cached data if available to ensure
+                # continuity.  This is important after HA restart when entities haven't
+                # restored state yet (state == "unavailable" but attributes may still
+                # carry metadata such as tank_level_unit).
                 if self._cached_vehicle_data:
                     _LOGGER.debug(
                         "No live vehicle data available, using cached data from previous update. "
